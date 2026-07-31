@@ -25,6 +25,12 @@ const API = (() => {
 
   // ── Fetch wrapper ───────────────────────────────────────────────
   async function req(method, path, body) {
+    // Don't even try if we have no token (prevents pointless 401s)
+    if (!_token && path !== '/auth/login') {
+      console.warn(`[API] No token — skipping ${method} ${path}`);
+      return null;
+    }
+
     const opts = {
       method,
       headers: {
@@ -37,10 +43,11 @@ const API = (() => {
     try {
       const res = await fetch(BASE + path, opts);
       
-      // Token expired — redirect to login
+      // Token expired — clear it and signal the app gracefully (NO location.reload!)
       if (res.status === 401) {
         clearToken();
-        window.location.reload();
+        // Dispatch event — App will handle showing login screen without page reload
+        window.dispatchEvent(new CustomEvent('erp:session-expired'));
         return null;
       }
       
@@ -55,19 +62,20 @@ const API = (() => {
 
   // ── Auth ────────────────────────────────────────────────────────
   async function syncCloudToLocal() {
+    // Keys must match what DB.getAll() reads from localStorage (no prefix!)
     const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
     for (const col of COLS) {
       try {
         const data = await getAll(col);
         if (data && Array.isArray(data)) {
-          localStorage.setItem(`_erp_${col}`, JSON.stringify(data));
+          localStorage.setItem(col, JSON.stringify(data)); // ← correct key
         }
       } catch (e) { console.warn('Sync failed for', col, e); }
     }
     try {
       const settings = await getSettings();
-      if (settings) {
-        localStorage.setItem(`_erp_settings`, JSON.stringify(settings));
+      if (settings && Object.keys(settings).length) {
+        localStorage.setItem('settings', JSON.stringify(settings)); // ← correct key
       }
     } catch (e) { console.warn('Sync failed for settings', e); }
   }

@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=8.96">
+<link rel="stylesheet" href="style.css?v=8.97">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script>
@@ -81,7 +81,7 @@
     <p class="login-tagline" id="loginSubtitle">Système de gestion — Accès sécurisé</p>
 
     <div class="login-error" id="loginError"></div>
-    <form id="loginForm" autocomplete="on">
+    <form id="loginForm" method="post" autocomplete="on" onsubmit="return false;">
       <div class="form-group">
         <label id="lblUsername">Identifiant</label>
         <input type="text" name="username" id="loginUsername" required placeholder="Identifiant" autocomplete="username">
@@ -222,10 +222,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=8.96"></script>
-<script src="core.js?v=8.96"></script>
-<script src="modules.js?v=8.96"></script>
-<script src="pdf.js?v=8.96"></script>
+<script src="api.js?v=8.97"></script>
+<script src="core.js?v=8.97"></script>
+<script src="modules.js?v=8.97"></script>
+<script src="pdf.js?v=8.97"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -349,6 +349,21 @@ const App = {
     this._checkMorningSession();
     // Start live background sync so concurrent users see each other's changes
     DB.startLiveSync();
+    
+    // ── Security: remove credentials from URL immediately after login ──
+    if (location.search) {
+      window.history.replaceState({}, document.title, location.pathname);
+    }
+
+    // ── Handle session expiry gracefully (no page reload = no password in URL) ──
+    window.addEventListener('erp:session-expired', () => {
+      Auth.logout(); // clears localStorage currentUser
+      document.getElementById('appContainer').style.display = 'none';
+      document.getElementById('loginScreen').style.display = 'flex';
+      if (typeof Utils !== 'undefined') {
+        Utils.notify('⏰ Session expirée — veuillez vous reconnecter', 'warning');
+      }
+    }, { once: false });
   },
 
   _applyBranding() {
