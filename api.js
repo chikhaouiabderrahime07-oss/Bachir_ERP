@@ -54,6 +54,24 @@ const API = (() => {
   }
 
   // ── Auth ────────────────────────────────────────────────────────
+  async function syncCloudToLocal() {
+    const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
+    for (const col of COLS) {
+      try {
+        const data = await getAll(col);
+        if (data && Array.isArray(data)) {
+          localStorage.setItem(`_erp_${col}`, JSON.stringify(data));
+        }
+      } catch (e) { console.warn('Sync failed for', col, e); }
+    }
+    try {
+      const settings = await getSettings();
+      if (settings) {
+        localStorage.setItem(`_erp_settings`, JSON.stringify(settings));
+      }
+    } catch (e) { console.warn('Sync failed for settings', e); }
+  }
+
   async function login(username, password) {
     const data = await req('POST', '/auth/login', { username, password });
     if (data?.token) {
@@ -98,6 +116,7 @@ const API = (() => {
   async function insert(col,doc) { return req('POST',   `/data/${col}`, doc); }
   async function update(col,id,patch) { return req('PATCH', `/data/${col}/${id}`, patch); }
   async function remove(col,id)  { return req('DELETE', `/data/${col}/${id}`); }
+  async function bulkSync(col, items) { return req('PUT', `/data/${col}/bulk`, items); }
   async function getSettings()   { return req('GET',    '/data/settings/main') || {}; }
   async function saveSettings(patch) { return req('PATCH', '/data/settings/main', patch); }
 
@@ -116,8 +135,8 @@ const API = (() => {
   }
 
   return {
-    login, logout, isLoggedIn, getUser, initFromToken,
-    getAll, getById, insert, update, remove,
+    syncCloudToLocal, login, logout, isLoggedIn, getUser, initFromToken,
+    getAll, getById, insert, update, remove, bulkSync,
     getSettings, saveSettings,
     listBackups, createBackup, restoreBackup, deleteBackup,
     ping,

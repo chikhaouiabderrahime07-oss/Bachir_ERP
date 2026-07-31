@@ -238,6 +238,52 @@ const DB = {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
     if (!localStorage.getItem('settings')) this._resetSettings();
     if (!this.getAll('users').length) this._seed();
+    
+    // Cloud mode: if localStorage appears empty or cleared, restore from MongoDB
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      const hasData = this._cols.some(c => this.getAll(c).length > 0);
+      if (!hasData) {
+        // Silently restore in background — login will also do a full sync
+        window.API.syncCloudToLocal().then(() => {
+          // If we now have users, reload the page so the login screen picks them up
+          if (this.getAll('users').length > 1) location.reload();
+        }).catch(() => {});
+      }
+    }
+  },
+
+  // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
+  startLiveSync() {
+    if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
+    const COLS = ['brs','bls','suppliers','clients','caisse_admin','sessions','history'];
+    let indicator = null;
+    
+    setInterval(async () => {
+      try {
+        for (const col of COLS) {
+          const fresh = await window.API.getAll(col);
+          if (fresh && Array.isArray(fresh)) {
+            localStorage.setItem(col, JSON.stringify(fresh));
+          }
+        }
+        // Refresh currently visible module silently
+        if (typeof App !== 'undefined' && App._currentModule) {
+          App.reloadCurrent();
+        }
+        // Show small sync dot
+        if (!indicator) {
+          indicator = document.createElement('div');
+          indicator.id = 'sync-indicator';
+          indicator.title = 'Synchronisé avec le cloud';
+          indicator.style.cssText = 'position:fixed;bottom:12px;right:12px;width:8px;height:8px;border-radius:50%;background:#10b981;z-index:9999;opacity:.8;transition:all .3s';
+          document.body.appendChild(indicator);
+        }
+        indicator.style.background = '#10b981';
+        indicator.title = 'Synchronisé — ' + new Date().toLocaleTimeString('fr-FR');
+      } catch (e) {
+        if (indicator) { indicator.style.background = '#ef4444'; indicator.title = 'Sync échoué'; }
+      }
+    }, 60000); // every 60 seconds
   },
 
   _seed() {
@@ -283,12 +329,24 @@ const DB = {
     const cur = this.getSettings();
     const upd = { ...cur, ...d };
     localStorage.setItem('settings', JSON.stringify(upd));
+    // Cloud sync settings
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.saveSettings(upd).catch(e => {
+        console.warn('[DB.saveSettings] cloud sync failed', e.message);
+      });
+    }
     return upd;
   },
 
   // CRUD
   getAll(col) { try { return JSON.parse(localStorage.getItem(col) || '[]'); } catch { return []; } },
-  rawSet(col, data) { localStorage.setItem(col, JSON.stringify(data)); },
+  
+  // rawSet: write to localStorage ONLY (fast local cache)
+  // Individual insert/update/delete methods handle cloud sync atomically
+  rawSet(col, data) {
+    localStorage.setItem(col, JSON.stringify(data));
+  },
+  
   getById(col, id) { return this.getAll(col).find(i => i.id === id) || null; },
   where(col, fn) { return this.getAll(col).filter(fn); },
 
@@ -308,6 +366,40 @@ const DB = {
     this.rawSet(col, items);
     this._audit('CREATE', col, id, null, item);
     this._history(col, id, 'CREATE', 'Création', null, item);
+
+    // ── Cloud: send to server, which assigns the REAL unique ID/brNum/blNum ──
+    // This prevents duplicate numbers when multiple users save at the same time.
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.insert(col, item).then(serverItem => {
+        if (!serverItem) return;
+        const hasIdChange   = serverItem.id    !== item.id;
+        const hasBrChange   = col === 'brs' && serverItem.brNum !== item.brNum;
+        const hasBlChange   = col === 'bls' && serverItem.blNum !== item.blNum;
+
+        if (hasIdChange || hasBrChange || hasBlChange) {
+          // Server assigned a different number — update localStorage silently
+          const latest = this.getAll(col).map(i => i.id === item.id ? serverItem : i);
+          localStorage.setItem(col, JSON.stringify(latest));
+
+          // Notify the user their number was corrected
+          const oldRef = col === 'brs' ? `BR-${item.brNum}`
+                       : col === 'bls' ? `BL-${item.blNum}`
+                       : `#${item.id}`;
+          const newRef = col === 'brs' ? `BR-${serverItem.brNum}`
+                       : col === 'bls' ? `BL-${serverItem.blNum}`
+                       : `#${serverItem.id}`;
+          if (typeof Utils !== 'undefined') {
+            Utils.notify(`⚠️ Numéro ajusté: ${oldRef} → ${newRef} (conflit résolu)`, 'warning', 5000);
+          }
+
+          // Refresh current module to show corrected number
+          if (typeof App !== 'undefined' && App._currentModule) {
+            setTimeout(() => App.reloadCurrent(), 500);
+          }
+        }
+      }).catch(e => console.warn('[DB.insert] cloud sync failed', e.message));
+    }
+
     return item;
   },
 
@@ -326,6 +418,10 @@ const DB = {
     this.rawSet(col, items);
     this._audit('UPDATE', col, id, old, items[idx]);
     this._history(col, id, 'UPDATE', note, old, items[idx]);
+    // ── Cloud: atomic UPDATE (safe for concurrent users) ──
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.update(col, id, items[idx]).catch(e => console.warn('[DB.update] cloud sync failed', e.message));
+    }
     return items[idx];
   },
 
@@ -334,6 +430,10 @@ const DB = {
     const old = items.find(i => i.id === id);
     this.rawSet(col, items.filter(i => i.id !== id));
     if (old) { this._audit('DELETE', col, id, old, null); this._history(col, id, 'DELETE', 'Suppression', old, null); }
+    // ── Cloud: atomic DELETE (safe for concurrent users) ──
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.remove(col, id).catch(e => console.warn('[DB.delete] cloud sync failed', e.message));
+    }
     return true;
   },
 
@@ -467,13 +567,16 @@ const Auth = {
   isLoggedIn() { return !!this.getCurrentUser(); },
   isAdmin() { return this.getCurrentUser()?.role === 'admin'; },
 
-  login(username, password) {
+  login(username, password, forceBypass = false) {
     const u = DB.getAll('users').find(u => u.username===username && u.password===password && u.active!==false);
-    if (!u) return false;
-    localStorage.setItem('currentUser', JSON.stringify(u));
+    if (!u && !forceBypass) return false;
+    
+    // If forced bypass but user not found (first login on new client), create a temporary session user
+    const finalUser = u || { id: 'admin', username, role: 'admin', name: username };
+    localStorage.setItem('currentUser', JSON.stringify(finalUser));
     // Log work start AFTER saving currentUser so DB.insert can read it
-    WorkLog.logIn(u.id);
-    return u;
+    if (u) WorkLog.logIn(u.id);
+    return finalUser;
   },
 
   logout() {

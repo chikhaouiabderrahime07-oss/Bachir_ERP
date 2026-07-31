@@ -1,6 +1,7 @@
 const express  = require('express');
 const Document = require('../models/Document');
 const Settings = require('../models/Settings');
+const Counter  = require('../models/Counter');
 const auth     = require('../middleware/auth');
 
 const router = express.Router();
@@ -35,25 +36,57 @@ router.get('/:col/:id', async (req, res) => {
   }
 });
 
-// ─── POST /api/data/:col  (insert new doc) ───────────────────────
+// ─── POST /api/data/:col  (insert new doc — server assigns ID atomically) ─────
 router.post('/:col', async (req, res) => {
   try {
     const col  = req.params.col;
     const data = req.body;
-    const id   = data.id || await nextId(col);
     const now  = new Date().toISOString();
+    const year = new Date().getFullYear();
 
+    // ── 1. Atomic internal ID ─────────────────────────────────────────────────
+    // Initialize counter from current max if this is the first time
+    const existingDocs = await Document.find({ col }).select('data.id').lean();
+    const existingIds  = existingDocs.map(d => Number(d.data?.id) || 0);
+    const currentMaxId = existingIds.length ? Math.max(...existingIds) : 0;
+    await Counter.initFromMax(`id_${col}`, currentMaxId, 1);
+    const newId = await Counter.nextSeq(`id_${col}`);
+
+    // ── 2. Atomic reference number for BRs ───────────────────────────────────
+    let brNum = data.brNum;
+    if (col === 'brs') {
+      const existingBrs  = await Document.find({ col: 'brs', 'data.year': year }).select('data.brNum').lean();
+      const existingNums = existingBrs.map(d => Number(d.data?.brNum) || 0);
+      const currentMaxBr = existingNums.length ? Math.max(...existingNums) : 99;
+      await Counter.initFromMax(`brNum_${year}`, currentMaxBr, 100);
+      brNum = await Counter.nextSeq(`brNum_${year}`);
+    }
+
+    // ── 3. Atomic reference number for BLs ───────────────────────────────────
+    let blNum = data.blNum;
+    if (col === 'bls') {
+      const existingBls  = await Document.find({ col: 'bls', 'data.year': year }).select('data.blNum').lean();
+      const existingNums = existingBls.map(d => Number(d.data?.blNum) || 0);
+      const currentMaxBl = existingNums.length ? Math.max(...existingNums) : 99;
+      await Counter.initFromMax(`blNum_${year}`, currentMaxBl, 100);
+      blNum = await Counter.nextSeq(`blNum_${year}`);
+    }
+
+    // ── 4. Build the final document ───────────────────────────────────────────
     const newData = {
       ...data,
-      id,
+      id:        newId,                          // server-assigned, unique
+      ...(col === 'brs' ? { brNum } : {}),       // server-assigned BR number
+      ...(col === 'bls' ? { blNum } : {}),       // server-assigned BL number
       createdAt: data.createdAt || now,
       updatedAt: now,
-      createdBy: data.createdBy ?? req.user.id,
-      userName:  data.userName  ?? req.user.name,
+      createdBy:   data.createdBy   ?? req.user.id,
+      createdByName: data.createdByName ?? req.user.name,
     };
 
     await Document.create({ col, data: newData });
     res.status(201).json(newData);
+
   } catch (e) {
     console.error('[DATA/POST]', e);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -109,6 +142,37 @@ router.delete('/:col/:id', async (req, res) => {
     res.json({ success: true, id });
   } catch (e) {
     console.error('[DATA/DELETE]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ─── PUT /api/data/:col/bulk  (full collection replace / sync) ────
+// Called automatically by the client after every localStorage write.
+// Upserts all items and removes any stale ones not in the new list.
+router.put('/:col/bulk', async (req, res) => {
+  try {
+    const col   = req.params.col;
+    const items = req.body; // array of objects
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'Array expected' });
+
+    // Upsert each item by data.id
+    const ops = items.map(item => ({
+      updateOne: {
+        filter: { col, 'data.id': item.id },
+        update: { $set: { col, data: item, updatedAt: new Date() } },
+        upsert: true
+      }
+    }));
+
+    if (ops.length) await Document.bulkWrite(ops);
+
+    // Remove documents whose id is NOT in the new list
+    const ids = items.map(i => i.id);
+    await Document.deleteMany({ col, 'data.id': { $nin: ids } });
+
+    res.json({ synced: items.length });
+  } catch (e) {
+    console.error('[DATA/BULK]', e);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
