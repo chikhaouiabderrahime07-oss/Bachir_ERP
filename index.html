@@ -6,7 +6,8 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=8.97">
+<link rel="stylesheet" href="style.css?v=8.98">
+<link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script>
@@ -371,12 +372,24 @@ const App = {
     const name = s.companyName || 'Mon Entreprise';
     document.title = 'AI — ' + name;
 
-    const logo = s.logoLeft || s.leftLogo || '';
+    const logoLeft  = s.logoLeft  || s.leftLogo  || '';
+    const logoRight = s.logoRight || s.rightLogo || '';
+    // Use right logo for favicon (official company stamp), fallback to left
+    const faviconLogo = logoRight || logoLeft;
+
+    // ── Browser tab favicon ──────────────────────────────────────
+    const favicon = document.getElementById('appFavicon');
+    if (favicon && faviconLogo) {
+      favicon.href = faviconLogo;
+      favicon.type = faviconLogo.startsWith('data:image/png') ? 'image/png'
+                   : faviconLogo.startsWith('data:image/svg') ? 'image/svg+xml'
+                   : 'image/jpeg';
+    }
 
     // Login screen — company branding footer
     const loginLogo = document.getElementById('loginLogoLeft');
     if (loginLogo) {
-      if (logo) { loginLogo.src = logo; loginLogo.style.display = 'block'; }
+      if (logoLeft) { loginLogo.src = logoLeft; loginLogo.style.display = 'block'; }
       else { loginLogo.style.display = 'none'; }
     }
     const loginCompName = document.getElementById('loginCompanyName');
@@ -395,10 +408,11 @@ const App = {
     const topCLogo = document.getElementById('topCompanyLogo');
     if (topCName) topCName.textContent = name;
     if (topCLogo) {
-      if (logo) { topCLogo.src = logo; topCLogo.style.display = 'block'; }
+      if (logoLeft) { topCLogo.src = logoLeft; topCLogo.style.display = 'block'; }
       else { topCLogo.style.display = 'none'; }
     }
   },
+
 
   _updateTopbar() {
     const u = Auth.getCurrentUser();

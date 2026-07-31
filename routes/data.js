@@ -7,12 +7,41 @@ const auth     = require('../middleware/auth');
 const router = express.Router();
 router.use(auth); // ALL data routes require authentication
 
-// ─── Helper: get next auto-increment id per collection ───────────
-async function nextId(col) {
-  const docs = await Document.find({ col }).select('data.id').lean();
-  const ids = docs.map(d => Number(d.data?.id) || 0);
-  return ids.length ? Math.max(...ids) + 1 : 1;
-}
+// ═══════════════════════════════════════════════════════════════════
+// IMPORTANT: Specific routes MUST come before parameterized routes!
+// Express matches routes in order — /settings/main must be declared
+// before /:col/:id or Express will treat "settings" as :col and
+// "main" as :id, causing a 404.
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── GET /api/data/settings/main ─────────────────────────────────
+router.get('/settings/main', async (req, res) => {
+  try {
+    let s = await Settings.findOne({ key: 'main' }).lean();
+    if (!s) { s = { value: {} }; }
+    res.json(s.value);
+  } catch (e) {
+    console.error('[SETTINGS/GET]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ─── PATCH /api/data/settings/main ───────────────────────────────
+router.patch('/settings/main', async (req, res) => {
+  try {
+    const current = await Settings.findOne({ key: 'main' });
+    const merged  = { ...(current?.value || {}), ...req.body };
+    await Settings.findOneAndUpdate(
+      { key: 'main' },
+      { value: merged },
+      { upsert: true, new: true }
+    );
+    res.json(merged);
+  } catch (e) {
+    console.error('[SETTINGS/PATCH]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
 // ─── GET /api/data/:col  (get all docs in a collection) ──────────
 router.get('/:col', async (req, res) => {
@@ -28,7 +57,10 @@ router.get('/:col', async (req, res) => {
 // ─── GET /api/data/:col/:id  (get single doc) ────────────────────
 router.get('/:col/:id', async (req, res) => {
   try {
-    const doc = await Document.findOne({ col: req.params.col, 'data.id': Number(req.params.id) }).lean();
+    const doc = await Document.findOne({
+      col: req.params.col,
+      'data.id': Number(req.params.id)
+    }).lean();
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
     res.json(doc.data);
   } catch (e) {
@@ -36,7 +68,7 @@ router.get('/:col/:id', async (req, res) => {
   }
 });
 
-// ─── POST /api/data/:col  (insert new doc — server assigns ID atomically) ─────
+// ─── POST /api/data/:col  (insert — server assigns ID atomically) ─
 router.post('/:col', async (req, res) => {
   try {
     const col  = req.params.col;
@@ -44,15 +76,14 @@ router.post('/:col', async (req, res) => {
     const now  = new Date().toISOString();
     const year = new Date().getFullYear();
 
-    // ── 1. Atomic internal ID ─────────────────────────────────────────────────
-    // Initialize counter from current max if this is the first time
+    // ── 1. Atomic internal ID ──────────────────────────────────────
     const existingDocs = await Document.find({ col }).select('data.id').lean();
     const existingIds  = existingDocs.map(d => Number(d.data?.id) || 0);
     const currentMaxId = existingIds.length ? Math.max(...existingIds) : 0;
     await Counter.initFromMax(`id_${col}`, currentMaxId, 1);
     const newId = await Counter.nextSeq(`id_${col}`);
 
-    // ── 2. Atomic reference number for BRs ───────────────────────────────────
+    // ── 2. Atomic BR number ────────────────────────────────────────
     let brNum = data.brNum;
     if (col === 'brs') {
       const existingBrs  = await Document.find({ col: 'brs', 'data.year': year }).select('data.brNum').lean();
@@ -62,7 +93,7 @@ router.post('/:col', async (req, res) => {
       brNum = await Counter.nextSeq(`brNum_${year}`);
     }
 
-    // ── 3. Atomic reference number for BLs ───────────────────────────────────
+    // ── 3. Atomic BL number ────────────────────────────────────────
     let blNum = data.blNum;
     if (col === 'bls') {
       const existingBls  = await Document.find({ col: 'bls', 'data.year': year }).select('data.blNum').lean();
@@ -72,15 +103,15 @@ router.post('/:col', async (req, res) => {
       blNum = await Counter.nextSeq(`blNum_${year}`);
     }
 
-    // ── 4. Build the final document ───────────────────────────────────────────
+    // ── 4. Build final document ────────────────────────────────────
     const newData = {
       ...data,
-      id:        newId,                          // server-assigned, unique
-      ...(col === 'brs' ? { brNum } : {}),       // server-assigned BR number
-      ...(col === 'bls' ? { blNum } : {}),       // server-assigned BL number
-      createdAt: data.createdAt || now,
-      updatedAt: now,
-      createdBy:   data.createdBy   ?? req.user.id,
+      id:        newId,
+      ...(col === 'brs' ? { brNum } : {}),
+      ...(col === 'bls' ? { blNum } : {}),
+      createdAt:    data.createdAt || now,
+      updatedAt:    now,
+      createdBy:    data.createdBy    ?? req.user.id,
       createdByName: data.createdByName ?? req.user.name,
     };
 
@@ -93,7 +124,36 @@ router.post('/:col', async (req, res) => {
   }
 });
 
-// ─── PUT /api/data/:col/:id  (update doc) ────────────────────────
+// ─── PUT /api/data/:col/bulk  (full collection upsert) ───────────
+router.put('/:col/bulk', async (req, res) => {
+  try {
+    const col   = req.params.col;
+    const items = req.body;
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'Array expected' });
+
+    if (items.length) {
+      const ops = items.map(item => ({
+        updateOne: {
+          filter: { col, 'data.id': item.id },
+          update: { $set: { col, data: item, updatedAt: new Date() } },
+          upsert: true
+        }
+      }));
+      await Document.bulkWrite(ops);
+    }
+
+    // Remove stale docs not in new list
+    const ids = items.map(i => i.id);
+    await Document.deleteMany({ col, 'data.id': { $nin: ids } });
+
+    res.json({ synced: items.length });
+  } catch (e) {
+    console.error('[DATA/BULK]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ─── PUT /api/data/:col/:id  (full replace of one doc) ───────────
 router.put('/:col/:id', async (req, res) => {
   try {
     const col    = req.params.col;
@@ -121,8 +181,8 @@ router.patch('/:col/:id', async (req, res) => {
     const doc = await Document.findOne({ col, 'data.id': id });
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
 
-    const merged = { ...doc.data, ...req.body, updatedAt: new Date().toISOString() };
-    doc.data     = merged;
+    const merged  = { ...doc.data, ...req.body, updatedAt: new Date().toISOString() };
+    doc.data      = merged;
     doc.updatedAt = new Date();
     await doc.save();
     res.json(merged);
@@ -135,68 +195,13 @@ router.patch('/:col/:id', async (req, res) => {
 // ─── DELETE /api/data/:col/:id ────────────────────────────────────
 router.delete('/:col/:id', async (req, res) => {
   try {
-    const col = req.params.col;
-    const id  = Number(req.params.id);
+    const col    = req.params.col;
+    const id     = Number(req.params.id);
     const result = await Document.deleteOne({ col, 'data.id': id });
     if (!result.deletedCount) return res.status(404).json({ error: 'Non trouvé' });
     res.json({ success: true, id });
   } catch (e) {
     console.error('[DATA/DELETE]', e);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// ─── PUT /api/data/:col/bulk  (full collection replace / sync) ────
-// Called automatically by the client after every localStorage write.
-// Upserts all items and removes any stale ones not in the new list.
-router.put('/:col/bulk', async (req, res) => {
-  try {
-    const col   = req.params.col;
-    const items = req.body; // array of objects
-    if (!Array.isArray(items)) return res.status(400).json({ error: 'Array expected' });
-
-    // Upsert each item by data.id
-    const ops = items.map(item => ({
-      updateOne: {
-        filter: { col, 'data.id': item.id },
-        update: { $set: { col, data: item, updatedAt: new Date() } },
-        upsert: true
-      }
-    }));
-
-    if (ops.length) await Document.bulkWrite(ops);
-
-    // Remove documents whose id is NOT in the new list
-    const ids = items.map(i => i.id);
-    await Document.deleteMany({ col, 'data.id': { $nin: ids } });
-
-    res.json({ synced: items.length });
-  } catch (e) {
-    console.error('[DATA/BULK]', e);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// ─── GET /api/data/settings/main ─────────────────────────────────
-router.get('/settings/main', async (req, res) => {
-  try {
-    let s = await Settings.findOne({ key: 'main' }).lean();
-    if (!s) s = { value: {} };
-    res.json(s.value);
-  } catch (e) {
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// ─── PATCH /api/data/settings/main ───────────────────────────────
-router.patch('/settings/main', async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Accès refusé' });
-    const current = await Settings.findOne({ key: 'main' });
-    const merged  = { ...(current?.value || {}), ...req.body };
-    await Settings.findOneAndUpdate({ key: 'main' }, { value: merged }, { upsert: true, new: true });
-    res.json(merged);
-  } catch (e) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
