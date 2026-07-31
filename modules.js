@@ -3677,11 +3677,41 @@ const UsersModule = {
   toggleActive(id) {
     const u = DB.getById('users', id);
     if (!u) return;
-    DB.update('users', id, { active: u.active===false });
-    Utils.notify((T.isRTL()?'تم تغيير الحالة':'Statut modifié'), 'success');
+    if (u.role === 'admin' && u.active !== false) {
+      const admins = DB.getAll('users').filter(x => x.role === 'admin' && x.active !== false);
+      if (admins.length <= 1) {
+        Utils.notify(T.isRTL() ? 'لا يمكن تعطيل آخر مسؤول' : 'Impossible de désactiver le dernier admin', 'error');
+        return;
+      }
+    }
+    DB.update('users', id, { active: u.active === false });
+    Utils.notify(T.isRTL() ? 'تم تغيير الحالة' : 'Statut modifié', 'success');
+    App.loadModule('users');
+  },
+
+  deleteUser(id) {
+    const u = DB.getById('users', id);
+    if (!u) return;
+    const me = Auth.getCurrentUser();
+    if (u.id === me?.id) {
+      Utils.notify(T.isRTL() ? 'لا يمكنك حذف حسابك الخاص' : 'Impossible de supprimer votre propre compte', 'error');
+      return;
+    }
+    if (u.role === 'admin') {
+      const admins = DB.getAll('users').filter(x => x.role === 'admin');
+      if (admins.length <= 1) {
+        Utils.notify(T.isRTL() ? 'لا يمكن حذف المسؤول الأخير' : 'Impossible de supprimer le dernier administrateur', 'error');
+        return;
+      }
+    }
+    const name = u.name || u.username;
+    if (!confirm((T.isRTL() ? 'حذف المستخدم' : 'Supprimer') + ' "' + name + '" ?\n' + (T.isRTL() ? 'هذا الإجراء لا يمكن التراجع عنه.' : 'Cette action est irréversible.'))) return;
+    DB.delete('users', id);
+    Utils.notify('✅ ' + (T.isRTL() ? 'تم حذف المستخدم' : 'Utilisateur supprimé'), 'success');
     App.loadModule('users');
   }
 };
+
 
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS MODULE
@@ -4024,6 +4054,9 @@ const SettingsModule = {
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._cleanDuplicates()" style="color:#f59e0b;border-color:rgba(245,158,11,.35)" title="${isAR ? 'حذف المكررات' : 'Supprimer les doublons'}">
             <i class="fas fa-broom"></i> ${isAR ? 'تنظيف' : 'Dédupliquer'}
           </button>
+          <button class="btn btn-outline btn-sm" onclick="SettingsModule._resetAllData()" style="color:#ef4444;border-color:rgba(239,68,68,.35)" title="${isAR ? 'حذف كل البيانات' : 'Effacer toutes les données'}">
+            <i class="fas fa-skull-crossbones"></i> ${isAR ? 'إعادة ضبط كامل' : 'Reset TOUT'}
+          </button>
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._loadBackups()" id="btn-refresh-backups">
             <i class="fas fa-sync-alt"></i> ${isAR ? 'تحديث' : 'Actualiser'}
           </button>
@@ -4249,14 +4282,48 @@ const SettingsModule = {
       } catch(e) { /* col might be empty */ }
     }
     if (totalRemoved > 0) {
-      // Refresh local cache after cleanup
       await window.API.syncCloudToLocal();
       App.reloadCurrent();
     }
     Utils.notify(`✅ Nettoyage terminé — ${totalRemoved} doublon(s) supprimé(s)`, totalRemoved > 0 ? 'success' : 'info');
   },
 
+  // ── Full database reset — wipes ALL data from MongoDB ──────────
+  async _resetAllData() {
+    if (!window.API) {
+      alert('Disponible uniquement en mode cloud.');
+      return;
+    }
+    // Step 1: warning
+    if (!confirm('⚠️ ATTENTION — OPÉRATION IRRÉVERSIBLE ⚠️\n\nCela va SUPPRIMER:\n• Tous les BRs et BLs\n• Tous les clients et fournisseurs\n• Toute la caisse\n• Tous les utilisateurs\n• Tous les paramètres\n\nSeul l\'admin (admin/admin123) sera recréé.\n\nVous êtes sûr de vouloir continuer ?')) return;
+
+    // Step 2: require typed confirmation
+    const phrase = prompt('Pour confirmer, tapez exactement:\n\nRESET_TOUT');
+    if (phrase !== 'RESET_TOUT') {
+      Utils.notify('Opération annulée — phrase incorrecte', 'info');
+      return;
+    }
+
+    try {
+      Utils.notify('Réinitialisation en cours…', 'info');
+      const result = await window.API._req('POST', '/admin/reset-all', { confirm: 'RESET_TOUT' });
+      if (result?.success) {
+        // Clear local cache too
+        const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log','settings'];
+        COLS.forEach(c => localStorage.removeItem(c));
+        localStorage.removeItem('_erp_token');
+        localStorage.removeItem('currentUser');
+        alert('✅ Base de données réinitialisée!\n\nConnectez-vous avec:\nIdentifiant: admin\nMot de passe: admin123');
+        location.reload();
+      }
+    } catch(e) {
+      Utils.notify('Erreur reset: ' + e.message, 'error');
+    }
+  },
+
 };
+
+
 
 
 

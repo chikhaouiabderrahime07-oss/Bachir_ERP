@@ -44,6 +44,61 @@ app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/backup', backupRoutes);
 
+// ─── Admin: Full Reset (wipes ALL data from MongoDB) ─────────────
+app.post('/api/admin/reset-all', async (req, res) => {
+  try {
+    // Must be authenticated as admin
+    const jwt = require('jsonwebtoken');
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Non authentifié' });
+
+    let decoded;
+    try { decoded = jwt.verify(token, process.env.JWT_SECRET); }
+    catch { return res.status(401).json({ error: 'Token invalide' }); }
+
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admins uniquement' });
+
+    // Extra safety: require confirmation phrase in body
+    if (req.body.confirm !== 'RESET_TOUT') {
+      return res.status(400).json({ error: 'Phrase de confirmation incorrecte' });
+    }
+
+    const Document = require('./models/Document');
+    const Settings = require('./models/Settings');
+    const Counter  = require('./models/Counter');
+    const bcrypt   = require('bcryptjs');
+
+    // Wipe everything
+    await Document.deleteMany({});
+    await Settings.deleteMany({});
+    await Counter.deleteMany({});
+
+    // Reseed default admin user
+    const hash = await bcrypt.hash('admin123', 10);
+    await Document.create({
+      col: 'users',
+      data: {
+        id: 1,
+        name: 'Administrateur',
+        username: 'admin',
+        password: 'admin123', // plain stored (app uses plain comparison)
+        role: 'admin',
+        active: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    });
+
+    console.log('[RESET] All data wiped and admin reseeded by:', decoded.username);
+    res.json({ success: true, message: 'Base de données réinitialisée. Admin: admin / admin123' });
+
+  } catch (e) {
+    console.error('[RESET] Error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Health Check ────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({

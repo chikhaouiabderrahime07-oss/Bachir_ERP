@@ -18,7 +18,10 @@ router.post('/login', async (req, res) => {
     if (!doc) return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect' });
 
     const user = doc.data;
-    if (user.active === false) return res.status(403).json({ error: 'Compte désactivé' });
+    // Admin can NEVER be locked out — only non-admin users can be deactivated
+    if (user.active === false && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Compte désactivé' });
+    }
 
     // Compare password (supports both bcrypt and legacy plain-text for migration)
     let passwordOk = false;
@@ -64,6 +67,24 @@ router.post('/refresh', (req, res) => {
     res.json({ token: newToken });
   } catch {
     res.status(401).json({ error: 'Token invalide' });
+  }
+});
+
+// ─── POST /api/auth/recover-admin  (emergency: unlock admin, no auth needed) ──
+// Requires secret phrase in body. Use only if locked out.
+router.post('/recover-admin', async (req, res) => {
+  try {
+    if (req.body.secret !== 'UNLOCK_ADMIN_NOW') {
+      return res.status(400).json({ error: 'Phrase incorrecte' });
+    }
+    // Force-enable ALL admin accounts
+    const result = await Document.updateMany(
+      { col: 'users', 'data.role': 'admin' },
+      { $set: { 'data.active': true, updatedAt: new Date() } }
+    );
+    res.json({ success: true, unlocked: result.modifiedCount, message: 'Comptes admin débloqués. Login: admin / admin123' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
