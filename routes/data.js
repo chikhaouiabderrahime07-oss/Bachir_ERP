@@ -76,6 +76,19 @@ router.post('/:col', async (req, res) => {
     const now  = new Date().toISOString();
     const year = new Date().getFullYear();
 
+    // ── Guard: if a document with this exact id already exists → update it ──
+    // This prevents duplicates when migration or reconnect sends same data twice.
+    if (data.id) {
+      const existing = await Document.findOne({ col, 'data.id': Number(data.id) });
+      if (existing) {
+        const merged = { ...existing.data, ...data, updatedAt: now };
+        existing.data = merged;
+        existing.updatedAt = new Date();
+        await existing.save();
+        return res.status(200).json(merged); // 200 = updated (not 201 created)
+      }
+    }
+
     // ── 1. Atomic internal ID ──────────────────────────────────────
     const existingDocs = await Document.find({ col }).select('data.id').lean();
     const existingIds  = existingDocs.map(d => Number(d.data?.id) || 0);
@@ -124,7 +137,9 @@ router.post('/:col', async (req, res) => {
   }
 });
 
-// ─── PUT /api/data/:col/bulk  (full collection upsert) ───────────
+// ─── PUT /api/data/:col/bulk  (safe upsert — never deletes) ─────
+// Only used for migration. Uses upsert-by-id so running it twice
+// never creates duplicates. Does NOT delete anything.
 router.put('/:col/bulk', async (req, res) => {
   try {
     const col   = req.params.col;
@@ -136,15 +151,11 @@ router.put('/:col/bulk', async (req, res) => {
         updateOne: {
           filter: { col, 'data.id': item.id },
           update: { $set: { col, data: item, updatedAt: new Date() } },
-          upsert: true
+          upsert: true  // insert if not found, update if found — NEVER duplicates
         }
       }));
       await Document.bulkWrite(ops);
     }
-
-    // Remove stale docs not in new list
-    const ids = items.map(i => i.id);
-    await Document.deleteMany({ col, 'data.id': { $nin: ids } });
 
     res.json({ synced: items.length });
   } catch (e) {
@@ -205,5 +216,33 @@ router.delete('/:col/:id', async (req, res) => {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
+// ─── POST /api/data/:col/dedup  (remove duplicates from a collection) ──
+// Admin-only cleanup endpoint. Keeps the FIRST document for each data.id
+// and removes all subsequent duplicates.
+router.post('/:col/dedup', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    const col = req.params.col;
+    const docs = await Document.find({ col }).sort({ createdAt: 1 }).lean();
+    const seen = new Set();
+    const toDelete = [];
+    for (const doc of docs) {
+      const key = String(doc.data?.id);
+      if (seen.has(key)) {
+        toDelete.push(doc._id);
+      } else {
+        seen.add(key);
+      }
+    }
+    if (toDelete.length) {
+      await Document.deleteMany({ _id: { $in: toDelete } });
+    }
+    res.json({ removed: toDelete.length, remaining: docs.length - toDelete.length });
+  } catch (e) {
+    console.error('[DATA/DEDUP]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
 module.exports = router;
+

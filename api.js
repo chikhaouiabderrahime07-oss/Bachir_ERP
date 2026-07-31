@@ -148,6 +148,7 @@ const API = (() => {
     getSettings, saveSettings,
     listBackups, createBackup, restoreBackup, deleteBackup,
     ping,
+    _req: req, // exposed for admin utility calls
   };
 })();
 

@@ -4021,6 +4021,9 @@ const SettingsModule = {
         </div>
         <span style="font-size:13px;font-weight:800;color:var(--text)">${isAR ? 'السحابة — النسخ الاحتياطية' : 'Sauvegardes Cloud (MongoDB)'}</span>
         <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="SettingsModule._cleanDuplicates()" style="color:#f59e0b;border-color:rgba(245,158,11,.35)" title="${isAR ? 'حذف المكررات' : 'Supprimer les doublons'}">
+            <i class="fas fa-broom"></i> ${isAR ? 'تنظيف' : 'Dédupliquer'}
+          </button>
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._loadBackups()" id="btn-refresh-backups">
             <i class="fas fa-sync-alt"></i> ${isAR ? 'تحديث' : 'Actualiser'}
           </button>
@@ -4210,27 +4213,52 @@ const SettingsModule = {
   // ── One-click migrate localStorage → MongoDB ───────────────────
   async _migrateLocalToCloud() {
     if (!window.API) return;
-    if (!confirm('Cette opération va envoyer toutes vos données locales (localStorage) vers MongoDB.\n\nLes données existantes sur le serveur seront remplacées.\n\nContinuer ?')) return;
+    if (!confirm('Cette opération va envoyer toutes vos données locales (localStorage) vers MongoDB.\n\nUtilise le mode upsert — aucun doublon ne sera créé.\n\nContinuer ?')) return;
     try {
       Utils.notify('Migration en cours…', 'info');
       const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
       let total = 0;
       for (const col of COLS) {
         const items = DB.getAll(col);
-        for (const item of items) {
-          try { await API.insert(col, item); total++; } catch(e) { /* skip duplicates */ }
+        if (items.length) {
+          // Use bulkSync (upsert by id) — NEVER creates duplicates
+          await API.bulkSync(col, items);
+          total += items.length;
         }
       }
       // Migrate settings
       const settings = DB.getSettings();
       await API.saveSettings(settings);
-      Utils.notify(`✅ Migration terminée — ${total} documents envoyés`, 'success');
+      Utils.notify(`✅ Migration terminée — ${total} documents envoyés (aucun doublon)`, 'success');
     } catch (e) {
       Utils.notify('Erreur migration: ' + e.message, 'error');
     }
   },
 
+  // ── Clean duplicates already in MongoDB ────────────────────────
+  async _cleanDuplicates() {
+    if (!window.API) return;
+    if (!confirm('Nettoyer les doublons dans MongoDB ?\n\nGarde le premier exemplaire de chaque document, supprime les copies.\n\nContinuer ?')) return;
+    const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
+    let totalRemoved = 0;
+    Utils.notify('Nettoyage en cours…', 'info');
+    for (const col of COLS) {
+      try {
+        const r = await window.API._req('POST', `/data/${col}/dedup`, {});
+        if (r?.removed) totalRemoved += r.removed;
+      } catch(e) { /* col might be empty */ }
+    }
+    if (totalRemoved > 0) {
+      // Refresh local cache after cleanup
+      await window.API.syncCloudToLocal();
+      App.reloadCurrent();
+    }
+    Utils.notify(`✅ Nettoyage terminé — ${totalRemoved} doublon(s) supprimé(s)`, totalRemoved > 0 ? 'success' : 'info');
+  },
+
 };
+
+
 
 
 // ═══════════════════════════════════════════════════════════════
