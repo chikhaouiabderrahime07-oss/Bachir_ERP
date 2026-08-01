@@ -3689,7 +3689,7 @@ const UsersModule = {
     App.loadModule('users');
   },
 
-  deleteUser(id) {
+  async deleteUser(id) {
     const u = DB.getById('users', id);
     if (!u) return;
     const me = Auth.getCurrentUser();
@@ -3705,7 +3705,12 @@ const UsersModule = {
       }
     }
     const name = u.name || u.username;
-    if (!confirm((T.isRTL() ? 'حذف المستخدم' : 'Supprimer') + ' "' + name + '" ?\n' + (T.isRTL() ? 'هذا الإجراء لا يمكن التراجع عنه.' : 'Cette action est irréversible.'))) return;
+    const ok = await Dialog.confirm(
+      T.isRTL() ? 'حذف المستخدم' : 'Supprimer l\'utilisateur',
+      `"${name}"\n\n${T.isRTL() ? 'هذا الإجراء لا يمكن التراجع عنه.' : 'Cette action est irréversible.'}`,
+      'danger'
+    );
+    if (!ok) return;
     DB.delete('users', id);
     Utils.notify('✅ ' + (T.isRTL() ? 'تم حذف المستخدم' : 'Utilisateur supprimé'), 'success');
     App.loadModule('users');
@@ -4204,11 +4209,15 @@ const SettingsModule = {
   // ── Create manual backup ────────────────────────────────────────
   async _createManualBackup() {
     if (!window.API) return;
-    const label = prompt(T.isRTL() ? 'اسم النسخة الاحتياطية:' : 'Nom de la sauvegarde:', `Manuel — ${new Date().toLocaleString('fr-DZ')}`);
-    if (!label) return;
+    const label = await Dialog.prompt(
+      T.isRTL() ? 'نسخة احتياطية جديدة' : 'Nouvelle sauvegarde',
+      T.isRTL() ? 'اختر اسمًا لهذه النسخة الاحتياطية' : 'Choisissez un nom pour cette sauvegarde',
+      { placeholder: `Manuel — ${new Date().toLocaleString('fr-DZ')}` }
+    );
+    if (label === null) return;
     try {
       Utils.notify(T.isRTL() ? 'جارٍ الإنشاء…' : 'Création en cours…', 'info');
-      await API.createBackup(label);
+      await API.createBackup(label || `Manuel — ${new Date().toLocaleString('fr-DZ')}`);
       Utils.notify(T.isRTL() ? '✅ تم إنشاء النسخة الاحتياطية' : '✅ Sauvegarde créée avec succès', 'success');
       this._loadBackups();
     } catch (e) {
@@ -4219,7 +4228,14 @@ const SettingsModule = {
   // ── Restore a backup ───────────────────────────────────────────
   async _restoreBackup(id, label) {
     if (!window.API) return;
-    if (!confirm(`⚠️ Restaurer depuis:\n"${label}"\n\nCette action remplace TOUTES les données actuelles.\nUne sauvegarde de sécurité sera créée automatiquement.\n\nContinuer ?`)) return;
+    const ok = await Dialog.confirm(
+      T.isRTL() ? 'استعادة نسخة احتياطية' : 'Restaurer une sauvegarde',
+      (T.isRTL()
+        ? `استعادة من:\n"${label}"\n\nسيتم استبدال جميع البيانات الحالية.\nسيتم إنشاء نسخة أمان تلقائيًا.`
+        : `Restaurer depuis:\n"${label}"\n\nCette action remplace TOUTES les données actuelles.\nUne sauvegarde de sécurité sera créée automatiquement.`),
+      'warning'
+    );
+    if (!ok) return;
     try {
       Utils.notify(T.isRTL() ? 'جارٍ الاستعادة…' : 'Restauration en cours…', 'info');
       const result = await API.restoreBackup(id);
@@ -4233,7 +4249,12 @@ const SettingsModule = {
   // ── Delete a backup ────────────────────────────────────────────
   async _deleteBackup(id) {
     if (!window.API) return;
-    if (!confirm(T.isRTL() ? 'حذف هذه النسخة الاحتياطية؟' : 'Supprimer cette sauvegarde ?')) return;
+    const ok = await Dialog.confirm(
+      T.isRTL() ? 'حذف النسخة الاحتياطية' : 'Supprimer la sauvegarde',
+      T.isRTL() ? 'هل أنت متأكد من حذف هذه النسخة الاحتياطية؟' : 'Êtes-vous sûr de vouloir supprimer cette sauvegarde ?',
+      'danger'
+    );
+    if (!ok) return;
     try {
       await API.deleteBackup(id);
       Utils.notify(T.isRTL() ? 'تم الحذف' : 'Sauvegarde supprimée', 'success');
@@ -4246,7 +4267,14 @@ const SettingsModule = {
   // ── One-click migrate localStorage → MongoDB ───────────────────
   async _migrateLocalToCloud() {
     if (!window.API) return;
-    if (!confirm('Cette opération va envoyer toutes vos données locales (localStorage) vers MongoDB.\n\nUtilise le mode upsert — aucun doublon ne sera créé.\n\nContinuer ?')) return;
+    const ok = await Dialog.confirm(
+      T.isRTL() ? 'نقل البيانات إلى السحابة' : 'Migrer vers le Cloud',
+      T.isRTL()
+        ? 'سيتم إرسال جميع بياناتك المحلية إلى MongoDB.\n\nيستخدم وضع upsert — لن يتم إنشاء أي نسخ مكررة.'
+        : 'Cette opération va envoyer toutes vos données locales vers MongoDB.\n\nUtilise le mode upsert — aucun doublon ne sera créé.',
+      'info'
+    );
+    if (!ok) return;
     try {
       Utils.notify('Migration en cours…', 'info');
       const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
@@ -4254,15 +4282,13 @@ const SettingsModule = {
       for (const col of COLS) {
         const items = DB.getAll(col);
         if (items.length) {
-          // Use bulkSync (upsert by id) — NEVER creates duplicates
           await API.bulkSync(col, items);
           total += items.length;
         }
       }
-      // Migrate settings
       const settings = DB.getSettings();
       await API.saveSettings(settings);
-      Utils.notify(`✅ Migration terminée — ${total} documents envoyés (aucun doublon)`, 'success');
+      Utils.notify(`✅ Migration terminée — ${total} documents envoyés`, 'success');
     } catch (e) {
       Utils.notify('Erreur migration: ' + e.message, 'error');
     }
@@ -4271,7 +4297,14 @@ const SettingsModule = {
   // ── Clean duplicates already in MongoDB ────────────────────────
   async _cleanDuplicates() {
     if (!window.API) return;
-    if (!confirm('Nettoyer les doublons dans MongoDB ?\n\nGarde le premier exemplaire de chaque document, supprime les copies.\n\nContinuer ?')) return;
+    const ok = await Dialog.confirm(
+      T.isRTL() ? 'تنظيف المكررات' : 'Nettoyer les doublons',
+      T.isRTL()
+        ? 'سيتم الاحتفاظ بالنسخة الأولى من كل مستند وحذف النسخ المكررة.'
+        : 'Garde le premier exemplaire de chaque document et supprime les copies en double.',
+      'warning'
+    );
+    if (!ok) return;
     const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
     let totalRemoved = 0;
     Utils.notify('Nettoyage en cours…', 'info');
@@ -4291,33 +4324,52 @@ const SettingsModule = {
   // ── Full database reset — wipes ALL data from MongoDB ──────────
   async _resetAllData() {
     if (!window.API) {
-      alert('Disponible uniquement en mode cloud.');
+      await Dialog.alert(
+        T.isRTL() ? 'غير متاح' : 'Non disponible',
+        T.isRTL() ? 'متاح فقط في وضع السحابة' : 'Disponible uniquement en mode cloud.',
+        'info'
+      );
       return;
     }
-    // Step 1: warning
-    if (!confirm('⚠️ ATTENTION — OPÉRATION IRRÉVERSIBLE ⚠️\n\nCela va SUPPRIMER:\n• Tous les BRs et BLs\n• Tous les clients et fournisseurs\n• Toute la caisse\n• Tous les utilisateurs\n• Tous les paramètres\n\nSeul l\'admin (admin/admin123) sera recréé.\n\nVous êtes sûr de vouloir continuer ?')) return;
 
-    // Step 2: require typed confirmation
-    const phrase = prompt('Pour confirmer, tapez exactement:\n\nRESET_TOUT');
-    if (phrase !== 'RESET_TOUT') {
-      Utils.notify('Opération annulée — phrase incorrecte', 'info');
+    // Step 1: serious warning
+    const ok = await Dialog.confirm(
+      '⚠️ ' + (T.isRTL() ? 'إعادة ضبط كامل' : 'RÉINITIALISATION TOTALE'),
+      T.isRTL()
+        ? 'سيتم حذف:\n• جميع سندات الاستلام والتسليم\n• جميع العملاء والموردين\n• جميع بيانات الصندوق\n• جميع المستخدمين\n• جميع الإعدادات\n\nسيتم إعادة إنشاء المسؤول فقط (admin/admin123).\n\nهل أنت متأكد؟'
+        : 'Cela va SUPPRIMER:\n• Tous les BRs et BLs\n• Tous les clients et fournisseurs\n• Toute la caisse\n• Tous les utilisateurs et paramètres\n\nSeul l\'admin (admin / admin123) sera recréé.\n\nCette action est IRRÉVERSIBLE.',
+      'danger'
+    );
+    if (!ok) return;
+
+    // Step 2: require admin password
+    const password = await Dialog.promptPassword(
+      T.isRTL() ? 'تأكيد كلمة المرور' : 'Confirmation par mot de passe',
+      T.isRTL() ? 'أدخل كلمة مرور المسؤول للتأكيد:' : 'Entrez le mot de passe administrateur pour confirmer:',
+      { label: T.isRTL() ? 'كلمة المرور' : 'Mot de passe admin' }
+    );
+    if (password === null || !password) {
+      Utils.notify(T.isRTL() ? 'تم الإلغاء' : 'Opération annulée', 'info');
       return;
     }
 
     try {
-      Utils.notify('Réinitialisation en cours…', 'info');
-      const result = await window.API._req('POST', '/admin/reset-all', { confirm: 'RESET_TOUT' });
+      Utils.notify(T.isRTL() ? 'جارٍ إعادة الضبط…' : 'Réinitialisation en cours…', 'info');
+      const result = await window.API._req('POST', '/admin/reset-all', { confirm: 'RESET_TOUT', password });
       if (result?.success) {
-        // Clear local cache too
         const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log','settings'];
         COLS.forEach(c => localStorage.removeItem(c));
         localStorage.removeItem('_erp_token');
         localStorage.removeItem('currentUser');
-        alert('✅ Base de données réinitialisée!\n\nConnectez-vous avec:\nIdentifiant: admin\nMot de passe: admin123');
+        await Dialog.alert(
+          '✅ ' + (T.isRTL() ? 'تمت إعادة الضبط' : 'Base réinitialisée'),
+          T.isRTL() ? 'سجّل الدخول بـ:\nالمعرف: admin\nكلمة المرور: admin123' : 'Connectez-vous avec:\nIdentifiant: admin\nMot de passe: admin123',
+          'success'
+        );
         location.reload();
       }
     } catch(e) {
-      Utils.notify('Erreur reset: ' + e.message, 'error');
+      Utils.notify('Erreur: ' + e.message, 'error');
     }
   },
 

@@ -59,30 +59,47 @@ app.post('/api/admin/reset-all', async (req, res) => {
 
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admins uniquement' });
 
-    // Extra safety: require confirmation phrase in body
+    // Require confirmation phrase
     if (req.body.confirm !== 'RESET_TOUT') {
       return res.status(400).json({ error: 'Phrase de confirmation incorrecte' });
     }
 
+    // Verify admin password against stored user
     const Document = require('./models/Document');
     const Settings = require('./models/Settings');
     const Counter  = require('./models/Counter');
+    const Backup   = require('./models/Backup');
     const bcrypt   = require('bcryptjs');
 
-    // Wipe everything
+    const password = req.body.password;
+    if (!password) return res.status(400).json({ error: 'Mot de passe requis' });
+
+    const adminDoc = await Document.findOne({ col: 'users', 'data.username': decoded.username });
+    if (!adminDoc) return res.status(404).json({ error: 'Utilisateur admin introuvable' });
+
+    const storedPw = adminDoc.data.password;
+    let pwOk = false;
+    if (storedPw?.startsWith('$2')) {
+      pwOk = await bcrypt.compare(password, storedPw);
+    } else {
+      pwOk = (password === storedPw);
+    }
+    if (!pwOk) return res.status(403).json({ error: 'Mot de passe incorrect' });
+
+    // ── WIPE EVERYTHING ─────────────────────────────────────────
     await Document.deleteMany({});
     await Settings.deleteMany({});
     await Counter.deleteMany({});
+    await Backup.deleteMany({});
 
-    // Reseed default admin user
-    const hash = await bcrypt.hash('admin123', 10);
+    // Reseed default admin user with plain-text password (app handles upgrade)
     await Document.create({
       col: 'users',
       data: {
         id: 1,
         name: 'Administrateur',
         username: 'admin',
-        password: 'admin123', // plain stored (app uses plain comparison)
+        password: 'admin123',
         role: 'admin',
         active: true,
         createdAt: new Date().toISOString(),

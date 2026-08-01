@@ -602,6 +602,67 @@ const Auth = {
   }
 };
 
+// ─── DIALOG — Custom modal replaces alert/confirm/prompt ──────
+const Dialog = {
+  _icons: { danger:'fa-skull-crossbones', warning:'fa-exclamation-triangle', success:'fa-check-circle', info:'fa-info-circle' },
+
+  show({ title='', message='', type='info', confirmText='OK', cancelText=null, inputType=null, inputPlaceholder='', inputLabel='' }) {
+    return new Promise(resolve => {
+      const id = 'dlg_' + Date.now();
+      const hasInput = !!inputType;
+      const icon = this._icons[type] || 'fa-info-circle';
+      const html = `
+        <div class="dlg-overlay" id="${id}">
+          <div class="dlg-box dlg-${type}">
+            <div class="dlg-icon-wrap"><i class="fas ${icon}"></i></div>
+            <div class="dlg-title">${title}</div>
+            <div class="dlg-msg">${message}</div>
+            ${hasInput ? `
+              ${inputLabel ? `<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">${inputLabel}</div>` : ''}
+              <input class="dlg-input" id="${id}_inp" type="${inputType}" placeholder="${inputPlaceholder}" autocomplete="off">
+            ` : ''}
+            <div class="dlg-btns">
+              ${cancelText ? `<button class="dlg-btn dlg-btn-cancel" id="${id}_cancel">${cancelText}</button>` : ''}
+              <button class="dlg-btn ${type==='danger'?'dlg-btn-danger':'dlg-btn-primary'}" id="${id}_ok">${confirmText}</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.insertAdjacentHTML('beforeend', html);
+      const overlay = document.getElementById(id);
+      const inp = document.getElementById(id + '_inp');
+      const okBtn = document.getElementById(id + '_ok');
+      const cancelBtn = document.getElementById(id + '_cancel');
+
+      requestAnimationFrame(() => { requestAnimationFrame(() => overlay.classList.add('dlg-open')); });
+      if (inp) setTimeout(() => inp.focus(), 120);
+
+      const close = (val) => {
+        overlay.classList.remove('dlg-open');
+        setTimeout(() => { overlay.remove(); resolve(val); }, 260);
+      };
+
+      okBtn.addEventListener('click', () => close(hasInput ? (inp?.value ?? '') : true));
+      if (cancelBtn) cancelBtn.addEventListener('click', () => close(hasInput ? null : false));
+      if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); } });
+      overlay.addEventListener('click', e => { if (e.target === overlay && cancelBtn) close(hasInput ? null : false); });
+    });
+  },
+
+  confirm(title, message, type = 'warning') {
+    return this.show({ title, message, type, confirmText: T?.isRTL() ? 'تأكيد' : 'Confirmer', cancelText: T?.isRTL() ? 'إلغاء' : 'Annuler' });
+  },
+  alert(title, message, type = 'info') {
+    return this.show({ title, message, type, confirmText: 'OK' });
+  },
+  prompt(title, message, { placeholder = '', inputType = 'text', label = '' } = {}) {
+    return this.show({ title, message, type: 'info', confirmText: 'OK', cancelText: T?.isRTL() ? 'إلغاء' : 'Annuler', inputType, inputPlaceholder: placeholder, inputLabel: label });
+  },
+  promptPassword(title, message, { placeholder = '••••••••', label = '' } = {}) {
+    return this.show({ title, message, type: 'warning', confirmText: T?.isRTL() ? 'تأكيد' : 'Confirmer', cancelText: T?.isRTL() ? 'إلغاء' : 'Annuler', inputType: 'password', inputPlaceholder: placeholder, inputLabel: label });
+  },
+};
+window.Dialog = Dialog;
+
 // ─── UTILS ────────────────────────────────────────────────────
 const Utils = {
   fmtDate(d) {
