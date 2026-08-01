@@ -70,20 +70,45 @@ router.post('/refresh', (req, res) => {
   }
 });
 
-// ─── POST /api/auth/recover-admin  (emergency: unlock admin, no auth needed) ──
-// Requires secret phrase in body. Use only if locked out.
+// ─── POST /api/auth/recover-admin  (emergency: unlock OR create admin) ──
+// No auth required. Works even if the database is completely empty.
 router.post('/recover-admin', async (req, res) => {
   try {
     if (req.body.secret !== 'UNLOCK_ADMIN_NOW') {
       return res.status(400).json({ error: 'Phrase incorrecte' });
     }
-    // Force-enable ALL admin accounts
-    const result = await Document.updateMany(
-      { col: 'users', 'data.role': 'admin' },
-      { $set: { 'data.active': true, updatedAt: new Date() } }
-    );
-    res.json({ success: true, unlocked: result.modifiedCount, message: 'Comptes admin débloqués. Login: admin / admin123' });
+    const Document = require('../models/Document');
+
+    // Check if admin user exists
+    const existing = await Document.findOne({ col: 'users', 'data.role': 'admin' });
+
+    if (existing) {
+      // Re-enable it
+      await Document.updateMany(
+        { col: 'users', 'data.role': 'admin' },
+        { $set: { 'data.active': true, updatedAt: new Date() } }
+      );
+      return res.json({ success: true, action: 'unlocked', message: 'Admin débloqué. Login: admin / admin123' });
+    }
+
+    // No admin user at all — create one from scratch
+    await Document.create({
+      col: 'users',
+      data: {
+        id: 1,
+        name: 'Administrateur',
+        username: 'admin',
+        password: 'admin123',
+        role: 'admin',
+        active: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    });
+
+    return res.json({ success: true, action: 'created', message: 'Admin créé. Login: admin / admin123' });
   } catch (e) {
+    console.error('[recover-admin]', e);
     res.status(500).json({ error: e.message });
   }
 });

@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.01">
+<link rel="stylesheet" href="style.css?v=9.03">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -223,10 +223,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.01"></script>
-<script src="core.js?v=9.01"></script>
-<script src="modules.js?v=9.01"></script>
-<script src="pdf.js?v=9.01"></script>
+<script src="api.js?v=9.03"></script>
+<script src="core.js?v=9.03"></script>
+<script src="modules.js?v=9.03"></script>
+<script src="pdf.js?v=9.03"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -251,6 +251,30 @@ const App = {
     // Apply theme
     UI.applyTheme();
 
+    // ── Cloud: try to restore session from stored JWT ───────────────
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      const hasToken = API.initFromToken(); // restores _user from JWT if still valid
+      if (hasToken) {
+        const apiUser = API.getUser();
+        // Ensure currentUser localStorage is set from JWT (survives cookie clear)
+        if (apiUser && !Auth.getCurrentUser()) {
+          localStorage.setItem('currentUser', JSON.stringify(apiUser));
+        }
+        // Sync from MongoDB then boot
+        API.syncCloudToLocal().catch(() => {}).finally(() => {
+          this._bootApp();
+        });
+        return; // don't fall through to login screen
+      } else {
+        // Token expired or missing — show login
+        document.getElementById('loginScreen').style.display = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
+        this._updateLoginStrings();
+        return;
+      }
+    }
+
+    // Local mode (file:// or no API)
     if (Auth.isLoggedIn()) {
       this._bootApp();
     } else {
@@ -277,20 +301,29 @@ const App = {
         btn.disabled = true;
         
         API.login(un, pw).then(async res => {
+          if (!res?.token) throw new Error(T.isRTL() ? 'فشل تسجيل الدخول' : 'Échec de connexion');
           btn.innerHTML = '<i class="fas fa-sync fa-spin"></i> ' + (T.isRTL() ? 'مزامنة البيانات...' : 'Synchronisation...');
           try {
+            // Sync all data from MongoDB into localStorage
             await API.syncCloudToLocal();
-            const user = Auth.login(un, pw, true); // force local login bypass
+            
+            // Use the REAL user returned by the server (has correct id, name, role)
+            // Do NOT use Auth.login() here — it would try plain-text compare against bcrypt
+            const realUser = res.user; // { id, name, username, role }
+            localStorage.setItem('currentUser', JSON.stringify(realUser));
+            if (realUser?.id) WorkLog.logIn(realUser.id);
+            
             this._bootApp();
             this._checkMorningSession();
           } catch (syncErr) {
-            errDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (T.isRTL() ? 'فشل المزامنة' : 'Erreur de synchronisation');
+            console.error('Sync error:', syncErr);
+            errDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (syncErr.message || (T.isRTL() ? 'فشل المزامنة' : 'Erreur de synchronisation'));
             errDiv.style.display = 'block';
             btn.innerHTML = origText;
             btn.disabled = false;
           }
         }).catch(err => {
-          errDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (err.message || 'Identifiants invalides');
+          errDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (err.message || (T.isRTL() ? 'بيانات الاعتماد غير صالحة' : 'Identifiants invalides'));
           errDiv.style.display = 'block';
           btn.innerHTML = origText;
           btn.disabled = false;
