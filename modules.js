@@ -4151,9 +4151,9 @@ const SettingsModule = {
       <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--danger);margin-bottom:8px">
         <i class="fas fa-exclamation-triangle"></i> ${T.get('set_reset_all')}
       </div>
-      <p style="color:var(--text4);font-size:11px;margin-bottom:10px">⚠️ ${T.get('set_reset_confirm')}</p>
-      <button class="btn btn-danger btn-sm" onclick="DB.hardReset()">
-        <i class="fas fa-trash-alt"></i> ${T.get('set_reset_all')}
+      <p style="color:var(--text4);font-size:11px;margin-bottom:10px">⚠️ ${isAR ? 'حذف جميع البيانات من قاعدة البيانات والخادم نهائياً' : 'Supprime TOUTES les données du serveur et localement. Action irréversible.'}</p>
+      <button class="btn btn-danger btn-sm" onclick="SettingsModule._resetAllData()">
+        <i class="fas fa-skull-crossbones"></i> ${isAR ? 'حذف كل شيء' : 'SUPPRIMER TOUT'}
       </button>
     </div>
 
@@ -4366,21 +4366,34 @@ const SettingsModule = {
 
     try {
       Utils.notify(T.isRTL() ? 'جارٍ إعادة الضبط…' : 'Réinitialisation en cours…', 'info');
+      console.log('[RESET] Sending reset request...');
+
       const result = await window.API._req('POST', '/admin/reset-all', { confirm: 'RESET_TOUT', password });
-      if (result?.success) {
-        const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log','settings'];
-        COLS.forEach(c => localStorage.removeItem(c));
-        localStorage.removeItem('_erp_token');
-        localStorage.removeItem('currentUser');
+      console.log('[RESET] Server response:', result);
+
+      // Handle null (401/token expired)
+      if (!result) {
+        Utils.notify('❌ Session expirée — reconnectez-vous et réessayez', 'error');
+        return;
+      }
+
+      if (result.success) {
+        console.log('[RESET] Success — clearing all localStorage...');
+        // Nuclear option: clear EVERYTHING in localStorage
+        localStorage.clear();
+        
         await Dialog.alert(
           '✅ ' + (T.isRTL() ? 'تمت إعادة الضبط' : 'Base réinitialisée'),
           T.isRTL() ? 'سجّل الدخول بـ:\nالمعرف: admin\nكلمة المرور: admin123' : 'Connectez-vous avec:\nIdentifiant: admin\nMot de passe: admin123',
           'success'
         );
         location.reload();
+      } else {
+        Utils.notify('❌ ' + (result.error || 'Erreur inconnue'), 'error');
       }
     } catch(e) {
-      Utils.notify('Erreur: ' + e.message, 'error');
+      console.error('[RESET] Error:', e);
+      Utils.notify('❌ Erreur: ' + e.message, 'error');
     }
   },
 
