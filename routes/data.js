@@ -128,32 +128,62 @@ router.post('/:col', async (req, res) => {
     await Counter.initFromMax(`id_${col}`, currentMaxId, 1);
     const newId = await Counter.nextSeq(`id_${col}`);
 
-    // ── 2. Atomic BR number ────────────────────────────────────────
+    // ── 2. Atomic BR number — reject duplicates ───────────────────
     let brNum = data.brNum;
     if (col === 'brs') {
-      const existingBrs  = await Document.find({ col: 'brs', 'data.year': year }).select('data.brNum').lean();
-      const existingNums = existingBrs.map(d => Number(d.data?.brNum) || 0);
-      const currentMaxBr = existingNums.length ? Math.max(...existingNums) : 99;
-      await Counter.initFromMax(`brNum_${year}`, currentMaxBr, 100);
-      brNum = await Counter.nextSeq(`brNum_${year}`);
+      const brYear = data.year || year;
+      // If client sent a manual brNum, check it's not already taken
+      if (brNum) {
+        const dup = await Document.findOne({ col: 'brs', 'data.brNum': Number(brNum), 'data.year': brYear });
+        if (dup) {
+          return res.status(409).json({ error: `Le numéro BR ${brNum} est déjà utilisé pour l'année ${brYear}` });
+        }
+      } else {
+        // Auto-assign from atomic counter
+        const counterId = `brs_${brYear}`;
+        const existing = await Counter.findOne({ _id: counterId });
+        if (!existing) {
+          const docs = await Document.find({ col: 'brs', 'data.year': brYear }).lean();
+          const nums = docs.map(d => parseInt(d.data?.brNum) || 0);
+          const currentMax = nums.length ? Math.max(...nums) : 99;
+          await Counter.create({ _id: counterId, seq: currentMax });
+        }
+        brNum = await Counter.nextSeq(counterId);
+      }
+      // Rebuild ref server-side to match the actual brNum
+      const suppAbbrev = data.ref?.match(/\/([A-Z]+)\//)?.[1] || '';
+      const n = String(brNum).padStart(3, '0');
+      data.ref = suppAbbrev ? `${n}/BR/${suppAbbrev}/${data.year || brYear}` : `BR/${n}/${data.year || brYear}`;
     }
 
-    // ── 3. Atomic BL number ────────────────────────────────────────
+    // ── 3. Atomic BL number — reject duplicates ───────────────────
     let blNum = data.blNum;
     if (col === 'bls') {
-      const existingBls  = await Document.find({ col: 'bls', 'data.year': year }).select('data.blNum').lean();
-      const existingNums = existingBls.map(d => Number(d.data?.blNum) || 0);
-      const currentMaxBl = existingNums.length ? Math.max(...existingNums) : 99;
-      await Counter.initFromMax(`blNum_${year}`, currentMaxBl, 100);
-      blNum = await Counter.nextSeq(`blNum_${year}`);
+      const blYear = data.year || year;
+      if (blNum) {
+        const dup = await Document.findOne({ col: 'bls', 'data.blNum': Number(blNum), 'data.year': blYear });
+        if (dup) {
+          return res.status(409).json({ error: `Le numéro BL ${blNum} est déjà utilisé pour l'année ${blYear}` });
+        }
+      } else {
+        const counterId = `bls_${blYear}`;
+        const existing = await Counter.findOne({ _id: counterId });
+        if (!existing) {
+          const docs = await Document.find({ col: 'bls', 'data.year': blYear }).lean();
+          const nums = docs.map(d => parseInt(d.data?.blNum) || 0);
+          const currentMax = nums.length ? Math.max(...nums) : 99;
+          await Counter.create({ _id: counterId, seq: currentMax });
+        }
+        blNum = await Counter.nextSeq(counterId);
+      }
     }
 
     // ── 4. Build final document ────────────────────────────────────
     const newData = {
       ...data,
       id:        newId,
-      ...(col === 'brs' ? { brNum } : {}),
-      ...(col === 'bls' ? { blNum } : {}),
+      ...(col === 'brs' ? { brNum: Number(brNum) } : {}),
+      ...(col === 'bls' ? { blNum: Number(blNum) } : {}),
       createdAt:    data.createdAt || now,
       updatedAt:    now,
       createdBy:    data.createdBy    ?? req.user.id,
@@ -224,7 +254,31 @@ router.patch('/:col/:id', async (req, res) => {
     const doc = await Document.findOne({ col, 'data.id': id });
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
 
-    const merged  = { ...doc.data, ...req.body, updatedAt: new Date().toISOString() };
+    const patch = req.body;
+
+    // ── Duplicate check for BR number on update ──────────────────
+    if (col === 'brs' && patch.brNum !== undefined) {
+      const brYear = patch.year || doc.data.year || new Date().getFullYear();
+      const dup = await Document.findOne({
+        col: 'brs', 'data.brNum': Number(patch.brNum), 'data.year': brYear, 'data.id': { $ne: id }
+      });
+      if (dup) {
+        return res.status(409).json({ error: `Le numéro BR ${patch.brNum} est déjà utilisé pour l'année ${brYear}` });
+      }
+    }
+
+    // ── Duplicate check for BL number on update ──────────────────
+    if (col === 'bls' && patch.blNum !== undefined) {
+      const blYear = patch.year || doc.data.year || new Date().getFullYear();
+      const dup = await Document.findOne({
+        col: 'bls', 'data.blNum': Number(patch.blNum), 'data.year': blYear, 'data.id': { $ne: id }
+      });
+      if (dup) {
+        return res.status(409).json({ error: `Le numéro BL ${patch.blNum} est déjà utilisé pour l'année ${blYear}` });
+      }
+    }
+
+    const merged  = { ...doc.data, ...patch, updatedAt: new Date().toISOString() };
     doc.data      = merged;
     doc.updatedAt = new Date();
     await doc.save();
