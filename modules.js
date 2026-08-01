@@ -654,11 +654,13 @@ const BRModule = {
     UI.showModal(`<i class="fas fa-file-import"></i> ${br.ref}`, body, footer, 'lg');
   },
 
-  deleteBR(id) {
-    if (!confirm(T.get('delete')+(T.isRTL()?' هذا الوصل؟':' ce BR ?'))) return;
+  async deleteBR(id) {
+    const ok1 = await Dialog.confirm(T.isRTL() ? 'حذف الوصل' : 'Supprimer le BR', T.get('delete')+(T.isRTL()?' هذا الوصل؟':' ce BR ?'), 'danger');
+    if (!ok1) return;
     const bl = DB.getAll('bls').find(b=>b.brId===id);
     if (bl) {
-      if (!confirm((T.isRTL()?'يوجد BL مرتبط. حذف الاثنين؟':'Un BL est lié à ce BR. Supprimer les deux ?'))) return;
+      const ok2 = await Dialog.confirm(T.isRTL() ? 'يوجد BL مرتبط' : 'BL lié', (T.isRTL()?'يوجد BL مرتبط. حذف الاثنين؟':'Un BL est lié à ce BR. Supprimer les deux ?'), 'danger');
+      if (!ok2) return;
       DB.delete('bls', bl.id);
     }
     DB.delete('brs', id);
@@ -1204,14 +1206,15 @@ const BLModule = {
     if (andPrint && savedBL) setTimeout(()=>PDFGen.exportBL(savedBL.id), 300);
   },
 
-  confirmDelivery(blId) {
+  async confirmDelivery(blId) {
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     const br = DB.getById('brs', bl.brId);
-    if (!Utils.confirm2(
+    const ok = await Utils.confirm2(
       T.get('bl_delivered_msg'),
       `Montant TTC: ${Utils.fmtCurrency(br?.totalTTC||0)}\n\nConfirmer définitivement ?`
-    )) return;
+    );
+    if (!ok) return;
     DB.update('bls', blId, { status:'delivered', deliveredAt: new Date().toISOString() }, 'Livraison confirmée');
     if (bl.brId) DB.update('brs', bl.brId, { status:'delivered', deliveredAt: new Date().toISOString() }, 'Livraison confirmée (depuis BL)');
     Utils.notify((T.isRTL()?'تم تأكيد التسليم! الوثائق مقفلة.':'Livraison confirmée ! Documents verrouillés.'), 'success');
@@ -1250,7 +1253,7 @@ const BLModule = {
     UI.showModal(`<i class="fas fa-file-export"></i> ${bl.ref}`, body, footer, 'lg');
   },
 
-  deleteBL(id) {
+  async deleteBL(id) {
     const bl = DB.getById('bls', id);
     if (!bl) return;
     const isValidated = bl.status === 'delivered' || bl.status === 'locked';
@@ -1259,9 +1262,11 @@ const BLModule = {
       return;
     }
     if (isValidated) {
-      if (!confirm(T.isRTL()?'هذا BL مُسلَّم. هل أنت متأكد من الحذف؟':'Ce BL est livré. Confirmer la suppression ?')) return;
+      const ok1 = await Dialog.confirm(T.isRTL() ? 'BL مُسلَّم' : 'BL livré', T.isRTL()?'هذا BL مُسلَّم. هل أنت متأكد من الحذف؟':'Ce BL est livré. Confirmer la suppression ?', 'danger');
+      if (!ok1) return;
     } else {
-      if (!confirm(T.isRTL()?'حذف هذا BL؟':'Supprimer ce BL ?')) return;
+      const ok2 = await Dialog.confirm(T.isRTL() ? 'حذف BL' : 'Supprimer BL', T.isRTL()?'حذف هذا BL؟':'Supprimer ce BL ?', 'danger');
+      if (!ok2) return;
     }
     DB.delete('bls', id);
     if (bl?.brId) {
@@ -1658,11 +1663,12 @@ const CaisseModule = {
     }
   },
 
-  _saveCloture(isEdit) {
+  async _saveCloture(isEdit) {
     const especes = parseFloat(document.getElementById('cloEspeces')?.value)||0;
     const monnaie = parseFloat(document.getElementById('cloMonnaie')?.value)||0;
     const u = Auth.getCurrentUser();
-    if (!confirm(`Confirmer la clôture ?\n${T.get('caisse_especes')}: ${Utils.fmtCurrency(especes)}\n${T.get('caisse_monnaie')}: ${Utils.fmtCurrency(monnaie)}`)) return;
+    const ok = await Dialog.confirm(T.isRTL() ? 'إغلاق اليوم' : 'Clôture', `Confirmer la clôture ?\n${T.get('caisse_especes')}: ${Utils.fmtCurrency(especes)}\n${T.get('caisse_monnaie')}: ${Utils.fmtCurrency(monnaie)}`, 'warning');
+    if (!ok) return;
     if (isEdit) {
       SessionMgr.updateCloture(u.id, especes, monnaie);
       Utils.notify((T.isRTL()?'تم تحديث الإغلاق':'Clôture mise à jour'), 'success');
@@ -2453,17 +2459,18 @@ const AdminCaisseModule = {
     </button>`, 'md');
   },
 
-  _saveWithdrawal() {
+  async _saveWithdrawal() {
     const amount = parseFloat(document.getElementById('withAmount')?.value)||0;
     const destination = (document.getElementById('withDest')?.value||'').trim();
     const bankRef = document.getElementById('withBankRef')?.value||'';
     const note = document.getElementById('withNote')?.value||'';
     if (!amount||amount<=0) { Utils.notify((T.isRTL()?'المبلغ غير صالح':'Montant invalide'), 'error'); return; }
     if (!destination) { Utils.notify(T.get('adm_dest')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
-    if (!Utils.confirm2(
+    const ok = await Utils.confirm2(
       T.get('adm_confirm1'),
       T.get('adm_confirm2') + '\n\nMontant: ' + Utils.fmtCurrency(amount) + '\nDestination: ' + destination
-    )) return;
+    );
+    if (!ok) return;
     const u = Auth.getCurrentUser();
     const tx = DB.insert('caisse_admin', { type:'withdrawal', source:'admin_withdrawal', userId:u.id, userName:u.name, amount, destination, bankRef, note });
     UI.closeModal();
@@ -2579,10 +2586,11 @@ const SuppliersModule = {
     else { DB.insert('suppliers',data); Utils.notify((T.isRTL()?'تمت إضافة المورد':'Fournisseur ajouté'),'success'); }
     UI.closeModal(); App.loadModule('suppliers');
   },
-  deleteSup(id) {
+  async deleteSup(id) {
     const hasBRs = DB.getAll('brs').some(b=>b.supplierId===id);
     if (hasBRs) { Utils.notify((T.isRTL()?'غير ممكن: هذا المورد لديه وصولات مرتبطة.':'Impossible: ce fournisseur a des BR liés.'),'error'); return; }
-    if (!confirm(T.get('delete')+'?')) return;
+    const ok = await Dialog.confirm(T.isRTL() ? 'حذف المورد' : 'Supprimer fournisseur', T.get('delete')+'?', 'danger');
+    if (!ok) return;
     DB.delete('suppliers',id); Utils.notify((T.isRTL()?'تم حذف المورد':'Fournisseur supprimé'),'success'); App.loadModule('suppliers');
   }
 };
@@ -2669,10 +2677,11 @@ const ClientsModule = {
     else { DB.insert('clients',data); Utils.notify((T.isRTL()?'تمت إضافة الزبون':'Client ajouté'),'success'); }
     UI.closeModal(); App.loadModule('clients');
   },
-  deleteCli(id) {
+  async deleteCli(id) {
     const hasBRs = DB.getAll('brs').some(b=>b.supplierId===id);
     if (hasBRs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات مرتبطة.':'Impossible: ce client a des BR liés.'),'error'); return; }
-    if (!confirm(T.get('delete')+'?')) return;
+    const ok = await Dialog.confirm(T.isRTL() ? 'حذف الزبون' : 'Supprimer client', T.get('delete')+'?', 'danger');
+    if (!ok) return;
     DB.delete('clients',id); Utils.notify((T.isRTL()?'تم حذف الزبون':'Client supprimé'),'success'); App.loadModule('clients');
   }
 };
@@ -3562,8 +3571,9 @@ const CatalogueModule = {
     else    { DB.insert('articles',{name,unit,price}); Utils.notify((T.isRTL()?'تمت إضافة المادة':'Article ajouté'),'success'); }
     UI.closeModal(); App.loadModule('catalogue');
   },
-  _deleteArticle(id) {
-    if (!confirm((T.isRTL()?'حذف هذه المادة؟':'Supprimer cet article ?'))) return;
+  async _deleteArticle(id) {
+    const ok = await Dialog.confirm(T.isRTL() ? 'حذف المادة' : 'Supprimer article', (T.isRTL()?'حذف هذه المادة؟':'Supprimer cet article ?'), 'danger');
+    if (!ok) return;
     DB.delete('articles',id); Utils.notify((T.isRTL()?'تم حذف المادة':'Article supprimé'),'success'); App.loadModule('catalogue');
   },
 
@@ -3592,8 +3602,9 @@ const CatalogueModule = {
     else    { DB.insert('drivers',{name,imm}); Utils.notify((T.isRTL()?'تمت إضافة السائق':'Chauffeur ajouté'),'success'); }
     UI.closeModal(); App.loadModule('catalogue');
   },
-  _deleteDriver(id) {
-    if (!confirm((T.isRTL()?'حذف هذا السائق؟':'Supprimer ce chauffeur ?'))) return;
+  async _deleteDriver(id) {
+    const ok = await Dialog.confirm(T.isRTL() ? 'حذف السائق' : 'Supprimer chauffeur', (T.isRTL()?'حذف هذا السائق؟':'Supprimer ce chauffeur ?'), 'danger');
+    if (!ok) return;
     DB.delete('drivers',id); Utils.notify((T.isRTL()?'تم حذف السائق':'Chauffeur supprimé'),'success'); App.loadModule('catalogue');
   }
 };
@@ -3627,7 +3638,7 @@ const UsersModule = {
                 <td>${lastSess?Utils.fmtDate(lastSess.date):'<span class="text-muted">—</span>'}</td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="UsersModule.showEdit(${u.id})"><i class="fas fa-edit"></i></button>
-                  ${u.id!==Auth.getCurrentUser()?.id?`<button class="btn btn-xs ${u.active!==false?'btn-warning':'btn-success'}" onclick="UsersModule.toggleActive(${u.id})">${u.active!==false?'<i class="fas fa-ban"></i>':'<i class="fas fa-check"></i>'}</button>`:''} 
+                  ${u.id!==Auth.getCurrentUser()?.id?`<button class="btn btn-xs ${u.active!==false?'btn-warning':'btn-success'}" onclick="UsersModule.toggleActive(${u.id})">${u.active!==false?'<i class="fas fa-ban"></i>':'<i class="fas fa-check"></i>'}</button><button class="btn btn-xs btn-danger" onclick="UsersModule.deleteUser(${u.id})" title="${isAR?'حذف':'Supprimer'}"><i class="fas fa-trash-alt"></i></button>`:''} 
                 </td>
               </tr>`;
             }).join('')}

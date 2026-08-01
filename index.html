@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.05">
+<link rel="stylesheet" href="style.css?v=9.06">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -18,9 +18,9 @@
   </script>
   <script>
     // Global Excel export helper — used everywhere in modules.js
-    function exportXLSX(headers, rows, filename) {
+    async function exportXLSX(headers, rows, filename) {
       if (typeof XLSX === 'undefined') {
-        alert('SheetJS non chargé. Vérifiez votre connexion internet et rechargez la page.');
+        await Dialog.alert('Erreur', 'SheetJS non chargé. Vérifiez votre connexion internet et rechargez la page.', 'danger');
         return;
       }
       try {
@@ -47,7 +47,7 @@
         XLSX.writeFile(wb, (filename || 'export') + '.xlsx');
       } catch(e) {
         console.error('exportXLSX error:', e);
-        alert('Erreur export Excel: ' + e.message);
+        await Dialog.alert('Erreur', 'Erreur export Excel: ' + e.message, 'danger');
       }
     }
   </script>
@@ -115,6 +115,9 @@
   <!-- Topbar -->
   <header class="topbar" id="topbar">
     <div class="topbar-left">
+      <button id="sidebarToggle" class="sidebar-toggle" onclick="document.body.classList.toggle('sidebar-open')">
+        <i class="fas fa-bars"></i>
+      </button>
       <button class="btn-icon" id="sidebarToggleBtn" onclick="UI.toggleSidebar()" title="Menu">
         <i class="fas fa-bars"></i>
       </button>
@@ -174,6 +177,7 @@
   <!-- App Layout -->
   <div class="app-layout">
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="UI.toggleSidebar()"></div>
+    <div class="sidebar-backdrop" onclick="document.body.classList.remove('sidebar-open')"></div>
 
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
@@ -223,10 +227,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.05"></script>
-<script src="core.js?v=9.05"></script>
-<script src="modules.js?v=9.05"></script>
-<script src="pdf.js?v=9.05"></script>
+<script src="api.js?v=9.06"></script>
+<script src="core.js?v=9.06"></script>
+<script src="modules.js?v=9.06"></script>
+<script src="pdf.js?v=9.06"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════

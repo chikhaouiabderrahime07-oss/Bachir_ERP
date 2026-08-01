@@ -554,9 +554,11 @@ const DB = {
       return true;
     } catch { return false; }
   },
-  hardReset() {
-    if (!confirm(T.get('set_reset_confirm'))) return;
-    if (!confirm('CONFIRMATION FINALE — Toutes les données seront effacées.')) return;
+  async hardReset() {
+    const ok1 = await Dialog.confirm(T.isRTL() ? 'تأكيد' : 'Confirmation', T.get('set_reset_confirm'), 'danger');
+    if (!ok1) return;
+    const ok2 = await Dialog.confirm(T.isRTL() ? 'تأكيد نهائي' : 'CONFIRMATION FINALE', 'CONFIRMATION FINALE — Toutes les données seront effacées.', 'danger');
+    if (!ok2) return;
     localStorage.clear(); this.init(); location.reload();
   }
 };
@@ -722,7 +724,11 @@ const Utils = {
     return `<span class="badge ${cls}"><i class="fas ${icon}"></i> ${label}</span>`;
   },
 
-  confirm2(msg1, msg2) { return confirm(msg1) && confirm(msg2); },
+  async confirm2(msg1, msg2) { 
+    const ok1 = await Dialog.confirm('Confirmation', msg1, 'danger');
+    if (!ok1) return false;
+    return await Dialog.confirm('Confirmation 2', msg2, 'danger');
+  },
 
   debounce(fn, d=200) { let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), d); }; },
 
