@@ -438,8 +438,16 @@ const DB = {
   },
 
   // ─── BR Numbering ─────────────────────────────────────────
-  getNextBRNum() {
+  async getNextBRNum() {
     const year = new Date().getFullYear();
+    // Use atomic server counter when in cloud mode
+    if (window.API) {
+      try {
+        const res = await API._req('GET', `/data/next-num/brs?year=${year}`);
+        if (res?.num) return res.num;
+      } catch (e) { console.warn('[DB.getNextBRNum] server counter failed, falling back to local', e.message); }
+    }
+    // Fallback: local counting
     const brs = this.getAll('brs').filter(b => b.year === year);
     if (!brs.length) return 100;
     const nums = brs.map(b => parseInt(b.brNum) || 0).filter(n => n > 0);
@@ -585,6 +593,8 @@ const Auth = {
     const u = this.getCurrentUser();
     if (u) WorkLog.logOut(u.id);
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('_erp_token');
+    if (window.API) API.logout();
     location.reload();
   },
 

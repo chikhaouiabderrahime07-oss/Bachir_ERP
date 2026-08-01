@@ -7,6 +7,38 @@ const auth     = require('../middleware/auth');
 const router = express.Router();
 router.use(auth); // ALL data routes require authentication
 
+// ─── GET /api/data/next-num/:type — Atomic counter for BR/BL numbers ──
+// Returns the next unique number for a given type (brs/bls) and year.
+// Uses MongoDB atomic $inc to prevent duplicates with concurrent users.
+router.get('/next-num/:type', async (req, res) => {
+  try {
+    const type = req.params.type; // 'brs' or 'bls'
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    if (!['brs', 'bls'].includes(type)) {
+      return res.status(400).json({ error: 'Type invalide (brs ou bls)' });
+    }
+
+    const counterId = `${type}_${year}`;
+
+    // Check if counter exists; if not, initialize from current max in DB
+    const existing = await Counter.findOne({ _id: counterId });
+    if (!existing) {
+      const docs = await Document.find({ col: type, 'data.year': year }).lean();
+      const nums = docs.map(d => parseInt(d.data?.brNum || d.data?.blNum) || 0);
+      const currentMax = nums.length ? Math.max(...nums) : 99; // Start at 100
+      await Counter.create({ _id: counterId, seq: currentMax });
+    }
+
+    // Atomically increment and return
+    const next = await Counter.nextSeq(counterId);
+    res.json({ num: next });
+  } catch (e) {
+    console.error('[NEXT-NUM]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // ═══════════════════════════════════════════════════════════════════
 // IMPORTANT: Specific routes MUST come before parameterized routes!
 // Express matches routes in order — /settings/main must be declared

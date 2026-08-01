@@ -438,9 +438,9 @@ const BRModule = {
     }
   },
 
-  _modalBody(br=null) {
+  async _modalBody(br=null) {
     const year = new Date().getFullYear();
-    const nextNum = DB.getNextBRNum();
+    const nextNum = await DB.getNextBRNum();
     const brNum = br ? br.brNum : nextNum;
     const brYear = br ? br.year : year;
     const initLines = br ? (br.lines||[]) : [{}];
@@ -538,8 +538,8 @@ const BRModule = {
     </div>`;
   },
 
-  showCreate() {
-    const body = this._modalBody(null);
+  async showCreate() {
+    const body = await this._modalBody(null);
     UI.showModal(`<i class="fas fa-file-import"></i> ${T.get('br_new')}`, body, `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-outline" onclick="BRModule._saveBR(null,true)"><i class="fas fa-print"></i> Sauver & PDF</button>
@@ -547,10 +547,10 @@ const BRModule = {
     setTimeout(()=>BRModule._recalcTotals(),80);
   },
 
-  showEdit(id) {
+  async showEdit(id) {
     const br = DB.getById('brs', id);
     if (!br) return;
-    const body = this._modalBody(br);
+    const body = await this._modalBody(br);
     UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} BR — ${br.ref}`, body, `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="BRModule._saveBR(${id},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
