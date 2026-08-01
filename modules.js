@@ -3616,6 +3616,7 @@ const CatalogueModule = {
 const UsersModule = {
   render() {
     if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> Accès administrateur</div></div>`;
+    const isAR = T.isRTL();
     const users = DB.getAll('users');
     const sessions = DB.getAll('sessions');
     return `<div style="padding:24px">
@@ -4384,7 +4385,7 @@ const SettingsModule = {
         
         await Dialog.alert(
           '✅ ' + (T.isRTL() ? 'تمت إعادة الضبط' : 'Base réinitialisée'),
-          T.isRTL() ? 'سجّل الدخول بـ:\nالمعرف: admin\nكلمة المرور: admin123' : 'Connectez-vous avec:\nIdentifiant: admin\nMot de passe: admin123',
+          T.isRTL() ? 'تمت إعادة ضبط قاعدة البيانات بنجاح.\nتواصل مع مسؤول تكنولوجيا المعلومات للحصول على بيانات الدخول.' : 'Base de données réinitialisée avec succès.\nContactez votre administrateur IT pour les identifiants d\'accès.',
           'success'
         );
         location.reload();
