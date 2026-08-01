@@ -368,36 +368,35 @@ const DB = {
     this._history(col, id, 'CREATE', 'Création', null, item);
 
     // ── Cloud: send to server, which assigns the REAL unique ID/brNum/blNum ──
-    // This prevents duplicate numbers when multiple users save at the same time.
+    // On error (409 duplicate etc.) → roll back optimistic localStorage save.
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.insert(col, item).then(serverItem => {
-        if (!serverItem) return;
-        const hasIdChange   = serverItem.id    !== item.id;
-        const hasBrChange   = col === 'brs' && serverItem.brNum !== item.brNum;
-        const hasBlChange   = col === 'bls' && serverItem.blNum !== item.blNum;
-
-        if (hasIdChange || hasBrChange || hasBlChange) {
-          // Server assigned a different number — update localStorage silently
-          const latest = this.getAll(col).map(i => i.id === item.id ? serverItem : i);
-          localStorage.setItem(col, JSON.stringify(latest));
-
-          // Notify the user their number was corrected
-          const oldRef = col === 'brs' ? `BR-${item.brNum}`
-                       : col === 'bls' ? `BL-${item.blNum}`
-                       : `#${item.id}`;
-          const newRef = col === 'brs' ? `BR-${serverItem.brNum}`
-                       : col === 'bls' ? `BL-${serverItem.blNum}`
-                       : `#${serverItem.id}`;
-          if (typeof Utils !== 'undefined') {
-            Utils.notify(`⚠️ Numéro ajusté: ${oldRef} → ${newRef} (conflit résolu)`, 'warning', 5000);
-          }
-
-          // Refresh current module to show corrected number
-          if (typeof App !== 'undefined' && App._currentModule) {
-            setTimeout(() => App.reloadCurrent(), 500);
-          }
+        if (!serverItem) {
+          // null = 401/token expired — roll back
+          const rolled = this.getAll(col).filter(i => i.id !== item.id);
+          localStorage.setItem(col, JSON.stringify(rolled));
+          if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 100);
+          return;
         }
-      }).catch(e => console.warn('[DB.insert] cloud sync failed', e.message));
+        // Replace optimistic local item with server-confirmed item (may have different id/brNum/blNum)
+        const latest = this.getAll(col).map(i => i.id === item.id ? serverItem : i);
+        localStorage.setItem(col, JSON.stringify(latest));
+
+        const hasBrChange = col === 'brs' && serverItem.brNum !== item.brNum;
+        const hasBlChange = col === 'bls' && serverItem.blNum !== item.blNum;
+        if (hasBrChange || hasBlChange) {
+          const oldRef = col === 'brs' ? `${item.brNum}` : `${item.blNum}`;
+          const newRef = col === 'brs' ? `${serverItem.brNum}` : `${serverItem.blNum}`;
+          if (typeof Utils !== 'undefined') Utils.notify(`⚠️ Numéro ajusté: ${oldRef} → ${newRef} (conflit résolu)`, 'warning', 5000);
+          if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 400);
+        }
+      }).catch(e => {
+        // Server rejected (409 duplicate, 500, etc.) — roll back optimistic save & show error
+        const rolled = this.getAll(col).filter(i => i.id !== item.id);
+        localStorage.setItem(col, JSON.stringify(rolled));
+        if (typeof Utils !== 'undefined') Utils.notify('❌ ' + (e.message || 'Erreur serveur'), 'error');
+        if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 200);
+      });
     }
 
     return item;
@@ -438,20 +437,37 @@ const DB = {
   },
 
   // ─── BR Numbering ─────────────────────────────────────────
+  // Returns the lowest available (gap-filling) BR number for the year.
+  // Asks server for the real list to avoid stale localStorage.
   async getNextBRNum() {
     const year = new Date().getFullYear();
-    // Use atomic server counter when in cloud mode
-    if (window.API) {
-      try {
-        const res = await API._req('GET', `/data/next-num/brs?year=${year}`);
-        if (res?.num) return res.num;
-      } catch (e) { console.warn('[DB.getNextBRNum] server counter failed, falling back to local', e.message); }
+    try {
+      let takenNums;
+      if (window.API) {
+        const serverBrs = await API.getAll('brs').catch(() => null);
+        takenNums = (serverBrs || this.getAll('brs'))
+          .filter(b => b.year === year)
+          .map(b => parseInt(b.brNum) || 0)
+          .filter(n => n > 0);
+      } else {
+        takenNums = this.getAll('brs').filter(b => b.year === year).map(b => parseInt(b.brNum) || 0).filter(n => n > 0);
+      }
+      if (!takenNums.length) return 100;
+      const takenSet = new Set(takenNums);
+      // Find lowest gap starting from 100
+      let candidate = 100;
+      while (takenSet.has(candidate)) candidate++;
+      return candidate;
+    } catch (e) {
+      const brs = this.getAll('brs').filter(b => b.year === year);
+      if (!brs.length) return 100;
+      const nums = brs.map(b => parseInt(b.brNum) || 0).filter(n => n > 0);
+      if (!nums.length) return 100;
+      const takenSet = new Set(nums);
+      let candidate = 100;
+      while (takenSet.has(candidate)) candidate++;
+      return candidate;
     }
-    // Fallback: local counting
-    const brs = this.getAll('brs').filter(b => b.year === year);
-    if (!brs.length) return 100;
-    const nums = brs.map(b => parseInt(b.brNum) || 0).filter(n => n > 0);
-    return nums.length ? Math.max(...nums) + 1 : 100;
   },
   isBRNumTaken(num, year, excludeId = null) {
     return this.getAll('brs').some(b => b.brNum == num && b.year == year && b.id !== excludeId);
