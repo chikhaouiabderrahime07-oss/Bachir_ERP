@@ -727,7 +727,9 @@ const BLModule = {
     const { q, status } = this._filters;
     const clients = DB.getAll('clients');
     const cliMap = {}; clients.forEach(c=>cliMap[c.id]=c);
-    const brMap = {}; DB.getAll('brs').forEach(b=>brMap[b.id]=b);
+    const allBRs = DB.getAll('brs');
+    const brMap = {}; allBRs.forEach(b=>brMap[b.id]=b);
+    const allUsers = DB.getAll('users');
 
     let items = DB.getAll('bls');
     if (q) { const ql=q.toLowerCase(); items=items.filter(b=>(b.ref+' '+(b.driverName||'')+' '+(b.truckIMM||'')+' '+(brMap[b.brId]?.ref||'')+' '+(cliMap[b.clientId]?.name||'')).toLowerCase().includes(ql)); }
@@ -765,7 +767,7 @@ const BLModule = {
           <label>${T.get('col_client')}</label>
           <select onchange="BLModule._filters.clientId=this.value;App.loadModule('bls')">
             <option value="all">${T.get('all')}</option>
-            ${DB.getAll('clients').sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${String(BLModule._filters.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
+            ${clients.sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${String(BLModule._filters.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
           </select>
         </div>
         <div class="filter-group">
@@ -790,14 +792,14 @@ const BLModule = {
           <label>${T.isRTL()?'أنشئ بواسطة':'Créé par'}</label>
           <select onchange="BLModule._filters.createdBy=this.value;App.loadModule('bls')" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px">
             <option value="all">${T.get('all')}</option>
-            ${DB.getAll('users').map(u=>`<option value="${u.id}" ${String(BLModule._filters.createdBy)===String(u.id)?'selected':''}>${Utils.escHTML(u.name)}</option>`).join('')}
+            ${allUsers.map(u=>`<option value="${u.id}" ${String(BLModule._filters.createdBy)===String(u.id)?'selected':''}>${Utils.escHTML(u.name)}</option>`).join('')}
           </select>
         </div>
         <div class="filter-group">
           <label>${T.isRTL()?'السائق':'Chauffeur'}</label>
           <select onchange="BLModule._filters.driver=this.value;App.loadModule('bls')" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px">
             <option value="all">${T.get('all')}</option>
-            ${[...new Set(DB.getAll('bls').map(b=>b.driverName).filter(Boolean))].sort().map(d=>`<option value="${d}" ${BLModule._filters.driver===d?'selected':''}>${Utils.escHTML(d)}</option>`).join('')}
+            ${[...new Set(items.map(b=>b.driverName).filter(Boolean))].sort().map(d=>`<option value="${d}" ${BLModule._filters.driver===d?'selected':''}>${Utils.escHTML(d)}</option>`).join('')}
           </select>
         </div>
         <div class="filter-group">

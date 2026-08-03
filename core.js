@@ -12,7 +12,7 @@ const T = {
     login_error:'Identifiants incorrects', login_sub:'Système de gestion — Accès sécurisé',
     // Nav
     nav_dashboard:'Tableau de Bord', nav_brs:'Bons de Réception', nav_bls:'Bons de Livraison',
-    nav_caisse:'Ma Caisse', nav_admin_caisse:'Audit Caisse', nav_suppliers:'Fournisseurs',
+    nav_caisse:'Ma Caisse', nav_admin_caisse:'Caisse Principale', nav_suppliers:'Fournisseurs',
     nav_catalogue:'Catalogue BD', nav_stats:'Statistiques', nav_eval:'Évaluation Utilisateurs',
     nav_users:'Utilisateurs', nav_settings:'Paramètres', nav_audit:'Audit',
     // Sections
@@ -124,7 +124,7 @@ const T = {
     login:'تسجيل الدخول', logout:'تسجيل الخروج', username:'اسم المستخدم', password:'كلمة المرور',
     login_error:'بيانات الدخول غير صحيحة', login_sub:'نظام الإدارة — دخول آمن',
     nav_dashboard:'لوحة التحكم', nav_brs:'وصولات الاستلام', nav_bls:'وصولات التسليم',
-    nav_caisse:'صندوقي', nav_admin_caisse:'تدقيق الصندوق', nav_suppliers:'الموردون', nav_clients:'الزبائن',
+    nav_caisse:'صندوقي', nav_admin_caisse:'الصندوق الرئيسي', nav_suppliers:'الموردون', nav_clients:'الزبائن',
     nav_catalogue:'قاعدة البيانات', nav_stats:'الإحصائيات', nav_eval:'تقييم المستخدمين',
     nav_users:'المستخدمون', nav_settings:'الإعدادات', nav_audit:'سجل المراجعة',
     sec_documents:'الوثائق', sec_cash:'الخزينة', sec_refs:'المراجع', sec_analysis:'التحليل', sec_admin:'الإدارة',
@@ -256,21 +256,32 @@ const DB = {
   startLiveSync() {
     if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
     const COLS = ['brs','bls','suppliers','clients','caisse_admin','sessions','history'];
+    const MERGE_COLS = new Set(['history']);
     let indicator = null;
     
     setInterval(async () => {
+      // Skip sync while a modal is open (prevents UI freeze during Générer BL etc.)
+      if (document.querySelector('.modal-overlay[style*="flex"]')) return;
       try {
-        for (const col of COLS) {
-          const fresh = await window.API.getAll(col);
-          if (fresh && Array.isArray(fresh)) {
-            localStorage.setItem(col, JSON.stringify(fresh));
+        const results = await Promise.allSettled(
+          COLS.map(col => window.API.getAll(col).then(data => ({ col, data })))
+        );
+        for (const r of results) {
+          if (r.status !== 'fulfilled' || !r.value?.data || !Array.isArray(r.value.data)) continue;
+          const { col, data } = r.value;
+          if (MERGE_COLS.has(col)) {
+            const local = JSON.parse(localStorage.getItem(col) || '[]');
+            const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
+            const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
+            localStorage.setItem(col, JSON.stringify([...data, ...uniqueLocal].slice(-5000)));
+          } else {
+            localStorage.setItem(col, JSON.stringify(data));
           }
         }
-        // Refresh currently visible module silently
-        if (typeof App !== 'undefined' && App._currentModule) {
+        // Refresh currently visible module silently (only if no modal open)
+        if (typeof App !== 'undefined' && App._currentModule && !document.querySelector('.modal-overlay[style*="flex"]')) {
           App.reloadCurrent();
         }
-        // Show small sync dot
         if (!indicator) {
           indicator = document.createElement('div');
           indicator.id = 'sync-indicator';
@@ -283,7 +294,7 @@ const DB = {
       } catch (e) {
         if (indicator) { indicator.style.background = '#ef4444'; indicator.title = 'Sync échoué'; }
       }
-    }, 60000); // every 60 seconds
+    }, 60000);
   },
 
   _seed() {

@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.13">
+<link rel="stylesheet" href="style.css?v=9.15">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -227,10 +227,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.13"></script>
-<script src="core.js?v=9.13"></script>
-<script src="modules.js?v=9.13"></script>
-<script src="pdf.js?v=9.13"></script>
+<script src="api.js?v=9.15"></script>
+<script src="core.js?v=9.15"></script>
+<script src="modules.js?v=9.15"></script>
+<script src="pdf.js?v=9.15"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -515,8 +515,9 @@ const App = {
         { mod:'bls',       icon:'fa-file-export',    label:T.get('nav_bls') },
       ]},
       { section: T.get('sec_cash'), items: [
-        { mod:'caisse',      icon:'fa-cash-register', label:T.get('nav_caisse') },
-        ...(isAdmin ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }] : []),
+        ...(isAdmin
+          ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }]
+          : [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }]),
       ]},
       { section: T.get('sec_refs'), items: [
         { mod:'suppliers', icon:'fa-building', label:T.get('nav_suppliers') },
