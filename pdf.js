@@ -431,7 +431,7 @@
       if (totalsData.extraFees) totRows.push(mkTotRow('Frais suppl.',   this._fmtMoney(totalsData.extraFees), false));
       totRows.push(mkTotRow('Total HT',   this._fmtMoney(totalsData.totalHT||0),  false));
       if (totalsData.tvaAmount) totRows.push(mkTotRow(`Taxes (TVA ${totalsData.tvaRate||19}%)`, this._fmtMoney(totalsData.tvaAmount||0), false));
-      totRows.push(mkTotRow('Timbre Fiscal', this._fmtMoney(totalsData.timbre||0), false));
+      if (totalsData.timbre) totRows.push(mkTotRow('Timbre Fiscal', this._fmtMoney(totalsData.timbre||0), false));
       totRows.push(mkTotRow('TOTAL TTC',  this._fmtMoney(totalsData.totalTTC||0), true));
 
       /* Tag first/last for mesh drawing */

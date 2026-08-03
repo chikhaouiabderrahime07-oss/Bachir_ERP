@@ -366,10 +366,11 @@ const BRModule = {
     const totalHT  = ht + extra;
     const tvaRate  = parseFloat(document.getElementById('br-tva-rate')?.value) ?? 19;
     const tva      = totalHT * tvaRate / 100;
-    const autoTimbre = DB.calcTimbre(totalHT);
+    const noTimbre = document.getElementById('br-no-timbre')?.checked;
+    const autoTimbre = noTimbre ? 0 : DB.calcTimbre(totalHT);
     const timbreInput = document.getElementById('br-timbre');
-    if (timbreInput && !timbreInput.dataset.manual) timbreInput.value = autoTimbre.toFixed(2);
-    const timbre   = parseFloat(timbreInput?.value)||0;
+    if (timbreInput && (!timbreInput.dataset.manual || noTimbre)) timbreInput.value = autoTimbre.toFixed(2);
+    const timbre   = noTimbre ? 0 : (parseFloat(timbreInput?.value)||0);
     const totalTTC = totalHT + tva + timbre;
 
     const el = id => document.getElementById(id);
@@ -378,8 +379,21 @@ const BRModule = {
     if (el('br-tva-pct'))        el('br-tva-pct').textContent        = tvaRate + '%';
     if (el('br-total-timbre-disp')) el('br-total-timbre-disp').textContent = Utils.fmtCurrency(timbre);
     if (el('br-total-ttc'))      el('br-total-ttc').textContent      = Utils.fmtCurrency(totalTTC);
-    if (el('br-timbre-auto'))    el('br-timbre-auto').textContent    = Utils.fmtCurrency(autoTimbre);
-    if (el('br-timbre-auto2'))   el('br-timbre-auto2').textContent   = '(' + Utils.fmtCurrency(autoTimbre) + ')';
+    if (el('br-timbre-auto'))    el('br-timbre-auto').textContent    = noTimbre ? '' : Utils.fmtCurrency(autoTimbre);
+    if (el('br-timbre-auto2'))   el('br-timbre-auto2').textContent   = noTimbre ? '' : '(' + Utils.fmtCurrency(autoTimbre) + ')';
+  },
+
+  _toggleTimbre(noTimbre) {
+    const inp = document.getElementById('br-timbre');
+    if (noTimbre) {
+      inp.value = '0.00';
+      inp.disabled = true;
+      inp.dataset.manual = '1';
+    } else {
+      inp.disabled = false;
+      delete inp.dataset.manual;
+    }
+    this._recalcTotals();
   },
 
   _addLine(line={}) {
@@ -520,8 +534,14 @@ const BRModule = {
       </div>
       <div class="form-group">
         <label>${T.get('br_timbre')} <small id="br-timbre-auto" style="color:var(--text4)"></small></label>
-        <input type="number" id="br-timbre" value="${(br?.timbreAmount||0).toFixed(2)}" min="0" step="any"
-          oninput="this.dataset.manual='1';BRModule._recalcTotals()">
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="number" id="br-timbre" value="${(br?.timbreAmount||0).toFixed(2)}" min="0" step="any"
+            oninput="this.dataset.manual='1';BRModule._recalcTotals()" style="flex:1" ${br?.noTimbre ? 'disabled' : ''}>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;margin:0">
+            <input type="checkbox" id="br-no-timbre" ${br?.noTimbre ? 'checked' : ''} onchange="BRModule._toggleTimbre(this.checked)">
+            ${T.isRTL() ? 'بدون طابع' : 'Sans timbre'}
+          </label>
+        </div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:8px">
@@ -564,7 +584,8 @@ const BRModule = {
     const date     = document.getElementById('br-date')?.value || Utils.today();
     const notes    = document.getElementById('br-notes')?.value || '';
     const extraFees= parseFloat(document.getElementById('br-extra')?.value)||0;
-    const timbre   = parseFloat(document.getElementById('br-timbre')?.value)||0;
+    const noTimbre = document.getElementById('br-no-timbre')?.checked || false;
+    const timbre   = noTimbre ? 0 : (parseFloat(document.getElementById('br-timbre')?.value)||0);
     const tvaRate  = parseFloat(document.getElementById('br-tva-rate')?.value) ?? 19;
     const receivedBy  = (document.getElementById('br-receiver')?.value||Auth.getCurrentUser()?.name||'').trim();
     const controlledBy= (document.getElementById('br-controller')?.value||'').trim();
@@ -584,7 +605,7 @@ const BRModule = {
 
     const data = {
       ref, brNum, year, supplierId, date, lines, extraFees,
-      totalHT, tvaRate, tvaAmount, timbreAmount: timbre, totalTTC,
+      totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       notes, receivedBy, controlledBy, status: 'open'
     };
 
@@ -728,6 +749,7 @@ const BLModule = {
         <div class="card-actions">
           <span class="badge badge-secondary">${items.length}</span>
           <button class="btn btn-outline btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter CSV"><i class="fas fa-file-csv"></i> CSV</button>
+          <button class="btn btn-outline" onclick="BLModule.showHistory()"><i class="fas fa-history"></i> Historique</button>
           <button class="btn btn-success" onclick="BLModule.showNewBL()">
             <i class="fas fa-plus"></i> ${T.get('bl_new')}
           </button>
@@ -1030,11 +1052,19 @@ const BLModule = {
         <input type="number" id="bl-tva-rate" value="${DB.getSettings().tvaRate??19}" min="0" max="100" step="0.1"
           style="width:70px;font-size:13px;font-weight:700;text-align:center;border-radius:8px;padding:4px 8px"
           oninput="BLModule._recalcBLTotals()">
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;margin:0;margin-left:auto">
+          <input type="checkbox" id="bl-no-timbre" onchange="BLModule._toggleTimbre(this.checked)">
+          ${T.isRTL() ? 'بدون طابع' : 'Sans timbre'}
+        </label>
       </div>
       <div class="totals-box" style="min-width:280px">
         <div class="totals-row"><label>${T.isRTL()?'المجموع قبل الرسوم':'Montant HT'}</label><span id="bl-tot-ht">0,00 DA</span></div>
         <div class="totals-row"><label>${T.isRTL()?'TVA':'Taxes (TVA)'} <span id="bl-tva-pct" style="color:var(--text4);font-size:10px"></span></label><span id="bl-tot-tva">0,00 DA</span></div>
-        <div class="totals-row"><label>${T.isRTL()?'الطابع الجبائي':'Timbre Fiscal'}</label><span id="bl-tot-timbre">0,00 DA</span></div>
+        <div class="totals-row"><label>${T.isRTL()?'الطابع الجبائي':'Timbre Fiscal'}</label>
+          <input type="number" id="bl-tot-timbre" value="0" min="0" step="any"
+            style="width:120px;text-align:right;font-weight:700;font-size:13px;border-radius:6px;padding:2px 8px"
+            oninput="this.dataset.manual='1';BLModule._recalcBLTotals()">
+        </div>
         <div class="totals-row grand-total"><label>${T.isRTL()?'المجموع الشامل':'TOTAL TTC'}</label><span id="bl-tot-ttc">0,00 DA</span></div>
       </div>
     </div>`;
@@ -1097,12 +1127,15 @@ const BLModule = {
     }
     const tvaRate  = parseFloat(document.getElementById('bl-tva-rate')?.value) ?? 19;
     const tva      = ht * tvaRate / 100;
-    const timbre   = DB.calcTimbre(ht);
+    const noTimbre = document.getElementById('bl-no-timbre')?.checked;
+    const autoTimbre = noTimbre ? 0 : DB.calcTimbre(ht);
+    const timbreInput = document.getElementById('bl-tot-timbre');
+    if (timbreInput && (!timbreInput.dataset.manual || noTimbre)) timbreInput.value = autoTimbre.toFixed(2);
+    const timbre = noTimbre ? 0 : (parseFloat(timbreInput?.value)||0);
     const el = n => document.getElementById(n);
     if (el('bl-tot-ht'))     el('bl-tot-ht').textContent     = Utils.fmtCurrency(ht);
     if (el('bl-tot-tva'))    el('bl-tot-tva').textContent    = Utils.fmtCurrency(tva);
     if (el('bl-tva-pct'))    el('bl-tva-pct').textContent    = tvaRate + '%';
-    if (el('bl-tot-timbre')) el('bl-tot-timbre').textContent = Utils.fmtCurrency(timbre);
     if (el('bl-tot-ttc'))    el('bl-tot-ttc').textContent    = Utils.fmtCurrency(ht + tva + timbre);
     let isPartial = false, j = 0;
     while (document.getElementById(`bl-qty-${j}`)) {
@@ -1112,6 +1145,19 @@ const BLModule = {
     }
     const badge = document.getElementById('bl-partial-badge');
     if (badge) badge.style.display = isPartial ? 'inline-flex' : 'none';
+  },
+
+  _toggleTimbre(noTimbre) {
+    const inp = document.getElementById('bl-tot-timbre');
+    if (noTimbre) {
+      inp.value = '0.00';
+      inp.disabled = true;
+      inp.dataset.manual = '1';
+    } else {
+      inp.disabled = false;
+      delete inp.dataset.manual;
+    }
+    this._recalcBLTotals();
   },
 
   _fillAllQtys() {
@@ -1169,7 +1215,8 @@ const BLModule = {
     const totalHT  = deliveredLines.reduce((s,l) => s+l.total, 0);
     const tvaRate  = parseFloat(document.getElementById('bl-tva-rate')?.value) ?? DB.getSettings().tvaRate ?? 19;
     const tvaAmount = totalHT * tvaRate / 100;
-    const timbre   = DB.calcTimbre(totalHT);
+    const noTimbre = document.getElementById('bl-no-timbre')?.checked || false;
+    const timbre   = noTimbre ? 0 : (parseFloat(document.getElementById('bl-tot-timbre')?.value) || DB.calcTimbre(totalHT));
     const totalTTC = totalHT + tvaAmount + timbre;
 
     /* Build reference */
@@ -1188,7 +1235,7 @@ const BLModule = {
     DB.saveDriver(driverName, truckIMM);
     const data = {
       ref, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
-      lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, totalTTC,
+      lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       isPartial, partNum, status: 'open'
     };
 
@@ -1310,6 +1357,147 @@ const BLModule = {
       rows,
       'Bons_Livraison_' + new Date().toISOString().slice(0,10)
     );
+  },
+
+  _historyFilters: { dateFrom: '', dateTo: '', clientId: 'all', q: '' },
+  
+  showHistory() {
+    this._historyFilters = { dateFrom: '', dateTo: '', clientId: 'all', q: '' };
+    UI.showModal(`<i class="fas fa-history"></i> ${T.isRTL() ? 'السجل' : 'Historique'}`, `<div id="bl-history-container">${this._renderHistoryHTML()}</div>`, '', 'xl');
+  },
+
+  updateHistory() {
+    const c = document.getElementById('bl-history-container');
+    if (c) c.innerHTML = this._renderHistoryHTML();
+  },
+
+  exportHistory() {
+    const { rows } = this._getHistoryData();
+    const headers = ['Date', 'BL Ref', 'Client', 'Designation', 'Qty', 'Prix Unit', 'Total', 'Statut'];
+    const exportRows = rows.map(r => [
+      r.date, r.blRef, r.clientName, r.designation, Number(r.qty), Number(r.price), Number(r.total), r.status
+    ]);
+    exportXLSX(headers, exportRows, 'Historique_BL_' + new Date().toISOString().slice(0,10));
+  },
+
+  _getHistoryData() {
+    const f = this._historyFilters;
+    const clients = DB.getAll('clients');
+    const cliMap = {}; clients.forEach(c => cliMap[c.id] = c);
+    
+    let bls = DB.getAll('bls');
+    if (f.dateFrom) bls = bls.filter(b => (b.date || '') >= f.dateFrom);
+    if (f.dateTo) bls = bls.filter(b => (b.date || '') <= f.dateTo);
+    if (f.clientId !== 'all') bls = bls.filter(b => String(b.clientId) === String(f.clientId));
+    
+    const ql = (f.q || '').toLowerCase();
+    
+    let rows = [];
+    let grandTotal = 0;
+    
+    bls.forEach(bl => {
+      const clientName = cliMap[bl.clientId]?.name || '-';
+      const lines = bl.lines || [];
+      lines.forEach(line => {
+        const designation = line.designation || '';
+        const ref = bl.ref || '';
+        if (ql) {
+          if (!designation.toLowerCase().includes(ql) && !ref.toLowerCase().includes(ql)) {
+            return;
+          }
+        }
+        rows.push({
+          blId: bl.id,
+          date: bl.date || '',
+          blRef: ref,
+          clientName: clientName,
+          designation: designation,
+          qty: line.qty || 0,
+          price: line.price || 0,
+          total: line.total || 0,
+          status: bl.status || 'open'
+        });
+        grandTotal += (line.total || 0);
+      });
+    });
+    
+    rows.sort((a,b) => b.date.localeCompare(a.date) || b.blId - a.blId);
+    return { rows, grandTotal, cliMap };
+  },
+
+  _renderHistoryHTML() {
+    const data = this._getHistoryData();
+    const f = this._historyFilters;
+    const isAdmin = Auth.isAdmin();
+    
+    const clients = Object.values(data.cliMap).sort((a,b) => a.name.localeCompare(b.name));
+    
+    const thead = `<tr>
+      <th>Date</th>
+      <th>BL Ref</th>
+      <th>Client</th>
+      <th>Designation</th>
+      <th>Qty</th>
+      <th>Prix Unit</th>
+      <th>Total</th>
+      <th>Statut</th>
+    </tr>`;
+    
+    const tbody = data.rows.map(r => {
+      let refHtml = Utils.escHTML(r.blRef);
+      if (isAdmin) {
+        refHtml = `<a href="javascript:void(0)" onclick="UI.closeModal(); setTimeout(()=>BLModule.showEdit(${r.blId}), 200)" style="text-decoration:underline;color:var(--primary)">${refHtml}</a>`;
+      }
+      return `<tr>
+        <td>${Utils.fmtDate(r.date)}</td>
+        <td>${refHtml}</td>
+        <td>${Utils.escHTML(r.clientName)}</td>
+        <td>${Utils.escHTML(r.designation)}</td>
+        <td>${r.qty}</td>
+        <td>${Utils.fmtCurrency(r.price)}</td>
+        <td class="fw-bold">${Utils.fmtCurrency(r.total)}</td>
+        <td>${Utils.statusBadge(r.status)}</td>
+      </tr>`;
+    }).join('');
+    
+    const tfoot = `<tr>
+      <td colspan="6" class="text-right fw-bold">Grand Total</td>
+      <td colspan="2" class="fw-bold text-primary">${Utils.fmtCurrency(data.grandTotal)}</td>
+    </tr>`;
+    
+    return `
+      <div class="filters-bar" style="margin-bottom:16px; flex-wrap:wrap;">
+        <div class="filter-group">
+          <label>${T.get('search')}</label>
+          <input type="text" value="${Utils.escHTML(f.q)}" placeholder="..." oninput="BLModule._historyFilters.q=this.value; BLModule.updateHistory()">
+        </div>
+        <div class="filter-group">
+          <label>${T.get('col_client')}</label>
+          <select onchange="BLModule._historyFilters.clientId=this.value; BLModule.updateHistory()">
+            <option value="all">${T.get('all')}</option>
+            ${clients.map(c => `<option value="${c.id}" ${String(f.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>${T.isRTL() ? 'من تاريخ' : 'Date début'}</label>
+          <input type="date" value="${f.dateFrom}" onchange="BLModule._historyFilters.dateFrom=this.value; BLModule.updateHistory()" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px">
+        </div>
+        <div class="filter-group">
+          <label>${T.isRTL() ? 'إلى تاريخ' : 'Date fin'}</label>
+          <input type="date" value="${f.dateTo}" onchange="BLModule._historyFilters.dateTo=this.value; BLModule.updateHistory()" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px">
+        </div>
+        <div class="filter-group" style="align-self:flex-end">
+          <button class="btn btn-outline" onclick="BLModule.exportHistory()" title="Excel"><i class="fas fa-file-excel" style="color:#1d6f42"></i> Excel</button>
+        </div>
+      </div>
+      <div class="table-shell" style="max-height: 60vh; overflow-y: auto;">
+        <table class="data-table">
+          <thead style="position: sticky; top: 0; z-index: 1;">${thead}</thead>
+          <tbody>${data.rows.length ? tbody : `<tr><td colspan="8" class="text-center">${T.get('no_data')}</td></tr>`}</tbody>
+          <tfoot style="position: sticky; bottom: 0; background: var(--bg2); z-index: 1; box-shadow: 0 -2px 5px rgba(0,0,0,0.05);">${tfoot}</tfoot>
+        </table>
+      </div>
+    `;
   }
 };
 
@@ -1324,6 +1512,21 @@ const CaisseModule = {
     const session = SessionMgr.getTodaySession(u.id);
     if (!session) return this._renderNoSession(u);
     return this._renderSession(u, session);
+  },
+
+  _renderNoSession(u) {
+    const isAR = T.isRTL();
+    return `<div style="padding:24px">
+    <div class="card" style="max-width:500px;margin:60px auto;text-align:center;padding:40px 30px">
+      <div style="font-size:64px;margin-bottom:16px;opacity:.6">🔐</div>
+      <h3 style="margin-bottom:8px;color:var(--text)">${isAR ? 'لا توجد جلسة مفتوحة اليوم' : 'Aucune session ouverte aujourd\'hui'}</h3>
+      <p style="color:var(--text-muted);margin-bottom:24px;font-size:13px">
+        ${isAR ? 'يرجى فتح جلسة الصندوق لبدء العمل' : 'Veuillez ouvrir une session de caisse pour commencer à travailler.'}
+      </p>
+      <button class="btn btn-primary" onclick="CaisseModule.showMorningPrompt()" style="padding:10px 30px;font-size:15px">
+        <i class="fas fa-door-open"></i> ${isAR ? 'فتح جلسة اليوم' : 'Ouvrir la session du jour'}
+      </button>
+    </div></div>`;
   },
   _renderSession(u, session) {
     const today = Utils.today();
@@ -1933,6 +2136,7 @@ const AdminCaisseModule = {
       {id:'deposits',       icon:'fa-arrow-alt-circle-down', label:isAR?'الإيداعات':'Dépôts',   accent:'#22c55e'},
       {id:'withdrawals',    icon:'fa-arrow-alt-circle-up',   label:isAR?'السحوبات':'Retraits', accent:'#ef4444'},
       {id:'reconciliation', icon:'fa-balance-scale',    label:isAR?'تسوية يومية':'Rapprochement'},
+      {id:'sessions',       icon:'fa-calendar-check',   label:isAR?'جلسات الصندوق':'Sessions Caisse', accent:'#8b5cf6'},
       {id:'caissiers',      icon:'fa-users',            label:isAR?'الكشافون':'Caissiers'},
     ];
 
@@ -2213,6 +2417,75 @@ const AdminCaisseModule = {
       </div>
     </div>`;
 
+    // ── SESSIONS TAB ──
+    const sessFilter = AdminCaisseModule._sessFilter || { userId:'all', dateFrom:'', dateTo:'' };
+    let allSess = [...sessions].sort((a,b) => b.date.localeCompare(a.date));
+    if (sessFilter.userId !== 'all') allSess = allSess.filter(s => String(s.userId) === String(sessFilter.userId));
+    if (sessFilter.dateFrom) allSess = allSess.filter(s => s.date >= sessFilter.dateFrom);
+    if (sessFilter.dateTo) allSess = allSess.filter(s => s.date <= sessFilter.dateTo);
+
+    const sessRows = allSess.map(s => {
+      const u = allUsers.find(x => x.id === s.userId);
+      const brTotal = DB.getAll('brs').filter(b => b.createdBy === s.userId && (b.date||'').slice(0,10) === s.date).reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
+      const ecColor = s.status === 'closed' ? (Math.abs(s.ecart||0) < 0.01 ? 'var(--success)' : 'var(--danger)') : 'var(--text-muted)';
+      const ecSign = (s.ecart||0) >= 0 ? '+' : '';
+      return `<tr>
+        <td style="font-weight:600">${Utils.fmtDate(s.date)}</td>
+        <td>${Utils.escHTML(u?.name||'-')}</td>
+        <td>${Utils.fmtCurrency(s.startingMonnaie||0)}</td>
+        <td>${Utils.fmtCurrency(brTotal)}</td>
+        <td>${s.status==='closed' ? Utils.fmtCurrency(s.closedEspeces||0) : '<span class="badge badge-warning">En cours</span>'}</td>
+        <td>${s.status==='closed' ? Utils.fmtCurrency(s.closedMonnaie||0) : '-'}</td>
+        <td style="color:${ecColor};font-weight:700">${s.status==='closed' ? ecSign+Utils.fmtCurrency(s.ecart||0) : '-'}</td>
+        <td><span class="badge ${s.status==='closed'?'badge-success':'badge-warning'}">${s.status==='closed'?(isAR?'مغلقة':'Clôturée'):(isAR?'مفتوحة':'En cours')}</span></td>
+        <td>${s.status==='closed' ? `<button class="btn btn-outline btn-sm" onclick="AdminCaisseModule.showRectifySession(${s.id})" title="${isAR?'تصحيح':'Rectifier'}"><i class="fas fa-edit"></i></button>` : ''}</td>
+      </tr>`;
+    }).join('');
+
+    const tabSessions = `
+    <div class="card">
+      <div class="card-header">
+        <h3><i class="fas fa-calendar-check" style="color:#8b5cf6"></i> ${isAR?'جميع جلسات الصندوق':'Toutes les Sessions Caisse'}</h3>
+        <span class="badge badge-secondary">${allSess.length}</span>
+      </div>
+      <div class="filters-bar" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div class="filter-group">
+          <label>${isAR?'المستخدم':'Utilisateur'}</label>
+          <select onchange="AdminCaisseModule._sessFilter=AdminCaisseModule._sessFilter||{};AdminCaisseModule._sessFilter.userId=this.value;App.loadModule('admin_caisse')">
+            <option value="all">${T.get('all')}</option>
+            ${allUsers.filter(u=>u.role!=='admin').map(u=>`<option value="${u.id}" ${String(sessFilter.userId)===String(u.id)?'selected':''}>${Utils.escHTML(u.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>${isAR?'من':'Du'}</label>
+          <input type="date" value="${sessFilter.dateFrom||''}" onchange="AdminCaisseModule._sessFilter=AdminCaisseModule._sessFilter||{};AdminCaisseModule._sessFilter.dateFrom=this.value;App.loadModule('admin_caisse')">
+        </div>
+        <div class="filter-group">
+          <label>${isAR?'إلى':'Au'}</label>
+          <input type="date" value="${sessFilter.dateTo||''}" onchange="AdminCaisseModule._sessFilter=AdminCaisseModule._sessFilter||{};AdminCaisseModule._sessFilter.dateTo=this.value;App.loadModule('admin_caisse')">
+        </div>
+        <div class="filter-group" style="align-self:flex-end">
+          <button class="btn btn-outline" onclick="AdminCaisseModule._sessFilter={userId:'all',dateFrom:'',dateTo:''};App.loadModule('admin_caisse')"><i class="fas fa-times"></i></button>
+        </div>
+      </div>
+      <div class="table-shell">
+        <table class="data-table">
+          <thead><tr>
+            <th>${isAR?'التاريخ':'Date'}</th>
+            <th>${isAR?'المستخدم':'Utilisateur'}</th>
+            <th>${isAR?'رصيد أولي':'Monnaie init.'}</th>
+            <th>${isAR?'إجمالي BR':'Total BR'}</th>
+            <th>${isAR?'نقد مُصرَّح':'Espèces décl.'}</th>
+            <th>${isAR?'صرف نهائي':'Monnaie fin.'}</th>
+            <th>${isAR?'الفارق':'Écart'}</th>
+            <th>${isAR?'الحالة':'Statut'}</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${sessRows || `<tr><td colspan="9" class="text-center text-muted">${T.get('no_data')}</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+
     // ── CAISSIERS TAB ──
     const userSummaryCards = users.map(u=>{
       const uSessions = sessions.filter(s=>s.userId===u.id&&s.status==='closed');
@@ -2279,6 +2552,7 @@ const AdminCaisseModule = {
       : tab==='deposits'       ? tabDeposits
       : tab==='withdrawals'    ? tabWithdrawals
       : tab==='reconciliation' ? tabReconciliation
+      : tab==='sessions'       ? tabSessions
       : tab==='caissiers'      ? tabCaissiers
       : tabOverview;
 
@@ -2495,6 +2769,161 @@ const AdminCaisseModule = {
       <button class="btn btn-outline" onclick="PDFGen.exportDecharge(${id})"><i class="fas fa-file-pdf"></i> ${T.isRTL()?'وصل PDF':'Décharge PDF'}</button>
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')}</button>`;
     UI.showModal(`<i class="fas fa-info-circle"></i> ${T.isRTL()?"تفاصيل العملية":"Détails transaction"}`, body, footer, 'md');
+  },
+
+  /* ── Admin Rectify Session (with cascade preview) ── */
+  showRectifySession(sessionId) {
+    const session = DB.getById('sessions', sessionId);
+    if (!session || session.status !== 'closed') { Utils.notify('Session introuvable ou non clôturée', 'error'); return; }
+    const isAR = T.isRTL();
+    const user = DB.getById('users', session.userId);
+    const brTotal = DB.getAll('brs').filter(b => b.createdBy === session.userId && (b.date||'').slice(0,10) === session.date)
+      .reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
+
+    // Find all FUTURE sessions for this user (cascade chain)
+    const futureSessions = DB.getAll('sessions')
+      .filter(s => s.userId === session.userId && s.date > session.date && s.status === 'closed')
+      .sort((a,b) => a.date.localeCompare(b.date));
+
+    const cascadePreview = futureSessions.length ? `
+      <div class="alert alert-warning" style="margin-top:16px">
+        <i class="fas fa-exclamation-triangle"></i>
+        <strong>${isAR ? 'تنبيه — تعديل متتالي' : 'Attention — Modification en cascade'}</strong><br>
+        ${isAR
+          ? `تعديل هذه الجلسة سيؤثر على <strong>${futureSessions.length}</strong> جلسة(ات) لاحقة لهذا المستخدم.`
+          : `La modification de cette session affectera <strong>${futureSessions.length}</strong> session(s) suivante(s) de cet utilisateur.`}
+      </div>
+      <div style="max-height:150px;overflow-y:auto;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:8px">
+        <table style="width:100%;font-size:11px">
+          <tr style="color:var(--text4);font-weight:700"><td>Date</td><td>${isAR?'رصيد أولي':'Monnaie init.'}</td><td>${isAR?'سيتغير إلى':'Changera à'}</td></tr>
+          <tbody id="rectify-cascade-preview">
+            ${futureSessions.map(s => `<tr><td>${Utils.fmtDate(s.date)}</td><td>${Utils.fmtCurrency(s.startingMonnaie||0)}</td><td style="color:var(--warning)">⟶ ?</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : '';
+
+    const body = `
+    <div style="margin-bottom:16px;padding:14px;background:var(--bg-inset);border-radius:10px;border-left:4px solid #8b5cf6">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:800;color:var(--text)">${Utils.escHTML(user?.name||'-')}</span>
+        <span style="font-size:12px;color:var(--text4)">${Utils.fmtDate(session.date)}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+        <div>${isAR?'إجمالي BR':'Total BR'}: <strong>${Utils.fmtCurrency(brTotal)}</strong></div>
+        <div>${isAR?'الفارق الحالي':'Écart actuel'}: <strong style="color:${Math.abs(session.ecart||0)<0.01?'var(--success)':'var(--danger)'}">${Utils.fmtCurrency(session.ecart||0)}</strong></div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>${isAR?'المبلغ النقدي المصحح':'Espèces corrigées'}</label>
+      <input type="number" id="rectify-especes" value="${session.closedEspeces||0}" step="0.01" min="0"
+        oninput="AdminCaisseModule._previewCascade(${sessionId})">
+    </div>
+    <div class="form-group">
+      <label>${isAR?'الصرف (Monnaie) المصحح':'Monnaie corrigée'}</label>
+      <input type="number" id="rectify-monnaie" value="${session.closedMonnaie||0}" step="0.01" min="0"
+        oninput="AdminCaisseModule._previewCascade(${sessionId})">
+    </div>
+    <div class="form-group">
+      <label>${isAR?'سبب التصحيح':'Raison de la rectification'}</label>
+      <input type="text" id="rectify-reason" placeholder="${isAR?'مثال: خطأ في العد':'Ex: Erreur de comptage'}" value="">
+    </div>
+    <div id="rectify-ecart-preview" style="padding:10px;background:var(--bg-inset);border-radius:8px;text-align:center;margin-top:8px">
+      ${isAR?'الفارق الجديد':'Nouvel écart'}: <strong>${Utils.fmtCurrency((session.closedEspeces||0) - brTotal)}</strong>
+    </div>
+    ${cascadePreview}`;
+
+    const footer = `
+      <button class="btn btn-outline" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-warning" onclick="AdminCaisseModule._applyRectification(${sessionId})">
+        <i class="fas fa-check"></i> ${isAR?'تطبيق التصحيح':'Appliquer la rectification'}
+      </button>`;
+
+    UI.showModal(`<i class="fas fa-edit" style="color:#8b5cf6"></i> ${isAR?'تصحيح الجلسة':'Rectifier la session'}`, body, footer, 'md');
+    setTimeout(() => this._previewCascade(sessionId), 100);
+  },
+
+  _previewCascade(sessionId) {
+    const session = DB.getById('sessions', sessionId);
+    if (!session) return;
+    const newEspeces = Number(document.getElementById('rectify-especes')?.value) || 0;
+    const newMonnaie = Number(document.getElementById('rectify-monnaie')?.value) || 0;
+    const brTotal = DB.getAll('brs').filter(b => b.createdBy === session.userId && (b.date||'').slice(0,10) === session.date)
+      .reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
+    const newEcart = newEspeces - brTotal;
+    const isAR = T.isRTL();
+
+    // Update écart preview
+    const ecPrev = document.getElementById('rectify-ecart-preview');
+    if (ecPrev) ecPrev.innerHTML = `${isAR?'الفارق الجديد':'Nouvel écart'}: <strong style="color:${Math.abs(newEcart)<0.01?'var(--success)':'var(--danger)'}">${Utils.fmtCurrency(newEcart)}</strong>`;
+
+    // Update cascade preview
+    const preview = document.getElementById('rectify-cascade-preview');
+    if (preview) {
+      const futureSessions = DB.getAll('sessions')
+        .filter(s => s.userId === session.userId && s.date > session.date && s.status === 'closed')
+        .sort((a,b) => a.date.localeCompare(b.date));
+
+      let carryMonnaie = newMonnaie;
+      preview.innerHTML = futureSessions.map(s => {
+        const newStart = carryMonnaie;
+        carryMonnaie = s.closedMonnaie || 0; // keep their closing monnaie unless we recalculate
+        return `<tr>
+          <td>${Utils.fmtDate(s.date)}</td>
+          <td>${Utils.fmtCurrency(s.startingMonnaie||0)}</td>
+          <td style="color:var(--warning);font-weight:700">⟶ ${Utils.fmtCurrency(newStart)}</td>
+        </tr>`;
+      }).join('');
+    }
+  },
+
+  _applyRectification(sessionId) {
+    const session = DB.getById('sessions', sessionId);
+    if (!session) return;
+    const newEspeces = Number(document.getElementById('rectify-especes')?.value) || 0;
+    const newMonnaie = Number(document.getElementById('rectify-monnaie')?.value) || 0;
+    const reason = (document.getElementById('rectify-reason')?.value || '').trim() || 'Rectification admin';
+    const isAR = T.isRTL();
+
+    const brTotal = DB.getAll('brs').filter(b => b.createdBy === session.userId && (b.date||'').slice(0,10) === session.date)
+      .reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
+    const newEcart = newEspeces - brTotal;
+
+    // 1. Update the target session
+    DB.update('sessions', sessionId, {
+      closedEspeces: newEspeces,
+      closedMonnaie: newMonnaie,
+      ecart: newEcart
+    }, `[ADMIN RECTIF] ${reason}`);
+
+    // 2. Update the corresponding caisse_admin deposit
+    const caisseEntries = DB.getAll('caisse_admin');
+    const dep = caisseEntries.find(e => e.sessionId === sessionId && e.source === 'user_cloture');
+    if (dep) {
+      DB.update('caisse_admin', dep.id, { amount: newEspeces }, `[ADMIN RECTIF] ${reason}`);
+    }
+
+    // 3. CASCADE: Update all future sessions' startingMonnaie
+    const futureSessions = DB.getAll('sessions')
+      .filter(s => s.userId === session.userId && s.date > session.date)
+      .sort((a,b) => a.date.localeCompare(b.date));
+
+    let carryMonnaie = newMonnaie;
+    let cascadeCount = 0;
+    for (const fs of futureSessions) {
+      if (Math.abs((fs.startingMonnaie||0) - carryMonnaie) > 0.001) {
+        DB.update('sessions', fs.id, { startingMonnaie: carryMonnaie }, `[CASCADE] ${reason}`);
+        cascadeCount++;
+      }
+      // The carry for the NEXT session is this session's closedMonnaie (unchanged)
+      carryMonnaie = fs.closedMonnaie ?? carryMonnaie;
+    }
+
+    UI.closeModal();
+    const msg = isAR
+      ? `✅ تم تصحيح الجلسة${cascadeCount > 0 ? ` + ${cascadeCount} جلسة(ات) لاحقة` : ''}`
+      : `✅ Session rectifiée${cascadeCount > 0 ? ` + ${cascadeCount} session(s) en cascade` : ''}`;
+    Utils.notify(msg, 'success', 4000);
+    App.loadModule('admin_caisse');
   }
 };
 

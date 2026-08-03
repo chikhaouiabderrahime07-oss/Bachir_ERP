@@ -62,22 +62,35 @@ const API = (() => {
 
   // ── Auth ────────────────────────────────────────────────────────
   async function syncCloudToLocal() {
-    // Keys must match what DB.getAll() reads from localStorage (no prefix!)
+    // Fetch ALL collections in PARALLEL instead of sequential for 10x faster sync
     const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
-    for (const col of COLS) {
-      try {
-        const data = await getAll(col);
-        if (data && Array.isArray(data)) {
-          localStorage.setItem(col, JSON.stringify(data)); // ← correct key
+    const MERGE_COLS = new Set(['history', 'audit_log']); // These merge instead of overwrite
+
+    const results = await Promise.allSettled([
+      ...COLS.map(col => getAll(col).then(data => ({ col, data }))),
+      getSettings().then(data => ({ col: '_settings', data }))
+    ]);
+
+    for (const result of results) {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      const { col, data } = result.value;
+      if (col === '_settings') {
+        if (data && Object.keys(data).length) {
+          localStorage.setItem('settings', JSON.stringify(data));
         }
-      } catch (e) { console.warn('Sync failed for', col, e); }
-    }
-    try {
-      const settings = await getSettings();
-      if (settings && Object.keys(settings).length) {
-        localStorage.setItem('settings', JSON.stringify(settings)); // ← correct key
+      } else if (data && Array.isArray(data)) {
+        if (MERGE_COLS.has(col)) {
+          // Merge server + local entries (dedup by ts+action to avoid duplicates)
+          const local = JSON.parse(localStorage.getItem(col) || '[]');
+          const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
+          const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
+          const merged = [...data, ...uniqueLocal].sort((a,b) => (a.ts||'').localeCompare(b.ts||''));
+          localStorage.setItem(col, JSON.stringify(merged.slice(-5000)));
+        } else {
+          localStorage.setItem(col, JSON.stringify(data));
+        }
       }
-    } catch (e) { console.warn('Sync failed for settings', e); }
+    }
   }
 
   async function login(username, password) {

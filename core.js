@@ -12,7 +12,7 @@ const T = {
     login_error:'Identifiants incorrects', login_sub:'Système de gestion — Accès sécurisé',
     // Nav
     nav_dashboard:'Tableau de Bord', nav_brs:'Bons de Réception', nav_bls:'Bons de Livraison',
-    nav_caisse:'Ma Caisse', nav_admin_caisse:'Caisse Principale', nav_suppliers:'Fournisseurs',
+    nav_caisse:'Ma Caisse', nav_admin_caisse:'Audit Caisse', nav_suppliers:'Fournisseurs',
     nav_catalogue:'Catalogue BD', nav_stats:'Statistiques', nav_eval:'Évaluation Utilisateurs',
     nav_users:'Utilisateurs', nav_settings:'Paramètres', nav_audit:'Audit',
     // Sections
@@ -124,7 +124,7 @@ const T = {
     login:'تسجيل الدخول', logout:'تسجيل الخروج', username:'اسم المستخدم', password:'كلمة المرور',
     login_error:'بيانات الدخول غير صحيحة', login_sub:'نظام الإدارة — دخول آمن',
     nav_dashboard:'لوحة التحكم', nav_brs:'وصولات الاستلام', nav_bls:'وصولات التسليم',
-    nav_caisse:'صندوقي', nav_admin_caisse:'الصندوق الرئيسي', nav_suppliers:'الموردون', nav_clients:'الزبائن',
+    nav_caisse:'صندوقي', nav_admin_caisse:'تدقيق الصندوق', nav_suppliers:'الموردون', nav_clients:'الزبائن',
     nav_catalogue:'قاعدة البيانات', nav_stats:'الإحصائيات', nav_eval:'تقييم المستخدمين',
     nav_users:'المستخدمون', nav_settings:'الإعدادات', nav_audit:'سجل المراجعة',
     sec_documents:'الوثائق', sec_cash:'الخزينة', sec_refs:'المراجع', sec_analysis:'التحليل', sec_admin:'الإدارة',
@@ -550,12 +550,21 @@ const DB = {
     entry.hash = this._fnv(`${prev}|${ts}|${entry.userId}|${action}|${col}|${id}`);
     log.push(entry);
     localStorage.setItem('audit_log', JSON.stringify(log.slice(-5000)));
+    // Push to server so audit persists across sessions
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.insert('audit_log', entry).catch(e => console.warn('[audit] cloud push failed', e.message));
+    }
   },
   _history(col, id, action, note, oldData, newData) {
     const h = this.getAll('history');
     const u = Auth.getCurrentUser();
-    h.push({ id: h.length+1, ts: new Date().toISOString(), col, docId: id, action, note, userId: u?.id||null, userName: u?.name||'System' });
+    const entry = { id: h.length+1, ts: new Date().toISOString(), col, docId: id, action, note, userId: u?.id||null, userName: u?.name||'System' };
+    h.push(entry);
     localStorage.setItem('history', JSON.stringify(h.slice(-3000)));
+    // Push to server so history persists across sessions
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.insert('history', entry).catch(e => console.warn('[history] cloud push failed', e.message));
+    }
   },
   getHistory(col, id) {
     return this.getAll('history').filter(h => h.col === col && h.docId === id).sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
