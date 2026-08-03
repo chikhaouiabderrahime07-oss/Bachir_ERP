@@ -258,10 +258,11 @@ const DB = {
     const COLS = ['brs','bls','suppliers','clients','caisse_admin','sessions','history'];
     const MERGE_COLS = new Set(['history']);
     let indicator = null;
-    
+
     setInterval(async () => {
-      // Skip sync while a modal is open (prevents UI freeze during Générer BL etc.)
-      if (document.querySelector('.modal-overlay[style*="flex"]')) return;
+      // Skip sync while a modal is open — prevents destroying Générer BL form
+      if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
+
       try {
         const results = await Promise.allSettled(
           COLS.map(col => window.API.getAll(col).then(data => ({ col, data })))
@@ -278,10 +279,7 @@ const DB = {
             localStorage.setItem(col, JSON.stringify(data));
           }
         }
-        // Refresh currently visible module silently (only if no modal open)
-        if (typeof App !== 'undefined' && App._currentModule && !document.querySelector('.modal-overlay[style*="flex"]')) {
-          App.reloadCurrent();
-        }
+        // Update sync indicator dot only — NO page reload (that destroys open modals/forms)
         if (!indicator) {
           indicator = document.createElement('div');
           indicator.id = 'sync-indicator';
