@@ -724,6 +724,27 @@ const BLModule = {
   _filters: { q:'', status:'all', clientId:'all', dateFrom:'', dateTo:'', createdBy:'all', driver:'all', sortDir:'desc' },
 
   render() {
+    // ── Inline History view ──
+    if (this._viewingHistory) {
+      return `<div style="padding:24px">
+        <div class="card">
+          <div class="card-header" style="border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:12px">
+              <button class="btn btn-secondary" onclick="BLModule.hideHistory()" style="display:inline-flex;align-items:center;gap:8px;padding:8px 18px;font-weight:700">
+                <i class="fas fa-arrow-left"></i> ← Retour aux BL
+              </button>
+              <div>
+                <h3 style="margin:0"><i class="fas fa-history" style="color:var(--primary)"></i> Historique des BL</h3>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toutes les lignes de livraison</div>
+              </div>
+            </div>
+          </div>
+          <div id="bl-history-container">${this._renderHistoryHTML()}</div>
+        </div>
+      </div>`;
+    }
+
+
     const { q, status } = this._filters;
     const clients = DB.getAll('clients');
     const cliMap = {}; clients.forEach(c=>cliMap[c.id]=c);
@@ -932,12 +953,17 @@ const BLModule = {
   _onDriverInput(val) {
     const dd = document.getElementById('bl-driver-ac');
     if (!dd) return;
-    const drivers = DB.getAll('drivers').filter(d=>d.name.toLowerCase().includes((val||'').toLowerCase())).slice(0,8);
+    const drivers = DB.getAll('drivers').filter(d => d.name.toLowerCase().includes((val||'').toLowerCase()));
     if (!val || !drivers.length) { dd.style.display='none'; return; }
-    dd.innerHTML = drivers.map(d=>
-      `<div class="autocomplete-item" onmousedown="BLModule._selectDriver('${Utils.escHTML(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(d.imm||'').replace(/'/g,"\\'")}')"><span>${Utils.escHTML(d.name)}</span><span class="ac-price">${d.imm||''}</span></div>`
-    ).join('');
-    dd.style.display='block';
+    // Show only TOP 1 match as a clean chip
+    const d = drivers[0];
+    dd.innerHTML = `<div class="ac-single-chip" onmousedown="BLModule._selectDriver('${Utils.escHTML(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(d.imm||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+      <i class="fas fa-id-card ac-chip-icon"></i>
+      <span class="ac-chip-name">${Utils.escHTML(d.name)}</span>
+      ${d.imm ? `<span class="ac-chip-unit">${Utils.escHTML(d.imm)}</span>` : ''}
+      <span class="ac-chip-hint">↵ Tab</span>
+    </div>`;
+    dd.style.display = 'block';
   },
   _closeDriverAC() {
     const dd = document.getElementById('bl-driver-ac');
@@ -1361,11 +1387,18 @@ const BLModule = {
     );
   },
 
-  _historyFilters: { dateFrom: '', dateTo: '', clientId: 'all', q: '' },
-  
+  _historyFilters: { dateFrom: '', dateTo: '', clientId: 'all', q: '', status: 'all', sortDir: 'desc' },
+  _viewingHistory: false,
+
   showHistory() {
-    this._historyFilters = { dateFrom: '', dateTo: '', clientId: 'all', q: '' };
-    UI.showModal(`<i class="fas fa-history"></i> ${T.isRTL() ? 'السجل' : 'Historique'}`, `<div id="bl-history-container">${this._renderHistoryHTML()}</div>`, '', 'xl');
+    this._historyFilters = { dateFrom: '', dateTo: '', clientId: 'all', q: '', status: 'all', sortDir: 'desc' };
+    this._viewingHistory = true;
+    App.loadModule('bls');
+  },
+
+  hideHistory() {
+    this._viewingHistory = false;
+    App.loadModule('bls');
   },
 
   updateHistory() {
@@ -1386,44 +1419,25 @@ const BLModule = {
     const f = this._historyFilters;
     const clients = DB.getAll('clients');
     const cliMap = {}; clients.forEach(c => cliMap[c.id] = c);
-    
     let bls = DB.getAll('bls');
     if (f.dateFrom) bls = bls.filter(b => (b.date || '') >= f.dateFrom);
     if (f.dateTo) bls = bls.filter(b => (b.date || '') <= f.dateTo);
     if (f.clientId !== 'all') bls = bls.filter(b => String(b.clientId) === String(f.clientId));
-    
+    if (f.status && f.status !== 'all') bls = bls.filter(b => (b.status || 'open') === f.status);
     const ql = (f.q || '').toLowerCase();
-    
-    let rows = [];
-    let grandTotal = 0;
-    
+    let rows = [], grandTotal = 0;
     bls.forEach(bl => {
       const clientName = cliMap[bl.clientId]?.name || '-';
-      const lines = bl.lines || [];
-      lines.forEach(line => {
+      (bl.lines || []).forEach(line => {
         const designation = line.designation || '';
         const ref = bl.ref || '';
-        if (ql) {
-          if (!designation.toLowerCase().includes(ql) && !ref.toLowerCase().includes(ql)) {
-            return;
-          }
-        }
-        rows.push({
-          blId: bl.id,
-          date: bl.date || '',
-          blRef: ref,
-          clientName: clientName,
-          designation: designation,
-          qty: line.qty || 0,
-          price: line.price || 0,
-          total: line.total || 0,
-          status: bl.status || 'open'
-        });
+        if (ql && !designation.toLowerCase().includes(ql) && !ref.toLowerCase().includes(ql) && !clientName.toLowerCase().includes(ql)) return;
+        rows.push({ blId: bl.id, date: bl.date || '', blRef: ref, clientName, designation, qty: line.qty || 0, price: line.price || 0, total: line.total || 0, status: bl.status || 'open' });
         grandTotal += (line.total || 0);
       });
     });
-    
-    rows.sort((a,b) => b.date.localeCompare(a.date) || b.blId - a.blId);
+    const dir = f.sortDir === 'asc' ? 1 : -1;
+    rows.sort((a,b) => dir * (a.date.localeCompare(b.date) || a.blId - b.blId));
     return { rows, grandTotal, cliMap };
   },
 
@@ -1431,75 +1445,66 @@ const BLModule = {
     const data = this._getHistoryData();
     const f = this._historyFilters;
     const isAdmin = Auth.isAdmin();
-    
     const clients = Object.values(data.cliMap).sort((a,b) => a.name.localeCompare(b.name));
-    
-    const thead = `<tr>
-      <th>Date</th>
-      <th>BL Ref</th>
-      <th>Client</th>
-      <th>Designation</th>
-      <th>Qty</th>
-      <th>Prix Unit</th>
-      <th>Total</th>
-      <th>Statut</th>
-    </tr>`;
-    
     const tbody = data.rows.map(r => {
       let refHtml = Utils.escHTML(r.blRef);
-      if (isAdmin) {
-        refHtml = `<a href="javascript:void(0)" onclick="UI.closeModal(); setTimeout(()=>BLModule.showEdit(${r.blId}), 200)" style="text-decoration:underline;color:var(--primary)">${refHtml}</a>`;
-      }
+      if (isAdmin) refHtml = `<a href="javascript:void(0)" onclick="BLModule.hideHistory();setTimeout(()=>BLModule.showEdit(${r.blId}),200)" style="text-decoration:none;color:var(--primary);font-weight:700">${refHtml}</a>`;
       return `<tr>
-        <td>${Utils.fmtDate(r.date)}</td>
+        <td style="white-space:nowrap">${Utils.fmtDate(r.date)}</td>
         <td>${refHtml}</td>
         <td>${Utils.escHTML(r.clientName)}</td>
-        <td>${Utils.escHTML(r.designation)}</td>
-        <td>${r.qty}</td>
+        <td style="font-weight:600">${Utils.escHTML(r.designation)}</td>
+        <td style="text-align:center">${r.qty}</td>
         <td>${Utils.fmtCurrency(r.price)}</td>
-        <td class="fw-bold">${Utils.fmtCurrency(r.total)}</td>
+        <td class="fw-bold" style="color:var(--primary)">${Utils.fmtCurrency(r.total)}</td>
         <td>${Utils.statusBadge(r.status)}</td>
       </tr>`;
     }).join('');
-    
-    const tfoot = `<tr>
-      <td colspan="6" class="text-right fw-bold">Grand Total</td>
-      <td colspan="2" class="fw-bold text-primary">${Utils.fmtCurrency(data.grandTotal)}</td>
-    </tr>`;
-    
+
+    const hasFilters = f.q || f.dateFrom || f.dateTo || f.clientId !== 'all' || f.status !== 'all';
+    const sortIcon = f.sortDir === 'asc' ? 'fa-sort-amount-up' : 'fa-sort-amount-down';
+    const sortLabel = f.sortDir === 'asc' ? 'Plus ancien' : 'Plus récent';
+
     return `
-      <div class="filters-bar" style="margin-bottom:16px; flex-wrap:wrap;">
-        <div class="filter-group">
-          <label>${T.get('search')}</label>
-          <input type="text" value="${Utils.escHTML(f.q)}" placeholder="..." oninput="BLModule._historyFilters.q=this.value; BLModule.updateHistory()">
+      <div class="smart-filters">
+        <div class="sf-search">
+          <i class="fas fa-search sf-search-icon"></i>
+          <input type="text" class="sf-search-input" value="${Utils.escHTML(f.q)}" placeholder="Rechercher réf, client, article..." oninput="BLModule._historyFilters.q=this.value;BLModule.updateHistory()">
         </div>
-        <div class="filter-group">
-          <label>${T.get('col_client')}</label>
-          <select onchange="BLModule._historyFilters.clientId=this.value; BLModule.updateHistory()">
-            <option value="all">${T.get('all')}</option>
-            ${clients.map(c => `<option value="${c.id}" ${String(f.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
+        <div class="sf-chips">
+          <select class="sf-chip-select" onchange="BLModule._historyFilters.clientId=this.value;BLModule.updateHistory()">
+            <option value="all">Tous clients</option>
+            ${clients.map(c=>`<option value="${c.id}" ${String(f.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
           </select>
-        </div>
-        <div class="filter-group">
-          <label>${T.isRTL() ? 'من تاريخ' : 'Date début'}</label>
-          <input type="date" value="${f.dateFrom}" onchange="BLModule._historyFilters.dateFrom=this.value; BLModule.updateHistory()" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px">
-        </div>
-        <div class="filter-group">
-          <label>${T.isRTL() ? 'إلى تاريخ' : 'Date fin'}</label>
-          <input type="date" value="${f.dateTo}" onchange="BLModule._historyFilters.dateTo=this.value; BLModule.updateHistory()" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px">
-        </div>
-        <div class="filter-group" style="align-self:flex-end">
-          <button class="btn btn-outline" onclick="BLModule.exportHistory()" title="Excel"><i class="fas fa-file-excel" style="color:#1d6f42"></i> Excel</button>
+          <select class="sf-chip-select" onchange="BLModule._historyFilters.status=this.value;BLModule.updateHistory()">
+            <option value="all" ${f.status==='all'?'selected':''}>Tous statuts</option>
+            <option value="open" ${f.status==='open'?'selected':''}>✅ Ouverts</option>
+            <option value="delivered" ${f.status==='delivered'?'selected':''}>📦 Livrés</option>
+          </select>
+          <input type="date" class="sf-date-input" value="${f.dateFrom}" title="Date début" onchange="BLModule._historyFilters.dateFrom=this.value;BLModule.updateHistory()">
+          <span class="sf-date-sep">→</span>
+          <input type="date" class="sf-date-input" value="${f.dateTo}" title="Date fin" onchange="BLModule._historyFilters.dateTo=this.value;BLModule.updateHistory()">
+          <button class="btn btn-outline btn-sm" onclick="BLModule._historyFilters.sortDir=BLModule._historyFilters.sortDir==='asc'?'desc':'asc';BLModule.updateHistory()" title="Trier">
+            <i class="fas ${sortIcon}"></i> ${sortLabel}
+          </button>
+          ${hasFilters ? `<button class="sf-clear" title="Effacer filtres" onclick="BLModule._historyFilters={dateFrom:'',dateTo:'',clientId:'all',q:'',status:'all',sortDir:'desc'};BLModule.updateHistory()"><i class="fas fa-times"></i></button>` : ''}
+          <button class="btn btn-outline btn-sm" onclick="BLModule.exportHistory()"><i class="fas fa-file-excel" style="color:#1d6f42"></i> Excel</button>
+          <span class="badge badge-secondary" style="margin-left:4px">${data.rows.length} ligne(s)</span>
         </div>
       </div>
-      <div class="table-shell" style="max-height: 60vh; overflow-y: auto;">
+      <div class="table-shell">
         <table class="data-table">
-          <thead style="position: sticky; top: 0; z-index: 1;">${thead}</thead>
-          <tbody>${data.rows.length ? tbody : `<tr><td colspan="8" class="text-center">${T.get('no_data')}</td></tr>`}</tbody>
-          <tfoot style="position: sticky; bottom: 0; background: var(--bg2); z-index: 1; box-shadow: 0 -2px 5px rgba(0,0,0,0.05);">${tfoot}</tfoot>
+          <thead><tr>
+            <th>Date</th><th>BL Réf</th><th>Client</th><th>Désignation</th>
+            <th style="text-align:center">Qté</th><th>Prix Unit.</th><th>Total</th><th>Statut</th>
+          </tr></thead>
+          <tbody>${data.rows.length ? tbody : `<tr><td colspan="8" class="text-center text-muted" style="padding:32px"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:8px;opacity:.3"></i>${T.get('no_data')}</td></tr>`}</tbody>
+          <tfoot><tr>
+            <td colspan="6" style="text-align:right;font-weight:700;padding:12px 16px">Grand Total (${data.rows.length} lignes)</td>
+            <td colspan="2" style="font-weight:900;color:var(--primary);font-size:15px;padding:12px 16px">${Utils.fmtCurrency(data.grandTotal)}</td>
+          </tr></tfoot>
         </table>
-      </div>
-    `;
+      </div>`;
   }
 };
 
