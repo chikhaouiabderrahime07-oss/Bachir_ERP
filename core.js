@@ -394,10 +394,10 @@ const DB = {
         localStorage.setItem(col, JSON.stringify(latest));
 
         const hasBrChange = col === 'brs' && serverItem.brNum !== item.brNum;
-        const hasBlChange = col === 'bls' && serverItem.blNum !== item.blNum;
+        const hasBlChange = col === 'bls' && serverItem.ref && serverItem.ref !== item.ref;
         if (hasBrChange || hasBlChange) {
-          const oldRef = col === 'brs' ? `${item.brNum}` : `${item.blNum}`;
-          const newRef = col === 'brs' ? `${serverItem.brNum}` : `${serverItem.blNum}`;
+          const oldRef = col === 'brs' ? `${item.brNum}` : `${item.ref}`;
+          const newRef = col === 'brs' ? `${serverItem.brNum}` : `${serverItem.ref}`;
           if (typeof Utils !== 'undefined') Utils.notify(`⚠️ Numéro ajusté: ${oldRef} → ${newRef} (conflit résolu)`, 'warning', 5000);
           if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 400);
         }

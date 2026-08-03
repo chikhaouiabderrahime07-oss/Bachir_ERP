@@ -156,34 +156,11 @@ router.post('/:col', async (req, res) => {
       data.ref = suppAbbrev ? `${n}/BR/${suppAbbrev}/${data.year || brYear}` : `BR/${n}/${data.year || brYear}`;
     }
 
-    // ── 3. Atomic BL number — reject duplicates ───────────────────
-    let blNum = data.blNum;
-    if (col === 'bls') {
-      const blYear = data.year || year;
-      if (blNum) {
-        const dup = await Document.findOne({ col: 'bls', 'data.blNum': Number(blNum), 'data.year': blYear });
-        if (dup) {
-          return res.status(409).json({ error: `Le numéro BL ${blNum} est déjà utilisé pour l'année ${blYear}` });
-        }
-      } else {
-        const counterId = `bls_${blYear}`;
-        const existing = await Counter.findOne({ _id: counterId });
-        if (!existing) {
-          const docs = await Document.find({ col: 'bls', 'data.year': blYear }).lean();
-          const nums = docs.map(d => parseInt(d.data?.blNum) || 0);
-          const currentMax = nums.length ? Math.max(...nums) : 99;
-          await Counter.create({ _id: counterId, seq: currentMax });
-        }
-        blNum = await Counter.nextSeq(counterId);
-      }
-    }
-
-    // ── 4. Build final document ────────────────────────────────────
+    // ── 3. Build final document ────────────────────────────────────
     const newData = {
       ...data,
       id:        newId,
       ...(col === 'brs' ? { brNum: Number(brNum) } : {}),
-      ...(col === 'bls' ? { blNum: Number(blNum) } : {}),
       createdAt:    data.createdAt || now,
       updatedAt:    now,
       createdBy:    data.createdBy    ?? req.user.id,
@@ -267,16 +244,6 @@ router.patch('/:col/:id', async (req, res) => {
       }
     }
 
-    // ── Duplicate check for BL number on update ──────────────────
-    if (col === 'bls' && patch.blNum !== undefined) {
-      const blYear = patch.year || doc.data.year || new Date().getFullYear();
-      const dup = await Document.findOne({
-        col: 'bls', 'data.blNum': Number(patch.blNum), 'data.year': blYear, 'data.id': { $ne: id }
-      });
-      if (dup) {
-        return res.status(409).json({ error: `Le numéro BL ${patch.blNum} est déjà utilisé pour l'année ${blYear}` });
-      }
-    }
 
     const merged  = { ...doc.data, ...patch, updatedAt: new Date().toISOString() };
     doc.data      = merged;
