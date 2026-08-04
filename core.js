@@ -238,7 +238,10 @@ const DB = {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
     if (!localStorage.getItem('settings')) this._resetSettings();
     if (!this.getAll('users').length) this._seed();
-    
+
+    // ── Run data migrations on every boot (idempotent) ──
+    this.runMigrations();
+
     // Cloud mode: if localStorage appears empty or cleared, restore from MongoDB
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       const hasData = this._cols.some(c => this.getAll(c).length > 0);
@@ -251,6 +254,69 @@ const DB = {
       }
     }
   },
+
+  // ─── Data Migrations (run on every boot, fully idempotent) ──────
+  // Each migration checks before acting — safe to run multiple times.
+  runMigrations() {
+    try {
+      this._migrateBLDeliveryCaisseEntries();
+      // Add future migrations here as _migrateXxx()
+    } catch(e) {
+      console.warn('[Migration] Error:', e);
+    }
+  },
+
+  // Migration M001: Backfill caisse_admin entries for ALL delivered BLs
+  // that were confirmed before the new caisse-on-delivery flow was added.
+  // Rule: cash goes to BL creator (bl.createdBy), amount from BR (br.totalTTC).
+  _migrateBLDeliveryCaisseEntries() {
+    const deliveredBLs = this.getAll('bls').filter(bl => bl.status === 'delivered');
+    const existingEntries = this.getAll('caisse_admin');
+    let added = 0;
+
+    for (const bl of deliveredBLs) {
+      // Skip if already has a caisse entry for this BL
+      const alreadyExists = existingEntries.some(e => e.blId === bl.id && e.source === 'bl_delivery');
+      if (alreadyExists) continue;
+
+      const br = this.getById('brs', bl.brId);
+      const amount = Number(br?.totalTTC || bl.totalTTC || 0);
+      if (!amount) continue;
+
+      // BL creator gets the cash
+      const blCreatorId = bl.createdBy;
+      if (!blCreatorId) continue;
+      const blCreator = this.getById('users', blCreatorId);
+
+      // Use deliveredAt date for sessionDate so it lands in the right day's caisse
+      const sessionDate = (bl.deliveredAt || bl.date || '').slice(0, 10) || Utils.today();
+
+      this.insert('caisse_admin', {
+        type: 'deposit',
+        source: 'bl_delivery',
+        blId: bl.id,
+        blRef: bl.ref,
+        brRef: br?.ref,
+        brCreatedBy: br?.createdBy,
+        brCreatedByName: br?.createdByName,
+        userId: blCreatorId,
+        userName: blCreator?.name || blCreator?.username || 'Utilisateur',
+        deliveredBy: bl.deliveredBy || blCreatorId,
+        deliveredByName: bl.deliveredByName || blCreator?.name || '—',
+        sessionDate,
+        amount,
+        note: `[MIGRATION] BL ${bl.ref} (BR ${br?.ref || '?'}) — créé par ${blCreator?.name || '?'}, livré le ${sessionDate}`,
+        // Use deliveredAt as createdAt so it sorts correctly in history
+        createdAt: bl.deliveredAt || new Date().toISOString()
+      });
+      added++;
+    }
+
+    if (added > 0) {
+      console.log(`[Migration M001] Backfilled ${added} caisse_admin entries for delivered BLs.`);
+    }
+  },
+
 
   // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
   startLiveSync() {
@@ -289,6 +355,8 @@ const DB = {
         }
         indicator.style.background = '#10b981';
         indicator.title = 'Synchronisé — ' + new Date().toLocaleTimeString('fr-FR');
+        // Re-run migrations after sync in case new delivered BLs came in from other users
+        this.runMigrations();
       } catch (e) {
         if (indicator) { indicator.style.background = '#ef4444'; indicator.title = 'Sync échoué'; }
       }
