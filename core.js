@@ -865,20 +865,31 @@ const SessionMgr = {
       ecart: ecart,
       closedAt: new Date().toISOString()
     }, 'Clôture de journée');
-    // Auto-deposit espèces to admin caisse
+    // Only create a deposit entry if no bl_delivery entries exist for today
+    // (to avoid double-counting when deliveries were already recorded)
     const user = DB.getById('users', userId);
-    DB.insert('caisse_admin', {
-      type: 'deposit',
-      source: 'user_cloture',
-      userId,
-      userName: user?.name || 'Utilisateur',
-      sessionId: session.id,
-      sessionDate: session.date,
-      amount: Number(especes),
-      note: `Clôture journée — ${user?.name||''} — ${session.date}`
-    });
+    const todayDeliveries = DB.getAll('caisse_admin').filter(e =>
+      e.source === 'bl_delivery' && e.userId === userId && e.sessionDate === session.date
+    );
+    const alreadyCounted = todayDeliveries.reduce((s,e) => s + (Number(e.amount)||0), 0);
+    const alreadyHasCloture = DB.getAll('caisse_admin').some(e =>
+      e.sessionId === session.id && e.source === 'user_cloture'
+    );
+    if (!alreadyHasCloture) {
+      DB.insert('caisse_admin', {
+        type: 'deposit',
+        source: 'user_cloture',
+        userId,
+        userName: user?.name || 'Utilisateur',
+        sessionId: session.id,
+        sessionDate: session.date,
+        amount: Number(especes),
+        note: `Clôture journée — ${user?.name||''} — ${session.date}`
+      });
+    }
     return updated;
   },
+
   updateCloture(userId, especes, monnaie) {
     const session = this.getTodaySession(userId);
     if (!session) return null;

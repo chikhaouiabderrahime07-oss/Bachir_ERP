@@ -859,7 +859,7 @@ const BLModule = {
                 <td>${Utils.escHTML(cli?.name||'-')}</td>
                 <td>${Utils.escHTML(bl.driverName||'-')}</td>
                 <td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td>
-                <td class="fw-bold text-primary">${Utils.fmtCurrency(br?.totalTTC||0)}</td>
+                <td class="fw-bold text-primary">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
                 <td>${Utils.statusBadge(bl.status||'open')}</td>
                 <td style="font-size:11px;color:var(--text4);line-height:1.6">
                   <div title="CR par"><i class="fas fa-user" style="color:var(--primary);width:12px"></i> <strong>${Utils.escHTML(bl.createdByName||'-')}</strong></div>
@@ -1088,7 +1088,7 @@ const BLModule = {
           style="width:70px;font-size:13px;font-weight:700;text-align:center;border-radius:8px;padding:4px 8px"
           oninput="BLModule._recalcBLTotals()">
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;margin:0;margin-left:auto">
-          <input type="checkbox" id="bl-no-timbre" onchange="BLModule._toggleTimbre(this.checked)">
+          <input type="checkbox" id="bl-no-timbre" ${bl?.noTimbre ? 'checked' : ''} onchange="BLModule._toggleTimbre(this.checked)">
           ${T.isRTL() ? 'بدون طابع' : 'Sans timbre'}
         </label>
       </div>
@@ -1096,7 +1096,10 @@ const BLModule = {
         <div class="totals-row"><label>${T.isRTL()?'المجموع قبل الرسوم':'Montant HT'}</label><span id="bl-tot-ht">0,00 DA</span></div>
         <div class="totals-row"><label>${T.isRTL()?'TVA':'Taxes (TVA)'} <span id="bl-tva-pct" style="color:var(--text4);font-size:10px"></span></label><span id="bl-tot-tva">0,00 DA</span></div>
         <div class="totals-row"><label>${T.isRTL()?'الطابع الجبائي':'Timbre Fiscal'}</label>
-          <input type="number" id="bl-tot-timbre" value="0" min="0" step="any"
+          <input type="number" id="bl-tot-timbre"
+            value="${(bl?.timbreAmount ?? 0).toFixed(2)}"
+            ${bl?.timbreAmount ? 'data-manual="1"' : ''}
+            min="0" step="any"
             style="width:120px;text-align:right;font-weight:700;font-size:13px;border-radius:6px;padding:2px 8px"
             oninput="this.dataset.manual='1';BLModule._recalcBLTotals()">
         </div>
@@ -1292,16 +1295,55 @@ const BLModule = {
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     const br = DB.getById('brs', bl.brId);
+    const u = Auth.getCurrentUser();
+    // Use BL's own totalTTC (may differ from BR if partial delivery)
+    const amount = Number(bl.totalTTC || br?.totalTTC || 0);
     const ok = await Utils.confirm2(
       T.get('bl_delivered_msg'),
-      `Montant TTC: ${Utils.fmtCurrency(br?.totalTTC||0)}\n\nConfirmer définitivement ?`
+      `Montant TTC: ${Utils.fmtCurrency(amount)}\n\nConfirmer définitivement ?`
     );
     if (!ok) return;
-    DB.update('bls', blId, { status:'delivered', deliveredAt: new Date().toISOString() }, 'Livraison confirmée');
-    if (bl.brId) DB.update('brs', bl.brId, { status:'delivered', deliveredAt: new Date().toISOString() }, 'Livraison confirmée (depuis BL)');
+
+    const now = new Date().toISOString();
+    // Mark BL delivered + traceability
+    DB.update('bls', blId, {
+      status: 'delivered', deliveredAt: now,
+      deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
+    }, 'Livraison confirmée');
+    // Mark BR delivered + traceability
+    if (bl.brId) DB.update('brs', bl.brId, {
+      status: 'delivered', deliveredAt: now,
+      deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
+    }, 'Livraison confirmée (depuis BL)');
+
+    // ── Immediate caisse entry on delivery (for the user who CREATED the BR) ──
+    // This makes the amount visible in caisse right away, not only at session close
+    const brCreatorId = br?.createdBy || u?.id;
+    const brCreator = DB.getById('users', brCreatorId);
+    const today = Utils.today();
+    // Avoid double-entry if already exists for this BL
+    const alreadyExists = DB.getAll('caisse_admin').some(e => e.blId === blId && e.source === 'bl_delivery');
+    if (!alreadyExists && amount > 0) {
+      DB.insert('caisse_admin', {
+        type: 'deposit',
+        source: 'bl_delivery',
+        blId,
+        blRef: bl.ref,
+        brRef: br?.ref,
+        userId: brCreatorId,
+        userName: brCreator?.name || brCreator?.username || 'Utilisateur',
+        deliveredBy: u?.id,
+        deliveredByName: u?.name,
+        sessionDate: today,
+        amount,
+        note: `BL livré: ${bl.ref} — par ${u?.name || 'Inconnu'}`
+      });
+    }
+
     Utils.notify((T.isRTL()?'تم تأكيد التسليم! الوثائق مقفلة.':'Livraison confirmée ! Documents verrouillés.'), 'success');
     App.loadModule('bls');
   },
+
 
   showDetail(blId) {
     const bl = DB.getById('bls', blId);
@@ -1694,10 +1736,14 @@ const CaisseModule = {
     const caTx = DB.getAll('caisse_admin').filter(t => (t.createdAt||'').slice(0,10) === today);
 
     // Per-user rows
+    const allDeliveries = DB.getAll('caisse_admin').filter(t =>
+      t.source === 'bl_delivery' && (t.createdAt||'').slice(0,10) === today
+    );
     const rows = users.map(u => {
       const sess = sessions.find(s => s.userId === u.id);
       const uBRs = allBRs.filter(b => b.createdBy === u.id);
       const brTotal = uBRs.reduce((t,b) => t+(Number(b.totalTTC)||0), 0);
+      const blDelivered = allDeliveries.filter(e => e.userId === u.id).reduce((t,e) => t+(Number(e.amount)||0), 0);
       const deposited = caTx.filter(t => t.type==='deposit' && t.userId===u.id).reduce((t,tx) => t+(Number(tx.amount)||0), 0);
       const sessStatus = sess
         ? (sess.status==='closed'
@@ -1711,19 +1757,29 @@ const CaisseModule = {
         <td><strong>${Utils.escHTML(u.name)}</strong></td>
         <td>${sessStatus}</td>
         <td style="color:var(--primary);font-weight:700">${Utils.fmtCurrency(brTotal)}</td>
+        <td style="color:var(--info,#38bdf8);font-weight:700">${blDelivered>0?Utils.fmtCurrency(blDelivered):'<span style="color:var(--text4)">—</span>'}</td>
         <td style="color:var(--success);font-weight:700">${Utils.fmtCurrency(deposited)}</td>
         <td style="color:${ecartColor};font-weight:700">${ecartStr}</td>
         <td style="color:var(--warning);font-weight:700">${Utils.fmtCurrency(sess?.startingMonnaie||0)}</td>
       </tr>`;
     }).join('');
 
-    // Today transactions (all caisse_admin for today)
+    // Today transactions (all caisse_admin for today) — with source icons
+    const sourceIcon = src => ({
+      bl_delivery:   '<i class="fas fa-truck" style="color:var(--primary)"></i>',
+      user_cloture:  '<i class="fas fa-door-closed" style="color:var(--success)"></i>',
+      admin_manual:  '<i class="fas fa-user-shield" style="color:var(--warning)"></i>',
+      admin_withdrawal: '<i class="fas fa-minus-circle" style="color:var(--danger)"></i>'
+    })[src] || '<i class="fas fa-exchange-alt" style="color:var(--text4)"></i>';
     const txRows = caTx.sort((a,b) => b.createdAt.localeCompare(a.createdAt)).map(t => `
       <div class="tx-item ${t.type}" style="cursor:pointer" onclick="AdminCaisseModule.showDetail(${t.id})">
-        <div>
-          <div style="font-size:11px;color:var(--text4)"><i class="fas fa-clock"></i> ${Utils.fmtDateTime(t.createdAt)}</div>
-          <div style="font-weight:600;color:var(--text);font-size:13px">${Utils.escHTML(t.note||t.source||'-')}</div>
-          <div style="font-size:11px;color:var(--text3)">${Utils.escHTML(t.userName||'-')}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex:1">
+          <span style="font-size:18px;width:24px;text-align:center">${sourceIcon(t.source)}</span>
+          <div>
+            <div style="font-size:11px;color:var(--text4)"><i class="fas fa-clock"></i> ${Utils.fmtDateTime(t.createdAt)}</div>
+            <div style="font-weight:600;color:var(--text);font-size:13px">${Utils.escHTML(t.note||t.source||'-')}</div>
+            <div style="font-size:11px;color:var(--text3)">${Utils.escHTML(t.userName||'-')}${t.deliveredByName && t.deliveredByName!==t.userName ? ` — livré par <strong>${Utils.escHTML(t.deliveredByName)}</strong>` : ''}</div>
+          </div>
         </div>
         <div style="text-align:right">
           <div class="badge ${t.type==='deposit'?'badge-success':'badge-danger'}" style="font-size:12px">
@@ -1732,8 +1788,9 @@ const CaisseModule = {
         </div>
       </div>`).join('');
 
-    const totalBR = allBRs.reduce((t,b) => t+(Number(b.totalTTC)||0), 0);
-    const totalDep = caTx.filter(t=>t.type==='deposit').reduce((t,tx) => t+(Number(tx.amount)||0), 0);
+    const totalBR   = allBRs.reduce((t,b) => t+(Number(b.totalTTC)||0), 0);
+    const totalBLDel= caTx.filter(t=>t.source==='bl_delivery').reduce((t,e)=>t+(Number(e.amount)||0),0);
+    const totalDep  = caTx.filter(t=>t.type==='deposit').reduce((t,tx) => t+(Number(tx.amount)||0), 0);
     const totalWith = caTx.filter(t=>t.type==='withdrawal').reduce((t,tx) => t+(Number(tx.amount)||0), 0);
 
     return `<div style="padding:24px" ${isAR?'dir="rtl"':''}>
@@ -1742,10 +1799,14 @@ const CaisseModule = {
         ${isAR?'عمليات الصندوق اليوم':'Opérations de caisse du jour'} — ${Utils.fmtDate(today)}
       </h2>
 
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">${isAR?'إجمالي BR':'Total BR'}</div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">${isAR?'إجمالي BR (متوقع)':'Total BR (attendu)'}</div>
           <div style="font-size:22px;font-weight:900;color:var(--primary);margin-top:6px">${Utils.fmtCurrency(totalBR)}</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;border-top:3px solid var(--info,#38bdf8)">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">${isAR?'BL مُسلَّمة (محقق)':'BL Livrés (réalisé)'}</div>
+          <div style="font-size:22px;font-weight:900;color:var(--info,#38bdf8);margin-top:6px">${Utils.fmtCurrency(totalBLDel)}</div>
         </div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">${isAR?'إجمالي الإيداعات':'Total Dépôts'}</div>
@@ -1753,7 +1814,7 @@ const CaisseModule = {
         </div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3)">${isAR?'إجمالي السحوبات':'Total Retraits'}</div>
-          <div style="font-size:22px;font-weight:900;color:var(--danger);margin-top:6px">${totalWith>0?'-':''}  ${Utils.fmtCurrency(totalWith)}</div>
+          <div style="font-size:22px;font-weight:900;color:var(--danger);margin-top:6px">${totalWith>0?'-':''}${Utils.fmtCurrency(totalWith)}</div>
         </div>
       </div>
 
@@ -1764,11 +1825,12 @@ const CaisseModule = {
             <th>${isAR?'المستخدم':'Utilisateur'}</th>
             <th>${isAR?'الجلسة':'Session'}</th>
             <th>${isAR?'إجمالي BR':'Total BR'}</th>
+            <th style="color:var(--info,#38bdf8)">${isAR?'BL مُسلَّمة':'BL Livrés'}</th>
             <th>${isAR?'مُودَع':'Versé'}</th>
             <th>${isAR?'الفارق':'Écart'}</th>
             <th>${isAR?'الصرف':'Monnaie'}</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="6" class="text-muted text-center">${isAR?'لا يوجد مستخدمون':'Aucun utilisateur'}</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="7" class="text-muted text-center">${isAR?'لا يوجد مستخدمون':'Aucun utilisateur'}</td></tr>`}</tbody>
         </table></div>
       </div>
 
