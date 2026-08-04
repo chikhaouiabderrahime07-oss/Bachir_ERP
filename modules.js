@@ -1316,10 +1316,11 @@ const BLModule = {
       deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
     }, 'Livraison confirmée (depuis BL)');
 
-    // ── Immediate caisse entry on delivery (for the user who CREATED the BR) ──
-    // This makes the amount visible in caisse right away, not only at session close
-    const brCreatorId = br?.createdBy || u?.id;
-    const brCreator = DB.getById('users', brCreatorId);
+    // ── Immediate caisse entry ──
+    // Amount comes from the BR (as per client: "caisse amount is calculated from the BR")
+    // But goes to the caisse of whoever CREATED the BL (not the BR creator)
+    const blCreatorId = bl.createdBy || u?.id;
+    const blCreator = DB.getById('users', blCreatorId);
     const today = Utils.today();
     // Avoid double-entry if already exists for this BL
     const alreadyExists = DB.getAll('caisse_admin').some(e => e.blId === blId && e.source === 'bl_delivery');
@@ -1330,13 +1331,15 @@ const BLModule = {
         blId,
         blRef: bl.ref,
         brRef: br?.ref,
-        userId: brCreatorId,
-        userName: brCreator?.name || brCreator?.username || 'Utilisateur',
-        deliveredBy: u?.id,
+        brCreatedBy: br?.createdBy,
+        brCreatedByName: br?.createdByName,
+        userId: blCreatorId,      // ← cash goes to BL creator's caisse
+        userName: blCreator?.name || blCreator?.username || 'Utilisateur',
+        deliveredBy: u?.id,       // ← who clicked confirm
         deliveredByName: u?.name,
         sessionDate: today,
-        amount,
-        note: `BL livré: ${bl.ref} — par ${u?.name || 'Inconnu'}`
+        amount: Number(br?.totalTTC || bl.totalTTC || 0),  // ← amount from BR
+        note: `BL ${bl.ref} (BR ${br?.ref||'?'}) — créé par ${blCreator?.name||'?'}, validé par ${u?.name||'?'}`
       });
     }
 
@@ -1587,8 +1590,10 @@ const CaisseModule = {
   _renderSession(u, session) {
     const today = Utils.today();
     const brTotal = SessionMgr.getDayBRTotal(u.id, today);
+    const deliveryTotal = SessionMgr.getDayDeliveryTotal(u.id, today);
     const isClosed = session.status === 'closed';
     const todayBRs = DB.getAll('brs').filter(b=>(b.date||'').slice(0,10)===today&&b.createdBy===u.id);
+    const todayDeliveries = DB.getAll('caisse_admin').filter(e => e.source==='bl_delivery' && e.userId===u.id && e.sessionDate===today);
     const isAR = T.isRTL();
 
     // Performance evaluation
@@ -1643,7 +1648,7 @@ const CaisseModule = {
       closedCards = `
       <div style="background:var(--bg-inset);border-radius:var(--radius);padding:14px;text-align:center;border-left:3px solid var(--text-muted)">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${T.get('caisse_especes')} ${isAR?'(متوقعة)':'(attendues)'}</div>
-        <div style="font-size:24px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(brTotal)}</div>
+        <div style="font-size:24px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(deliveryTotal)}</div>
       </div>`;
     }
 
@@ -1688,8 +1693,13 @@ const CaisseModule = {
       </div>
       <div style="padding:18px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+          <div style="background:var(--bg-inset);border-radius:var(--radius);padding:14px;text-align:center;border-left:3px solid var(--info,#38bdf8)">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${isAR?'BL مُسلَّمة (صندوقي)':'BL Livrés (ma caisse)'}</div>
+            <div style="font-size:24px;font-weight:900;color:var(--info,#38bdf8)">${Utils.fmtCurrency(deliveryTotal)}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${todayDeliveries.length} livraison(s)</div>
+          </div>
           <div style="background:var(--bg-inset);border-radius:var(--radius);padding:14px;text-align:center;border-left:3px solid var(--primary)">
-            <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${isAR?'إجمالي BR اليوم':'Total BR du jour'}</div>
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${isAR?'إجمالي BR (معلوماتي)':'Total BR (info)'}</div>
             <div style="font-size:24px;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(brTotal)}</div>
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${todayBRs.length} BR(s)</div>
           </div>
@@ -1705,20 +1715,30 @@ const CaisseModule = {
 
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm)">
       <div style="padding:14px 18px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
-        <i class="fas fa-receipt" style="color:var(--primary)"></i>
-        <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR?'وصولات اليوم':'BR du jour'}</h3>
-        <span style="margin-${isAR?'right':'left'}:auto;font-size:11px;color:var(--text-muted)">${todayBRs.length} BR(s)</span>
+        <i class="fas fa-truck" style="color:var(--info,#38bdf8)"></i>
+        <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR?'BL المُسلَّمة اليوم':'Mes BL livrés du jour'}</h3>
+        <span style="margin-${isAR?'right':'left'}:auto;font-size:11px;color:var(--text-muted)">${todayDeliveries.length} livraison(s) — ${Utils.fmtCurrency(deliveryTotal)}</span>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:var(--bg-inset);border-bottom:2px solid var(--border)">
-            <th style="${thStyle};text-align:left">${T.get('col_ref')}</th>
-            <th style="${thStyle};text-align:left">${T.get('col_supplier')}</th>
-            <th style="${thStyle};text-align:right">${T.get('col_total_ttc')}</th>
-            <th style="${thStyle};text-align:center">${T.get('col_status')}</th>
+            <th style="${thStyle};text-align:left">BL Réf</th>
+            <th style="${thStyle};text-align:left">BR Réf</th>
+            <th style="${thStyle};text-align:right">Montant</th>
+            <th style="${thStyle};text-align:left">Validé par</th>
+            <th style="${thStyle};text-align:left">Heure</th>
           </tr></thead>
-          <tbody>${brRows}</tbody>
-          ${brFooter}
+          <tbody>${todayDeliveries.length ? todayDeliveries.map((d,i) =>
+            '<tr style="border-bottom:1px solid var(--border);'+(i%2?'background:var(--bg-inset)':'')+'">' +
+            '<td style="padding:10px 14px"><strong style="color:var(--info,#38bdf8)">'+ Utils.escHTML(d.blRef||'-') +'</strong></td>' +
+            '<td style="padding:10px 14px;color:var(--text)">'+ Utils.escHTML(d.brRef||'-') +'</td>' +
+            '<td style="padding:10px 14px;text-align:right;font-weight:700;color:var(--text)">'+ Utils.fmtCurrency(d.amount) +'</td>' +
+            '<td style="padding:10px 14px;font-size:11px;color:var(--text3)">'+ Utils.escHTML(d.deliveredByName||'-') +'</td>' +
+            '<td style="padding:10px 14px;font-size:11px;color:var(--text4)">'+ Utils.fmtDateTime(d.createdAt) +'</td>' +
+            '</tr>'
+          ).join('') : '<tr><td colspan="5" style="padding:30px;text-align:center;color:var(--text-muted)"><i class="fas fa-inbox" style="font-size:24px;opacity:.3;display:block;margin-bottom:8px"></i>'+(isAR?'لا تسليمات اليوم':'Aucune livraison aujourd\'hui')+'</td></tr>'}
+          </tbody>
+          ${todayDeliveries.length ? '<tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)"><td colspan="2" style="padding:12px 14px;font-weight:800;text-align:right;font-size:14px;color:var(--text)">TOTAL</td><td style="padding:12px 14px;text-align:right;font-weight:900;font-size:16px;color:var(--info,#38bdf8)">'+ Utils.fmtCurrency(deliveryTotal) +'</td><td colspan="2"></td></tr></tfoot>' : ''}
         </table>
       </div>
     </div>
@@ -1890,22 +1910,25 @@ const CaisseModule = {
   showCloture(isEdit=false) {
     const u = Auth.getCurrentUser();
     const today = Utils.today();
+    const deliveryTotal = SessionMgr.getDayDeliveryTotal(u.id, today);
     const brTotal = SessionMgr.getDayBRTotal(u.id, today);
     const session = SessionMgr.getTodaySession(u.id);
-    const prevEspeces = session?.closedEspeces ?? brTotal;
+    const prevEspeces = session?.closedEspeces ?? deliveryTotal;
     const prevMonnaie = session?.closedMonnaie ?? (session?.startingMonnaie ?? 0);
+    const todayDeliveries = DB.getAll('caisse_admin').filter(e => e.source==='bl_delivery' && e.userId===u.id && e.sessionDate===today);
 
     UI.showModal(`🌙 ${T.get('caisse_cloture')}`, `
     <div class="alert alert-info mb-2">
       <i class="fas fa-info-circle"></i>
-      <strong>${T.get('caisse_expected')}:</strong> ${Utils.fmtCurrency(brTotal)}
-      (${DB.getAll('brs').filter(b=>(b.date||'').slice(0,10)===today&&b.createdBy===u.id).length} BR)
+      <strong>${T.get('caisse_expected')}:</strong> ${Utils.fmtCurrency(deliveryTotal)}
+      (${todayDeliveries.length} BL livrés)
+      ${brTotal !== deliveryTotal ? `<br><small style="opacity:.7">Total BR créés: ${Utils.fmtCurrency(brTotal)} — ${DB.getAll('brs').filter(b=>(b.date||'').slice(0,10)===today&&b.createdBy===u.id).length} BR</small>` : ''}
     </div>
     <p style="color:var(--text2);margin-bottom:16px">${T.get('caisse_cloture_msg')}</p>
     <div class="cloture-compare mb-2">
       <div class="compare-box expected">
         <div class="cb-label">${T.get('caisse_expected')}</div>
-        <div class="cb-value">${Utils.fmtCurrency(brTotal)}</div>
+        <div class="cb-value">${Utils.fmtCurrency(deliveryTotal)}</div>
       </div>
       <div class="compare-box actual">
         <div class="cb-label">${T.get('caisse_ecart')} (en temps réel)</div>
@@ -1917,7 +1940,7 @@ const CaisseModule = {
         <label class="required"><i class="fas fa-money-bill-wave"></i> ${T.get('caisse_especes')}</label>
         <input type="number" id="cloEspeces" value="${prevEspeces.toFixed(2)}" min="0" step="any"
           style="font-size:18px;font-weight:700;text-align:center"
-          oninput="CaisseModule._updateEcartDisplay(${brTotal})">
+          oninput="CaisseModule._updateEcartDisplay(${deliveryTotal})">
       </div>
       <div class="form-group">
         <label class="required"><i class="fas fa-coins"></i> ${T.get('caisse_monnaie')}</label>
@@ -1929,7 +1952,7 @@ const CaisseModule = {
      <button class="btn btn-primary btn-lg" onclick="CaisseModule._saveCloture(${isEdit})">
        <i class="fas fa-door-closed"></i> ${isEdit?T.get('save'):T.get('caisse_cloture')}
      </button>`, 'md');
-    setTimeout(()=>CaisseModule._updateEcartDisplay(brTotal), 100);
+    setTimeout(()=>CaisseModule._updateEcartDisplay(deliveryTotal), 100);
   },
 
   _updateEcartDisplay(expected) {
@@ -2853,8 +2876,7 @@ const AdminCaisseModule = {
     if (!session || session.status !== 'closed') { Utils.notify('Session introuvable ou non clôturée', 'error'); return; }
     const isAR = T.isRTL();
     const user = DB.getById('users', session.userId);
-    const brTotal = DB.getAll('brs').filter(b => b.createdBy === session.userId && (b.date||'').slice(0,10) === session.date)
-      .reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
+    const brTotal = SessionMgr.getDayDeliveryTotal(session.userId, session.date);
 
     // Find all FUTURE sessions for this user (cascade chain)
     const futureSessions = DB.getAll('sessions')
@@ -2923,8 +2945,7 @@ const AdminCaisseModule = {
     if (!session) return;
     const newEspeces = Number(document.getElementById('rectify-especes')?.value) || 0;
     const newMonnaie = Number(document.getElementById('rectify-monnaie')?.value) || 0;
-    const brTotal = DB.getAll('brs').filter(b => b.createdBy === session.userId && (b.date||'').slice(0,10) === session.date)
-      .reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
+    const brTotal = SessionMgr.getDayDeliveryTotal(session.userId, session.date);
     const newEcart = newEspeces - brTotal;
     const isAR = T.isRTL();
 
@@ -2960,9 +2981,8 @@ const AdminCaisseModule = {
     const reason = (document.getElementById('rectify-reason')?.value || '').trim() || 'Rectification admin';
     const isAR = T.isRTL();
 
-    const brTotal = DB.getAll('brs').filter(b => b.createdBy === session.userId && (b.date||'').slice(0,10) === session.date)
-      .reduce((t,b) => t + (Number(b.totalTTC)||0), 0);
-    const newEcart = newEspeces - brTotal;
+    const deliveryTotal = SessionMgr.getDayDeliveryTotal(session.userId, session.date);
+    const newEcart = newEspeces - deliveryTotal;
 
     // 1. Update the target session
     DB.update('sessions', sessionId, {

@@ -838,10 +838,19 @@ const SessionMgr = {
       .sort((a,b)=>b.date.localeCompare(a.date))[0] || null;
   },
   getDayBRTotal(userId, date) {
+    // Sum of BRs created by this user on this date (for display/info only)
     return DB.getAll('brs')
       .filter(br => br.createdBy === userId && (br.date||'').slice(0,10) === date)
       .reduce((s,br) => s + (Number(br.totalTTC)||0), 0);
   },
+  getDayDeliveryTotal(userId, date) {
+    // Sum of confirmed BL deliveries that belong to this user's caisse
+    // (BLs created by this user, amount from BR)
+    return DB.getAll('caisse_admin')
+      .filter(e => e.source === 'bl_delivery' && e.userId === userId && e.sessionDate === date)
+      .reduce((s,e) => s + (Number(e.amount)||0), 0);
+  },
+
   startSession(userId, startingMonnaie = 0) {
     const existing = this.getTodaySession(userId);
     if (existing) return existing;
@@ -856,8 +865,9 @@ const SessionMgr = {
   closeSession(userId, especes, monnaie) {
     const session = this.getTodaySession(userId);
     if (!session) return null;
-    const brTotal = this.getDayBRTotal(userId, session.date);
-    const ecart = Number(especes) - brTotal;
+    // Expected = sum of delivered BLs that belong to this user's caisse
+    const deliveryTotal = this.getDayDeliveryTotal(userId, session.date);
+    const ecart = Number(especes) - deliveryTotal;
     const updated = DB.update('sessions', session.id, {
       status: 'closed',
       closedEspeces: Number(especes),
@@ -893,8 +903,8 @@ const SessionMgr = {
   updateCloture(userId, especes, monnaie) {
     const session = this.getTodaySession(userId);
     if (!session) return null;
-    const brTotal = this.getDayBRTotal(userId, session.date);
-    const ecart = Number(especes) - brTotal;
+    const deliveryTotal = this.getDayDeliveryTotal(userId, session.date);
+    const ecart = Number(especes) - deliveryTotal;
     // Update the admin caisse deposit for today
     const caisseEntries = DB.getAll('caisse_admin');
     const dep = caisseEntries.find(e => e.sessionId === session.id && e.source === 'user_cloture');
