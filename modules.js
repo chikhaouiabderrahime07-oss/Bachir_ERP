@@ -164,7 +164,7 @@ const BRModule = {
     const years = [...new Set(DB.getAll('brs').map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
 
     let items = DB.getAll('brs');
-    if (!Auth.isAdmin()) items = items.filter(b => b.createdBy === Auth.getCurrentUser()?.id);
+    // All users see all BRs — no isolation. Traceability via createdByName/updatedByName.
     if (q) { const ql=q.toLowerCase(); items=items.filter(b=>(b.ref+' '+(supMap[b.supplierId]?.name||'')+' '+(b.notes||'')).toLowerCase().includes(ql)); }
     if (status !== 'all') items = items.filter(b=>(b.status||'open')===status);
     if (supplierId !== 'all') items = items.filter(b=>String(b.supplierId)===String(supplierId));
@@ -247,7 +247,7 @@ const BRModule = {
           <thead><tr>
             <th>${T.get('col_ref')}</th><th>${T.get('col_date')}</th><th>${T.get('col_supplier')}</th>
             <th>${T.get('col_total_ht')}</th><th>${T.get('col_timbre')}</th><th>${T.get('col_total_ttc')}</th>
-            <th>${T.get('col_status')}</th><th>${T.get('col_actions')}</th>
+            <th>${T.get('col_status')}</th><th>Traçabilité</th><th>${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.map(br=>{
@@ -264,6 +264,10 @@ const BRModule = {
                 <td>${Utils.fmtCurrency(br.timbreAmount)}</td>
                 <td class="fw-bold text-primary">${Utils.fmtCurrency(br.totalTTC)}</td>
                 <td>${Utils.statusBadge(br.status||'open')}</td>
+                <td style="font-size:11px;color:var(--text4);line-height:1.6">
+                  <div title="Cr\u00e9\u00e9 par"><i class="fas fa-user" style="color:var(--primary);width:12px"></i> <strong>${Utils.escHTML(br.createdByName||'-')}</strong></div>
+                  ${br.updatedByName && br.updatedByName !== br.createdByName ? `<div title="Modifi\u00e9 par"><i class="fas fa-pen" style="color:var(--warning);width:12px"></i> ${Utils.escHTML(br.updatedByName)}</div>` : ''}
+                </td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BRModule.showDetail(${br.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
                   ${!hasBL && !isLocked?`<button class="btn-quick" onclick="BLModule.showGenerate(${br.id})" title="${T.get('br_gen_bl')}"><i class="fas fa-truck"></i> ${T.get('br_gen_bl_short')}</button>`:''}
@@ -272,7 +276,7 @@ const BRModule = {
                   ${canDel?`<button class="btn btn-xs btn-danger" onclick="BRModule.deleteBR(${br.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-import"></i><h4>${T.get('no_data')}</h4><p>${T.get('br_new')}</p></div></td></tr>`}
+            }).join('') : `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-import"></i><h4>${T.get('no_data')}</h4><p>${T.get('br_new')}</p></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -841,7 +845,7 @@ const BLModule = {
           <thead><tr>
             <th>${T.get('col_ref')}</th><th>${T.get('bl_linked_br')}</th><th>${T.get('col_date')}</th>
             <th>${T.get('col_client')}</th><th>${T.get('col_driver')}</th><th>${T.get('col_truck')}</th>
-            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th>${T.get('col_actions')}</th>
+            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th>Traçabilité</th><th>${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.map(bl=>{
@@ -857,6 +861,10 @@ const BLModule = {
                 <td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td>
                 <td class="fw-bold text-primary">${Utils.fmtCurrency(br?.totalTTC||0)}</td>
                 <td>${Utils.statusBadge(bl.status||'open')}</td>
+                <td style="font-size:11px;color:var(--text4);line-height:1.6">
+                  <div title="CR par"><i class="fas fa-user" style="color:var(--primary);width:12px"></i> <strong>${Utils.escHTML(bl.createdByName||'-')}</strong></div>
+                  ${bl.updatedByName && bl.updatedByName !== bl.createdByName ? `<div title="Modifi\u00e9 par"><i class="fas fa-pen" style="color:var(--warning);width:12px"></i> ${Utils.escHTML(bl.updatedByName)}</div>` : ''}
+                </td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
                   ${!isLocked?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
@@ -864,9 +872,8 @@ const BLModule = {
                   <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="PDF"><i class="fas fa-file-pdf"></i></button>
                   ${(!isLocked||Auth.isAdmin())?`<button class="btn btn-xs btn-danger" onclick="BLModule.deleteBL(${bl.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
                 </td>
-                </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            }).join('') : `<tr><td colspan="10"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
