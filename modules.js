@@ -686,11 +686,27 @@ const BRModule = {
     if (bl) {
       const ok2 = await Dialog.confirm(T.isRTL() ? 'يوجد BL مرتبط' : 'BL lié', (T.isRTL()?'يوجد BL مرتبط. حذف الاثنين؟':'Un BL est lié à ce BR. Supprimer les deux ?'), 'danger');
       if (!ok2) return;
+      // Remove caisse entry for the linked BL before deleting
+      BRModule._cleanCaisseForBL(bl.id);
       DB.delete('bls', bl.id);
     }
     DB.delete('brs', id);
     Utils.notify((T.isRTL()?'تم حذف الوصل':'BR supprimé'), 'success');
     App.loadModule('brs');
+  },
+
+  // Remove the caisse_admin bl_delivery entry for a specific BL (called on delete)
+  _cleanCaisseForBL(blId) {
+    const caisse = DB.getAll('caisse_admin');
+    const toRemove = caisse.filter(e => e.source === 'bl_delivery' && e.blId === blId);
+    if (!toRemove.length) return;
+    const cleaned = caisse.filter(e => !(e.source === 'bl_delivery' && e.blId === blId));
+    DB.rawSet('caisse_admin', cleaned);
+    // Cloud sync: remove orphan entries
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      toRemove.forEach(e => window.API.remove('caisse_admin', e.id).catch(() => {}));
+    }
+    console.log(`[CaisseClean] Removed ${toRemove.length} caisse entries for BL id=${blId}`);
   },
 
   _applyFilters() {
@@ -1395,6 +1411,10 @@ const BLModule = {
       const ok2 = await Dialog.confirm(T.isRTL() ? 'حذف BL' : 'Supprimer BL', T.isRTL()?'حذف هذا BL؟':'Supprimer ce BL ?', 'danger');
       if (!ok2) return;
     }
+
+    // ── Remove caisse entry BEFORE deleting (so migration M002 doesn't need to run) ──
+    BRModule._cleanCaisseForBL(id);
+
     DB.delete('bls', id);
     if (bl?.brId) {
       const br = DB.getById('brs', bl.brId);
@@ -4931,9 +4951,142 @@ const SettingsModule = {
 
 
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// RECYCLE BIN MODULE (Admin only)
+// ═══════════════════════════════════════════════════════════════
+const RecycleBinModule = {
+  _filter: 'all',
+
+  render() {
+    if (!Auth.isAdmin()) return `<div style="padding:40px;text-align:center;color:var(--text3)"><i class="fas fa-lock" style="font-size:40px;opacity:.3"></i><br>${T.isRTL()?'للمسؤول فقط':'Réservé à l\'administrateur'}</div>`;
+    const isAR = T.isRTL();
+    const all = DB.getAll('recycle_bin').slice().reverse();
+    const filter = this._filter || 'all';
+    const items = filter === 'all' ? all : all.filter(e => e.collection === filter);
+    const collections = [...new Set(all.map(e=>e.collection))];
+
+    const colLabel = { brs:'BR', bls:'BL', suppliers: isAR?'موردون':'Fournisseurs', clients: isAR?'زبائن':'Clients', articles: isAR?'مواد':'Articles', drivers: isAR?'سائقون':'Chauffeurs', users: isAR?'مستخدمون':'Utilisateurs' };
+    const colIcon  = { brs:'fa-file-import', bls:'fa-file-export', suppliers:'fa-building', clients:'fa-users', articles:'fa-boxes', drivers:'fa-truck', users:'fa-user' };
+    const colColor = { brs:'#3b82f6', bls:'#8b5cf6', suppliers:'#0ea5e9', clients:'#10b981', articles:'#f59e0b', drivers:'#6366f1', users:'#ef4444' };
+
+    const rows = items.map((e,i) => {
+      const item = e.item || {};
+      const col = e.collection;
+      const label = colLabel[col] || col;
+      const icon  = colIcon[col]  || 'fa-file';
+      const color = colColor[col] || 'var(--primary)';
+      const name  = item.ref || item.name || item.username || `#${item.id}`;
+      const already = e.restored;
+      return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--bg-inset)':''}${already?';opacity:.45':''}">
+        <td style="padding:10px 14px">
+          <span style="background:${color}22;color:${color};border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700">
+            <i class="fas ${icon}" style="margin-right:4px"></i>${label}
+          </span>
+        </td>
+        <td style="padding:10px 14px;font-weight:700;color:var(--text)">${Utils.escHTML(name)}</td>
+        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">${Utils.escHTML(e.deletedByName||'—')}</td>
+        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">${Utils.fmtDateTime(e.deletedAt)}</td>
+        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">
+          ${already
+            ? `<span class="badge badge-success"><i class="fas fa-check"></i> ${T.get('rb_already')}</span>`
+            : `<button class="btn btn-xs btn-primary" onclick="RecycleBinModule.restore(${e.id})"><i class="fas fa-undo"></i> ${T.get('rb_restore')}</button>`
+          }
+        </td>
+      </tr>`;
+    }).join('');
+
+    const filterTabs = ['all',...collections].map(c =>
+      `<button class="btn btn-sm ${filter===c?'btn-primary':'btn-outline'}" onclick="RecycleBinModule._filter='${c}';App.loadModule('recycle_bin')">
+        ${c==='all'?(isAR?'الكل':'Tout'):(colLabel[c]||c)}
+        <span style="margin-left:4px;background:rgba(255,255,255,.2);border-radius:10px;padding:0 6px;font-size:10px">${c==='all'?all.length:all.filter(e=>e.collection===c).length}</span>
+      </button>`
+    ).join('');
+
+    return `<div style="padding:24px" ${isAR?'dir="rtl"':''}>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+        <div>
+          <h2 style="font-size:22px;font-weight:800;margin:0;display:flex;align-items:center;gap:10px">
+            <i class="fas fa-trash-restore" style="color:var(--warning)"></i> ${T.get('rb_title')}
+          </h2>
+          <p style="color:var(--text3);font-size:12px;margin:4px 0 0">${isAR?'جميع العناصر المحذوفة من النظام — للمسؤول فقط':'Tous les éléments supprimés — réservé à l\'administrateur'}</p>
+        </div>
+        ${all.length ? `<button class="btn btn-danger btn-sm" onclick="RecycleBinModule.emptyBin()"><i class="fas fa-trash-alt"></i> ${isAR?'تفريغ السلة':'Vider la corbeille'}</button>` : ''}
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${filterTabs}</div>
+
+      ${!items.length
+        ? `<div style="text-align:center;padding:60px;color:var(--text3)"><i class="fas fa-trash" style="font-size:48px;opacity:.15;display:block;margin-bottom:12px"></i>${T.get('rb_empty')}</div>`
+        : `<div class="card" style="overflow:hidden">
+            <div class="table-wrap">
+              <table class="data-table" style="font-size:13px">
+                <thead><tr>
+                  <th>${T.get('rb_collection')}</th>
+                  <th>${isAR?'الاسم / المرجع':'Nom / Référence'}</th>
+                  <th>${T.get('rb_deleted_by')}</th>
+                  <th>${T.get('rb_deleted_at')}</th>
+                  <th>${T.get('col_actions')}</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>`
+      }
+    </div>`;
+  },
+
+  async restore(binId) {
+    const isAR = T.isRTL();
+    const ok = await Dialog.confirm(isAR?'استعادة العنصر':'Restaurer l\'élément', T.get('rb_confirm_restore'), 'warning');
+    if (!ok) return;
+
+    const result = DB.restoreFromBin(binId);
+    if (!result.ok) { Utils.notify(result.error || T.get('rb_already'), 'error'); return; }
+
+    if (result.refWarning) {
+      // Show a warning modal explaining the ref conflict
+      const { oldRef, newRef } = result.refWarning;
+      await Dialog.confirm(
+        isAR ? '⚠️ تعارض المرجع' : '⚠️ Conflit de référence',
+        `${T.get('rb_ref_taken')} <strong>${newRef}</strong>\n\n${isAR?`المرجع الأصلي "${oldRef}" مشغول — تم تعيين مرجع جديد تلقائياً.`:
+          `La référence originale "${oldRef}" est déjà utilisée.\nUn nouveau numéro a été attribué automatiquement : ${newRef}`}`,
+        'warning',
+        [isAR?'فهمت':'Compris']
+      );
+    }
+
+    Utils.notify(T.get('rb_restored'), 'success');
+
+    // If it was a BL that was delivered, DON'T re-add caisse (user must re-confirm delivery)
+    // The status was reset to 'open' by restoreFromBin — user needs to re-deliver to get caisse entry
+
+    App.loadModule('recycle_bin');
+  },
+
+  async emptyBin() {
+    const isAR = T.isRTL();
+    const ok = await Dialog.confirm(
+      isAR?'تفريغ السلة':'Vider la corbeille',
+      isAR?'هذا سيزيل جميع العناصر المحذوفة نهائياً. هل أنت متأكد؟':
+           'Ceci supprimera définitivement tous les éléments de la corbeille. Confirmer ?',
+      'danger'
+    );
+    if (!ok) return;
+    DB.rawSet('recycle_bin', []);
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      // Cloud: delete all recycle bin entries
+      DB.getAll('recycle_bin').forEach(e => window.API.remove('recycle_bin', e.id).catch(()=>{}));
+    }
+    Utils.notify(isAR?'تم تفريغ السلة':'Corbeille vidée', 'success');
+    App.loadModule('recycle_bin');
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
 // AUDIT MODULE
 // ═══════════════════════════════════════════════════════════════
 const AuditModule = {
+
   _filters: { q:'', collection:'all', action:'all', dateFrom:'', dateTo:'', userId:'all' },
   
   exportHistoryXLSX() {

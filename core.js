@@ -118,6 +118,12 @@ const T = {
     // Clients
     nav_clients:'Clients', cli_title:'Clients', cli_new:'Nouveau Client', cli_name:'Nom',
     cli_phone:'Téléphone', cli_address:'Adresse', cli_contact:'Contact', col_client:'Client',
+    // Recycle bin
+    nav_recycle:'Corbeille', rb_title:'Corbeille — Historique des suppressions',
+    rb_collection:'Collection', rb_item:'Elément', rb_deleted_at:'Supprimé le', rb_deleted_by:'Par',
+    rb_restore:'Restaurer', rb_empty:'La corbeille est vide',
+    rb_ref_taken:'Référence prise — nouveau numéro:', rb_restored:'Elément restauré !',
+    rb_already:'Déjà restauré', rb_confirm_restore:'Confirmer la restauration de cet élément ?',
   },
   ar: {
     app_name:'نظام إدارة الموردين', app_by:'تطوير CHIKHAOUI ABDERRAHIME',
@@ -216,6 +222,12 @@ const T = {
     col_status:'الحالة', col_actions:'إجراءات', col_by:'بواسطة', col_total_ht:'قبل الرسوم',
     col_timbre:'الطابع', col_total_ttc:'الشامل', col_truck:'رقم الشاحنة', col_driver:'السائق',
     col_user:'المستخدم', col_source:'المصدر', col_note:'ملاحظة', col_type:'النوع',
+    // Recycle bin
+    nav_recycle:'سلة المحذوفات', rb_title:'سلة المحذوفات — سجل الحذف',
+    rb_collection:'المجموعة', rb_item:'العنصر', rb_deleted_at:'حُذف بتاريخ', rb_deleted_by:'بواسطة',
+    rb_restore:'استعادة', rb_empty:'سلة المحذوفات فارغة',
+    rb_ref_taken:'المرجع مستخدم — رقم جديد:', rb_restored:'تمت استعادة العنصر!',
+    rb_already:'تمت الاستعادة مسبقاً', rb_confirm_restore:'تأكيد استعادة هذا العنصر؟',
   },
 
   get(k) { return this[this._l]?.[k] || this.fr[k] || k; },
@@ -232,7 +244,7 @@ const T = {
 
 // ─── DATABASE ──────────────────────────────────────────────────
 const DB = {
-  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log'],
+  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin'],
 
   init() {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
@@ -259,12 +271,15 @@ const DB = {
   // Each migration checks before acting — safe to run multiple times.
   runMigrations() {
     try {
-      this._migrateBLDeliveryCaisseEntries();
+      this._migrateBLDeliveryCaisseEntries();   // M001: backfill missing caisse entries
+      this._migrateCleanOrphanCaisse();          // M002: remove caisse entries for deleted BLs
+      this._migrateTimbreSlabsToLF2025();        // M003: update old timbre slabs to LF2025 format
       // Add future migrations here as _migrateXxx()
     } catch(e) {
       console.warn('[Migration] Error:', e);
     }
   },
+
 
   // Migration M001: Backfill caisse_admin entries for ALL delivered BLs
   // that were confirmed before the new caisse-on-delivery flow was added.
@@ -315,6 +330,31 @@ const DB = {
     if (added > 0) {
       console.log(`[Migration M001] Backfilled ${added} caisse_admin entries for delivered BLs.`);
     }
+  },
+
+  // Migration M002: Remove caisse_admin bl_delivery entries for BLs that no longer exist
+  // This handles the case where an admin deleted a delivered BL but the caisse entry stayed.
+  _migrateCleanOrphanCaisse() {
+    const allBLIds = new Set(this.getAll('bls').map(bl => bl.id));
+    const caisse = this.getAll('caisse_admin');
+    const orphans = caisse.filter(e => e.source === 'bl_delivery' && e.blId && !allBLIds.has(e.blId));
+    if (!orphans.length) return;
+    const cleanedCaisse = caisse.filter(e => !(e.source === 'bl_delivery' && e.blId && !allBLIds.has(e.blId)));
+    this.rawSet('caisse_admin', cleanedCaisse);
+    console.log(`[Migration M002] Removed ${orphans.length} orphan caisse entries for deleted BLs.`);
+  },
+
+  // Migration M003: Upgrade old-format timbre slabs (rate%) to LF2025 (ratePerTranche)
+  // Runs once if settings still have old `rate` field without `ratePerTranche`.
+  _migrateTimbreSlabsToLF2025() {
+    const s = this.getSettings();
+    if (!s.timbreSlabs?.length) return;
+    // Check if already migrated (new format has ratePerTranche)
+    if (s.timbreSlabs[0].ratePerTranche !== undefined) return;
+    // Replace with correct LF2025 slabs
+    const lf2025 = this._defaultSettings().timbreSlabs;
+    this.saveSettings({ timbreSlabs: lf2025, timbreMin: 5 });
+    console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
   },
 
 
@@ -382,12 +422,18 @@ const DB = {
       phone: '',  fax: '',  email: '',  nif: '',  rc: '',  nis: '',
       logoLeft: '',  logoRight: '',
       themeColor: '#0ea5e9',  themeMode: 'light',
+      // ── Timbre fiscal Algérie — Loi de Finances 2025 ──────────────
+      // Méthode: ceil(montant / 100) × taux_par_tranche
+      // Chaque tranche = 100 DA ou fraction de tranche (arrondi supérieur)
+      // Minimum légal: 5 DA si timbre > 0
+      // Source: Code du timbre, art. 258 et suiv. (LF 2025)
       timbreSlabs: [
-        { min:0,      max:99,      rate:0,    cap:null },
-        { min:100,    max:100000,  rate:1,    cap:null },
-        { min:100001, max:1000000, rate:0.5,  cap:null },
-        { min:1000001,max:null,    rate:0.25, cap:10000 }
-      ]
+        { min:0,     max:299,    ratePerTranche:0,   label:'Exonéré (< 300 DA)' },
+        { min:300,   max:30000,  ratePerTranche:1,   label:'1 DA / tranche de 100 DA' },
+        { min:30001, max:100000, ratePerTranche:1.5, label:'1,5 DA / tranche de 100 DA' },
+        { min:100001,max:null,   ratePerTranche:2,   label:'2 DA / tranche de 100 DA' }
+      ],
+      timbreMin: 5
     };
   },
 
@@ -504,6 +550,30 @@ const DB = {
   delete(col, id) {
     const items = this.getAll(col);
     const old = items.find(i => i.id === id);
+    if (!old) return false;
+
+    // ── Save to Recycle Bin before deleting ──
+    const u = typeof Auth !== 'undefined' ? Auth.getCurrentUser() : null;
+    const recyclable = ['brs','bls','suppliers','clients','articles','drivers','users'];
+    if (recyclable.includes(col)) {
+      const bin = this.getAll('recycle_bin');
+      const maxId = bin.reduce((m,e) => Math.max(m, e.id||0), 0);
+      bin.push({
+        id: maxId + 1,
+        collection: col,
+        item: { ...old },
+        deletedAt: new Date().toISOString(),
+        deletedBy: u?.id,
+        deletedByName: u?.name || u?.username || 'Système',
+        restored: false
+      });
+      localStorage.setItem('recycle_bin', JSON.stringify(bin));
+      // Cloud sync recycle bin entry
+      if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+        window.API.insert('recycle_bin', bin[bin.length-1]).catch(() => {});
+      }
+    }
+
     this.rawSet(col, items.filter(i => i.id !== id));
     if (old) { this._audit('DELETE', col, id, old, null); this._history(col, id, 'DELETE', 'Suppression', old, null); }
     // ── Cloud: atomic DELETE (safe for concurrent users) ──
@@ -511,6 +581,53 @@ const DB = {
       window.API.remove(col, id).catch(e => console.warn('[DB.delete] cloud sync failed', e.message));
     }
     return true;
+  },
+
+  // ─── Recycle Bin: Restore ──────────────────────────────────
+  restoreFromBin(binId, overrideData = {}) {
+    const bin = this.getAll('recycle_bin');
+    const entry = bin.find(e => e.id === binId);
+    if (!entry || entry.restored) return { ok: false, error: 'Introuvable ou déjà restauré' };
+
+    const { collection, item } = entry;
+    const existing = this.getAll(collection);
+
+    // Check if ref/num conflicts
+    let finalItem = { ...item, ...overrideData };
+    let refWarning = null;
+
+    if (collection === 'brs' || collection === 'bls') {
+      const refField = 'ref';
+      const existingRefs = existing.map(e => e[refField]);
+      if (existingRefs.includes(finalItem.ref)) {
+        // Auto-assign new number
+        const nums = existing.map(e => Number(e.brNum || e.partNum || 0));
+        const newNum = (Math.max(0, ...nums) + 1);
+        const oldRef = finalItem.ref;
+        if (collection === 'brs') {
+          finalItem.brNum = newNum;
+          finalItem.ref = this.buildBRRef(newNum, finalItem.year || new Date().getFullYear(),
+            this.getById('suppliers', finalItem.supplierId)?.abbrev || '');
+        } else {
+          finalItem.partNum = newNum;
+          finalItem.ref = finalItem.ref.replace(/\d+/, newNum);
+        }
+        refWarning = { oldRef, newRef: finalItem.ref };
+      }
+    }
+
+    // Re-insert with new id
+    delete finalItem.id;
+    finalItem.status = finalItem.status === 'delivered' ? 'open' : (finalItem.status || 'open');
+    finalItem.restoredFrom = 'recycle_bin';
+    finalItem.restoredAt = new Date().toISOString();
+    const restored = this.insert(collection, finalItem);
+
+    // Mark as restored in bin
+    const updatedBin = bin.map(e => e.id === binId ? { ...e, restored: true, restoredAt: new Date().toISOString() } : e);
+    localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+
+    return { ok: true, item: restored, refWarning };
   },
 
   // ─── BR Numbering ─────────────────────────────────────────
@@ -583,19 +700,44 @@ const DB = {
     else { this.insert('drivers', { name, imm }); }
   },
 
-  // ─── Timbre calculation ────────────────────────────────────
+  // ─── Timbre calculation — Algérie LF2025 ──────────────────
+  // Méthode légale: nombre de tranches de 100 DA (arrondi supérieur) × taux
+  // Exemple: 10 000 DA → ceil(10000/100)=100 tranches × 1 DA = 100 DA
+  // Exemple: 50 000 DA → ceil(50000/100)=500 tranches × 1,5 DA = 750 DA
+  // Exemple: 200 000 DA → ceil(200000/100)=2000 tranches × 2 DA = 4 000 DA
   calcTimbre(amountHT) {
-    const slabs = this.getSettings().timbreSlabs || [];
+    const settings = this.getSettings();
+    const slabs = settings.timbreSlabs || [];
+    const timbreMin = Number(settings.timbreMin) || 5;
     const amt = Number(amountHT) || 0;
+
     for (const s of slabs) {
       const inRange = amt >= s.min && (s.max === null || amt <= s.max);
-      if (inRange) {
+      if (!inRange) continue;
+
+      // Legacy support: old slabs had `rate` (%), new slabs have `ratePerTranche`
+      if (s.ratePerTranche !== undefined) {
+        // Algerian ceiling-tranche method
+        if (s.ratePerTranche === 0) return 0; // exonéré
+        const tranches = Math.ceil(amt / 100);
+        const t = tranches * s.ratePerTranche;
+        // Apply legal minimum (5 DA)
+        const result = Math.max(timbreMin, t);
+        return Math.round(result * 100) / 100;
+      } else {
+        // Legacy percentage method (backwards compat)
         let t = amt * (s.rate / 100);
         if (s.cap !== null) t = Math.min(t, s.cap);
         return Math.round(t * 100) / 100;
       }
     }
     return 0;
+  },
+
+  // Preview timbre for a given amount (used in settings UI)
+  previewTimbre(amt) {
+    const t = this.calcTimbre(amt);
+    return { timbre: t, total: Number(amt) + t };
   },
 
   // ─── Article catalog ───────────────────────────────────────
