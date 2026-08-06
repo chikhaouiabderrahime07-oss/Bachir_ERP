@@ -2220,8 +2220,9 @@ const AdminCaisseModule = {
     const allUsers   = DB.getAll('users');
     const users      = allUsers.filter(u=>u.role==='user');
     const sessions   = DB.getAll('sessions');
+    // totalBR_expected is informational only (not added to balance)
     const allBRs     = DB.getAll('brs');
-    const totalBR_expected = allBRs.reduce((t,b)=>t+(Number(b.totalTTC)||0),0);
+    const totalBR_expected = allBRs.filter(b=>b.status==='delivered'||b.status==='billed').reduce((t,b)=>t+(Number(b.totalTTC)||0),0);
 
     // ── Filtered data (for Deposits / Withdrawals tabs) ──
     const df = this._filters.dateFrom;
@@ -2265,10 +2266,11 @@ const AdminCaisseModule = {
       <div class="vault-icon-wrap"><i class="fas fa-vault"></i></div>
       <div class="vault-info">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.6">${isAR?'الرصيد الإجمالي':'SOLDE TOTAL'}</div>
-        <div class="vault-amount" style="font-size:40px;font-weight:900;color:#4ade80">${Utils.fmtCurrency(balance + totalBR_expected)}</div>
+        <div class="vault-amount" style="font-size:40px;font-weight:900;color:#4ade80">${Utils.fmtCurrency(balance)}</div>
         <div style="opacity:.5;font-size:12px;margin-top:4px">
-          ${isAR?'الصندوق':'Caisse'}: ${Utils.fmtCurrency(balance)} &nbsp;·&nbsp; BR: ${Utils.fmtCurrency(totalBR_expected)}
+          ${isAR?'إجمالي الإيداعات':'Total dépôts'}: ${Utils.fmtCurrency(deposits)} &nbsp;·&nbsp; ${isAR?'إجمالي السحوبات':'Retraits'}: ${Utils.fmtCurrency(withdrawals)}
         </div>
+        <div style="opacity:.4;font-size:11px;margin-top:2px">${isAR?'BR livrés (prévisionnel)':'BR livrés (prévisionnel)'}: ${Utils.fmtCurrency(totalBR_expected)}</div>
         <div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap">
           <span style="font-size:12px;opacity:.7">↓ ${Utils.fmtCurrency(deposits)}</span>
           <span style="font-size:12px;opacity:.7">↑ ${Utils.fmtCurrency(withdrawals)}</span>
@@ -4455,40 +4457,205 @@ const SettingsModule = {
 
   _tabTimbre(s) {
     const slabs = s.timbreSlabs || [];
+    const timbreMin = s.timbreMin || 5;
+    const isAR = T.isRTL();
     return `
-    <div class="alert alert-info mb-2"><i class="fas fa-info-circle"></i> ${T.get('set_timbre_slabs')} — ${T.isRTL()?'القانون الجبائي الجزائري':'Loi fiscale algérienne'}</div>
+    <style>
+      .timbre-law-card{background:linear-gradient(135deg,#0f2027 0%,#1e3a5f 50%,#0f4c75 100%);border-radius:16px;padding:20px;margin-bottom:20px;color:#e0f2fe;border:1px solid rgba(56,189,248,.2)}
+      .timbre-law-card h3{margin:0 0 6px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px}
+      .timbre-law-card .law-ref{font-size:11px;opacity:.65;margin-bottom:16px;font-style:italic}
+      .timbre-law-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+      .timbre-slab-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px}
+      .timbre-slab-card .range{color:#7dd3fc;font-size:11px;font-weight:800;margin-bottom:4px}
+      .timbre-slab-card .rate{font-size:15px;font-weight:900;color:#fff}
+      .timbre-slab-card .ex{font-size:10px;opacity:.55;margin-top:4px}
+      .timbre-formula-box{background:rgba(0,0,0,.3);border-radius:10px;padding:14px;font-size:12px;border:1px solid rgba(56,189,248,.15)}
+      .timbre-formula-box code{background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc;font-size:12px}
+      .timbre-sim-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
+      .timbre-sim-result{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+      .timbre-sim-cell{background:var(--bg3,var(--bg));border-radius:10px;padding:14px;text-align:center}
+      .timbre-sim-cell .label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px}
+      .timbre-sim-cell .value{font-size:22px;font-weight:900}
+      .timbre-sim-step{background:var(--bg3,var(--bg));border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px;color:var(--text3);border-left:3px solid var(--primary)}
+    </style>
+
+    <!-- ═══ LAW EXPLANATION CARD ═══ -->
+    <div class="timbre-law-card">
+      <h3><i class="fas fa-landmark" style="color:#38bdf8"></i>
+        ${isAR ? 'الطابع الجبائي — قانون المالية 2025' : 'Timbre Fiscal Algérien — Loi de Finances 2025'}
+      </h3>
+      <div class="law-ref">
+        ${isAR
+          ? 'المرجع: مدونة الطابع — المادة 258 وما بعدها | جامعة المديرية العامة للضرائب (DGI)'
+          : 'Référence : Code du timbre, art. 258 et suiv. (LF 2025) &nbsp;——&nbsp; Direction Générale des Impôts (DGI)'}
+      </div>
+
+      <div class="timbre-law-grid">
+        <div class="timbre-slab-card">
+          <div class="range">&lt; 300 DA</div>
+          <div class="rate" style="color:#4ade80">${isAR ? 'معفى' : 'Exonéré'}</div>
+          <div class="ex">${isAR ? 'لا يوجد طابع' : 'Timbre = 0 DA'}</div>
+        </div>
+        <div class="timbre-slab-card">
+          <div class="range">300 → 30 000 DA</div>
+          <div class="rate">1 DA <span style="font-size:11px;opacity:.7">/ 100 DA</span></div>
+          <div class="ex">${isAR ? 'مثال: 10 000 دج → 100 دج' : 'Ex: 10 000 DA → 100 DA'}</div>
+        </div>
+        <div class="timbre-slab-card">
+          <div class="range">30 001 → 100 000 DA</div>
+          <div class="rate">1,5 DA <span style="font-size:11px;opacity:.7">/ 100 DA</span></div>
+          <div class="ex">${isAR ? 'مثال: 50 000 دج → 750 دج' : 'Ex: 50 000 DA → 750 DA'}</div>
+        </div>
+        <div class="timbre-slab-card">
+          <div class="range">&gt; 100 000 DA</div>
+          <div class="rate">2 DA <span style="font-size:11px;opacity:.7">/ 100 DA</span></div>
+          <div class="ex">${isAR ? 'مثال: 200 000 دج → 4 000 دج' : 'Ex: 200 000 DA → 4 000 DA'}</div>
+        </div>
+      </div>
+
+      <div class="timbre-formula-box">
+        <div style="font-weight:700;margin-bottom:8px;color:#7dd3fc;font-size:12px">
+          ⓘ ${isAR ? 'طريقة الحساب القانونية (دوام الشرائح)' : 'Méthode légale de calcul (tranches progressives)'}
+        </div>
+        ${isAR ? `
+        <div>عدد الشرائح = <code>ceil(المبلغ ÷ 100)</code> &nbsp;×&nbsp; <code>سعر الشريحة</code> = الطابع</div>
+        <div style="margin-top:6px;opacity:.7">الحد الأدنى القانوني: <strong>${timbreMin} دج</strong> إذا كان الطابع > 0 | الدفع الإلكتروني = معفى (Art. 258 quinquies)</div>` : `
+        <div><code>timbre = ceil(montant_HT ÷ 100) &times; taux_par_tranche</code></div>
+        <div style="margin-top:6px;opacity:.7">Minimum légal : <strong>${timbreMin} DA</strong> si timbre &gt; 0 &nbsp;|&nbsp; Paiement électronique : exonéré (Art. 258 quinquies LF2025)</div>`}
+      </div>
+    </div>
+
+    <!-- ═══ LIVE SIMULATOR ═══ -->
+    <div class="timbre-sim-wrap">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px;color:var(--text)">
+        <i class="fas fa-calculator" style="color:var(--primary)"></i>
+        ${isAR ? 'حاسبة الطابع الفورية' : 'Simulateur de timbre en temps réel'}
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
+        ${isAR ? 'أدخل مبلغ الفاتورة (HT) وستظهر الطابع والمجموع الشامل' : 'Saisissez le montant HT de la facture pour voir le calcul détaillé'}
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:6px">${isAR ? 'المبلغ قبل الضريبة (HT)' : 'Montant HT (DA)'}</label>
+          <input type="number" id="timbre-sim-amt" min="0" step="100" placeholder="${isAR ? 'مثال: 50000' : 'ex: 50 000'}"
+            style="width:100%;padding:10px 14px;font-size:18px;font-weight:700;border-radius:10px;border:2px solid var(--border);background:var(--bg);color:var(--text)"
+            oninput="SettingsModule._previewTimbre()">
+        </div>
+      </div>
+      <div id="timbre-sim-result" style="margin-top:14px;color:var(--text3);font-size:13px">
+        ${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}
+      </div>
+    </div>
+
+    <!-- ═══ SLABS TABLE ═══ -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="margin:0;font-size:14px;font-weight:800;color:var(--text)">
+        <i class="fas fa-sliders-h" style="color:var(--primary);margin-right:6px"></i>
+        ${isAR ? 'جدول الشرائح' : 'Tableau des tranches'}
+      </h4>
+      <span style="font-size:10px;color:var(--text3);background:var(--bg2);padding:3px 8px;border-radius:6px">
+        ${isAR ? 'السعر بالدينار لكل 100 دج' : 'Taux en DA par tranche de 100 DA'}
+      </span>
+    </div>
     <div id="slabsContainer">
       ${slabs.map((sl,i)=>`
-      <div class="slab-row" id="slab-${i}">
-        <div class="form-group"><label style="font-size:10px">${T.get('set_slab_min')}</label>
-          <input type="number" class="slab-min" value="${sl.min}" min="0"></div>
-        <div class="form-group"><label style="font-size:10px">${T.get('set_slab_max')}</label>
-          <input type="number" class="slab-max" value="${sl.max!==null?sl.max:''}" placeholder="∞"></div>
-        <div class="form-group"><label style="font-size:10px">${T.get('set_slab_rate')}</label>
-          <input type="number" class="slab-rate" value="${sl.rate}" min="0" max="100" step="0.01"></div>
-        <div class="form-group"><label style="font-size:10px">${T.get('set_slab_cap')}</label>
-          <input type="number" class="slab-cap" value="${sl.cap!==null?sl.cap:''}" placeholder="—"></div>
-        <button class="btn btn-xs btn-danger" onclick="document.getElementById('slab-${i}').remove()" style="align-self:flex-end;margin-bottom:2px"><i class="fas fa-times"></i></button>
+      <div class="slab-row" id="slab-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label>
+          <input type="number" class="slab-min" value="${sl.min}" min="0">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'إلى (DA)' : 'Max (DA)'}</label>
+          <input type="number" class="slab-max" value="${sl.max!==null&&sl.max!==undefined?sl.max:''}" placeholder="∞">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'سعر/شريحة (DA)' : 'DA / tranche'}</label>
+          <input type="number" class="slab-rate" value="${sl.ratePerTranche??sl.rate??0}" min="0" step="0.01">
+        </div>
+        <button class="btn btn-xs btn-danger" onclick="document.getElementById('slab-${i}').remove()" style="height:36px;margin-bottom:1px">
+          <i class="fas fa-times"></i>
+        </button>
       </div>`).join('')}
     </div>
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button class="btn btn-outline" onclick="SettingsModule._addSlab()"><i class="fas fa-plus"></i> ${T.get('set_add_slab')}</button>
-      <button class="btn btn-primary" onclick="SettingsModule._saveTimbre()"><i class="fas fa-save"></i> ${T.get('save')}</button>
-      <button class="btn btn-secondary" onclick="SettingsModule._resetTimbre()"><i class="fas fa-undo"></i> ${T.get('set_reset_slabs')}</button>
+
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span><i class="fas fa-info-circle" style="color:var(--primary)"></i> ${isAR ? 'الحد الأدنى للطابع (DA):' : 'Minimum légal du timbre (DA):'}</span>
+      <input type="number" id="timbre-min-input" value="${timbreMin}" min="0" step="1"
+        style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700">
+      <span style="opacity:.6">${isAR ? '(0 = بدون حد أدنى)' : '(0 = sans minimum)'}</span>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="SettingsModule._addSlab()">
+        <i class="fas fa-plus"></i> ${isAR ? 'إضافة شريحة' : 'Ajouter tranche'}
+      </button>
+      <button class="btn btn-primary" onclick="SettingsModule._saveTimbre()">
+        <i class="fas fa-save"></i> ${T.get('save')}
+      </button>
+      <button class="btn btn-secondary" onclick="SettingsModule._resetTimbre()">
+        <i class="fas fa-undo"></i> ${isAR ? 'إعادة تعيين (LF2025)' : 'Réinitialiser — LF2025'}
+      </button>
     </div>`;
+  },
+
+  _previewTimbre() {
+    const amt = parseFloat(document.getElementById('timbre-sim-amt')?.value) || 0;
+    const el  = document.getElementById('timbre-sim-result');
+    if (!el) return;
+    const isAR = T.isRTL();
+    if (!amt || amt < 0) {
+      el.innerHTML = `<span style="color:var(--text3)">${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}</span>`;
+      return;
+    }
+    const timbre = DB.calcTimbre(amt);
+    const ttc    = amt + timbre;
+    const slabs  = DB.getSettings().timbreSlabs || [];
+    const slab   = slabs.find(s => amt >= s.min && (s.max === null || s.max === undefined || amt <= s.max));
+    const rpt    = slab?.ratePerTranche ?? 0;
+    const tranches = Math.ceil(amt / 100);
+    const fmtDA  = v => Utils.fmtCurrency(v);
+    const exonere = timbre === 0;
+
+    el.innerHTML = `
+      <div class="timbre-sim-result">
+        <div class="timbre-sim-cell">
+          <div class="label">${isAR ? 'المبلغ HT' : 'Montant HT'}</div>
+          <div class="value" style="color:var(--text)">${fmtDA(amt)}</div>
+        </div>
+        <div class="timbre-sim-cell">
+          <div class="label">${isAR ? 'الطابع الجبائي' : 'Timbre fiscal'}</div>
+          <div class="value" style="color:${exonere ? '#4ade80' : '#f59e0b'}">${exonere ? (isAR ? 'معفى' : 'Exonéré') : fmtDA(timbre)}</div>
+        </div>
+        <div class="timbre-sim-cell" style="background:var(--primary-light,rgba(14,165,233,.08));border:2px solid var(--primary)">
+          <div class="label" style="color:var(--primary)">${isAR ? 'المجموع TTC' : 'Total TTC'}</div>
+          <div class="value" style="color:var(--primary)">${fmtDA(ttc)}</div>
+        </div>
+      </div>
+      ${!exonere ? `
+      <div class="timbre-sim-step">
+        <strong>${isAR ? 'تفاصيل الحساب:' : 'Détail du calcul :'}</strong>
+        &nbsp; ceil(${amt.toLocaleString('fr-FR')} ÷ 100) = <strong>${tranches}</strong> ${isAR ? 'شريحة' : 'tranches'}
+        &nbsp;×&nbsp; <strong>${rpt} DA</strong>
+        = <strong style="color:var(--primary)">${fmtDA(tranches * rpt)}</strong>
+        ${timbre !== tranches * rpt ? ` &rarr; ${isAR ? 'الحد الأدنى' : 'minimum légal appliqué'}: <strong>${fmtDA(timbre)}</strong>` : ''}
+      </div>` : `
+      <div class="timbre-sim-step" style="border-color:#4ade80;color:#4ade80">
+        ✓ ${isAR ? 'الفاتورة معفاة من الطابع (أقل من 300 دج)' : 'Facture exonérée du timbre (montant &lt; 300 DA)'}
+      </div>`}
+    `;
   },
 
   _addSlab() {
     const c = document.getElementById('slabsContainer');
     if (!c) return;
     const idx = c.children.length;
+    const isAR = T.isRTL();
     c.insertAdjacentHTML('beforeend', `
-    <div class="slab-row" id="slab-${idx}">
-      <div class="form-group"><label style="font-size:10px">${T.get('set_slab_min')}</label><input type="number" class="slab-min" value="0" min="0"></div>
-      <div class="form-group"><label style="font-size:10px">${T.get('set_slab_max')}</label><input type="number" class="slab-max" placeholder="∞"></div>
-      <div class="form-group"><label style="font-size:10px">${T.get('set_slab_rate')}</label><input type="number" class="slab-rate" value="0" step="0.01"></div>
-      <div class="form-group"><label style="font-size:10px">${T.get('set_slab_cap')}</label><input type="number" class="slab-cap" placeholder="—"></div>
-      <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove()" style="align-self:flex-end;margin-bottom:2px"><i class="fas fa-times"></i></button>
+    <div class="slab-row" id="slab-${idx}" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label><input type="number" class="slab-min" value="0" min="0"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'إلى (DA)' : 'Max (DA)'}</label><input type="number" class="slab-max" placeholder="∞"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'سعر/شريحة (DA)' : 'DA/tranche'}</label><input type="number" class="slab-rate" value="0" step="0.01"></div>
+      <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove()" style="height:36px;margin-bottom:1px"><i class="fas fa-times"></i></button>
     </div>`);
   },
 
@@ -4497,18 +4664,19 @@ const SettingsModule = {
     const slabs = Array.from(rows).map(row=>({
       min: parseFloat(row.querySelector('.slab-min')?.value)||0,
       max: row.querySelector('.slab-max')?.value ? parseFloat(row.querySelector('.slab-max').value) : null,
-      rate: parseFloat(row.querySelector('.slab-rate')?.value)||0,
-      cap: row.querySelector('.slab-cap')?.value ? parseFloat(row.querySelector('.slab-cap').value) : null,
-    }));
-    DB.saveSettings({ timbreSlabs: slabs });
+      ratePerTranche: parseFloat(row.querySelector('.slab-rate')?.value)||0,
+    })).sort((a,b)=>a.min-b.min);
+    const timbreMin = parseFloat(document.getElementById('timbre-min-input')?.value)||5;
+    DB.saveSettings({ timbreSlabs: slabs, timbreMin });
     Utils.notify((T.isRTL()?'تم حفظ شرائح الطابع':'Tranches timbre enregistrées'), 'success');
   },
 
   _resetTimbre() {
-    DB.saveSettings({ timbreSlabs: DB._defaultSettings().timbreSlabs });
-    Utils.notify((T.isRTL()?'تمت إعادة تعيين الشرائح':'Tranches réinitialisées'), 'success');
+    DB.saveSettings({ timbreSlabs: DB._defaultSettings().timbreSlabs, timbreMin: 5 });
+    Utils.notify((T.isRTL()?'تمت إعادة تعيين الشرائح (LF2025)':'Tranches réinitialisées — LF2025'), 'success');
     App.loadModule('settings');
   },
+
 
   _tabAppear(s) {
     const cur = s.themeColor || "#006078";
@@ -4958,82 +5126,151 @@ const RecycleBinModule = {
   _filter: 'all',
 
   render() {
-    if (!Auth.isAdmin()) return `<div style="padding:40px;text-align:center;color:var(--text3)"><i class="fas fa-lock" style="font-size:40px;opacity:.3"></i><br>${T.isRTL()?'للمسؤول فقط':'Réservé à l\'administrateur'}</div>`;
+    if (!Auth.isAdmin()) return `<div style="padding:60px;text-align:center;color:var(--text3)"><i class="fas fa-lock" style="font-size:48px;opacity:.2;display:block;margin-bottom:12px"></i>${T.isRTL()?'للمسؤول فقط':'Réservé à l\'administrateur'}</div>`;
     const isAR = T.isRTL();
     const all = DB.getAll('recycle_bin').slice().reverse();
     const filter = this._filter || 'all';
     const items = filter === 'all' ? all : all.filter(e => e.collection === filter);
     const collections = [...new Set(all.map(e=>e.collection))];
+    const pending = all.filter(e=>!e.restored).length;
+    const restored = all.filter(e=>e.restored).length;
 
-    const colLabel = { brs:'BR', bls:'BL', suppliers: isAR?'موردون':'Fournisseurs', clients: isAR?'زبائن':'Clients', articles: isAR?'مواد':'Articles', drivers: isAR?'سائقون':'Chauffeurs', users: isAR?'مستخدمون':'Utilisateurs' };
-    const colIcon  = { brs:'fa-file-import', bls:'fa-file-export', suppliers:'fa-building', clients:'fa-users', articles:'fa-boxes', drivers:'fa-truck', users:'fa-user' };
-    const colColor = { brs:'#3b82f6', bls:'#8b5cf6', suppliers:'#0ea5e9', clients:'#10b981', articles:'#f59e0b', drivers:'#6366f1', users:'#ef4444' };
+    const colLabel = { brs:'BR', bls:'BL', suppliers:isAR?'مورد':'Fournisseur', clients:isAR?'زبون':'Client', articles:isAR?'مادة':'Article', drivers:isAR?'سائق':'Chauffeur', users:isAR?'مستخدم':'Utilisateur' };
+    const colIcon  = { brs:'fa-file-import', bls:'fa-file-export', suppliers:'fa-building', clients:'fa-user-tie', articles:'fa-boxes', drivers:'fa-truck', users:'fa-user-circle' };
+    const colGrad  = { brs:'135deg,#1d4ed8,#3b82f6', bls:'135deg,#6d28d9,#8b5cf6', suppliers:'135deg,#0369a1,#0ea5e9', clients:'135deg,#065f46,#10b981', articles:'135deg,#92400e,#f59e0b', drivers:'135deg,#3730a3,#6366f1', users:'135deg,#991b1b,#ef4444' };
 
-    const rows = items.map((e,i) => {
-      const item = e.item || {};
-      const col = e.collection;
-      const label = colLabel[col] || col;
-      const icon  = colIcon[col]  || 'fa-file';
-      const color = colColor[col] || 'var(--primary)';
-      const name  = item.ref || item.name || item.username || `#${item.id}`;
-      const already = e.restored;
-      return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--bg-inset)':''}${already?';opacity:.45':''}">
-        <td style="padding:10px 14px">
-          <span style="background:${color}22;color:${color};border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700">
-            <i class="fas ${icon}" style="margin-right:4px"></i>${label}
-          </span>
-        </td>
-        <td style="padding:10px 14px;font-weight:700;color:var(--text)">${Utils.escHTML(name)}</td>
-        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">${Utils.escHTML(e.deletedByName||'—')}</td>
-        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">${Utils.fmtDateTime(e.deletedAt)}</td>
-        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">
-          ${already
-            ? `<span class="badge badge-success"><i class="fas fa-check"></i> ${T.get('rb_already')}</span>`
-            : `<button class="btn btn-xs btn-primary" onclick="RecycleBinModule.restore(${e.id})"><i class="fas fa-undo"></i> ${T.get('rb_restore')}</button>`
-          }
-        </td>
-      </tr>`;
+    const filterTabs = ['all',...collections].map(c => {
+      const cnt = c==='all' ? all.length : all.filter(e=>e.collection===c).length;
+      const active = filter === c;
+      return `<button onclick="RecycleBinModule._filter='${c}';App.loadModule('recycle_bin')"
+        style="padding:7px 14px;border-radius:20px;border:1.5px solid ${active?'var(--primary)':'var(--border)'};
+               background:${active?'var(--primary)':'transparent'};color:${active?'#fff':'var(--text3)'};
+               font-size:12px;font-weight:600;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:6px">
+        <i class="fas ${colIcon[c]||'fa-layer-group'}" style="font-size:10px"></i>
+        ${c==='all'?(isAR?'الكل':'Tout'):(colLabel[c]||c)}
+        <span style="background:${active?'rgba(255,255,255,.25)':'var(--bg2)'};color:${active?'#fff':'var(--text3)'};border-radius:10px;padding:1px 7px;font-size:10px">${cnt}</span>
+      </button>`;
     }).join('');
 
-    const filterTabs = ['all',...collections].map(c =>
-      `<button class="btn btn-sm ${filter===c?'btn-primary':'btn-outline'}" onclick="RecycleBinModule._filter='${c}';App.loadModule('recycle_bin')">
-        ${c==='all'?(isAR?'الكل':'Tout'):(colLabel[c]||c)}
-        <span style="margin-left:4px;background:rgba(255,255,255,.2);border-radius:10px;padding:0 6px;font-size:10px">${c==='all'?all.length:all.filter(e=>e.collection===c).length}</span>
-      </button>`
-    ).join('');
+    const cards = items.map(e => {
+      const item = e.item || {};
+      const col  = e.collection;
+      const grad = colGrad[col] || '135deg,var(--primary),var(--primary)';
+      const icon = colIcon[col] || 'fa-file';
+      const lbl  = colLabel[col] || col;
+      const name = item.ref || item.name || item.username || `#${item.id||'?'}`;
+      const sub  = item.supplier || item.client || item.designation || item.totalTTC
+        ? `${item.totalTTC?Utils.fmtCurrency(item.totalTTC):''} ${item.status?`· ${item.status}`:''}`
+        : '';
+      const done = e.restored;
+      const dDate = Utils.fmtDateTime(e.deletedAt);
 
-    return `<div style="padding:24px" ${isAR?'dir="rtl"':''}>
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px">
-        <div>
-          <h2 style="font-size:22px;font-weight:800;margin:0;display:flex;align-items:center;gap:10px">
-            <i class="fas fa-trash-restore" style="color:var(--warning)"></i> ${T.get('rb_title')}
-          </h2>
-          <p style="color:var(--text3);font-size:12px;margin:4px 0 0">${isAR?'جميع العناصر المحذوفة من النظام — للمسؤول فقط':'Tous les éléments supprimés — réservé à l\'administrateur'}</p>
+      return `<div style="background:var(--bg-card,var(--bg2));border:1px solid var(--border);border-radius:14px;overflow:hidden;
+                         display:flex;flex-direction:column;transition:.2s;${done?'opacity:.5':''}
+                         box-shadow:0 2px 8px rgba(0,0,0,.06)" class="rb-card">
+        <!-- Top color strip -->
+        <div style="height:5px;background:linear-gradient(${grad})"></div>
+        <div style="padding:16px 18px;flex:1;display:flex;flex-direction:column;gap:10px">
+          <!-- Badge + name row -->
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(${grad});
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <i class="fas ${icon}" style="color:#fff;font-size:16px"></i>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+                          color:var(--text3);margin-bottom:2px">${lbl}</div>
+              <div style="font-size:15px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                   title="${Utils.escHTML(name)}">${Utils.escHTML(name)}</div>
+              ${sub ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${Utils.escHTML(sub)}</div>` : ''}
+            </div>
+            ${done ? `<span style="background:#d1fae5;color:#065f46;border-radius:8px;padding:3px 8px;font-size:10px;font-weight:700;white-space:nowrap"><i class="fas fa-check"></i> ${isAR?'مُسترجَع':'Restauré'}</span>` : ''}
+          </div>
+          <!-- Timeline info -->
+          <div style="background:var(--bg,var(--bg3));border-radius:8px;padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3)">
+              <i class="fas fa-trash-alt" style="color:#ef4444;font-size:10px"></i>
+              <span>${isAR?'حُذف بواسطة':'Supprimé par'}: <strong style="color:var(--text)">${Utils.escHTML(e.deletedByName||'—')}</strong></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);margin-top:4px">
+              <i class="fas fa-clock" style="color:var(--text3);font-size:10px"></i>
+              <span>${dDate}</span>
+            </div>
+          </div>
         </div>
-        ${all.length ? `<button class="btn btn-danger btn-sm" onclick="RecycleBinModule.emptyBin()"><i class="fas fa-trash-alt"></i> ${isAR?'تفريغ السلة':'Vider la corbeille'}</button>` : ''}
+        <!-- Action footer -->
+        <div style="padding:12px 18px;border-top:1px solid var(--border);background:var(--bg,rgba(0,0,0,.02))">
+          ${done
+            ? `<div style="font-size:11px;color:var(--text3);text-align:center"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR?'تمت الاستعادة':'Déjà restauré'}</div>`
+            : `<button onclick="RecycleBinModule.restore(${e.id})"
+                 style="width:100%;padding:8px;border-radius:8px;border:none;background:var(--primary);color:#fff;
+                        font-size:12px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px"
+                 onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+                <i class="fas fa-undo"></i> ${T.get('rb_restore')}
+              </button>`
+          }
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div style="padding:28px;max-width:1400px;margin:0 auto" ${isAR?'dir="rtl"':''}>
+      <style>
+        .rb-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.12)!important}
+        @keyframes rbFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+        .rb-card{animation:rbFadeIn .25s ease both}
+      </style>
+
+      <!-- ─── HEADER ─── -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px">
+        <div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+            <div style="width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#dc2626,#ef4444);
+                        display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(239,68,68,.3)">
+              <i class="fas fa-trash-restore" style="color:#fff;font-size:20px"></i>
+            </div>
+            <div>
+              <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${isAR?'سلة المحذوفات':'Corbeille'}</h2>
+              <p style="margin:2px 0 0;font-size:12px;color:var(--text3)">${isAR?'أرشيف العناصر المحذوفة — للمسؤول فقط':'Historique des suppressions — admin uniquement'}</p>
+            </div>
+          </div>
+        </div>
+        <!-- Stats chips -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:8px 14px;font-size:12px">
+            <i class="fas fa-trash" style="color:#ef4444"></i> <strong>${all.length}</strong> ${isAR?'عنصر':'éléments'}
+          </div>
+          <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:8px 14px;font-size:12px">
+            <i class="fas fa-clock" style="color:#f59e0b"></i> <strong>${pending}</strong> ${isAR?'قابل للاستعادة':'restaurables'}
+          </div>
+          <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:8px 14px;font-size:12px">
+            <i class="fas fa-check" style="color:#10b981"></i> <strong>${restored}</strong> ${isAR?'مستعاد':'restaurés'}
+          </div>
+          ${all.length ? `<button onclick="RecycleBinModule.emptyBin()"
+            style="padding:8px 16px;border-radius:10px;border:1.5px solid rgba(239,68,68,.4);background:transparent;
+                   color:#ef4444;font-size:12px;font-weight:700;cursor:pointer;transition:.15s"
+            onmouseover="this.style.background='rgba(239,68,68,.08)'" onmouseout="this.style.background='transparent'">
+            <i class="fas fa-fire-alt"></i> ${isAR?'تفريغ نهائي':'Vider définitivement'}
+          </button>` : ''}
+        </div>
       </div>
 
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${filterTabs}</div>
+      <!-- ─── FILTER TABS ─── -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">${filterTabs}</div>
 
+      <!-- ─── CARDS GRID ─── -->
       ${!items.length
-        ? `<div style="text-align:center;padding:60px;color:var(--text3)"><i class="fas fa-trash" style="font-size:48px;opacity:.15;display:block;margin-bottom:12px"></i>${T.get('rb_empty')}</div>`
-        : `<div class="card" style="overflow:hidden">
-            <div class="table-wrap">
-              <table class="data-table" style="font-size:13px">
-                <thead><tr>
-                  <th>${T.get('rb_collection')}</th>
-                  <th>${isAR?'الاسم / المرجع':'Nom / Référence'}</th>
-                  <th>${T.get('rb_deleted_by')}</th>
-                  <th>${T.get('rb_deleted_at')}</th>
-                  <th>${T.get('col_actions')}</th>
-                </tr></thead>
-                <tbody>${rows}</tbody>
-              </table>
+        ? `<div style="text-align:center;padding:80px 40px;color:var(--text3)">
+            <div style="width:80px;height:80px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+              <i class="fas fa-leaf" style="font-size:36px;color:var(--text3);opacity:.3"></i>
             </div>
-          </div>`
+            <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px">${isAR?'السلة فارغة':'Corbeille vide'}</div>
+            <div style="font-size:13px">${isAR?'لم يتم حذف أي عنصر بعد':'Aucun élément supprimé pour le moment'}</div>
+           </div>`
+        : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">${cards}</div>`
       }
     </div>`;
   },
+
 
   async restore(binId) {
     const isAR = T.isRTL();

@@ -63,7 +63,14 @@ const API = (() => {
   // ── Auth ────────────────────────────────────────────────────────
   async function syncCloudToLocal() {
     // Fetch ALL collections in PARALLEL instead of sequential for 10x faster sync
-    const COLS = ['users','brs','bls','suppliers','clients','caisse_admin','sessions','catalogue','history','audit_log'];
+    const COLS = [
+      'users', 'brs', 'bls', 'suppliers', 'clients',
+      'caisse_admin', 'sessions', 'history', 'audit_log',
+      // Reference data — shared across all users
+      'articles', 'drivers',
+      // Extra collections
+      'work_log', 'recycle_bin'
+    ];
     const MERGE_COLS = new Set(['history', 'audit_log']); // These merge instead of overwrite
 
     const results = await Promise.allSettled([
@@ -92,6 +99,7 @@ const API = (() => {
       }
     }
   }
+
 
   async function login(username, password) {
     const data = await req('POST', '/auth/login', { username, password });

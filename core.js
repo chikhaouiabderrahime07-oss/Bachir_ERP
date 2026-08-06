@@ -361,7 +361,13 @@ const DB = {
   // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
   startLiveSync() {
     if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
-    const COLS = ['brs','bls','suppliers','clients','caisse_admin','sessions','history'];
+    const COLS = [
+      'brs','bls','suppliers','clients','caisse_admin','sessions','history',
+      // Reference data (shared across users — must stay synced)
+      'users','articles','drivers',
+      // Extra
+      'work_log','recycle_bin'
+    ];
     const MERGE_COLS = new Set(['history']);
     let indicator = null;
 
