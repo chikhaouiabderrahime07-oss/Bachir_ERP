@@ -1074,6 +1074,81 @@ const Utils = {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════════
+// FORM GUIDE — Sequential field highlighting for guided data entry
+// Highlights the next empty required field so users never forget anything
+// ═══════════════════════════════════════════════════════════════════════
+const FormGuide = {
+  _activeFields: [],
+  _observer: null,
+
+  /**
+   * Start guiding through a list of field IDs.
+   * Call after the modal is shown (use setTimeout for DOM readiness).
+   * @param {string[]} fieldIds - ordered list of field IDs to guide through
+   */
+  start(fieldIds) {
+    this.stop(); // cleanup previous
+    this._activeFields = fieldIds;
+    this._update();
+    // Watch for changes on all fields
+    fieldIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const handler = () => setTimeout(() => this._update(), 50);
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+      el._fgHandler = handler;
+    });
+  },
+
+  /** Update: remove all classes, find next empty, highlight it */
+  _update() {
+    // Clear all
+    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(el => {
+      el.classList.remove('field-guide-active', 'field-guide-done');
+    });
+
+    let foundEmpty = false;
+    for (const id of this._activeFields) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const group = el.closest('.form-group');
+      if (!group) continue;
+
+      const val = (el.value || '').trim();
+      const isEmpty = !val || val === '-- ' || val.startsWith('--') || val === '';
+
+      if (isEmpty && !foundEmpty) {
+        // This is the next field to fill — highlight it
+        group.classList.add('field-guide-active');
+        foundEmpty = true;
+        // Smooth scroll into view
+        try { group.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
+      } else if (!isEmpty) {
+        // Already filled — mark as done
+        group.classList.add('field-guide-done');
+      }
+    }
+  },
+
+  /** Stop guiding and clean up listeners */
+  stop() {
+    this._activeFields.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el._fgHandler) {
+        el.removeEventListener('input', el._fgHandler);
+        el.removeEventListener('change', el._fgHandler);
+        delete el._fgHandler;
+      }
+    });
+    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(el => {
+      el.classList.remove('field-guide-active', 'field-guide-done');
+    });
+    this._activeFields = [];
+  }
+};
+
 // ─── WORK LOG ─────────────────────────────────────────────────
 const WorkLog = {
   logIn(userId) {

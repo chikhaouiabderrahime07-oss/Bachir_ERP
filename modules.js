@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    MODULES.JS — All Application Modules
    ERP v2.0 — Bilingual FR/AR | RTL/LTR
    Dashboard · BR · BL · Caisse · Admin Caisse · Suppliers
@@ -23,7 +23,7 @@ const UI = {
     ov.classList.add('active');
     setTimeout(() => document.getElementById('modalBody')?.querySelector('input,select,textarea')?.focus(), 80);
   },
-  closeModal() { document.getElementById('modalOverlay')?.classList.remove('active'); },
+  closeModal() { if (typeof FormGuide !== 'undefined') FormGuide.stop(); document.getElementById('modalOverlay')?.classList.remove('active'); },
   toggleTheme() {
     const s = DB.getSettings();
     const next = s.themeMode === 'dark' ? 'light' : 'dark';
@@ -158,7 +158,7 @@ function _buildDeliveryAddrSection(entity, addrs, isAdmin) {
   // entity = 'sup' | 'cli'
   const lbl = T.isRTL() ? 'عناوين التسليم' : 'Adresses de livraison';
   const rows = (addrs||[]).map((a,i) => `
-    <div class="da-row" id="da-row-${entity}-${i}" style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px;align-items:center;background:${a.isDefault?'rgba(var(--primary-rgb),.08)':'var(--bg3)'};border:1px solid ${a.isDefault?'var(--primary)':'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px">
+    <div class="da-row" id="da-row-${entity}-${i}" data-is-default="${a.isDefault?'1':''}" style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px;align-items:center;background:${a.isDefault?'rgba(var(--primary-rgb),.08)':'var(--bg3)'};border:1px solid ${a.isDefault?'var(--primary)':'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <input type="text" class="da-label" placeholder="Ex: Dépôt Oran" value="${Utils.escHTML(a.label||'')}" style="font-weight:600">
       <input type="text" class="da-addr"  placeholder="Adresse complète..." value="${Utils.escHTML(a.address||'')}">
       ${isAdmin ? `<button class="btn btn-xs ${a.isDefault?'btn-primary':'btn-outline'}" onclick="_setDefaultDeliveryAddr('${entity}',${i})" title="${a.isDefault?'Défaut':'Définir comme défaut'}">${a.isDefault?'<i class="fas fa-star"></i>':'<i class="far fa-star"></i>'}</button>
@@ -214,7 +214,7 @@ function _setDefaultDeliveryAddr(entity, idx) {
     row.style.borderColor = isThis ? 'var(--primary)' : 'var(--border)';
     const btn = row.querySelector('button');
     if (btn) { btn.className = 'btn btn-xs ' + (isThis ? 'btn-primary' : 'btn-outline'); btn.innerHTML = isThis ? '<i class="fas fa-star"></i>' : '<i class="far fa-star"></i>'; }
-    row.dataset.isDefault = isThis ? '1' : '';
+    row.setAttribute('data-is-default', isThis ? '1' : '');
   });
 }
 
@@ -227,7 +227,7 @@ function _collectDeliveryAddrs(entity) {
     const label   = row.querySelector('.da-label')?.value?.trim() || '';
     const address = row.querySelector('.da-addr')?.value?.trim()  || '';
     if (!address) return;
-    const isDefault = !!(row.dataset.isDefault || row.style.borderColor.includes('primary'));
+    const isDefault = !!(row.dataset.isDefault === '1' || row.getAttribute('data-is-default') === '1');
     results.push({ id: i + 1, label, address, isDefault });
   });
   // Ensure at most one default; if none, first becomes default
@@ -305,7 +305,7 @@ const BRModule = {
       <div class="filters-bar">
         <div class="filter-group" style="flex:2;min-width:180px">
           <label>${T.get('search')}</label>
-          <input type="text" value="${Utils.escHTML(q)}" placeholder="${T.get('search')}"
+          <input type="text" id="br-search-input" value="${Utils.escHTML(q)}" placeholder="${T.get('search')}"
             oninput="BRModule._filters.q=this.value;App.reloadDebounced('brs')">
         </div>
         <div class="filter-group">
@@ -682,10 +682,10 @@ const BRModule = {
   async showCreate() {
     const body = await this._modalBody(null);
     UI.showModal(`<i class="fas fa-file-import"></i> ${T.get('br_new')}`, body, `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-secondary" onclick="UI.closeModal()"> ${T.get('cancel')}</button>
       <button class="btn btn-outline" onclick="BRModule._saveBR(null,true)"><i class="fas fa-print"></i> Sauver & PDF</button>
       <button class="btn btn-primary" onclick="BRModule._saveBR(null,false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
-    setTimeout(()=>BRModule._recalcTotals(),80);
+    setTimeout(()=>{ BRModule._recalcTotals(); FormGuide.start(['br-supplier','br-date','br-num','br-des-0','br-qty-0','br-price-0']); }, 100);
   },
 
   async showEdit(id) {
@@ -695,7 +695,7 @@ const BRModule = {
     UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} BR — ${br.ref}`, body, `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="BRModule._saveBR(${id},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
-    setTimeout(()=>BRModule._recalcTotals(),80);
+    setTimeout(()=>{ BRModule._recalcTotals(); FormGuide.start(['br-supplier','br-date','br-num','br-des-0','br-qty-0','br-price-0']); }, 100);
   },
 
   _saveBR(editId, andPrint) {
@@ -921,7 +921,7 @@ const BLModule = {
       <div class="filters-bar">
         <div class="filter-group" style="flex:2;min-width:180px">
           <label>${T.get('search')}</label>
-          <input type="text" value="${Utils.escHTML(q)}" placeholder="${T.get('search')}"
+          <input type="text" id="bl-search-input" value="${Utils.escHTML(q)}" placeholder="${T.get('search')}"
             oninput="BLModule._filters.q=this.value;App.reloadDebounced('bls')">
         </div>
         <div class="filter-group">
@@ -1080,7 +1080,7 @@ const BLModule = {
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-outline" onclick="BLModule._saveBL(${brId},null,true)"><i class="fas fa-print"></i> Sauver & PDF</button>
       <button class="btn btn-success" onclick="BLModule._saveBL(${brId},null,false)"><i class="fas fa-truck"></i> Générer BL</button>`, 'xl');
-    setTimeout(() => BLModule._recalcBLTotals(), 80);
+    setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
   showEdit(blId) {
@@ -1091,7 +1091,7 @@ const BLModule = {
     UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} BL — ${bl.ref}`, this._blModalBody(br, bl), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="BLModule._saveBL(${bl.brId},${blId},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
-    setTimeout(() => BLModule._recalcBLTotals(), 80);
+    setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
   _onDriverInput(val) {
@@ -3287,6 +3287,7 @@ const SuppliersModule = {
     UI.showModal(`<i class="fas fa-building"></i> ${T.get('sup_new')}`, this._form(), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-primary" onclick="SuppliersModule._save(null)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'lg');
+    setTimeout(() => FormGuide.start(['sName','sAbbrev','sNif','sRc','sPhone','sAddress']), 100);
   },
   showEdit(id) {
     const s = DB.getById('suppliers', id);
@@ -3294,6 +3295,7 @@ const SuppliersModule = {
     UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')}`, this._form(s), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="SuppliersModule._save(${id})"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'lg');
+    setTimeout(() => FormGuide.start(['sName','sAbbrev','sNif','sRc','sPhone','sAddress']), 100);
   },
   _save(id) {
     const name = (document.getElementById('sName')?.value||'').trim();
@@ -3385,6 +3387,7 @@ const ClientsModule = {
     UI.showModal(`<i class="fas fa-building"></i> ${T.get('cli_new')}`, this._form(), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-primary" onclick="ClientsModule._save(null)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
+    setTimeout(() => FormGuide.start(['sName','sNif','sRc','sPhone','sAddress']), 100);
   },
   showEdit(id) {
     const s = DB.getById('clients', id);
@@ -3392,6 +3395,7 @@ const ClientsModule = {
     UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')}`, this._form(s), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="ClientsModule._save(${id})"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
+    setTimeout(() => FormGuide.start(['sName','sNif','sRc','sPhone','sAddress']), 100);
   },
   _save(id) {
     const name = (document.getElementById('sName')?.value||'').trim();
@@ -3402,7 +3406,7 @@ const ClientsModule = {
       nis: document.getElementById('sNis')?.value||'',
       rc:  document.getElementById('sRc')?.value||'',
       ai:  document.getElementById('sAi')?.value||'',
-      deliveryAddresses: _collectDeliveryAddrs('sup'),
+      deliveryAddresses: _collectDeliveryAddrs('cli'),
       phone: document.getElementById('sPhone')?.value||'',
       email: document.getElementById('sEmail')?.value||'',
       contact: document.getElementById('sContact')?.value||'',
@@ -4286,7 +4290,7 @@ const CatalogueModule = {
       <div class="filters-bar">
         <div class="filter-group" style="flex:1">
           <label>${T.isRTL()?"بحث":"Rechercher"}</label>
-          <input type="text" value="${Utils.escHTML(this._q)}" placeholder="Rechercher un article..."
+          <input type="text" id="cat-article-search" value="${Utils.escHTML(this._q)}" placeholder="Rechercher un article..."
             oninput="CatalogueModule._q=this.value;App.reloadDebounced('catalogue')">
         </div>
       </div>
@@ -4338,7 +4342,7 @@ const CatalogueModule = {
       <div class="filters-bar">
         <div class="filter-group" style="flex:1">
           <label>${T.isRTL()?"بحث":"Rechercher"}</label>
-          <input type="text" value="${Utils.escHTML(this._q)}" placeholder="Rechercher un chauffeur..."
+          <input type="text" id="cat-driver-search" value="${Utils.escHTML(this._q)}" placeholder="Rechercher un chauffeur..."
             oninput="CatalogueModule._q=this.value;App.reloadDebounced('catalogue')">
         </div>
       </div>
@@ -5792,7 +5796,7 @@ const AuditModule = {
       <div class="filters-bar" style="flex-wrap:wrap;gap:8px">
         <div class="filter-group">
           <label>${T.isRTL()?"بحث":"Recherche"}</label>
-          <input type="text" value="${Utils.escHTML(q)}" placeholder="${T.get('search')}"
+          <input type="text" id="audit-search-input" value="${Utils.escHTML(q)}" placeholder="${T.get('search')}"
             oninput="AuditModule._filters.q=this.value;App.reloadDebounced('audit')">
         </div>
         <div class="filter-group">
