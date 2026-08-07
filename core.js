@@ -624,7 +624,7 @@ const DB = {
       }
     }
 
-    this.rawSet(col, items.filter(i => i.id !== id));
+    this.rawSet(col, items.filter(i => Number(i.id) !== Number(id)));
     if (old) { this._audit('DELETE', col, id, old, null); this._history(col, id, 'DELETE', 'Suppression', old, null); }
     // ── Cloud: atomic DELETE (safe for concurrent users) ──
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -1080,56 +1080,82 @@ const Utils = {
 // ═══════════════════════════════════════════════════════════════════════
 const FormGuide = {
   _activeFields: [],
-  _observer: null,
+  _lastActiveId: null,
 
   /**
    * Start guiding through a list of field IDs.
-   * Call after the modal is shown (use setTimeout for DOM readiness).
    * @param {string[]} fieldIds - ordered list of field IDs to guide through
    */
   start(fieldIds) {
-    this.stop(); // cleanup previous
+    this.stop();
     this._activeFields = fieldIds;
-    this._update();
+    this._lastActiveId = null;
+    this._update(true);
     // Watch for changes on all fields
     fieldIds.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
-      const handler = () => setTimeout(() => this._update(), 50);
+      const handler = () => setTimeout(() => this._update(false), 80);
       el.addEventListener('input', handler);
       el.addEventListener('change', handler);
+      el.addEventListener('blur', handler);
       el._fgHandler = handler;
     });
   },
 
-  /** Update: remove all classes, find next empty, highlight it */
-  _update() {
-    // Clear all
+  /** Check if a field is "empty" (needs user input) */
+  _isEmpty(el) {
+    if (!el) return true;
+    const val = (el.value || '').trim();
+    if (!val) return true;
+    // For selects: empty string value means no selection
+    if (el.tagName === 'SELECT') return !val;
+    return false;
+  },
+
+  /** Update: highlight next empty, mark done, auto-focus next */
+  _update(isInit) {
+    // Clear all guide classes
     document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(el => {
       el.classList.remove('field-guide-active', 'field-guide-done');
     });
 
-    let foundEmpty = false;
+    let nextEmptyId = null;
+    let nextEmptyEl = null;
+
     for (const id of this._activeFields) {
       const el = document.getElementById(id);
       if (!el) continue;
       const group = el.closest('.form-group');
       if (!group) continue;
 
-      const val = (el.value || '').trim();
-      const isEmpty = !val || val === '-- ' || val.startsWith('--') || val === '';
-
-      if (isEmpty && !foundEmpty) {
-        // This is the next field to fill — highlight it
-        group.classList.add('field-guide-active');
-        foundEmpty = true;
-        // Smooth scroll into view
-        try { group.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
-      } else if (!isEmpty) {
-        // Already filled — mark as done
+      if (this._isEmpty(el)) {
+        if (!nextEmptyId) {
+          // First empty field — highlight it
+          nextEmptyId = id;
+          nextEmptyEl = el;
+          group.classList.add('field-guide-active');
+        }
+        // Don't mark subsequent empties
+      } else {
+        // Filled — mark as done
         group.classList.add('field-guide-done');
       }
     }
+
+    // Auto-focus jump: if the previously active field got filled, jump to next
+    if (!isInit && nextEmptyEl && nextEmptyId !== this._lastActiveId && this._lastActiveId) {
+      // The user just filled a field — auto-focus the next one
+      setTimeout(() => {
+        nextEmptyEl.focus();
+        try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
+      }, 50);
+    } else if (isInit && nextEmptyEl) {
+      // On init, scroll to first empty
+      try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
+    }
+
+    this._lastActiveId = nextEmptyId;
   },
 
   /** Stop guiding and clean up listeners */
@@ -1139,6 +1165,7 @@ const FormGuide = {
       if (el && el._fgHandler) {
         el.removeEventListener('input', el._fgHandler);
         el.removeEventListener('change', el._fgHandler);
+        el.removeEventListener('blur', el._fgHandler);
         delete el._fgHandler;
       }
     });
@@ -1146,6 +1173,7 @@ const FormGuide = {
       el.classList.remove('field-guide-active', 'field-guide-done');
     });
     this._activeFields = [];
+    this._lastActiveId = null;
   }
 };
 

@@ -321,7 +321,7 @@ const BRModule = {
         <h3><i class="fas fa-file-import"></i> ${T.get('br_title')}</h3>
         <div class="card-actions">
           <span class="badge badge-secondary">${items.length}</span>
-          <button class="btn btn-outline btn-sm" onclick="BRModule.exportBRCSV()" title="Exporter CSV"><i class="fas fa-file-csv"></i> CSV</button>
+          <button class="btn btn-sm" onclick="BRModule.exportBRCSV()" title="Exporter CSV" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px"><i class="fas fa-file-csv"></i> CSV</button>
           <button class="btn btn-primary" onclick="BRModule.showCreate()"><i class="fas fa-plus"></i> ${T.get('br_new')}</button>
         </div>
       </div>
@@ -934,7 +934,7 @@ const BLModule = {
         <h3><i class="fas fa-file-export"></i> ${T.get('bl_title')}</h3>
         <div class="card-actions">
           <span class="badge badge-secondary">${items.length}</span>
-          <button class="btn btn-outline btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter CSV"><i class="fas fa-file-csv"></i> CSV</button>
+          <button class="btn btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter CSV" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px"><i class="fas fa-file-csv"></i> CSV</button>
           <button class="btn btn-outline" onclick="BLModule.showHistory()"><i class="fas fa-history"></i> Historique</button>
           <button class="btn btn-success" onclick="BLModule.showNewBL()">
             <i class="fas fa-plus"></i> ${T.get('bl_new')}
@@ -996,9 +996,9 @@ const BLModule = {
         </div>
         <div class="filter-group" style="flex:0 0 auto">
           <label>&nbsp;</label>
-          <div style="display:flex;gap:4px">
-            <button class="btn btn-outline btn-sm" onclick="BLModule._filters={q:'',status:'all',clientId:'all',dateFrom:'',dateTo:'',createdBy:'all',driver:'all',sortDir:'desc'};App.loadModule('bls')" title="${T.isRTL()?'إعادة تعيين':'Réinitialiser'}" style="height:34px;width:34px;padding:0;display:flex;align-items:center;justify-content:center"><i class="fas fa-times"></i></button>
-            <button class="btn btn-outline btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter Excel" style="height:34px;width:34px;padding:0;display:flex;align-items:center;justify-content:center"><i class="fas fa-file-excel" style="color:#1d6f42"></i></button>
+          <div style="display:flex;gap:5px">
+            <button class="btn btn-sm" onclick="BLModule._filters={q:'',status:'all',clientId:'all',dateFrom:'',dateTo:'',createdBy:'all',driver:'all',sortDir:'desc'};App.loadModule('bls')" title="${T.isRTL()?'إعادة تعيين':'Réinitialiser les filtres'}" style="height:36px;width:36px;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.1);color:#dc2626;border:1.5px solid rgba(239,68,68,.25);border-radius:8px;font-size:13px"><i class="fas fa-times"></i></button>
+            <button class="btn btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter vers Excel" style="height:36px;width:36px;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px;font-size:14px"><i class="fas fa-file-excel"></i></button>
           </div>
         </div>
       </div>
