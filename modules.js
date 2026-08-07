@@ -474,11 +474,14 @@ const BRModule = {
     const des = document.getElementById(`br-des-${idx}`);
     const u = document.getElementById(`br-unit-${idx}`);
     const p = document.getElementById(`br-price-${idx}`);
-    if (des) des.value = name;
-    if (u && unit) u.value = unit;
-    if (p) p.value = price;
+    if (des) { des.value = name; des.dispatchEvent(new Event('change')); }
+    if (u && unit) { u.value = unit; u.dispatchEvent(new Event('change')); }
+    if (p) { p.value = price; p.dispatchEvent(new Event('change')); }
     this._closeAC(idx);
     this._recalcLine(idx);
+    // Focus quantity field after article selection
+    const qtyEl = document.getElementById(`br-qty-${idx}`);
+    if (qtyEl && !qtyEl.value) setTimeout(() => qtyEl.focus(), 50);
   },
 
   _recalcLine(idx) {
@@ -1139,11 +1142,11 @@ const BLModule = {
     const dd = document.getElementById('bl-driver-ac');
     if (dd) dd.style.display='none';
     const name = document.getElementById('bl-driver')?.value;
-    if (name) { const imm=DB.getDriverIMM(name); if(imm){const t=document.getElementById('bl-truck');if(t&&!t.value)t.value=imm;} }
+    if (name) { const imm=DB.getDriverIMM(name); if(imm){const t=document.getElementById('bl-truck');if(t&&!t.value){t.value=imm; t.dispatchEvent(new Event('change'));}} }
   },
   _selectDriver(name, imm) {
-    const di=document.getElementById('bl-driver'); if(di) di.value=name;
-    const ti=document.getElementById('bl-truck');  if(ti&&imm) ti.value=imm;
+    const di=document.getElementById('bl-driver'); if(di) { di.value=name; di.dispatchEvent(new Event('change')); }
+    const ti=document.getElementById('bl-truck');  if(ti&&imm) { ti.value=imm; ti.dispatchEvent(new Event('change')); }
     this._closeDriverAC();
   },
 
@@ -1318,18 +1321,21 @@ const BLModule = {
         addrs.map((a,i) => `<option value="${Utils.escHTML(a.address)}">${Utils.escHTML(a.label||'Adresse '+(i+1))}${a.isDefault?' ⭐':''}</option>`).join('');
       // Auto-fill with default address (or first, or main address)
       const def = addrs.find(a => a.isDefault) || addrs[0];
-      if (destInput) destInput.value = def?.address || cli.address || '';
+      if (destInput) { destInput.value = def?.address || cli.address || ''; destInput.dispatchEvent(new Event('change')); }
       if (destSel && def) destSel.value = def.address;
     } else if (destInput) {
       const addrs = cli.deliveryAddresses || [];
       const def = addrs.find(a => a.isDefault) || addrs[0];
       destInput.value = def?.address || cli.address || '';
+      destInput.dispatchEvent(new Event('change'));
     }
+    // Notify FormGuide that fields changed
+    if (typeof FormGuide !== 'undefined') setTimeout(() => FormGuide._update(false), 100);
   },
 
   _onDestSelect(val) {
     const inp = document.getElementById('bl-destination');
-    if (inp && val) inp.value = val;
+    if (inp && val) { inp.value = val; inp.dispatchEvent(new Event('change')); }
   },
 
 
