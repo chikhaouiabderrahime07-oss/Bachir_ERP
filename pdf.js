@@ -602,7 +602,12 @@
        BL — BON DE LIVRAISON
     ══════════════════════════════════════════════════════════ */
     _exportBL(id) {
-      const bl  = DB.getById('bls', id);
+      let bl = DB.getById('bls', id);
+      // Fallback: in cloud mode, the server may reassign IDs — find by most recent
+      if (!bl) {
+        const allBLs = DB.getAll('bls');
+        bl = allBLs.find(b => String(b.id) === String(id)) || allBLs[allBLs.length - 1];
+      }
       if(!bl) { this._notify('BL introuvable','error'); return; }
       const br  = bl.brId ? DB.getById('brs',bl.brId) : null;
       const sup = br ? DB.getById('suppliers',br.supplierId)||{} : {};
@@ -681,6 +686,24 @@
 
       const tEndY=this._buildTable(doc,y,COLS,bodyRows6,{totalHT,timbre,totalTTC,tvaAmount:bl.tvaAmount||0,tvaRate:bl.tvaRate||0});
       y=tEndY+4;
+
+      /* ── DESTINATION ADDRESS — bold, prominent, below table ── */
+      const destAddr = bl.destinationAddress || bl.wilaya || cli.address || '';
+      if (destAddr) {
+        const destBoxH = 12;
+        this._tc(doc, C.PRIMARY);
+        doc.setFont('helvetica','bold'); doc.setFontSize(9);
+        doc.text('Adresse de livraison :', ML, y + 4);
+        doc.setFont('helvetica','bold'); doc.setFontSize(10);
+        this._tc(doc, [30,30,30]);
+        const destLines = doc.splitTextToSize(this._t(destAddr), CW - 60);
+        doc.text(destLines, ML + 42, y + 4);
+        // Underline box
+        doc.setDrawColor(...C.PRIMARY);
+        doc.setLineWidth(0.6);
+        doc.line(ML, y + destBoxH - 1, ML + CW, y + destBoxH - 1);
+        y += destBoxH + 3;
+      }
 
       const wd=this._amountWords(totalTTC);
       if(wd){

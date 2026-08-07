@@ -155,26 +155,40 @@ const DashboardModule = {
 // DELIVERY ADDRESS HELPERS — shared by Suppliers & Clients modules
 // ═══════════════════════════════════════════════════════════════════════
 function _buildDeliveryAddrSection(entity, addrs, isAdmin) {
-  // entity = 'sup' | 'cli'
   const lbl = T.isRTL() ? 'عناوين التسليم' : 'Adresses de livraison';
   const rows = (addrs||[]).map((a,i) => `
-    <div class="da-row" id="da-row-${entity}-${i}" data-is-default="${a.isDefault?'1':''}" style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px;align-items:center;background:${a.isDefault?'rgba(var(--primary-rgb),.08)':'var(--bg3)'};border:1px solid ${a.isDefault?'var(--primary)':'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px">
-      <input type="text" class="da-label" placeholder="Ex: Dépôt Oran" value="${Utils.escHTML(a.label||'')}" style="font-weight:600">
-      <input type="text" class="da-addr"  placeholder="Adresse complète..." value="${Utils.escHTML(a.address||'')}">
-      ${isAdmin ? `<button class="btn btn-xs ${a.isDefault?'btn-primary':'btn-outline'}" onclick="_setDefaultDeliveryAddr('${entity}',${i})" title="${a.isDefault?'Défaut':'Définir comme défaut'}">${a.isDefault?'<i class="fas fa-star"></i>':'<i class="far fa-star"></i>'}</button>
-      <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}',${i})" title="Supprimer"><i class="fas fa-times"></i></button>` : '<span></span><span></span>'}
+    <div class="da-row" id="da-row-${entity}-${i}" data-is-default="${a.isDefault?'1':''}" style="display:flex;gap:10px;align-items:stretch;background:${a.isDefault?'rgba(var(--primary-rgb),.06)':'var(--bg)'};border:1.5px solid ${a.isDefault?'var(--primary)':'var(--border2, var(--border))'};border-radius:10px;padding:10px 14px;margin-bottom:8px;transition:all .2s">
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <i class="fas fa-map-pin" style="color:${a.isDefault?'var(--primary)':'var(--text4)'};font-size:12px;width:14px"></i>
+          <input type="text" class="da-label" placeholder="${T.isRTL()?'اسم الموقع':'Nom du lieu (ex: Dépôt Oran, Chantier...)'}" value="${Utils.escHTML(a.label||'')}" style="font-weight:700;font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <i class="fas fa-road" style="color:var(--text4);font-size:11px;width:14px"></i>
+          <input type="text" class="da-addr" placeholder="${T.isRTL()?'العنوان الكامل':'Adresse complète de livraison...'}" value="${Utils.escHTML(a.address||'')}" style="font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
+        </div>
+      </div>
+      ${isAdmin ? `<div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <button class="btn btn-xs ${a.isDefault?'btn-primary':'btn-outline'}" onclick="_setDefaultDeliveryAddr('${entity}',${i})" title="${a.isDefault?'Par défaut':'Définir par défaut'}" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px">${a.isDefault?'<i class="fas fa-star" style="font-size:10px"></i>':'<i class="far fa-star" style="font-size:10px"></i>'}</button>
+        <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}',${i})" title="Supprimer" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px;opacity:.7"><i class="fas fa-trash-alt" style="font-size:9px"></i></button>
+      </div>` : ''}
     </div>`).join('');
 
-  const addBtn = isAdmin ? `<button class="btn btn-sm btn-outline" onclick="_addDeliveryAddr('${entity}')"><i class="fas fa-plus"></i> ${T.isRTL()?'إضافة عنوان':'Ajouter une adresse'}</button>` : '';
+  const emptyState = `<div id="da-empty-${entity}" style="text-align:center;padding:20px 16px;color:var(--text4);font-size:12px;border:2px dashed var(--border);border-radius:10px"><i class="fas fa-map-marked-alt" style="font-size:22px;opacity:.25;display:block;margin-bottom:6px"></i>${T.isRTL()?'لا توجد عناوين تسليم':'Aucune adresse enregistrée'}</div>`;
+  const addBtn = isAdmin ? `<button class="btn btn-sm btn-outline" onclick="_addDeliveryAddr('${entity}')" style="width:100%;border-style:dashed;margin-top:6px;color:var(--primary);font-weight:600"><i class="fas fa-plus"></i> ${T.isRTL()?'إضافة عنوان جديد':'Ajouter une adresse'}</button>` : '';
   return `
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px"><i class="fas fa-map-marked-alt"></i> ${lbl}</div>
-      ${addBtn}
+  <div style="background:linear-gradient(135deg,rgba(var(--primary-rgb),.03),transparent);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+      <div style="width:28px;height:28px;border-radius:8px;background:rgba(var(--primary-rgb),.1);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas fa-truck" style="font-size:11px;color:var(--primary)"></i></div>
+      <div>
+        <div style="font-size:12px;font-weight:800;color:var(--text)">${lbl}</div>
+        <div style="font-size:10px;color:var(--text4)">${T.isRTL()?'عناوين مختلفة عن المقر':'Destinations différentes du siège social'}</div>
+      </div>
     </div>
     <div id="da-container-${entity}">
-      ${rows || `<div id="da-empty-${entity}" style="text-align:center;padding:16px;color:var(--text4);font-size:12px"><i class="fas fa-map-marker-alt" style="font-size:20px;opacity:.3;display:block;margin-bottom:6px"></i>${T.isRTL()?'لا توجد عناوين تسليم بعد':'Aucune adresse de livraison enregistrée'}</div>`}
+      ${rows || emptyState}
     </div>
+    ${addBtn}
   </div>`;
 }
 
@@ -182,18 +196,27 @@ function _addDeliveryAddr(entity) {
   const c = document.getElementById('da-container-' + entity);
   if (!c) return;
   const idx = Date.now();
-  const isEmpty = c.querySelector('.da-row');
-  if (!isEmpty) {
-    const emptyDiv = c.querySelector('[id^="da-empty-"]');
-    if (emptyDiv) emptyDiv.remove();
-  }
+  const emptyDiv = c.querySelector('[id^="da-empty-"]');
+  if (emptyDiv) emptyDiv.remove();
   c.insertAdjacentHTML('beforeend', `
-    <div class="da-row" id="da-row-${entity}-${idx}" style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
-      <input type="text" class="da-label" placeholder="Ex: Dépôt Oran" style="font-weight:600">
-      <input type="text" class="da-addr"  placeholder="Adresse complète...">
-      <button class="btn btn-xs btn-outline" onclick="_setDefaultDeliveryAddr('${entity}','${idx}')" title="Définir comme défaut"><i class="far fa-star"></i></button>
-      <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}','${idx}')" title="Supprimer"><i class="fas fa-times"></i></button>
+    <div class="da-row" id="da-row-${entity}-${idx}" data-is-default="" style="display:flex;gap:10px;align-items:stretch;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:8px;transition:all .2s">
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <i class="fas fa-map-pin" style="color:var(--text4);font-size:12px;width:14px"></i>
+          <input type="text" class="da-label" placeholder="Nom du lieu (ex: Dépôt Oran, Chantier...)" style="font-weight:700;font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <i class="fas fa-road" style="color:var(--text4);font-size:11px;width:14px"></i>
+          <input type="text" class="da-addr" placeholder="Adresse complète de livraison..." style="font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
+        <button class="btn btn-xs btn-outline" onclick="_setDefaultDeliveryAddr('${entity}','${idx}')" title="Définir par défaut" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px"><i class="far fa-star" style="font-size:10px"></i></button>
+        <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}','${idx}')" title="Supprimer" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px;opacity:.7"><i class="fas fa-trash-alt" style="font-size:9px"></i></button>
+      </div>
     </div>`);
+  const newRow = document.getElementById('da-row-' + entity + '-' + idx);
+  if (newRow) newRow.querySelector('.da-label')?.focus();
 }
 
 function _removeDeliveryAddr(entity, idx) {
@@ -971,9 +994,12 @@ const BLModule = {
             ${this._filters.sortDir==='asc' ? (T.isRTL()?'أقدم':'Ancien') : (T.isRTL()?'أحدث':'Récent')}
           </button>
         </div>
-        <div class="filter-group" style="align-self:flex-end">
-          <button class="btn btn-outline" onclick="BLModule._filters={q:'',status:'all',clientId:'all',dateFrom:'',dateTo:'',createdBy:'all',driver:'all',sortDir:'desc'};App.loadModule('bls')" title="${T.isRTL()?'إعادة تعيين':'Réinitialiser'}"><i class="fas fa-times"></i></button>
-          <button class="btn btn-outline" onclick="BLModule.exportBLCSV()" title="Excel"><i class="fas fa-file-excel" style="color:#1d6f42"></i></button>
+        <div class="filter-group" style="flex:0 0 auto">
+          <label>&nbsp;</label>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-outline btn-sm" onclick="BLModule._filters={q:'',status:'all',clientId:'all',dateFrom:'',dateTo:'',createdBy:'all',driver:'all',sortDir:'desc'};App.loadModule('bls')" title="${T.isRTL()?'إعادة تعيين':'Réinitialiser'}" style="height:34px;width:34px;padding:0;display:flex;align-items:center;justify-content:center"><i class="fas fa-times"></i></button>
+            <button class="btn btn-outline btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter Excel" style="height:34px;width:34px;padding:0;display:flex;align-items:center;justify-content:center"><i class="fas fa-file-excel" style="color:#1d6f42"></i></button>
+          </div>
         </div>
       </div>
       <div class="table-shell">
