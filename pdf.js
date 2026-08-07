@@ -640,6 +640,7 @@
       this._drawEntityBox(doc,'Fournisseur / Origine',compLines,ML,y,cw2,boxH);
 
       /* RIGHT: Client / Destinataire */
+      const wilayaDest = bl.destinationAddress || bl.wilaya || cli.address || '';
       const cliLines=[
         this._t(cli.name||'Client non specifie'),
         `NIF : ${cli.nif||'-'}`,
@@ -648,6 +649,7 @@
         `AI  : ${cli.ai||'-'}`,
         `Adresse : ${this._t(cli.address||'-')}`,
         `Tel : ${cli.phone||'-'}`,
+        ...(wilayaDest ? [`Dest. livr. : ${this._t(wilayaDest)}`] : []),
       ];
       this._drawEntityBox(doc,'Client / Destinataire',cliLines,ML+cw2+gap,y,cw2,boxH);
       y+=boxH+4;
@@ -779,3 +781,4 @@
   global.PDFGen = PDFGen;
 
 })(window);
+

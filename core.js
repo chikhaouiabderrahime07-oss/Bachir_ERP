@@ -479,6 +479,7 @@ const DB = {
       timbrePerTranche: 1.5,      // DA par tranche
       timbreMin: 0,               // pas de minimum légal imposé
       timbreEnabled: true,        // timbre activé par défaut
+      timbreSlabs: [],            // slab table (empty = use global rate)
     };
   },
 
@@ -492,6 +493,7 @@ const DB = {
       if (merged.timbreRate === undefined) merged.timbreRate = def.timbreRate;
       if (merged.timbrePerTranche === undefined) merged.timbrePerTranche = def.timbrePerTranche;
       if (merged.timbreEnabled === undefined) merged.timbreEnabled = def.timbreEnabled;
+      if (!Array.isArray(merged.timbreSlabs)) merged.timbreSlabs = [];
       return merged;
     } catch { return this._resetSettings(); }
   },
@@ -759,34 +761,53 @@ const DB = {
     const amt = Number(amountHT) || 0;
     if (amt <= 0) return 0;
 
-    const rate         = Number(settings.timbreRate)        || 0.0119;
-    const perTranche   = Number(settings.timbrePerTranche)  || 1.5;
-    const timbreMin    = Number(settings.timbreMin)         || 0;
+    const globalRate       = Number(settings.timbreRate)       || 0.0119;
+    const globalPerTranche = Number(settings.timbrePerTranche) || 1.5;
+    const timbreMin        = Number(settings.timbreMin)        || 0;
 
-    // Official formula: tranches = HT × rate, timbre = tranches × perTranche
+    // Slab lookup: find matching bracket by HT amount
+    const slabs = settings.timbreSlabs || [];
+    let rate = globalRate, perTranche = globalPerTranche;
+    if (slabs.length) {
+      const slab = slabs.find(sl =>
+        amt >= Number(sl.min) &&
+        (sl.max === null || sl.max === undefined || amt <= Number(sl.max))
+      );
+      if (slab) {
+        rate       = Number(slab.rate)       || globalRate;
+        perTranche = Number(slab.perTranche) || globalPerTranche;
+      }
+    }
+
+    // Official formula: timbre = HT x rate x perTranche
     const tranches = amt * rate;
     const timbre   = tranches * perTranche;
     const result   = timbreMin > 0 ? Math.max(timbreMin, timbre) : timbre;
     return Math.round(result * 100) / 100;
   },
 
-  // Detail breakdown for UI display
   calcTimbreDetail(amountHT) {
     const settings = this.getSettings();
     const amt = Number(amountHT) || 0;
-    const rate       = Number(settings.timbreRate)       || 0.0119;
-    const perTranche = Number(settings.timbrePerTranche) || 1.5;
-    const tranches   = amt * rate;
-    const timbre     = Math.round(tranches * perTranche * 100) / 100;
-    return {
-      tranches: Math.round(tranches * 100) / 100,
-      perTranche,
-      rate,
-      timbre
-    };
+    const globalRate       = Number(settings.timbreRate)       || 0.0119;
+    const globalPerTranche = Number(settings.timbrePerTranche) || 1.5;
+    const slabs = settings.timbreSlabs || [];
+    let rate = globalRate, perTranche = globalPerTranche;
+    if (slabs.length) {
+      const slab = slabs.find(sl =>
+        amt >= Number(sl.min) &&
+        (sl.max === null || sl.max === undefined || amt <= Number(sl.max))
+      );
+      if (slab) {
+        rate       = Number(slab.rate)       || globalRate;
+        perTranche = Number(slab.perTranche) || globalPerTranche;
+      }
+    }
+    const tranches = amt * rate;
+    const timbre   = Math.round(tranches * perTranche * 100) / 100;
+    return { tranches: Math.round(tranches * 100) / 100, perTranche, rate, timbre };
   },
 
-  // Preview timbre for a given amount (used in settings UI)
   previewTimbre(amt) {
     const t = this.calcTimbre(amt);
     return { timbre: t, total: Number(amt) + t };

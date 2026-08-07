@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    MODULES.JS — All Application Modules
    ERP v2.0 — Bilingual FR/AR | RTL/LTR
    Dashboard · BR · BL · Caisse · Admin Caisse · Suppliers
@@ -151,8 +151,118 @@ const DashboardModule = {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// BR MODULE
+// ═══════════════════════════════════════════════════════════════════════
+// DELIVERY ADDRESS HELPERS — shared by Suppliers & Clients modules
+// ═══════════════════════════════════════════════════════════════════════
+function _buildDeliveryAddrSection(entity, addrs, isAdmin) {
+  // entity = 'sup' | 'cli'
+  const lbl = T.isRTL() ? 'عناوين التسليم' : 'Adresses de livraison';
+  const rows = (addrs||[]).map((a,i) => `
+    <div class="da-row" id="da-row-${entity}-${i}" style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px;align-items:center;background:${a.isDefault?'rgba(var(--primary-rgb),.08)':'var(--bg3)'};border:1px solid ${a.isDefault?'var(--primary)':'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <input type="text" class="da-label" placeholder="Ex: Dépôt Oran" value="${Utils.escHTML(a.label||'')}" style="font-weight:600">
+      <input type="text" class="da-addr"  placeholder="Adresse complète..." value="${Utils.escHTML(a.address||'')}">
+      ${isAdmin ? `<button class="btn btn-xs ${a.isDefault?'btn-primary':'btn-outline'}" onclick="_setDefaultDeliveryAddr('${entity}',${i})" title="${a.isDefault?'Défaut':'Définir comme défaut'}">${a.isDefault?'<i class="fas fa-star"></i>':'<i class="far fa-star"></i>'}</button>
+      <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}',${i})" title="Supprimer"><i class="fas fa-times"></i></button>` : '<span></span><span></span>'}
+    </div>`).join('');
+
+  const addBtn = isAdmin ? `<button class="btn btn-sm btn-outline" onclick="_addDeliveryAddr('${entity}')"><i class="fas fa-plus"></i> ${T.isRTL()?'إضافة عنوان':'Ajouter une adresse'}</button>` : '';
+  return `
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px"><i class="fas fa-map-marked-alt"></i> ${lbl}</div>
+      ${addBtn}
+    </div>
+    <div id="da-container-${entity}">
+      ${rows || `<div id="da-empty-${entity}" style="text-align:center;padding:16px;color:var(--text4);font-size:12px"><i class="fas fa-map-marker-alt" style="font-size:20px;opacity:.3;display:block;margin-bottom:6px"></i>${T.isRTL()?'لا توجد عناوين تسليم بعد':'Aucune adresse de livraison enregistrée'}</div>`}
+    </div>
+  </div>`;
+}
+
+function _addDeliveryAddr(entity) {
+  const c = document.getElementById('da-container-' + entity);
+  if (!c) return;
+  const idx = Date.now();
+  const isEmpty = c.querySelector('.da-row');
+  if (!isEmpty) {
+    const emptyDiv = c.querySelector('[id^="da-empty-"]');
+    if (emptyDiv) emptyDiv.remove();
+  }
+  c.insertAdjacentHTML('beforeend', `
+    <div class="da-row" id="da-row-${entity}-${idx}" style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <input type="text" class="da-label" placeholder="Ex: Dépôt Oran" style="font-weight:600">
+      <input type="text" class="da-addr"  placeholder="Adresse complète...">
+      <button class="btn btn-xs btn-outline" onclick="_setDefaultDeliveryAddr('${entity}','${idx}')" title="Définir comme défaut"><i class="far fa-star"></i></button>
+      <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}','${idx}')" title="Supprimer"><i class="fas fa-times"></i></button>
+    </div>`);
+}
+
+function _removeDeliveryAddr(entity, idx) {
+  const row = document.getElementById('da-row-' + entity + '-' + idx);
+  if (row) row.remove();
+  const c = document.getElementById('da-container-' + entity);
+  if (c && !c.querySelector('.da-row')) {
+    c.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text4);font-size:12px"><i class="fas fa-map-marker-alt" style="font-size:20px;opacity:.3;display:block;margin-bottom:6px"></i>${T.isRTL()?'لا توجد عناوين تسليم بعد':'Aucune adresse de livraison enregistrée'}</div>`;
+  }
+}
+
+function _setDefaultDeliveryAddr(entity, idx) {
+  const c = document.getElementById('da-container-' + entity);
+  if (!c) return;
+  c.querySelectorAll('.da-row').forEach(row => {
+    const isThis = row.id === 'da-row-' + entity + '-' + idx;
+    row.style.background = isThis ? 'rgba(var(--primary-rgb),.08)' : 'var(--bg3)';
+    row.style.borderColor = isThis ? 'var(--primary)' : 'var(--border)';
+    const btn = row.querySelector('button');
+    if (btn) { btn.className = 'btn btn-xs ' + (isThis ? 'btn-primary' : 'btn-outline'); btn.innerHTML = isThis ? '<i class="fas fa-star"></i>' : '<i class="far fa-star"></i>'; }
+    row.dataset.isDefault = isThis ? '1' : '';
+  });
+}
+
+function _collectDeliveryAddrs(entity) {
+  const c = document.getElementById('da-container-' + entity);
+  if (!c) return [];
+  const rows = c.querySelectorAll('.da-row');
+  const results = [];
+  rows.forEach((row, i) => {
+    const label   = row.querySelector('.da-label')?.value?.trim() || '';
+    const address = row.querySelector('.da-addr')?.value?.trim()  || '';
+    if (!address) return;
+    const isDefault = !!(row.dataset.isDefault || row.style.borderColor.includes('primary'));
+    results.push({ id: i + 1, label, address, isDefault });
+  });
+  // Ensure at most one default; if none, first becomes default
+  if (results.length && !results.some(a => a.isDefault)) results[0].isDefault = true;
+  return results;
+}
+
 // ═══════════════════════════════════════════════════════════════
+// ALGERIAN WILAYAS (kept for backward compat — not used in new forms) — 58 Wilayas (list shared across all modules)
+// ═══════════════════════════════════════════════════════════════
+const WILAYAS_DZ = [
+  '01 - Adrar','02 - Chlef','03 - Laghouat','04 - Oum El Bouaghi','05 - Batna',
+  '06 - Béjaïa','07 - Biskra','08 - Béchar','09 - Blida','10 - Bouira',
+  '11 - Tamanrasset','12 - Tébessa','13 - Tlemcen','14 - Tiaret','15 - Tizi Ouzou',
+  '16 - Alger','17 - Djelfa','18 - Jijel','19 - Sétif','20 - Saïda',
+  '21 - Skikda','22 - Sidi Bel Abbès','23 - Annaba','24 - Guelma','25 - Constantine',
+  '26 - Médéa','27 - Mostaganem','28 - M\'Sila','29 - Mascara','30 - Ouargla',
+  '31 - Oran','32 - El Bayadh','33 - Illizi','34 - Bordj Bou Arréridj','35 - Boumerdès',
+  '36 - El Tarf','37 - Tindouf','38 - Tissemsilt','39 - El Oued','40 - Khenchela',
+  '41 - Souk Ahras','42 - Tipaza','43 - Mila','44 - Aïn Defla','45 - Naâma',
+  '46 - Aïn Témouchent','47 - Ghardaïa','48 - Relizane',
+  '49 - Timimoun','50 - Bordj Badji Mokhtar','51 - Ouled Djellal','52 - Béni Abbès',
+  '53 - In Salah','54 - In Guezzam','55 - Touggourt','56 - Djanet',
+  '57 - El M\'Ghair','58 - El Meniaa'
+];
+
+/** Build a <select> for Algerian wilayas with optional current value */
+function _wilayaSelect(id, currentVal='', required=false) {
+  return `<select id="${id}" ${required ? 'required' : ''} style="width:100%">
+    <option value="">— ${T.isRTL() ? 'اختر الولاية' : 'Choisir la wilaya'} —</option>
+    ${WILAYAS_DZ.map(w => `<option value="${Utils.escHTML(w)}" ${currentVal===w?'selected':''}>${Utils.escHTML(w)}</option>`).join('')}
+  </select>`;
+}
+
+
 const BRModule = {
   _filters: { q:'', supplierId:'all', status:'all', year:'all', createdBy:'all', dateFrom:'', dateTo:'', sortDir:'desc' },
   _lineCount: 0,
@@ -178,7 +288,9 @@ const BRModule = {
     });
 
     const blMap = {};
-    DB.getAll('bls').forEach(bl=>blMap[bl.brId]=bl);
+    // Include active BLs AND recycled BLs — so a BR with a deleted BL still shows as "has BL"
+    DB.getAll('bls').forEach(bl => blMap[bl.brId] = bl);
+    DB.getAll('recycle_bin').filter(e => e.collection === 'bls').forEach(e => { if (!blMap[e.item?.brId]) blMap[e.item?.brId] = e.item; });
 
     return `<div style="padding:24px">
     <div class="card">
@@ -868,7 +980,7 @@ const BLModule = {
         <table class="data-table">
           <thead><tr>
             <th>${T.get('col_ref')}</th><th>${T.get('bl_linked_br')}</th><th>${T.get('col_date')}</th>
-            <th>${T.get('col_client')}</th><th>${T.get('col_driver')}</th><th>${T.get('col_truck')}</th>
+            <th>${T.get('col_client')}</th><th>${T.isRTL()?'عنوان التسليم':'Destination'}</th><th>${T.get('col_driver')}</th><th>${T.get('col_truck')}</th>
             <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th>Traçabilité</th><th>${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
@@ -881,6 +993,7 @@ const BLModule = {
                 <td>${br?`<span class="badge badge-primary">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
                 <td>${Utils.fmtDate(bl.date)}</td>
                 <td>${Utils.escHTML(cli?.name||'-')}</td>
+                <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text3)" title="${Utils.escHTML(bl.destinationAddress||cli?.address||'')}">${Utils.escHTML((bl.destinationAddress||cli?.address||'-').substring(0,35))}${(bl.destinationAddress||'').length>35?'…':''}</td>
                 <td>${Utils.escHTML(bl.driverName||'-')}</td>
                 <td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td>
                 <td class="fw-bold text-primary">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
@@ -984,16 +1097,16 @@ const BLModule = {
   _onDriverInput(val) {
     const dd = document.getElementById('bl-driver-ac');
     if (!dd) return;
+    if (!val || val.length < 1) { dd.style.display='none'; return; }
     const drivers = DB.getAll('drivers').filter(d => d.name.toLowerCase().includes((val||'').toLowerCase()));
-    if (!val || !drivers.length) { dd.style.display='none'; return; }
-    // Show only TOP 1 match as a clean chip
-    const d = drivers[0];
-    dd.innerHTML = `<div class="ac-single-chip" onmousedown="BLModule._selectDriver('${Utils.escHTML(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(d.imm||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
-      <i class="fas fa-id-card ac-chip-icon"></i>
-      <span class="ac-chip-name">${Utils.escHTML(d.name)}</span>
-      ${d.imm ? `<span class="ac-chip-unit">${Utils.escHTML(d.imm)}</span>` : ''}
-      <span class="ac-chip-hint">↵ Tab</span>
-    </div>`;
+    if (!drivers.length) { dd.style.display='none'; return; }
+    // Show ALL matching drivers (same logic as article autocomplete in BR)
+    dd.innerHTML = drivers.slice(0, 10).map(d =>
+      `<div class="autocomplete-item" onmousedown="BLModule._selectDriver('${Utils.escHTML(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(d.imm||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+        <span><i class="fas fa-id-card" style="color:var(--primary);margin-right:6px"></i>${Utils.escHTML(d.name)}</span>
+        ${d.imm ? `<span class="ac-price">${Utils.escHTML(d.imm)}</span>` : ''}
+      </div>`
+    ).join('');
     dd.style.display = 'block';
   },
   _closeDriverAC() {
@@ -1047,6 +1160,20 @@ const BLModule = {
         <option value="">-- Choisir un client --</option>
         ${DB.getAll('clients').sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${String(bl?.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
       </select>
+    </div>
+    <div class="form-group mb-2" id="bl-destination-wrap">
+      <label style="font-weight:600;display:flex;align-items:center;gap:6px"><i class="fas fa-map-marker-alt" style="color:var(--primary)"></i> ${T.isRTL()?'عنوان التسليم':'Adresse de destination'}</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="bl-dest-select" onchange="BLModule._onDestSelect(this.value)"
+          style="flex:0 0 auto;width:180px;font-size:12px;border-radius:8px;padding:6px 8px;border:1px solid var(--border);background:var(--bg3);color:var(--text)">
+          <option value="">-- Adresses enregistrées --</option>
+          ${(()=>{ const cli=bl?.clientId?DB.getById('clients',Number(bl.clientId)):null; return (cli?.deliveryAddresses||[]).map((a,i)=>`<option value="${Utils.escHTML(a.address)}" ${(bl?.destinationAddress||'')===(a.address)?'selected':''}>${Utils.escHTML(a.label||'Adresse '+(i+1))}${a.isDefault?' ⭐':''}</option>`).join(''); })()}
+        </select>
+        <input type="text" id="bl-destination"
+          value="${Utils.escHTML(bl?.destinationAddress || (()=>{ const cli=bl?.clientId?DB.getById('clients',Number(bl.clientId)):null; return (cli?.deliveryAddresses?.find(a=>a.isDefault)||cli?.deliveryAddresses?.[0])?.address || cli?.address || ''; })())}"
+          placeholder="${T.isRTL()?'أدخل عنوان التسليم...':'Saisir l\'adresse de livraison...'}"
+          style="flex:1;font-weight:500">
+      </div>
     </div>
     <div class="form-grid cols-2" style="margin-bottom:12px">
       <div class="form-group">
@@ -1135,12 +1262,16 @@ const BLModule = {
   _updateClientCredit(clientId) {
     const nameEl    = document.getElementById('bl-client-name-disp');
     const detailEl  = document.getElementById('bl-client-details');
+    const destSel   = document.getElementById('bl-dest-select');
+    const destInput = document.getElementById('bl-destination');
     if (!clientId) {
       if (nameEl) nameEl.textContent = '—';
       if (detailEl) detailEl.innerHTML = '';
+      if (destSel) destSel.innerHTML = '<option value="">-- Adresses enregistrées --</option>';
+      if (destInput) destInput.value = '';
       return;
     }
-    const cli = DB.getById('clients', clientId);
+    const cli = DB.getById('clients', Number(clientId));
     if (!cli) return;
     if (nameEl) nameEl.textContent = cli.name || '—';
     if (detailEl) {
@@ -1154,6 +1285,25 @@ const BLModule = {
       if (cli.email)   rows.push(`<i class="fas fa-envelope" style="font-size:9px"></i> ${Utils.escHTML(cli.email)}`);
       detailEl.innerHTML = rows.join('<br>');
     }
+    // Update destination dropdown with client's saved delivery addresses
+    if (destSel) {
+      const addrs = cli.deliveryAddresses || [];
+      destSel.innerHTML = '<option value="">-- Adresses enregistrées --</option>' +
+        addrs.map((a,i) => `<option value="${Utils.escHTML(a.address)}">${Utils.escHTML(a.label||'Adresse '+(i+1))}${a.isDefault?' ⭐':''}</option>`).join('');
+      // Auto-fill with default address (or first, or main address)
+      const def = addrs.find(a => a.isDefault) || addrs[0];
+      if (destInput) destInput.value = def?.address || cli.address || '';
+      if (destSel && def) destSel.value = def.address;
+    } else if (destInput) {
+      const addrs = cli.deliveryAddresses || [];
+      const def = addrs.find(a => a.isDefault) || addrs[0];
+      destInput.value = def?.address || cli.address || '';
+    }
+  },
+
+  _onDestSelect(val) {
+    const inp = document.getElementById('bl-destination');
+    if (inp && val) inp.value = val;
   },
 
 
@@ -1247,10 +1397,16 @@ const BLModule = {
     const notes      = document.getElementById('bl-notes')?.value||'';
     const clientId   = document.getElementById('bl-client')?.value;
     const br = DB.getById('brs', brId);
-    if (!br) return;
+    // ── Guard: block BL generation if BR was deleted (moved to recycle bin) ──
+    if (!br) {
+      Utils.notify(T.isRTL() ? 'خطأ: هذا الوصل محذوف ولا يمكن إنشاء BL منه.' : 'Erreur : ce BR a été supprimé — impossible de créer un BL.', 'error');
+      UI.closeModal();
+      return;
+    }
     if (!clientId)   { Utils.notify(T.get('col_client')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     if (!driverName) { Utils.notify(T.get('bl_driver')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     if (!truckIMM)   { Utils.notify(T.get('bl_truck')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
+
 
     /* Collect lines with their delivered quantities */
     const brLines = br.lines || [];
@@ -1295,8 +1451,10 @@ const BLModule = {
     }
 
     DB.saveDriver(driverName, truckIMM);
+
     const data = {
       ref, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
+      destinationAddress: (document.getElementById('bl-destination')?.value||'').trim(),
       lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       isPartial, partNum, status: 'open'
     };
@@ -3084,7 +3242,7 @@ const SuppliersModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>${T.get('sup_name')}</th><th>${T.isRTL()?'اختصار':'Abrév.'}</th><th>${T.get('sup_phone')}</th><th>${T.get('sup_address')}</th><th>${T.get('sup_contact')}</th><th>${T.isRTL()?"عدد BR":"BR count"}</th><th>${T.get('col_actions')}</th></tr></thead>
+          <thead><tr><th>${T.get('sup_name')}</th><th>${T.isRTL()?'اختصار':'Abrév.'}</th><th>${T.get('sup_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('sup_address')}</th><th>${T.get('sup_contact')}</th><th>${T.isRTL()?"عدد BR":"BR count"}</th><th>${T.get('col_actions')}</th></tr></thead>
           <tbody>
             ${items.length ? items.map(s=>`<tr>
               <td><strong>${Utils.escHTML(s.name)}</strong></td>
@@ -3104,21 +3262,24 @@ const SuppliersModule = {
   },
 
   _form(s={}) {
+    const isAdmin = Auth.isAdmin();
+    const addrs = s.deliveryAddresses || [];
     return `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;margin-bottom:14px">
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
         <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('sup_name')} / Raison Sociale</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم المورد أو الشركة...':'Nom ou raison sociale...'}" required></div>
-        <div class="form-group"><label style="font-weight:700;color:var(--primary)">Abréviation <small style="color:var(--text4)">(code court BR/BL — ex: GIB, BNA…)</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="MAX 5 LETTRES" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px" oninput="this.value=this.value.toUpperCase()"></div>
-        <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(Numéro d'Identification Fiscale)</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(Identif. Statistique)</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(Registre du Commerce)</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
-        <div class="form-group"><label style="font-weight:600">Art. d'Imposition (AI)</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:700;color:var(--primary)">Abréviation <small style="color:var(--text4)">(code court BR/BL)</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="MAX 5 LETTRES" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="form-group"><label style="font-weight:600">NIF</label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">NIS</label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">RC</label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
+        <div class="form-group"><label style="font-weight:600">Art. Imposition (AI)</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">${T.get('sup_phone')} / Fax</label><input id="sPhone" value="${Utils.escHTML(s.phone||'')}" placeholder="0X XX XX XX XX"></div>
         <div class="form-group"><label style="font-weight:600">Email</label><input id="sEmail" type="email" value="${Utils.escHTML(s.email||'')}" placeholder="contact@societe.dz"></div>
         <div class="form-group"><label style="font-weight:600">${T.isRTL()?'جهة الاتصال':'Contact / Représentant'}</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="${T.isRTL()?'اسم جهة الاتصال':'Nom du contact'}"></div>
-        <div class="form-group span-full"><label style="font-weight:600">${T.get('sup_address')}</label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
+        <div class="form-group span-full"><label style="font-weight:600">${T.get('sup_address')} <small style="color:var(--text4)">(${T.isRTL()?'عنوان الشركة الرئيسي':'adresse du siège'})</small></label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
       </div>
+      ${_buildDeliveryAddrSection('sup', addrs, isAdmin)}
     </div>`;
   },
 
@@ -3144,6 +3305,7 @@ const SuppliersModule = {
       nis: document.getElementById('sNis')?.value||'',
       rc:  document.getElementById('sRc')?.value||'',
       ai:  document.getElementById('sAi')?.value||'',
+      deliveryAddresses: _collectDeliveryAddrs('sup'),
       phone: document.getElementById('sPhone')?.value||'',
       email: document.getElementById('sEmail')?.value||'',
       contact: document.getElementById('sContact')?.value||'',
@@ -3178,14 +3340,15 @@ const ClientsModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>${T.get('cli_name')}</th><th>${T.get('cli_phone')}</th><th>${T.get('cli_address')}</th><th>${T.get('cli_contact')}</th><th>${T.isRTL()?"عدد BR":"BR count"}</th><th>${T.get('col_actions')}</th></tr></thead>
+          <thead><tr><th>${T.get('cli_name')}</th><th>${T.get('cli_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('cli_address')}</th><th>${T.get('cli_contact')}</th><th>${T.isRTL()?"BL count":"BL count"}</th><th>${T.get('col_actions')}</th></tr></thead>
           <tbody>
             ${items.length ? items.map(s=>`<tr>
               <td><strong>${Utils.escHTML(s.name)}</strong></td>
               <td>${Utils.escHTML(s.phone||'-')}</td>
+              <td><span style="font-size:11px;background:var(--bg2);padding:2px 8px;border-radius:12px;font-weight:600">${Utils.escHTML(s.wilaya||'-')}</span></td>
               <td>${Utils.escHTML(s.address||'-')}</td>
               <td>${Utils.escHTML(s.contact||'-')}</td>
-              <td><span class="badge badge-primary">${brMap[s.id]||0}</span></td>
+              <td><span class="badge badge-primary">${DB.getAll('bls').filter(b=>String(b.clientId)===String(s.id)).length}</span></td>
               <td class="td-actions">
                 <button class="btn btn-xs btn-outline" onclick="ClientsModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="ClientsModule.deleteCli(${s.id})"><i class="fas fa-trash"></i></button>
@@ -3198,19 +3361,23 @@ const ClientsModule = {
   },
 
   _form(s={}) {
+    const isAdmin = Auth.isAdmin();
+    const addrs = s.deliveryAddresses || [];
     return `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> Identification Officielle</div>
+      <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
         <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('cli_name')} / Raison Sociale</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="Nom ou raison sociale du client..." required></div>
         <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(Numéro d'Identification Fiscale)</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(Identif. Statistique)</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(Registre du Commerce)</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
-        <div class="form-group"><label style="font-weight:600">Art. Imposition</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">Art. Imposition (AI)</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">${T.get('cli_phone')} / Fax</label><input id="sPhone" value="${Utils.escHTML(s.phone||'')}" placeholder="0X XX XX XX XX"></div>
+        <div class="form-group"><label style="font-weight:600">Email</label><input id="sEmail" type="email" value="${Utils.escHTML(s.email||'')}" placeholder="contact@client.dz"></div>
         <div class="form-group"><label style="font-weight:600">Contact / Représentant</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="Nom du contact"></div>
-        <div class="form-group span-full"><label style="font-weight:600">${T.get('cli_address')}</label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
+        <div class="form-group span-full"><label style="font-weight:600">${T.get('cli_address')} <small style="color:var(--text4)">(${T.isRTL()?'عنوان الشركة الرئيسي':'adresse du siège social'})</small></label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
       </div>
+      ${_buildDeliveryAddrSection('cli', addrs, isAdmin)}
     </div>`;
   },
 
@@ -3235,6 +3402,7 @@ const ClientsModule = {
       nis: document.getElementById('sNis')?.value||'',
       rc:  document.getElementById('sRc')?.value||'',
       ai:  document.getElementById('sAi')?.value||'',
+      deliveryAddresses: _collectDeliveryAddrs('sup'),
       phone: document.getElementById('sPhone')?.value||'',
       email: document.getElementById('sEmail')?.value||'',
       contact: document.getElementById('sContact')?.value||'',
@@ -3245,8 +3413,9 @@ const ClientsModule = {
     UI.closeModal(); App.loadModule('clients');
   },
   async deleteCli(id) {
-    const hasBRs = DB.getAll('brs').some(b=>b.supplierId===id);
-    if (hasBRs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات مرتبطة.':'Impossible: ce client a des BR liés.'),'error'); return; }
+    // Check BLs linked to this client (not BRs — clients are linked via BLs)
+    const hasLinkedBLs = DB.getAll('bls').some(b => Number(b.clientId) === Number(id));
+    if (hasLinkedBLs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات تسليم مرتبطة.':'Impossible: ce client a des BL liés — supprimez-les d\'abord.'),'error'); return; }
     const ok = await Dialog.confirm(T.isRTL() ? 'حذف الزبون' : 'Supprimer client', T.get('delete')+'?', 'danger');
     if (!ok) return;
     DB.delete('clients',id); Utils.notify((T.isRTL()?'تم حذف الزبون':'Client supprimé'),'success'); App.loadModule('clients');
@@ -4561,17 +4730,24 @@ const SettingsModule = {
   },
 
   _tabTimbre(s) {
-    const timbreRate     = s.timbreRate     ?? 0.0119;
-    const timbrePerTranche = s.timbrePerTranche ?? 1.5;
-    const timbreMin      = s.timbreMin      ?? 0;
+    const slabs = s.timbreSlabs && s.timbreSlabs.length ? s.timbreSlabs : [];
+    const globalRate       = s.timbreRate       ?? 0.0119;
+    const globalPerTranche = s.timbrePerTranche ?? 1.5;
+    const timbreMin        = s.timbreMin        ?? 0;
     const isAR = T.isRTL();
+
+    const slabRows = slabs.length ? slabs.map((sl,i) => `
+      <div class="slab-row" id="slab-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
+        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label><input type="number" class="slab-min" value="${sl.min??0}" min="0"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'الى (DA)' : 'Max (DA)'}</label><input type="number" class="slab-max" value="${sl.max!==null&&sl.max!==undefined?sl.max:''}" placeholder="∞"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'معامل (rate)' : 'Taux (rate)'}</label><input type="number" class="slab-rate" value="${sl.rate??globalRate}" step="0.0001" oninput="SettingsModule._previewTimbre()"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'DA/شريحة' : 'DA/tranche'}</label><input type="number" class="slab-pt" value="${sl.perTranche??globalPerTranche}" step="0.01" oninput="SettingsModule._previewTimbre()"></div>
+        <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove();SettingsModule._previewTimbre()" style="height:36px;margin-bottom:1px"><i class="fas fa-times"></i></button>
+      </div>`).join('') : '';
+
     return `
     <style>
       .timbre-law-card{background:linear-gradient(135deg,#0f2027 0%,#1e3a5f 50%,#0f4c75 100%);border-radius:16px;padding:20px;margin-bottom:20px;color:#e0f2fe;border:1px solid rgba(56,189,248,.2)}
-      .timbre-law-card h3{margin:0 0 6px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px}
-      .timbre-law-card .law-ref{font-size:11px;opacity:.65;margin-bottom:16px;font-style:italic}
-      .timbre-formula-box{background:rgba(0,0,0,.3);border-radius:10px;padding:14px;font-size:13px;border:1px solid rgba(56,189,248,.15)}
-      .timbre-formula-box code{background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc;font-size:13px;font-weight:700}
       .timbre-sim-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
       .timbre-sim-result{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
       .timbre-sim-cell{background:var(--bg3,var(--bg));border-radius:10px;padding:14px;text-align:center}
@@ -4580,80 +4756,84 @@ const SettingsModule = {
       .timbre-sim-step{background:var(--bg3,var(--bg));border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px;color:var(--text3);border-left:3px solid var(--primary)}
     </style>
 
-    <!-- ═══ FORMULA EXPLANATION CARD ═══ -->
+    <!-- FORMULA EXPLANATION -->
     <div class="timbre-law-card">
-      <h3><i class="fas fa-stamp" style="color:#38bdf8"></i>
-        ${isAR ? 'الطابع الجبائي — صيغة الحساب' : 'Timbre Fiscal — Formule de calcul'}
+      <h3 style="margin:0 0 6px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px">
+        <i class="fas fa-stamp" style="color:#38bdf8"></i>
+        ${isAR ? 'الطابع الجبائي — صيغة الحساب بالشرائح' : 'Timbre Fiscal — Calcul par tranches'}
       </h3>
-      <div class="law-ref">
-        ${isAR ? 'الصيغة: timbre = HT × rate × 1.5 DA' : 'Formule : timbre = HT × taux × DA/tranche'}
+      <div style="font-size:11px;opacity:.65;margin-bottom:12px;font-style:italic">
+        ${isAR ? 'الصيغة: timbre = HT × rate × DA/tranche (لكل شريحة)' : 'Formule : timbre = HT × taux × DA/tranche (par slab)'}
       </div>
-      <div class="timbre-formula-box">
-        <div style="font-weight:700;margin-bottom:10px;color:#7dd3fc;font-size:13px">
-          ℹ️ ${isAR ? 'طريقة الحساب الرسمية' : 'Méthode de calcul officielle'}
-        </div>
-        <div style="margin-bottom:8px">
-          <code>tranches = HT × ${timbreRate}</code>
-        </div>
-        <div style="margin-bottom:8px">
-          <code>timbre = tranches × ${timbrePerTranche} DA</code>
-        </div>
-        <div style="margin-bottom:8px;color:#7dd3fc">
-          <code>timbre = HT × ${(timbreRate * timbrePerTranche).toFixed(5)}</code>
-        </div>
-        <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;opacity:.7">
-          ${isAR
-            ? `مثال: 38 894,80 DA → 38894.8 × ${timbreRate} = ${(38894.8 * timbreRate).toFixed(2)} شريحة × ${timbrePerTranche} = ${(38894.8 * timbreRate * timbrePerTranche).toFixed(2)} DA`
-            : `Ex: 38 894,80 DA → 38894.8 × ${timbreRate} = ${(38894.8 * timbreRate).toFixed(2)} tranches × ${timbrePerTranche} = ${(38894.8 * timbreRate * timbrePerTranche).toFixed(2)} DA`}
-        </div>
+      <div style="background:rgba(0,0,0,.3);border-radius:10px;padding:12px;font-size:12px">
+        <code style="background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc">tranches = HT × rate</code>
+        &nbsp;→&nbsp;
+        <code style="background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc">timbre = tranches × DA/tranche</code>
+        <br><small style="opacity:.7;margin-top:8px;display:block">${isAR ? 'كل شريحة تعرّف نطاق HT ومعامل خاص. إذا لا توجد شرائح يستخدم المعامل الافتراضي.' : 'Chaque slab définit un intervalle HT avec son propre taux. Sans slabs : taux global.'}</small>
       </div>
     </div>
 
-    <!-- ═══ LIVE SIMULATOR ═══ -->
+    <!-- LIVE SIMULATOR -->
     <div class="timbre-sim-wrap">
       <div style="font-weight:800;font-size:15px;margin-bottom:4px;color:var(--text)">
         <i class="fas fa-calculator" style="color:var(--primary)"></i>
         ${isAR ? 'حاسبة الطابع الفورية' : 'Simulateur de timbre en temps réel'}
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
-        ${isAR ? 'أدخل مبلغ HT وستظهر تفاصيل الحساب' : 'Saisissez le montant HT pour voir le détail exact'}
-      </div>
       <input type="number" id="timbre-sim-amt" min="0" step="100" placeholder="${isAR ? 'مثال: 38894' : 'ex: 38 894'}"
-        style="width:100%;padding:10px 14px;font-size:18px;font-weight:700;border-radius:10px;border:2px solid var(--border);background:var(--bg);color:var(--text)"
+        style="width:100%;padding:10px 14px;font-size:18px;font-weight:700;border-radius:10px;border:2px solid var(--border);background:var(--bg);color:var(--text);margin-top:10px"
         oninput="SettingsModule._previewTimbre()">
       <div id="timbre-sim-result" style="margin-top:14px;color:var(--text3);font-size:13px">
         ${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}
       </div>
     </div>
 
-    <!-- ═══ PARAMETERS ═══ -->
+    <!-- GLOBAL DEFAULTS -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px">
-      <h4 style="margin:0 0 16px;font-size:14px;font-weight:800;color:var(--text)">
+      <h4 style="margin:0 0 14px;font-size:13px;font-weight:800;color:var(--text)">
         <i class="fas fa-sliders-h" style="color:var(--primary);margin-right:6px"></i>
-        ${isAR ? 'معاملات الطابع' : 'Paramètres du timbre'}
+        ${isAR ? 'المعاملات الافتراضية (تُستخدم إذا لم تنطبق أي شريحة)' : 'Taux globaux par défaut (utilisés si aucun slab ne correspond)'}
       </h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
         <div class="form-group" style="margin:0">
-          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'معامل الشرائح (rate)' : 'Taux (rate)'}</label>
-          <input type="number" id="timbre-rate-input" value="${timbreRate}" min="0" step="0.0001"
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'معامل افتراضي (rate)' : 'Taux global (rate)'}</label>
+          <input type="number" id="timbre-rate-input" value="${globalRate}" min="0" step="0.0001"
             style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px"
             oninput="SettingsModule._previewTimbre()">
-          <small style="color:var(--text4);font-size:10px">${isAR ? 'مثال: 0.0119' : 'Ex: 0.0119'}</small>
+          <small style="color:var(--text4);font-size:10px">Ex: 0.0119</small>
         </div>
         <div class="form-group" style="margin:0">
-          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'DA / شريحة' : 'DA / tranche'}</label>
-          <input type="number" id="timbre-per-tranche-input" value="${timbrePerTranche}" min="0" step="0.01"
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'DA/شريحة افتراضي' : 'DA/tranche global'}</label>
+          <input type="number" id="timbre-per-tranche-input" value="${globalPerTranche}" min="0" step="0.01"
             style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px"
             oninput="SettingsModule._previewTimbre()">
-          <small style="color:var(--text4);font-size:10px">${isAR ? 'مثال: 1.5' : 'Ex: 1.5'}</small>
+          <small style="color:var(--text4);font-size:10px">Ex: 1.5</small>
         </div>
         <div class="form-group" style="margin:0">
           <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'الحد الأدنى (DA)' : 'Minimum (DA)'}</label>
           <input type="number" id="timbre-min-input" value="${timbreMin}" min="0" step="1"
             style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px">
-          <small style="color:var(--text4);font-size:10px">${isAR ? '0 = بدون حد أدنى' : '0 = sans minimum'}</small>
+          <small style="color:var(--text4);font-size:10px">0 = ${isAR ? 'بدون حد أدنى' : 'sans minimum'}</small>
         </div>
       </div>
+    </div>
+
+    <!-- SLABS TABLE -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h4 style="margin:0;font-size:13px;font-weight:800;color:var(--text)">
+          <i class="fas fa-layer-group" style="color:var(--primary);margin-right:6px"></i>
+          ${isAR ? 'جدول الشرائح (اختياري)' : 'Tableau des tranches (optionnel)'}
+        </h4>
+        <button class="btn btn-sm btn-outline" onclick="SettingsModule._addSlab()">
+          <i class="fas fa-plus"></i> ${isAR ? 'إضافة شريحة' : 'Ajouter slab'}
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+        <i class="fas fa-info-circle" style="color:var(--primary)"></i>
+        ${isAR ? 'إذا تركت الجدول فارغاً سيستخدم المعامل الافتراضي. الشرائح تُحدد نطاقات HT مع معاملات خاصة.' : 'Laissez vide pour utiliser uniquement le taux global. Les slabs définissent des intervalles HT avec des taux personnalisés.'}
+      </div>
+      <div id="slabsContainer">${slabRows}</div>
+      ${!slabs.length ? `<div style="text-align:center;padding:20px;color:var(--text4);font-size:12px"><i class="fas fa-th-list" style="font-size:24px;margin-bottom:8px;display:block;opacity:.3"></i>${isAR ? 'لا توجد شرائح — يستخدم المعامل الافتراضي' : 'Aucun slab — taux global utilisé'}</div>` : ''}
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -4666,6 +4846,23 @@ const SettingsModule = {
     </div>`;
   },
 
+  _addSlab() {
+    const c = document.getElementById('slabsContainer');
+    if (!c) return;
+    const idx = Date.now();
+    const isAR = T.isRTL();
+    const defRate = parseFloat(document.getElementById('timbre-rate-input')?.value) || 0.0119;
+    const defPT   = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
+    c.insertAdjacentHTML('beforeend', `
+    <div class="slab-row" id="slab-${idx}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label><input type="number" class="slab-min" value="0" min="0"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'الى (DA)' : 'Max (DA)'}</label><input type="number" class="slab-max" placeholder="∞"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'معامل (rate)' : 'Taux'}</label><input type="number" class="slab-rate" value="${defRate}" step="0.0001" oninput="SettingsModule._previewTimbre()"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'DA/شريحة' : 'DA/tranche'}</label><input type="number" class="slab-pt" value="${defPT}" step="0.01" oninput="SettingsModule._previewTimbre()"></div>
+      <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove();SettingsModule._previewTimbre()" style="height:36px;margin-bottom:1px"><i class="fas fa-times"></i></button>
+    </div>`);
+  },
+
   _previewTimbre() {
     const amt = parseFloat(document.getElementById('timbre-sim-amt')?.value) || 0;
     const el  = document.getElementById('timbre-sim-result');
@@ -4675,13 +4872,30 @@ const SettingsModule = {
       el.innerHTML = `<span style="color:var(--text3)">${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}</span>`;
       return;
     }
-    // Read live UI values so preview reflects any in-progress edits
-    const rate       = parseFloat(document.getElementById('timbre-rate-input')?.value)       || 0.0119;
-    const perTranche = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
-    const tranches   = amt * rate;
-    const timbre     = Math.round(tranches * perTranche * 100) / 100;
-    const ttc        = amt + timbre;
-    const fmtDA      = v => Utils.fmtCurrency(v);
+    const globalRate = parseFloat(document.getElementById('timbre-rate-input')?.value) || 0.0119;
+    const globalPT   = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
+    // Find matching slab
+    const rows = Array.from(document.querySelectorAll('#slabsContainer .slab-row'));
+    const slabs = rows.map(row => ({
+      min: parseFloat(row.querySelector('.slab-min')?.value)||0,
+      max: row.querySelector('.slab-max')?.value ? parseFloat(row.querySelector('.slab-max').value) : null,
+      rate: parseFloat(row.querySelector('.slab-rate')?.value)||globalRate,
+      perTranche: parseFloat(row.querySelector('.slab-pt')?.value)||globalPT,
+    })).sort((a,b) => a.min - b.min);
+
+    let rate = globalRate, perTranche = globalPT, slabLabel = isAR ? 'المعامل الافتراضي' : 'Taux global';
+    if (slabs.length) {
+      const slab = slabs.find(sl => amt >= sl.min && (sl.max === null || sl.max === undefined || amt <= sl.max));
+      if (slab) {
+        rate = slab.rate; perTranche = slab.perTranche;
+        slabLabel = `${isAR?'شريحة':'Slab'} ${slab.min.toLocaleString('fr-FR')} – ${slab.max!==null&&slab.max!==undefined ? slab.max.toLocaleString('fr-FR') : '∞'} DA`;
+      }
+    }
+
+    const tranches = amt * rate;
+    const timbre   = Math.round(tranches * perTranche * 100) / 100;
+    const ttc      = amt + timbre;
+    const fmtDA    = v => Utils.fmtCurrency(v);
 
     el.innerHTML = `
       <div class="timbre-sim-result">
@@ -4699,8 +4913,9 @@ const SettingsModule = {
         </div>
       </div>
       <div class="timbre-sim-step">
-        <strong>${isAR ? 'تفاصيل الحساب:' : 'Détail du calcul :'}</strong>
-        &nbsp; ${amt.toLocaleString('fr-FR')} &times; ${rate} = <strong>${Math.round(tranches * 100) / 100}</strong> ${isAR ? 'شريحة' : 'tranches'}
+        <strong>${isAR ? 'تفاصيل:' : 'Détail :'}</strong>
+        <span style="color:var(--primary);font-weight:700">${slabLabel}</span>
+        &nbsp;— ${amt.toLocaleString('fr-FR')} &times; ${rate} = <strong>${Math.round(tranches*100)/100}</strong> ${isAR ? 'شريحة' : 'tranches'}
         &nbsp;&times;&nbsp; <strong>${perTranche} DA</strong>
         = <strong style="color:var(--primary)">${fmtDA(timbre)}</strong>
       </div>
@@ -4711,13 +4926,20 @@ const SettingsModule = {
     const rate       = parseFloat(document.getElementById('timbre-rate-input')?.value)       || 0.0119;
     const perTranche = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
     const timbreMin  = parseFloat(document.getElementById('timbre-min-input')?.value)         || 0;
-    DB.saveSettings({ timbreRate: rate, timbrePerTranche: perTranche, timbreMin });
+    const rows = document.querySelectorAll('#slabsContainer .slab-row');
+    const slabs = Array.from(rows).map(row => ({
+      min: parseFloat(row.querySelector('.slab-min')?.value)||0,
+      max: row.querySelector('.slab-max')?.value ? parseFloat(row.querySelector('.slab-max').value) : null,
+      rate: parseFloat(row.querySelector('.slab-rate')?.value)||rate,
+      perTranche: parseFloat(row.querySelector('.slab-pt')?.value)||perTranche,
+    })).sort((a,b) => a.min - b.min);
+    DB.saveSettings({ timbreRate: rate, timbrePerTranche: perTranche, timbreMin, timbreSlabs: slabs });
     Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع' : 'Paramètres timbre enregistrés'), 'success');
   },
 
   _resetTimbre() {
     const def = DB._defaultSettings();
-    DB.saveSettings({ timbreRate: def.timbreRate, timbrePerTranche: def.timbrePerTranche, timbreMin: def.timbreMin });
+    DB.saveSettings({ timbreRate: def.timbreRate, timbrePerTranche: def.timbrePerTranche, timbreMin: def.timbreMin, timbreSlabs: [] });
     Utils.notify((T.isRTL() ? 'تمت إعادة تعيين الطابع' : 'Timbre réinitialisé'), 'success');
     App.loadModule('settings');
   },
@@ -5644,3 +5866,4 @@ const Modules = {
   settings: SettingsModule, audit: AuditModule
 };
 window.Modules = Modules;
+

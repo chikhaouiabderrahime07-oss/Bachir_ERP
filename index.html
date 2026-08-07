@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr" dir="ltr" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.30">
+<link rel="stylesheet" href="style.css?v=9.33">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -227,10 +227,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.30"></script>
-<script src="core.js?v=9.30"></script>
-<script src="modules.js?v=9.30"></script>
-<script src="pdf.js?v=9.30"></script>
+<script src="api.js?v=9.33"></script>
+<script src="core.js?v=9.33"></script>
+<script src="modules.js?v=9.33"></script>
+<script src="pdf.js?v=9.33"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -385,6 +385,18 @@ const App = {
     this._checkMorningSession();
     // Start live background sync so concurrent users see each other's changes
     DB.startLiveSync();
+    // ── Recycle bin overflow notification (admin only) ──
+    setTimeout(() => {
+      if (Auth.isAdmin()) {
+        const binCount = DB.getAll('recycle_bin').length;
+        if (binCount >= 30) {
+          Utils.notify(
+            `🗑️ Corbeille : ${binCount} éléments — pensez à vider la corbeille !`,
+            'warning', 8000
+          );
+        }
+      }
+    }, 2500);
     
     // ── Security: remove credentials from URL immediately after login ──
     if (location.search) {
@@ -586,6 +598,14 @@ const App = {
     this._setActiveSidebarItem(mod);
 
     if (!main) return;
+
+    // ── Preserve focused input state across re-renders (fixes search-loses-focus bug) ──
+    const focused = document.activeElement;
+    const savedFocusId    = focused?.id || null;
+    const savedFocusValue = (focused?.tagName === 'INPUT' || focused?.tagName === 'TEXTAREA') ? focused.value : null;
+    const savedSelStart   = focused?.selectionStart ?? null;
+    const savedSelEnd     = focused?.selectionEnd   ?? null;
+
     try {
       let html = '';
       switch(mod) {
@@ -607,6 +627,20 @@ const App = {
       }
       main.innerHTML = html;
       main.scrollTop = 0;
+
+      // ── Restore focus after re-render so search inputs keep focus ──
+      if (savedFocusId) {
+        const restored = document.getElementById(savedFocusId);
+        if (restored && (restored.tagName === 'INPUT' || restored.tagName === 'TEXTAREA')) {
+          restored.focus();
+          if (savedFocusValue !== null && restored.value === savedFocusValue) {
+            try {
+              if (savedSelStart !== null) restored.setSelectionRange(savedSelEnd, savedSelEnd);
+            } catch(e) { /* ignore for type=number */ }
+          }
+        }
+      }
+
       // Post-render hooks
       if (mod === 'stats' && typeof StatsModule !== 'undefined' && typeof StatsModule.initCharts === 'function') {
         setTimeout(() => StatsModule.initCharts(), 100);
@@ -621,6 +655,7 @@ const App = {
       main.innerHTML = `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> ${T.isRTL() ? 'خطأ في الوحدة' : 'Erreur module'} <code>${mod}</code>: ${e.message}<br><pre style="font-size:10px;margin-top:8px;white-space:pre-wrap">${e.stack||''}</pre></div></div>`;
     }
   },
+
 
   _updateSessionIndicator() {
     const u = Auth.getCurrentUser();
@@ -826,5 +861,6 @@ function triggerCrazyAi() {
 </body>
 
 </html>
+
 
 
