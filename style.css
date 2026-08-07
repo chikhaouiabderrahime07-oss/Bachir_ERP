@@ -1,4 +1,4 @@
-﻿/* ╔══════════════════════════════════════════════════════════════╗
+/* ╔══════════════════════════════════════════════════════════════╗
    ║  APPRO+ — Theme v4.0  (inspired by ERP Douroub reference)  ║
    ║  Deep Teal · Dark Navy Sidebar · Clean Surfaces            ║
    ╚══════════════════════════════════════════════════════════════╝ */
@@ -1957,13 +1957,17 @@ tbody tr:hover { background:rgba(var(--primary-rgb),.05) }
    FORM GUIDE — Sequential field highlighting for guided data entry
    ═══════════════════════════════════════════════════════════════ */
 @keyframes fieldPulse {
-  0%   { box-shadow: 0 0 0 0 rgba(var(--primary-rgb),.4); }
-  50%  { box-shadow: 0 0 0 6px rgba(var(--primary-rgb),.15); }
-  100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb),.0); }
+  0%   { box-shadow: 0 0 0 0 rgba(var(--primary-rgb),.5), inset 0 0 0 0 rgba(var(--primary-rgb),.05); }
+  50%  { box-shadow: 0 0 0 10px rgba(var(--primary-rgb),.0), inset 0 0 8px rgba(var(--primary-rgb),.08); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb),.5), inset 0 0 0 0 rgba(var(--primary-rgb),.05); }
+}
+@keyframes arrowBounce {
+  0%, 100% { transform: translateY(-50%) translateX(0); }
+  50%      { transform: translateY(-50%) translateX(4px); }
 }
 @keyframes fieldFadeIn {
-  from { opacity:0; transform:translateY(-4px); }
-  to   { opacity:1; transform:translateY(0); }
+  from { opacity:0; transform:translateY(-6px) scale(.95); }
+  to   { opacity:1; transform:translateY(0) scale(1); }
 }
 
 /* Active guided field — the one the user should fill next */
@@ -1971,40 +1975,59 @@ tbody tr:hover { background:rgba(var(--primary-rgb),.05) }
 .field-guide-active select,
 .field-guide-active textarea {
   border-color: var(--primary) !important;
-  animation: fieldPulse 1.8s ease-in-out infinite;
-  background: rgba(var(--primary-rgb),.04) !important;
+  border-width: 2px !important;
+  animation: fieldPulse 1.2s ease-in-out infinite;
+  background: rgba(var(--primary-rgb),.07) !important;
 }
 .field-guide-active label {
   color: var(--primary) !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
 }
 .field-guide-active {
   position: relative;
+  border-left: 3px solid var(--primary);
+  padding-left: 10px !important;
+  border-radius: 6px;
+  animation: fieldFadeIn .3s ease;
 }
-/* Small arrow indicator */
+/* Arrow indicator with bounce */
 .field-guide-active::before {
-  content: '→';
+  content: '▶';
   position: absolute;
-  left: -18px;
+  left: -22px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--primary);
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 900;
-  animation: fieldFadeIn .3s ease;
+  animation: arrowBounce 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 3px rgba(var(--primary-rgb),.4));
+}
+[dir="rtl"] .field-guide-active {
+  border-left: none;
+  border-right: 3px solid var(--primary);
+  padding-left: 0 !important;
+  padding-right: 10px !important;
 }
 [dir="rtl"] .field-guide-active::before {
-  content: '←';
+  content: '◀';
   left: auto;
-  right: -18px;
+  right: -22px;
 }
 
-/* Completed field — subtle green check */
+/* Completed field — green check */
 .field-guide-done label::after {
   content: ' ✓';
   color: var(--success);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
+}
+.field-guide-done input,
+.field-guide-done select,
+.field-guide-done textarea {
+  border-color: rgba(16,185,129,.3) !important;
+  background: rgba(16,185,129,.03) !important;
 }
 
 /* Compact form improvements */

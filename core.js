@@ -1082,40 +1082,31 @@ const FormGuide = {
   _activeFields: [],
   _lastActiveId: null,
 
-  /**
-   * Start guiding through a list of field IDs.
-   * @param {string[]} fieldIds - ordered list of field IDs to guide through
-   */
   start(fieldIds) {
     this.stop();
     this._activeFields = fieldIds;
     this._lastActiveId = null;
-    this._update(true);
+    // Small delay so DOM is ready, then highlight + focus first empty
+    setTimeout(() => this._update(true), 120);
     // Watch for changes on all fields
     fieldIds.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
-      const handler = () => setTimeout(() => this._update(false), 80);
+      const handler = () => setTimeout(() => this._update(false), 60);
       el.addEventListener('input', handler);
       el.addEventListener('change', handler);
-      el.addEventListener('blur', handler);
       el._fgHandler = handler;
     });
   },
 
-  /** Check if a field is "empty" (needs user input) */
   _isEmpty(el) {
     if (!el) return true;
     const val = (el.value || '').trim();
     if (!val) return true;
-    // For selects: empty string value means no selection
-    if (el.tagName === 'SELECT') return !val;
     return false;
   },
 
-  /** Update: highlight next empty, mark done, auto-focus next */
   _update(isInit) {
-    // Clear all guide classes
     document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(el => {
       el.classList.remove('field-guide-active', 'field-guide-done');
     });
@@ -1131,41 +1122,39 @@ const FormGuide = {
 
       if (this._isEmpty(el)) {
         if (!nextEmptyId) {
-          // First empty field — highlight it
           nextEmptyId = id;
           nextEmptyEl = el;
           group.classList.add('field-guide-active');
         }
-        // Don't mark subsequent empties
       } else {
-        // Filled — mark as done
         group.classList.add('field-guide-done');
       }
     }
 
-    // Auto-focus jump: if the previously active field got filled, jump to next
-    if (!isInit && nextEmptyEl && nextEmptyId !== this._lastActiveId && this._lastActiveId) {
-      // The user just filled a field — auto-focus the next one
-      setTimeout(() => {
+    // Smart auto-focus:
+    if (nextEmptyEl) {
+      if (isInit) {
+        // On init: directly focus the first empty field (skip pre-filled!)
         nextEmptyEl.focus();
         try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
-      }, 50);
-    } else if (isInit && nextEmptyEl) {
-      // On init, scroll to first empty
-      try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
+      } else if (nextEmptyId !== this._lastActiveId && this._lastActiveId) {
+        // User just filled a field -> jump to next empty
+        setTimeout(() => {
+          nextEmptyEl.focus();
+          try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
+        }, 80);
+      }
     }
 
     this._lastActiveId = nextEmptyId;
   },
 
-  /** Stop guiding and clean up listeners */
   stop() {
     this._activeFields.forEach(id => {
       const el = document.getElementById(id);
       if (el && el._fgHandler) {
         el.removeEventListener('input', el._fgHandler);
         el.removeEventListener('change', el._fgHandler);
-        el.removeEventListener('blur', el._fgHandler);
         delete el._fgHandler;
       }
     });
