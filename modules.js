@@ -4666,6 +4666,47 @@ const SettingsModule = {
     </div>`;
   },
 
+  _previewTimbre() {
+    const amt = parseFloat(document.getElementById('timbre-sim-amt')?.value) || 0;
+    const el  = document.getElementById('timbre-sim-result');
+    if (!el) return;
+    const isAR = T.isRTL();
+    if (!amt || amt < 0) {
+      el.innerHTML = `<span style="color:var(--text3)">${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}</span>`;
+      return;
+    }
+    // Read live UI values so preview reflects any in-progress edits
+    const rate       = parseFloat(document.getElementById('timbre-rate-input')?.value)       || 0.0119;
+    const perTranche = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
+    const tranches   = amt * rate;
+    const timbre     = Math.round(tranches * perTranche * 100) / 100;
+    const ttc        = amt + timbre;
+    const fmtDA      = v => Utils.fmtCurrency(v);
+
+    el.innerHTML = `
+      <div class="timbre-sim-result">
+        <div class="timbre-sim-cell">
+          <div class="label">${isAR ? 'المبلغ HT' : 'Montant HT'}</div>
+          <div class="value" style="color:var(--text)">${fmtDA(amt)}</div>
+        </div>
+        <div class="timbre-sim-cell">
+          <div class="label">${isAR ? 'الطابع الجبائي' : 'Timbre fiscal'}</div>
+          <div class="value" style="color:#f59e0b">${fmtDA(timbre)}</div>
+        </div>
+        <div class="timbre-sim-cell" style="background:var(--primary-light,rgba(14,165,233,.08));border:2px solid var(--primary)">
+          <div class="label" style="color:var(--primary)">${isAR ? 'المجموع TTC' : 'Total TTC'}</div>
+          <div class="value" style="color:var(--primary)">${fmtDA(ttc)}</div>
+        </div>
+      </div>
+      <div class="timbre-sim-step">
+        <strong>${isAR ? 'تفاصيل الحساب:' : 'Détail du calcul :'}</strong>
+        &nbsp; ${amt.toLocaleString('fr-FR')} &times; ${rate} = <strong>${Math.round(tranches * 100) / 100}</strong> ${isAR ? 'شريحة' : 'tranches'}
+        &nbsp;&times;&nbsp; <strong>${perTranche} DA</strong>
+        = <strong style="color:var(--primary)">${fmtDA(timbre)}</strong>
+      </div>
+    `;
+  },
+
   _saveTimbre() {
     const rate       = parseFloat(document.getElementById('timbre-rate-input')?.value)       || 0.0119;
     const perTranche = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
