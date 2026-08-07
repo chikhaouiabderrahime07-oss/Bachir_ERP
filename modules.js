@@ -590,7 +590,8 @@ const BRModule = {
     const extraFees= parseFloat(document.getElementById('br-extra')?.value)||0;
     const noTimbre = document.getElementById('br-no-timbre')?.checked || false;
     const timbre   = noTimbre ? 0 : (parseFloat(document.getElementById('br-timbre')?.value)||0);
-    const tvaRate  = parseFloat(document.getElementById('br-tva-rate')?.value) ?? 19;
+    const tvaRateRaw = parseFloat(document.getElementById('br-tva-rate')?.value);
+    const tvaRate  = isNaN(tvaRateRaw) ? 19 : tvaRateRaw;
     const receivedBy  = (document.getElementById('br-receiver')?.value||Auth.getCurrentUser()?.name||'').trim();
     const controlledBy= (document.getElementById('br-controller')?.value||'').trim();
 
@@ -616,7 +617,7 @@ const BRModule = {
     let savedBR;
     if (editId) {
       savedBR = DB.update('brs', editId, data);
-      const bl = DB.getAll('bls').find(b=>b.brId===editId);
+      const bl = DB.getAll('bls').find(b=>Number(b.brId)===Number(editId));
       if (bl) DB.update('bls', bl.id, { ref: DB.buildBLRef(brNum,year,null,suppAbbrev) }, 'Sync avec BR modifié');
       Utils.notify((T.isRTL()?'تم تعديل وصل الاستلام':'BR modifié avec succès'), 'success');
     } else {
@@ -632,7 +633,7 @@ const BRModule = {
     const br = DB.getById('brs', id);
     if (!br) return;
     const sup = DB.getById('suppliers', br.supplierId);
-    const bl = DB.getAll('bls').find(b=>b.brId===id);
+    const bl = DB.getAll('bls').find(b=>Number(b.brId)===Number(id));
     const isLocked = br.status==='delivered'||br.status==='locked';
     const canEdit = Auth.canEdit(br);
 
@@ -682,13 +683,14 @@ const BRModule = {
   async deleteBR(id) {
     const ok1 = await Dialog.confirm(T.isRTL() ? 'حذف الوصل' : 'Supprimer le BR', T.get('delete')+(T.isRTL()?' هذا الوصل؟':' ce BR ?'), 'danger');
     if (!ok1) return;
-    const bl = DB.getAll('bls').find(b=>b.brId===id);
-    if (bl) {
-      const ok2 = await Dialog.confirm(T.isRTL() ? 'يوجد BL مرتبط' : 'BL lié', (T.isRTL()?'يوجد BL مرتبط. حذف الاثنين؟':'Un BL est lié à ce BR. Supprimer les deux ?'), 'danger');
+    const linkedBLs = DB.getAll('bls').filter(b=>Number(b.brId)===Number(id));
+    if (linkedBLs.length) {
+      const ok2 = await Dialog.confirm(T.isRTL() ? 'يوجد BL مرتبط' : 'BL lié', (T.isRTL()?`يوجد ${linkedBLs.length} BL مرتبط. حذف الاثنين؟`:`${linkedBLs.length} BL(s) lié(s) à ce BR. Supprimer tout ?`), 'danger');
       if (!ok2) return;
-      // Remove caisse entry for the linked BL before deleting
-      BRModule._cleanCaisseForBL(bl.id);
-      DB.delete('bls', bl.id);
+      for (const bl of linkedBLs) {
+        BRModule._cleanCaisseForBL(bl.id);
+        DB.delete('bls', bl.id);
+      }
     }
     DB.delete('brs', id);
     Utils.notify((T.isRTL()?'تم حذف الوصل':'BR supprimé'), 'success');
@@ -697,10 +699,11 @@ const BRModule = {
 
   // Remove the caisse_admin bl_delivery entry for a specific BL (called on delete)
   _cleanCaisseForBL(blId) {
+    const blIdNum = Number(blId);
     const caisse = DB.getAll('caisse_admin');
-    const toRemove = caisse.filter(e => e.source === 'bl_delivery' && e.blId === blId);
+    const toRemove = caisse.filter(e => e.source === 'bl_delivery' && Number(e.blId) === blIdNum);
     if (!toRemove.length) return;
-    const cleaned = caisse.filter(e => !(e.source === 'bl_delivery' && e.blId === blId));
+    const cleaned = caisse.filter(e => !(e.source === 'bl_delivery' && Number(e.blId) === blIdNum));
     DB.rawSet('caisse_admin', cleaned);
     // Cloud sync: remove orphan entries
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -1327,10 +1330,17 @@ const BLModule = {
       deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
     }, 'Livraison confirmée');
     // Mark BR delivered + traceability
-    if (bl.brId) DB.update('brs', bl.brId, {
-      status: 'delivered', deliveredAt: now,
-      deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
-    }, 'Livraison confirmée (depuis BL)');
+    // Only mark BR as delivered if ALL linked BLs are now delivered
+    if (bl.brId) {
+      const otherBLs = DB.getAll('bls').filter(b => Number(b.brId) === Number(bl.brId));
+      const allDelivered = otherBLs.every(b => Number(b.id) === Number(blId) || b.status === 'delivered');
+      if (allDelivered) {
+        DB.update('brs', bl.brId, {
+          status: 'delivered', deliveredAt: now,
+          deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
+        }, 'Livraison confirmée (depuis BL)');
+      }
+    }
 
     // ── Immediate caisse entry ──
     // Amount comes from the BR (as per client: "caisse amount is calculated from the BR")
@@ -1338,8 +1348,8 @@ const BLModule = {
     const blCreatorId = bl.createdBy || u?.id;
     const blCreator = DB.getById('users', blCreatorId);
     const today = Utils.today();
-    // Avoid double-entry if already exists for this BL
-    const alreadyExists = DB.getAll('caisse_admin').some(e => e.blId === blId && e.source === 'bl_delivery');
+    // Avoid double-entry if already exists for this BL (Number() for type-safe comparison)
+    const alreadyExists = DB.getAll('caisse_admin').some(e => Number(e.blId) === Number(blId) && e.source === 'bl_delivery');
     if (!alreadyExists && amount > 0) {
       DB.insert('caisse_admin', {
         type: 'deposit',
@@ -1354,7 +1364,7 @@ const BLModule = {
         deliveredBy: u?.id,       // ← who clicked confirm
         deliveredByName: u?.name,
         sessionDate: today,
-        amount: Number(br?.totalTTC || bl.totalTTC || 0),  // ← amount from BR
+        amount: Number(bl.totalTTC || br?.totalTTC || 0),  // ← amount from BL (correct for partial deliveries)
         note: `BL ${bl.ref} (BR ${br?.ref||'?'}) — créé par ${blCreator?.name||'?'}, validé par ${u?.name||'?'}`
       });
     }
@@ -1418,9 +1428,14 @@ const BLModule = {
     DB.delete('bls', id);
     if (bl?.brId) {
       const br = DB.getById('brs', bl.brId);
-      // Free the BR — reopen it so the number is available again
       if (br && (br.status === 'delivered' || br.status === 'billed')) {
-        DB.update('brs', br.id, { status: 'open' }, T.isRTL()?'حذف BL — إعادة فتح BR':'BL supprimé — BR réouvert');
+        // Only reopen BR if NO other delivered BLs remain for it
+        const otherDeliveredBLs = DB.getAll('bls').filter(b =>
+          Number(b.brId) === Number(bl.brId) && Number(b.id) !== Number(id) && b.status === 'delivered'
+        );
+        if (otherDeliveredBLs.length === 0) {
+          DB.update('brs', br.id, { status: 'open' }, T.isRTL()?'حذف BL — إعادة فتح BR':'BL supprimé — BR réouvert');
+        }
       }
     }
     Utils.notify(T.isRTL()?'تم حذف BL':'BL supprimé', 'success');
@@ -3239,8 +3254,13 @@ const ClientsModule = {
 const StatsModule = {
   _period: 'month',
   _charts: {},
+  _customFrom: '',
+  _customTo: '',
 
   _getRange() {
+    if (this._period === 'custom' && this._customFrom) {
+      return new Date(this._customFrom);
+    }
     const d = new Date();
     d.setHours(0,0,0,0);
     if (this._period === 'week')  { d.setDate(d.getDate()-7); return d; }
@@ -3271,11 +3291,15 @@ const StatsModule = {
       tendance:     isAR ? 'اتجاه الشهر'              : 'Tendance du mois',
       topFourn:     isAR ? 'أفضل الموردين'            : 'Top Fournisseurs',
       perfUsr:      isAR ? 'أداء المستخدمين'          : 'Performance Utilisateurs',
+      topArticles:  isAR ? 'أكثر المنتجات شراءً'       : 'Top Articles achetés',
+      exportStats:  isAR ? 'تصدير التقرير'            : 'Exporter le rapport',
     };
 
     const startDate = this._getRange();
+    const endDate = this._customTo ? new Date(this._customTo + 'T23:59:59') : null;
     const allBRs = DB.getAll('brs');
-    const brs = startDate ? allBRs.filter(b => new Date(b.createdAt) >= startDate) : allBRs;
+    let brs = startDate ? allBRs.filter(b => new Date(b.createdAt) >= startDate) : allBRs;
+    if (endDate) brs = brs.filter(b => new Date(b.createdAt) <= endDate);
     const bls = DB.getAll('bls');
     const delivered = bls.filter(b => b.status === 'delivered');
     const totalTTC = brs.reduce((s,b) => s+(Number(b.totalTTC)||0), 0);
@@ -3285,7 +3309,8 @@ const StatsModule = {
     const vaultWithdrawals = ca.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+(Number(t.amount)||0),0);
     const vaultBalance = vaultDeposits - vaultWithdrawals;
     const avgBR = brs.length ? totalTTC / brs.length : 0;
-    const deliveryRate = brs.length ? Math.round(delivered.length/brs.length*100) : 0;
+    const deliveredBRsCount = brs.filter(b => b.status === 'delivered' || b.status === 'billed').length;
+    const deliveryRate = brs.length ? Math.min(100, Math.round(deliveredBRsCount/brs.length*100)) : 0;
 
     const now = new Date();
     const curMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -3322,11 +3347,20 @@ const StatsModule = {
             </span>
           </p>
         </div>
-        <div style="display:flex;gap:6px;padding-bottom:2px">
+        <div style="display:flex;gap:6px;padding-bottom:2px;align-items:center">
           ${['week','month','year','all'].map(p =>
-            `<button class="btn btn-sm ${this._period===p?'btn-primary':'btn-outline'}" onclick="StatsModule._period='${p}';App.loadModule('stats')">
+            `<button class="btn btn-sm ${this._period===p?'btn-primary':'btn-outline'}" onclick="StatsModule._period='${p}';StatsModule._customFrom='';StatsModule._customTo='';App.loadModule('stats')">
               ${p==='week'?T.get('stat_week'):p==='month'?T.get('stat_month'):p==='year'?T.get('stat_year'):T.get('stat_all')}
             </button>`).join('')}
+          <span style="width:1px;height:24px;background:var(--border);margin:0 4px"></span>
+          <input type="date" id="stats-from" value="${this._customFrom||''}" onchange="StatsModule._customFrom=this.value;StatsModule._period='custom';App.loadModule('stats')"
+            style="font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);height:30px">
+          <span style="font-size:11px;color:var(--text3)">→</span>
+          <input type="date" id="stats-to" value="${this._customTo||''}" onchange="StatsModule._customTo=this.value;StatsModule._period='custom';App.loadModule('stats')"
+            style="font-size:11px;padding:4px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);height:30px">
+          <button class="btn btn-sm btn-outline" onclick="StatsModule.exportStatsExcel()" title="${lbl.exportStats}">
+            <i class="fas fa-file-excel"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -3401,8 +3435,8 @@ const StatsModule = {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
       <div class="card">
-        <div class="card-header"><h3><i class="fas fa-chart-bar"></i> ${lbl.perfUsr}</h3></div>
-        <div class="card-body" style="padding:16px"><canvas id="chart-users" style="max-height:220px"></canvas></div>
+        <div class="card-header"><h3><i class="fas fa-boxes"></i> ${lbl.topArticles}</h3></div>
+        <div class="card-body" style="padding:16px"><canvas id="chart-top-articles" style="max-height:220px"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header"><h3><i class="fas fa-chart-area"></i> ${lbl.fluxMois}</h3></div>
@@ -3649,6 +3683,72 @@ const StatsModule = {
         options: { responsive: true, scales: { y: { grid: { color: gridColor }, ticks: { callback: v=>(v/1000).toFixed(0)+'k' } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }
       });
     }
+
+    // ── Top Articles chart (horizontal bar — top 10 by value) ──
+    const topArtCtx = document.getElementById('chart-top-articles');
+    if (topArtCtx) {
+      const artMap = {};
+      const allBRs = DB.getAll('brs');
+      allBRs.forEach(br => {
+        (br.lines || []).forEach(l => {
+          const name = (l.designation || '').trim();
+          if (!name) return;
+          artMap[name] = (artMap[name] || 0) + (Number(l.total) || 0);
+        });
+      });
+      const sorted = Object.entries(artMap).sort((a,b) => b[1]-a[1]).slice(0, 10);
+      const artColors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#ec4899','#14b8a6','#f97316','#6366f1'];
+      this._charts.topArticles = new Chart(topArtCtx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(([n]) => n.length > 20 ? n.slice(0,18)+'…' : n),
+          datasets: [{ label: T.isRTL()?'القيمة':'Valeur (DA)', data: sorted.map(([,v]) => v),
+            backgroundColor: artColors, borderRadius: 6, borderSkipped: false }]
+        },
+        options: { indexAxis: 'y', responsive: true,
+          scales: { x: { grid: { color: gridColor }, ticks: { callback: v=>(v/1000).toFixed(0)+'k' } }, y: { grid: { display: false } } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+  },
+
+  // ── Export Stats to Excel ──
+  exportStatsExcel() {
+    const isAR = T.isRTL();
+    const allBRs = DB.getAll('brs');
+    const allBLs = DB.getAll('bls');
+    const ca = DB.getAll('caisse_admin');
+    const headers = ['Date','Réf BR','Fournisseur','Total HT','TVA','Timbre','Total TTC','Statut','BL Réf','BL Statut'];
+    const rows = allBRs.map(br => {
+      const sup = DB.getById('suppliers', br.supplierId);
+      const bl = allBLs.find(b => Number(b.brId) === Number(br.id));
+      return [
+        br.date || '', br.ref || '', sup?.name || '',
+        Number(br.totalHT)||0, Number(br.tvaAmount)||0, Number(br.timbreAmount)||0, Number(br.totalTTC)||0,
+        br.status || '', bl?.ref || '', bl?.status || ''
+      ];
+    });
+    // Add summary rows
+    const totalHT = rows.reduce((s,r) => s + (Number(r[3])||0), 0);
+    const totalTVA = rows.reduce((s,r) => s + (Number(r[4])||0), 0);
+    const totalTimbre = rows.reduce((s,r) => s + (Number(r[5])||0), 0);
+    const totalTTC = rows.reduce((s,r) => s + (Number(r[6])||0), 0);
+    rows.push([]);
+    rows.push(['TOTAL','','', totalHT, totalTVA, totalTimbre, totalTTC, '','','']);
+    // Caisse summary
+    const deps = ca.filter(t=>t.type==='deposit').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const wits = ca.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    rows.push(['CAISSE','Dépôts','', deps, '','','','','','']);
+    rows.push(['','Retraits','', wits, '','','','','','']);
+    rows.push(['','SOLDE','', deps-wits, '','','','','','']);
+
+    if (typeof exportXLSX !== 'undefined') {
+      exportXLSX(headers, rows, `rapport_stats_${Utils.today()}`);
+      Utils.notify(isAR?'تم تصدير التقرير':'Rapport exporté', 'success');
+    } else {
+      Utils.notify('Excel export non disponible', 'error');
+    }
   }
 };
 
@@ -3801,7 +3901,7 @@ const EvalModule = {
       })();
 
       const brRows = dayBRs.map(br => {
-        const blLinked = allBLs.find(bl => bl.brId===br.id);
+        const blLinked = allBLs.find(bl => Number(bl.brId)===Number(br.id));
         return `<tr>
           <td><strong>${Utils.escHTML(br.ref||'')}</strong></td>
           <td>${Utils.escHTML(supMap[br.supplierId]?.name||'—')}</td>
@@ -5165,11 +5265,17 @@ const RecycleBinModule = {
       const done = e.restored;
       const dDate = Utils.fmtDateTime(e.deletedAt);
 
-      return `<div style="background:var(--bg-card,var(--bg2));border:1px solid var(--border);border-radius:14px;overflow:hidden;
+      const checked = RecycleBinModule._selected.has(e.id);
+
+      return `<div style="background:var(--bg-card,var(--bg2));border:1px solid ${checked?'var(--primary)':'var(--border)'};border-radius:14px;overflow:hidden;
                          display:flex;flex-direction:column;transition:.2s;${done?'opacity:.5':''}
                          box-shadow:0 2px 8px rgba(0,0,0,.06)" class="rb-card">
-        <!-- Top color strip -->
-        <div style="height:5px;background:linear-gradient(${grad})"></div>
+        <!-- Top: color strip + checkbox -->
+        <div style="height:5px;background:linear-gradient(${grad});position:relative">
+          <input type="checkbox" id="rb-cb-${e.id}" ${checked?'checked':''}
+            onchange="RecycleBinModule.toggleSelect(${e.id})"
+            style="position:absolute;top:8px;${isAR?'left':'right'}:10px;width:16px;height:16px;cursor:pointer;accent-color:var(--primary)">
+        </div>
         <div style="padding:16px 18px;flex:1;display:flex;flex-direction:column;gap:10px">
           <!-- Badge + name row -->
           <div style="display:flex;align-items:flex-start;gap:10px">
@@ -5199,16 +5305,22 @@ const RecycleBinModule = {
           </div>
         </div>
         <!-- Action footer -->
-        <div style="padding:12px 18px;border-top:1px solid var(--border);background:var(--bg,rgba(0,0,0,.02))">
+        <div style="padding:10px 18px;border-top:1px solid var(--border);background:var(--bg,rgba(0,0,0,.02));display:flex;gap:8px">
           ${done
-            ? `<div style="font-size:11px;color:var(--text3);text-align:center"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR?'تمت الاستعادة':'Déjà restauré'}</div>`
+            ? `<div style="font-size:11px;color:var(--text3);text-align:center;width:100%"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR?'تمت الاستعادة':'Déjà restauré'}</div>`
             : `<button onclick="RecycleBinModule.restore(${e.id})"
-                 style="width:100%;padding:8px;border-radius:8px;border:none;background:var(--primary);color:#fff;
-                        font-size:12px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px"
+                 style="flex:1;padding:7px;border-radius:8px;border:none;background:var(--primary);color:#fff;
+                        font-size:11px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:5px"
                  onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
                 <i class="fas fa-undo"></i> ${T.get('rb_restore')}
               </button>`
           }
+          <button onclick="RecycleBinModule.permanentDelete(${e.id})"
+            style="padding:7px 12px;border-radius:8px;border:1px solid rgba(239,68,68,.3);background:transparent;
+                   color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:4px"
+            onmouseover="this.style.background='rgba(239,68,68,.08)'" onmouseout="this.style.background='transparent'">
+            <i class="fas fa-fire-alt" style="font-size:10px"></i>
+          </button>
         </div>
       </div>`;
     }).join('');
@@ -5254,8 +5366,15 @@ const RecycleBinModule = {
         </div>
       </div>
 
-      <!-- ─── FILTER TABS ─── -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">${filterTabs}</div>
+      <!-- ─── FILTER TABS + SELECT ALL ─── -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;align-items:center">
+        ${filterTabs}
+        ${items.length ? `<button onclick="RecycleBinModule.selectAll()"
+          style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;
+                 color:var(--text3);font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-check-double" style="font-size:10px"></i> ${isAR?'تحديد الكل':'Tout sélectionner'}
+        </button>` : ''}
+      </div>
 
       <!-- ─── CARDS GRID ─── -->
       ${!items.length
@@ -5268,9 +5387,68 @@ const RecycleBinModule = {
            </div>`
         : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">${cards}</div>`
       }
+
+      <!-- ─── BULK ACTION BAR (visible when items selected) ─── -->
+      <div id="rb-bulk-bar" style="display:none;position:sticky;bottom:20px;margin-top:20px;padding:14px 20px;
+           background:var(--bg-card,var(--bg2));border:2px solid var(--primary);border-radius:14px;
+           box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:10;
+           display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span id="rb-sel-count" style="font-weight:800;color:var(--primary);font-size:14px"></span>
+        <button onclick="RecycleBinModule.permanentDeleteSelected()"
+          style="padding:8px 16px;border-radius:8px;border:none;background:#ef4444;color:#fff;font-size:12px;font-weight:700;cursor:pointer">
+          <i class="fas fa-fire-alt"></i> ${isAR?'حذف نهائي للمحددين':'Suppr. définitive'}
+        </button>
+        <button onclick="RecycleBinModule.clearSelection()"
+          style="padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text3);font-size:12px;cursor:pointer">
+          ${isAR?'إلغاء التحديد':'Désélectionner'}
+        </button>
+      </div>
     </div>`;
   },
 
+  _selected: new Set(),
+
+  toggleSelect(binId) {
+    if (this._selected.has(binId)) this._selected.delete(binId);
+    else this._selected.add(binId);
+    this._updateBulkBar();
+    // Toggle checkbox visual
+    const cb = document.getElementById(`rb-cb-${binId}`);
+    if (cb) cb.checked = this._selected.has(binId);
+  },
+
+  selectAll() {
+    const all = DB.getAll('recycle_bin');
+    const filter = this._filter || 'all';
+    const items = filter === 'all' ? all : all.filter(e => e.collection === filter);
+    const allSelected = items.every(e => this._selected.has(e.id));
+    if (allSelected) {
+      items.forEach(e => this._selected.delete(e.id));
+    } else {
+      items.forEach(e => this._selected.add(e.id));
+    }
+    // Refresh checkboxes
+    items.forEach(e => {
+      const cb = document.getElementById(`rb-cb-${e.id}`);
+      if (cb) cb.checked = this._selected.has(e.id);
+    });
+    this._updateBulkBar();
+  },
+
+  clearSelection() {
+    this._selected.clear();
+    document.querySelectorAll('[id^="rb-cb-"]').forEach(cb => cb.checked = false);
+    this._updateBulkBar();
+  },
+
+  _updateBulkBar() {
+    const bar = document.getElementById('rb-bulk-bar');
+    const cnt = document.getElementById('rb-sel-count');
+    if (!bar) return;
+    const n = this._selected.size;
+    bar.style.display = n > 0 ? 'flex' : 'none';
+    if (cnt) cnt.textContent = T.isRTL() ? `${n} عنصر محدد` : `${n} sélectionné(s)`;
+  },
 
   async restore(binId) {
     const isAR = T.isRTL();
@@ -5281,7 +5459,6 @@ const RecycleBinModule = {
     if (!result.ok) { Utils.notify(result.error || T.get('rb_already'), 'error'); return; }
 
     if (result.refWarning) {
-      // Show a warning modal explaining the ref conflict
       const { oldRef, newRef } = result.refWarning;
       await Dialog.confirm(
         isAR ? '⚠️ تعارض المرجع' : '⚠️ Conflit de référence',
@@ -5293,11 +5470,62 @@ const RecycleBinModule = {
     }
 
     Utils.notify(T.get('rb_restored'), 'success');
-
-    // If it was a BL that was delivered, DON'T re-add caisse (user must re-confirm delivery)
-    // The status was reset to 'open' by restoreFromBin — user needs to re-deliver to get caisse entry
-
+    this._selected.delete(binId);
     App.loadModule('recycle_bin');
+  },
+
+  // Permanently delete ONE item from recycle bin (cannot be restored)
+  async permanentDelete(binId) {
+    const isAR = T.isRTL();
+    const ok = await Dialog.confirm(
+      isAR?'حذف نهائي':'Suppression définitive',
+      isAR?'هذا العنصر سيُحذف نهائياً ولا يمكن استعادته. متأكد؟':
+           'Cet élément sera définitivement supprimé et ne pourra plus être restauré. Confirmer ?',
+      'danger'
+    );
+    if (!ok) return;
+    this._permaDeleteIds([binId]);
+    Utils.notify(isAR?'تم الحذف النهائي':'Supprimé définitivement', 'success');
+    App.loadModule('recycle_bin');
+  },
+
+  // Permanently delete all SELECTED items
+  async permanentDeleteSelected() {
+    if (!this._selected.size) return;
+    const isAR = T.isRTL();
+    const n = this._selected.size;
+    const ok = await Dialog.confirm(
+      isAR?'حذف نهائي':'Suppression définitive',
+      isAR?`حذف ${n} عنصر(عناصر) نهائياً؟ لا يمكن التراجع.`:
+           `Supprimer définitivement ${n} élément(s) ? Cette action est irréversible.`,
+      'danger'
+    );
+    if (!ok) return;
+    this._permaDeleteIds([...this._selected]);
+    this._selected.clear();
+    Utils.notify(isAR?`تم حذف ${n} عنصر نهائياً`:`${n} élément(s) supprimé(s) définitivement`, 'success');
+    App.loadModule('recycle_bin');
+  },
+
+  // Internal: remove specific IDs from recycle_bin + cloud
+  _permaDeleteIds(ids) {
+    const idSet = new Set(ids.map(Number));
+    const bin = DB.getAll('recycle_bin');
+    const toRemove = bin.filter(e => idSet.has(Number(e.id)));
+    const remaining = bin.filter(e => !idSet.has(Number(e.id)));
+
+    // Clean caisse for any BLs being permanently deleted
+    for (const entry of toRemove) {
+      if (entry.collection === 'bls' && entry.item?.id) {
+        BRModule._cleanCaisseForBL(entry.item.id);
+      }
+    }
+
+    DB.rawSet('recycle_bin', remaining);
+    // Cloud: remove from server
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      toRemove.forEach(e => window.API.remove('recycle_bin', e.id).catch(() => {}));
+    }
   },
 
   async emptyBin() {
@@ -5309,11 +5537,19 @@ const RecycleBinModule = {
       'danger'
     );
     if (!ok) return;
+    // Read BEFORE clearing so we can cloud-delete
+    const toRemove = DB.getAll('recycle_bin');
+    // Clean caisse for any BLs
+    for (const entry of toRemove) {
+      if (entry.collection === 'bls' && entry.item?.id) {
+        BRModule._cleanCaisseForBL(entry.item.id);
+      }
+    }
     DB.rawSet('recycle_bin', []);
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      // Cloud: delete all recycle bin entries
-      DB.getAll('recycle_bin').forEach(e => window.API.remove('recycle_bin', e.id).catch(()=>{}));
+      toRemove.forEach(e => window.API.remove('recycle_bin', e.id).catch(() => {}));
     }
+    this._selected.clear();
     Utils.notify(isAR?'تم تفريغ السلة':'Corbeille vidée', 'success');
     App.loadModule('recycle_bin');
   }

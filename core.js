@@ -274,6 +274,7 @@ const DB = {
       this._migrateBLDeliveryCaisseEntries();   // M001: backfill missing caisse entries
       this._migrateCleanOrphanCaisse();          // M002: remove caisse entries for deleted BLs
       this._migrateTimbreSlabsToLF2025();        // M003: update old timbre slabs to LF2025 format
+      this._migrateDedupCaisseEntries();         // M004: remove duplicate bl_delivery entries
       // Add future migrations here as _migrateXxx()
     } catch(e) {
       console.warn('[Migration] Error:', e);
@@ -287,29 +288,44 @@ const DB = {
   _migrateBLDeliveryCaisseEntries() {
     const deliveredBLs = this.getAll('bls').filter(bl => bl.status === 'delivered');
     const existingEntries = this.getAll('caisse_admin');
+
+    // ── CRITICAL: skip BLs in the recycle bin ──────────────────────────────────────
+    // Live-sync can restore a deleted BL from the server before the cloud DELETE
+    // propagates. Without this guard, M001 would create caisse entries for deleted BLs.
+    const recycleBinBLIds = new Set(
+      this.getAll('recycle_bin')
+        .filter(e => e.collection === 'bls')
+        .map(e => Number(e.item?.id))
+    );
+
     let added = 0;
 
     for (const bl of deliveredBLs) {
-      // Skip if already has a caisse entry for this BL
-      const alreadyExists = existingEntries.some(e => e.blId === bl.id && e.source === 'bl_delivery');
+      const blIdNum = Number(bl.id);
+
+      // Skip if this BL was deleted (it's in the recycle bin)
+      if (recycleBinBLIds.has(blIdNum)) continue;
+
+      // Skip if already has a caisse entry — use Number() for type-safe comparison
+      const alreadyExists = existingEntries.some(e =>
+        Number(e.blId) === blIdNum && e.source === 'bl_delivery'
+      );
       if (alreadyExists) continue;
 
       const br = this.getById('brs', bl.brId);
       const amount = Number(br?.totalTTC || bl.totalTTC || 0);
       if (!amount) continue;
 
-      // BL creator gets the cash
       const blCreatorId = bl.createdBy;
       if (!blCreatorId) continue;
       const blCreator = this.getById('users', blCreatorId);
 
-      // Use deliveredAt date for sessionDate so it lands in the right day's caisse
       const sessionDate = (bl.deliveredAt || bl.date || '').slice(0, 10) || Utils.today();
 
       this.insert('caisse_admin', {
         type: 'deposit',
         source: 'bl_delivery',
-        blId: bl.id,
+        blId: blIdNum,
         blRef: bl.ref,
         brRef: br?.ref,
         brCreatedBy: br?.createdBy,
@@ -321,7 +337,6 @@ const DB = {
         sessionDate,
         amount,
         note: `[MIGRATION] BL ${bl.ref} (BR ${br?.ref || '?'}) — créé par ${blCreator?.name || '?'}, livré le ${sessionDate}`,
-        // Use deliveredAt as createdAt so it sorts correctly in history
         createdAt: bl.deliveredAt || new Date().toISOString()
       });
       added++;
@@ -333,15 +348,43 @@ const DB = {
   },
 
   // Migration M002: Remove caisse_admin bl_delivery entries for BLs that no longer exist
-  // This handles the case where an admin deleted a delivered BL but the caisse entry stayed.
+  // Uses Number() for type-safe comparison (server may return strings, localStorage stores numbers)
   _migrateCleanOrphanCaisse() {
-    const allBLIds = new Set(this.getAll('bls').map(bl => bl.id));
+    const activeBLIds = new Set(this.getAll('bls').map(bl => Number(bl.id)));
     const caisse = this.getAll('caisse_admin');
-    const orphans = caisse.filter(e => e.source === 'bl_delivery' && e.blId && !allBLIds.has(e.blId));
+    const orphans = caisse.filter(e =>
+      e.source === 'bl_delivery' && e.blId != null && !activeBLIds.has(Number(e.blId))
+    );
     if (!orphans.length) return;
-    const cleanedCaisse = caisse.filter(e => !(e.source === 'bl_delivery' && e.blId && !allBLIds.has(e.blId)));
+    const cleanedCaisse = caisse.filter(e =>
+      !(e.source === 'bl_delivery' && e.blId != null && !activeBLIds.has(Number(e.blId)))
+    );
     this.rawSet('caisse_admin', cleanedCaisse);
+    // Also remove from cloud
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      orphans.forEach(e => window.API.remove('caisse_admin', e.id).catch(() => {}));
+    }
     console.log(`[Migration M002] Removed ${orphans.length} orphan caisse entries for deleted BLs.`);
+  },
+
+  // Migration M004: Remove duplicate bl_delivery entries — keep only ONE per blId
+  _migrateDedupCaisseEntries() {
+    const caisse = this.getAll('caisse_admin');
+    const seen = new Map(); // blId → first entry id
+    const toRemove = [];
+    for (const e of caisse) {
+      if (e.source !== 'bl_delivery' || e.blId == null) continue;
+      const key = Number(e.blId);
+      if (!seen.has(key)) { seen.set(key, e.id); }
+      else { toRemove.push(e.id); } // duplicate — remove
+    }
+    if (!toRemove.length) return;
+    const deduped = caisse.filter(e => !toRemove.includes(e.id));
+    this.rawSet('caisse_admin', deduped);
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      toRemove.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
+    }
+    console.log(`[Migration M004] Removed ${toRemove.length} duplicate bl_delivery caisse entries.`);
   },
 
   // Migration M003: Upgrade old-format timbre slabs (rate%) to LF2025 (ratePerTranche)
@@ -533,7 +576,7 @@ const DB = {
 
   update(col, id, data, note = 'Modification') {
     const items = this.getAll(col);
-    const idx = items.findIndex(i => i.id === id);
+    const idx = items.findIndex(i => Number(i.id) === Number(id));
     if (idx === -1) return null;
     const old = { ...items[idx] };
     const u = Auth.getCurrentUser();
@@ -555,7 +598,7 @@ const DB = {
 
   delete(col, id) {
     const items = this.getAll(col);
-    const old = items.find(i => i.id === id);
+    const old = items.find(i => Number(i.id) === Number(id));
     if (!old) return false;
 
     // ── Save to Recycle Bin before deleting ──
@@ -1102,6 +1145,9 @@ const SessionMgr = {
       e.sessionId === session.id && e.source === 'user_cloture'
     );
     if (!alreadyHasCloture) {
+      // Deposit only the NET cash (especes minus what bl_delivery already deposited)
+      // This prevents double-counting: bl_delivery entries already added their amounts to the vault
+      const netAmount = Math.max(0, Number(especes) - alreadyCounted);
       DB.insert('caisse_admin', {
         type: 'deposit',
         source: 'user_cloture',
@@ -1109,8 +1155,8 @@ const SessionMgr = {
         userName: user?.name || 'Utilisateur',
         sessionId: session.id,
         sessionDate: session.date,
-        amount: Number(especes),
-        note: `Clôture journée — ${user?.name||''} — ${session.date}`
+        amount: netAmount,
+        note: `Clôture journée — ${user?.name||''} — ${session.date}${alreadyCounted > 0 ? ` (${Utils.fmtCurrency(alreadyCounted)} déjà comptés via BL)` : ''}`
       });
     }
     return updated;
