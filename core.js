@@ -1075,93 +1075,76 @@ const Utils = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// FORM GUIDE — Sequential field highlighting for guided data entry
-// Highlights the next empty required field so users never forget anything
+// FORM GUIDE — Sequential field highlighting (polling-based, bulletproof)
+// Scans fields every 400ms, highlights next empty, auto-focuses on change
 // ═══════════════════════════════════════════════════════════════════════
 const FormGuide = {
-  _activeFields: [],
+  _fields: [],
+  _timer: null,
   _lastActiveId: null,
 
   start(fieldIds) {
     this.stop();
-    this._activeFields = fieldIds;
+    this._fields = fieldIds;
     this._lastActiveId = null;
-    // Small delay so DOM is ready, then highlight + focus first empty
-    setTimeout(() => this._update(true), 120);
-    // Watch for changes on all fields
-    fieldIds.forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const handler = () => setTimeout(() => this._update(false), 60);
-      el.addEventListener('input', handler);
-      el.addEventListener('change', handler);
-      el._fgHandler = handler;
-    });
+    // Initial scan after DOM settles
+    setTimeout(() => {
+      this._scan(true);
+      // Start polling every 400ms
+      this._timer = setInterval(() => this._scan(false), 400);
+    }, 200);
   },
 
-  _isEmpty(el) {
-    if (!el) return true;
-    const val = (el.value || '').trim();
-    if (!val) return true;
-    return false;
-  },
-
-  _update(isInit) {
-    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(el => {
-      el.classList.remove('field-guide-active', 'field-guide-done');
+  _scan(isInit) {
+    // Remove all previous highlights
+    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(n => {
+      n.classList.remove('field-guide-active', 'field-guide-done');
     });
 
-    let nextEmptyId = null;
-    let nextEmptyEl = null;
+    let firstEmptyId = null;
+    let firstEmptyEl = null;
 
-    for (const id of this._activeFields) {
+    for (const id of this._fields) {
       const el = document.getElementById(id);
       if (!el) continue;
-      const group = el.closest('.form-group');
+      // Find wrapping group — try .form-group, then any parent div
+      const group = el.closest('.form-group') || el.parentElement;
       if (!group) continue;
 
-      if (this._isEmpty(el)) {
-        if (!nextEmptyId) {
-          nextEmptyId = id;
-          nextEmptyEl = el;
-          group.classList.add('field-guide-active');
-        }
-      } else {
+      const val = (el.value || '').trim();
+      const empty = !val;
+
+      if (empty && !firstEmptyId) {
+        firstEmptyId = id;
+        firstEmptyEl = el;
+        group.classList.add('field-guide-active');
+      } else if (!empty) {
         group.classList.add('field-guide-done');
       }
     }
 
-    // Smart auto-focus:
-    if (nextEmptyEl) {
+    // Auto-focus logic
+    if (firstEmptyEl) {
       if (isInit) {
-        // On init: directly focus the first empty field (skip pre-filled!)
-        nextEmptyEl.focus();
-        try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
-      } else if (nextEmptyId !== this._lastActiveId && this._lastActiveId) {
-        // User just filled a field -> jump to next empty
-        setTimeout(() => {
-          nextEmptyEl.focus();
-          try { nextEmptyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(e) {}
-        }, 80);
+        // First run: focus the first empty field right away
+        firstEmptyEl.focus();
+        try { firstEmptyEl.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(e){}
+      } else if (firstEmptyId !== this._lastActiveId && this._lastActiveId) {
+        // A field just got filled — jump to next empty
+        firstEmptyEl.focus();
+        try { firstEmptyEl.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(e){}
       }
     }
 
-    this._lastActiveId = nextEmptyId;
+    this._lastActiveId = firstEmptyId;
   },
 
   stop() {
-    this._activeFields.forEach(id => {
-      const el = document.getElementById(id);
-      if (el && el._fgHandler) {
-        el.removeEventListener('input', el._fgHandler);
-        el.removeEventListener('change', el._fgHandler);
-        delete el._fgHandler;
-      }
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(n => {
+      n.classList.remove('field-guide-active', 'field-guide-done');
     });
-    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(el => {
-      el.classList.remove('field-guide-active', 'field-guide-done');
-    });
-    this._activeFields = [];
+    this._fields = [];
     this._lastActiveId = null;
   }
 };

@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.39">
+<link rel="stylesheet" href="style.css?v=9.40">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -53,6 +53,45 @@
   </script>
 </head>
 <body>
+
+<!-- ═══ SPLASH SCREEN — Logo on load ══════════════════════ -->
+<div id="splashScreen" style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity .5s ease, transform .4s ease;background:var(--bg, #fff)">
+  <div id="splashLogo" style="animation:splashPulse 1.5s ease-in-out infinite">
+    <div style="font-size:36px;font-weight:900;color:var(--primary, #2563eb);letter-spacing:-1px">AI</div>
+  </div>
+  <div style="margin-top:16px;font-size:11px;color:var(--text4, #999);font-weight:500;letter-spacing:1px">CHARGEMENT...</div>
+</div>
+<style>
+  @keyframes splashPulse {
+    0%, 100% { transform: scale(1); opacity:.9; }
+    50% { transform: scale(1.05); opacity:1; }
+  }
+</style>
+<script>
+  // Show splash with company logo if available
+  (function(){
+    try {
+      const s = JSON.parse(localStorage.getItem('settings') || '{}');
+      const logo = s.logoRight || s.rightLogo || s.logoLeft || s.leftLogo || '';
+      const theme = s.themeMode || 'light';
+      const splash = document.getElementById('splashScreen');
+      if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme','dark');
+        splash.style.background = '#0f172a';
+      }
+      if (logo) {
+        document.getElementById('splashLogo').innerHTML = '<img src="'+logo+'" style="max-height:90px;max-width:200px;border-radius:12px;filter:drop-shadow(0 4px 20px rgba(0,0,0,.15))" alt="Logo">';
+      }
+    } catch(e){}
+    // Hide splash after app loads
+    window.addEventListener('load', function(){
+      setTimeout(function(){
+        var sp = document.getElementById('splashScreen');
+        if(sp){ sp.style.opacity='0'; sp.style.transform='scale(1.05)'; setTimeout(function(){sp.remove()},500); }
+      }, 800);
+    });
+  })();
+</script>
 
 <!-- ═══ LOGIN SCREEN ══════════════════════════════════════ -->
 <div class="login-screen" id="loginScreen" style="display:none">
@@ -227,10 +266,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.39"></script>
-<script src="core.js?v=9.39"></script>
-<script src="modules.js?v=9.39"></script>
-<script src="pdf.js?v=9.39"></script>
+<script src="api.js?v=9.40"></script>
+<script src="core.js?v=9.40"></script>
+<script src="modules.js?v=9.40"></script>
+<script src="pdf.js?v=9.40"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
