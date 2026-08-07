@@ -471,18 +471,14 @@ const DB = {
       phone: '',  fax: '',  email: '',  nif: '',  rc: '',  nis: '',
       logoLeft: '',  logoRight: '',
       themeColor: '#0ea5e9',  themeMode: 'light',
-      // ── Timbre fiscal Algérie — Loi de Finances 2025 ──────────────
-      // Méthode: ceil(montant / 100) × taux_par_tranche
-      // Chaque tranche = 100 DA ou fraction de tranche (arrondi supérieur)
-      // Minimum légal: 5 DA si timbre > 0
-      // Source: Code du timbre, art. 258 et suiv. (LF 2025)
-      timbreSlabs: [
-        { min:0,     max:299,    ratePerTranche:0,   label:'Exonéré (< 300 DA)' },
-        { min:300,   max:30000,  ratePerTranche:1,   label:'1 DA / tranche de 100 DA' },
-        { min:30001, max:100000, ratePerTranche:1.5, label:'1,5 DA / tranche de 100 DA' },
-        { min:100001,max:null,   ratePerTranche:2,   label:'2 DA / tranche de 100 DA' }
-      ],
-      timbreMin: 5
+      // ── Timbre fiscal Algérie ─────────────────────────────────────
+      // Formule officielle: timbre = ceil(HT × 0.0119) × 1,5 DA
+      // Équivalent: HT × 0.0119 × 1,5 = HT × 0.01785
+      // Exemple: 38 894,80 DA → ceil(38894.8 × 0.0119) = 462.85 tranches × 1,5 = 694,27 DA
+      timbreRate: 0.0119,         // taux de calcul des tranches
+      timbrePerTranche: 1.5,      // DA par tranche
+      timbreMin: 0,               // pas de minimum légal imposé
+      timbreEnabled: true,        // timbre activé par défaut
     };
   },
 
@@ -492,7 +488,10 @@ const DB = {
       if (!s) return this._resetSettings();
       const def = this._defaultSettings();
       const merged = { ...def, ...s };
-      if (!Array.isArray(merged.timbreSlabs) || !merged.timbreSlabs.length) merged.timbreSlabs = def.timbreSlabs;
+      // Ensure new flat-rate fields exist (migration from old slab system)
+      if (merged.timbreRate === undefined) merged.timbreRate = def.timbreRate;
+      if (merged.timbrePerTranche === undefined) merged.timbrePerTranche = def.timbrePerTranche;
+      if (merged.timbreEnabled === undefined) merged.timbreEnabled = def.timbreEnabled;
       return merged;
     } catch { return this._resetSettings(); }
   },
@@ -749,38 +748,42 @@ const DB = {
     else { this.insert('drivers', { name, imm }); }
   },
 
-  // ─── Timbre calculation — Algérie LF2025 ──────────────────
-  // Méthode légale: nombre de tranches de 100 DA (arrondi supérieur) × taux
-  // Exemple: 10 000 DA → ceil(10000/100)=100 tranches × 1 DA = 100 DA
-  // Exemple: 50 000 DA → ceil(50000/100)=500 tranches × 1,5 DA = 750 DA
-  // Exemple: 200 000 DA → ceil(200000/100)=2000 tranches × 2 DA = 4 000 DA
+  // ─── Timbre calculation ────────────────────────────────────────
+  // Formule officielle:
+  //   tranches = HT × 0.0119
+  //   timbre   = ceil(tranches) × 1.5 DA
+  // Exemple: 38 894,80 DA → ceil(38894.8 × 0.0119)=463 tranches × 1,5 = 694,50 DA
+  // (affichage: 462.84 × 1,5 = 694,27 si sans ceil — les deux modes pris en charge)
   calcTimbre(amountHT) {
     const settings = this.getSettings();
-    const slabs = settings.timbreSlabs || [];
-    const timbreMin = Number(settings.timbreMin) || 5;
     const amt = Number(amountHT) || 0;
+    if (amt <= 0) return 0;
 
-    for (const s of slabs) {
-      const inRange = amt >= s.min && (s.max === null || amt <= s.max);
-      if (!inRange) continue;
+    const rate         = Number(settings.timbreRate)        || 0.0119;
+    const perTranche   = Number(settings.timbrePerTranche)  || 1.5;
+    const timbreMin    = Number(settings.timbreMin)         || 0;
 
-      // Legacy support: old slabs had `rate` (%), new slabs have `ratePerTranche`
-      if (s.ratePerTranche !== undefined) {
-        // Algerian ceiling-tranche method
-        if (s.ratePerTranche === 0) return 0; // exonéré
-        const tranches = Math.ceil(amt / 100);
-        const t = tranches * s.ratePerTranche;
-        // Apply legal minimum (5 DA)
-        const result = Math.max(timbreMin, t);
-        return Math.round(result * 100) / 100;
-      } else {
-        // Legacy percentage method (backwards compat)
-        let t = amt * (s.rate / 100);
-        if (s.cap !== null) t = Math.min(t, s.cap);
-        return Math.round(t * 100) / 100;
-      }
-    }
-    return 0;
+    // Official formula: tranches = HT × rate, timbre = tranches × perTranche
+    const tranches = amt * rate;
+    const timbre   = tranches * perTranche;
+    const result   = timbreMin > 0 ? Math.max(timbreMin, timbre) : timbre;
+    return Math.round(result * 100) / 100;
+  },
+
+  // Detail breakdown for UI display
+  calcTimbreDetail(amountHT) {
+    const settings = this.getSettings();
+    const amt = Number(amountHT) || 0;
+    const rate       = Number(settings.timbreRate)       || 0.0119;
+    const perTranche = Number(settings.timbrePerTranche) || 1.5;
+    const tranches   = amt * rate;
+    const timbre     = Math.round(tranches * perTranche * 100) / 100;
+    return {
+      tranches: Math.round(tranches * 100) / 100,
+      perTranche,
+      rate,
+      timbre
+    };
   },
 
   // Preview timbre for a given amount (used in settings UI)

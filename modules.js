@@ -372,6 +372,7 @@ const BRModule = {
     const tva      = totalHT * tvaRate / 100;
     const noTimbre = document.getElementById('br-no-timbre')?.checked;
     const autoTimbre = noTimbre ? 0 : DB.calcTimbre(totalHT);
+    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(totalHT);
     const timbreInput = document.getElementById('br-timbre');
     if (timbreInput && (!timbreInput.dataset.manual || noTimbre)) timbreInput.value = autoTimbre.toFixed(2);
     const timbre   = noTimbre ? 0 : (parseFloat(timbreInput?.value)||0);
@@ -383,8 +384,12 @@ const BRModule = {
     if (el('br-tva-pct'))        el('br-tva-pct').textContent        = tvaRate + '%';
     if (el('br-total-timbre-disp')) el('br-total-timbre-disp').textContent = Utils.fmtCurrency(timbre);
     if (el('br-total-ttc'))      el('br-total-ttc').textContent      = Utils.fmtCurrency(totalTTC);
-    if (el('br-timbre-auto'))    el('br-timbre-auto').textContent    = noTimbre ? '' : Utils.fmtCurrency(autoTimbre);
-    if (el('br-timbre-auto2'))   el('br-timbre-auto2').textContent   = noTimbre ? '' : '(' + Utils.fmtCurrency(autoTimbre) + ')';
+    // Show calculation detail: "ceil(HT × 0.0119) = X tranches × 1.5 DA"
+    const detailStr = noTimbre ? '' : timbreDetail
+      ? `ceil(${Utils.fmtCurrency(totalHT).replace(' DA','')} × ${timbreDetail.rate}) = ${timbreDetail.tranches} tranches × ${timbreDetail.perTranche} DA`
+      : '';
+    if (el('br-timbre-auto'))  el('br-timbre-auto').textContent  = detailStr;
+    if (el('br-timbre-auto2')) el('br-timbre-auto2').textContent  = detailStr ? `(${detailStr})` : '';
   },
 
   _toggleTimbre(noTimbre) {
@@ -4556,21 +4561,17 @@ const SettingsModule = {
   },
 
   _tabTimbre(s) {
-    const slabs = s.timbreSlabs || [];
-    const timbreMin = s.timbreMin || 5;
+    const timbreRate     = s.timbreRate     ?? 0.0119;
+    const timbrePerTranche = s.timbrePerTranche ?? 1.5;
+    const timbreMin      = s.timbreMin      ?? 0;
     const isAR = T.isRTL();
     return `
     <style>
       .timbre-law-card{background:linear-gradient(135deg,#0f2027 0%,#1e3a5f 50%,#0f4c75 100%);border-radius:16px;padding:20px;margin-bottom:20px;color:#e0f2fe;border:1px solid rgba(56,189,248,.2)}
       .timbre-law-card h3{margin:0 0 6px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px}
       .timbre-law-card .law-ref{font-size:11px;opacity:.65;margin-bottom:16px;font-style:italic}
-      .timbre-law-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
-      .timbre-slab-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px}
-      .timbre-slab-card .range{color:#7dd3fc;font-size:11px;font-weight:800;margin-bottom:4px}
-      .timbre-slab-card .rate{font-size:15px;font-weight:900;color:#fff}
-      .timbre-slab-card .ex{font-size:10px;opacity:.55;margin-top:4px}
-      .timbre-formula-box{background:rgba(0,0,0,.3);border-radius:10px;padding:14px;font-size:12px;border:1px solid rgba(56,189,248,.15)}
-      .timbre-formula-box code{background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc;font-size:12px}
+      .timbre-formula-box{background:rgba(0,0,0,.3);border-radius:10px;padding:14px;font-size:13px;border:1px solid rgba(56,189,248,.15)}
+      .timbre-formula-box code{background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc;font-size:13px;font-weight:700}
       .timbre-sim-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
       .timbre-sim-result{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
       .timbre-sim-cell{background:var(--bg3,var(--bg));border-radius:10px;padding:14px;text-align:center}
@@ -4579,49 +4580,32 @@ const SettingsModule = {
       .timbre-sim-step{background:var(--bg3,var(--bg));border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px;color:var(--text3);border-left:3px solid var(--primary)}
     </style>
 
-    <!-- ═══ LAW EXPLANATION CARD ═══ -->
+    <!-- ═══ FORMULA EXPLANATION CARD ═══ -->
     <div class="timbre-law-card">
-      <h3><i class="fas fa-landmark" style="color:#38bdf8"></i>
-        ${isAR ? 'الطابع الجبائي — قانون المالية 2025' : 'Timbre Fiscal Algérien — Loi de Finances 2025'}
+      <h3><i class="fas fa-stamp" style="color:#38bdf8"></i>
+        ${isAR ? 'الطابع الجبائي — صيغة الحساب' : 'Timbre Fiscal — Formule de calcul'}
       </h3>
       <div class="law-ref">
-        ${isAR
-          ? 'المرجع: مدونة الطابع — المادة 258 وما بعدها | جامعة المديرية العامة للضرائب (DGI)'
-          : 'Référence : Code du timbre, art. 258 et suiv. (LF 2025) &nbsp;——&nbsp; Direction Générale des Impôts (DGI)'}
+        ${isAR ? 'الصيغة: timbre = HT × rate × 1.5 DA' : 'Formule : timbre = HT × taux × DA/tranche'}
       </div>
-
-      <div class="timbre-law-grid">
-        <div class="timbre-slab-card">
-          <div class="range">&lt; 300 DA</div>
-          <div class="rate" style="color:#4ade80">${isAR ? 'معفى' : 'Exonéré'}</div>
-          <div class="ex">${isAR ? 'لا يوجد طابع' : 'Timbre = 0 DA'}</div>
-        </div>
-        <div class="timbre-slab-card">
-          <div class="range">300 → 30 000 DA</div>
-          <div class="rate">1 DA <span style="font-size:11px;opacity:.7">/ 100 DA</span></div>
-          <div class="ex">${isAR ? 'مثال: 10 000 دج → 100 دج' : 'Ex: 10 000 DA → 100 DA'}</div>
-        </div>
-        <div class="timbre-slab-card">
-          <div class="range">30 001 → 100 000 DA</div>
-          <div class="rate">1,5 DA <span style="font-size:11px;opacity:.7">/ 100 DA</span></div>
-          <div class="ex">${isAR ? 'مثال: 50 000 دج → 750 دج' : 'Ex: 50 000 DA → 750 DA'}</div>
-        </div>
-        <div class="timbre-slab-card">
-          <div class="range">&gt; 100 000 DA</div>
-          <div class="rate">2 DA <span style="font-size:11px;opacity:.7">/ 100 DA</span></div>
-          <div class="ex">${isAR ? 'مثال: 200 000 دج → 4 000 دج' : 'Ex: 200 000 DA → 4 000 DA'}</div>
-        </div>
-      </div>
-
       <div class="timbre-formula-box">
-        <div style="font-weight:700;margin-bottom:8px;color:#7dd3fc;font-size:12px">
-          ⓘ ${isAR ? 'طريقة الحساب القانونية (دوام الشرائح)' : 'Méthode légale de calcul (tranches progressives)'}
+        <div style="font-weight:700;margin-bottom:10px;color:#7dd3fc;font-size:13px">
+          ℹ️ ${isAR ? 'طريقة الحساب الرسمية' : 'Méthode de calcul officielle'}
         </div>
-        ${isAR ? `
-        <div>عدد الشرائح = <code>ceil(المبلغ ÷ 100)</code> &nbsp;×&nbsp; <code>سعر الشريحة</code> = الطابع</div>
-        <div style="margin-top:6px;opacity:.7">الحد الأدنى القانوني: <strong>${timbreMin} دج</strong> إذا كان الطابع > 0 | الدفع الإلكتروني = معفى (Art. 258 quinquies)</div>` : `
-        <div><code>timbre = ceil(montant_HT ÷ 100) &times; taux_par_tranche</code></div>
-        <div style="margin-top:6px;opacity:.7">Minimum légal : <strong>${timbreMin} DA</strong> si timbre &gt; 0 &nbsp;|&nbsp; Paiement électronique : exonéré (Art. 258 quinquies LF2025)</div>`}
+        <div style="margin-bottom:8px">
+          <code>tranches = HT × ${timbreRate}</code>
+        </div>
+        <div style="margin-bottom:8px">
+          <code>timbre = tranches × ${timbrePerTranche} DA</code>
+        </div>
+        <div style="margin-bottom:8px;color:#7dd3fc">
+          <code>timbre = HT × ${(timbreRate * timbrePerTranche).toFixed(5)}</code>
+        </div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;opacity:.7">
+          ${isAR
+            ? `مثال: 38 894,80 DA → 38894.8 × ${timbreRate} = ${(38894.8 * timbreRate).toFixed(2)} شريحة × ${timbrePerTranche} = ${(38894.8 * timbreRate * timbrePerTranche).toFixed(2)} DA`
+            : `Ex: 38 894,80 DA → 38894.8 × ${timbreRate} = ${(38894.8 * timbreRate).toFixed(2)} tranches × ${timbrePerTranche} = ${(38894.8 * timbreRate * timbrePerTranche).toFixed(2)} DA`}
+        </div>
       </div>
     </div>
 
@@ -4632,148 +4616,68 @@ const SettingsModule = {
         ${isAR ? 'حاسبة الطابع الفورية' : 'Simulateur de timbre en temps réel'}
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
-        ${isAR ? 'أدخل مبلغ الفاتورة (HT) وستظهر الطابع والمجموع الشامل' : 'Saisissez le montant HT de la facture pour voir le calcul détaillé'}
+        ${isAR ? 'أدخل مبلغ HT وستظهر تفاصيل الحساب' : 'Saisissez le montant HT pour voir le détail exact'}
       </div>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px">
-          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:6px">${isAR ? 'المبلغ قبل الضريبة (HT)' : 'Montant HT (DA)'}</label>
-          <input type="number" id="timbre-sim-amt" min="0" step="100" placeholder="${isAR ? 'مثال: 50000' : 'ex: 50 000'}"
-            style="width:100%;padding:10px 14px;font-size:18px;font-weight:700;border-radius:10px;border:2px solid var(--border);background:var(--bg);color:var(--text)"
-            oninput="SettingsModule._previewTimbre()">
-        </div>
-      </div>
+      <input type="number" id="timbre-sim-amt" min="0" step="100" placeholder="${isAR ? 'مثال: 38894' : 'ex: 38 894'}"
+        style="width:100%;padding:10px 14px;font-size:18px;font-weight:700;border-radius:10px;border:2px solid var(--border);background:var(--bg);color:var(--text)"
+        oninput="SettingsModule._previewTimbre()">
       <div id="timbre-sim-result" style="margin-top:14px;color:var(--text3);font-size:13px">
         ${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}
       </div>
     </div>
 
-    <!-- ═══ SLABS TABLE ═══ -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h4 style="margin:0;font-size:14px;font-weight:800;color:var(--text)">
+    <!-- ═══ PARAMETERS ═══ -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px">
+      <h4 style="margin:0 0 16px;font-size:14px;font-weight:800;color:var(--text)">
         <i class="fas fa-sliders-h" style="color:var(--primary);margin-right:6px"></i>
-        ${isAR ? 'جدول الشرائح' : 'Tableau des tranches'}
+        ${isAR ? 'معاملات الطابع' : 'Paramètres du timbre'}
       </h4>
-      <span style="font-size:10px;color:var(--text3);background:var(--bg2);padding:3px 8px;border-radius:6px">
-        ${isAR ? 'السعر بالدينار لكل 100 دج' : 'Taux en DA par tranche de 100 DA'}
-      </span>
-    </div>
-    <div id="slabsContainer">
-      ${slabs.map((sl,i)=>`
-      <div class="slab-row" id="slab-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
         <div class="form-group" style="margin:0">
-          <label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label>
-          <input type="number" class="slab-min" value="${sl.min}" min="0">
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'معامل الشرائح (rate)' : 'Taux (rate)'}</label>
+          <input type="number" id="timbre-rate-input" value="${timbreRate}" min="0" step="0.0001"
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px"
+            oninput="SettingsModule._previewTimbre()">
+          <small style="color:var(--text4);font-size:10px">${isAR ? 'مثال: 0.0119' : 'Ex: 0.0119'}</small>
         </div>
         <div class="form-group" style="margin:0">
-          <label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'إلى (DA)' : 'Max (DA)'}</label>
-          <input type="number" class="slab-max" value="${sl.max!==null&&sl.max!==undefined?sl.max:''}" placeholder="∞">
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'DA / شريحة' : 'DA / tranche'}</label>
+          <input type="number" id="timbre-per-tranche-input" value="${timbrePerTranche}" min="0" step="0.01"
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px"
+            oninput="SettingsModule._previewTimbre()">
+          <small style="color:var(--text4);font-size:10px">${isAR ? 'مثال: 1.5' : 'Ex: 1.5'}</small>
         </div>
         <div class="form-group" style="margin:0">
-          <label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'سعر/شريحة (DA)' : 'DA / tranche'}</label>
-          <input type="number" class="slab-rate" value="${sl.ratePerTranche??sl.rate??0}" min="0" step="0.01">
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'الحد الأدنى (DA)' : 'Minimum (DA)'}</label>
+          <input type="number" id="timbre-min-input" value="${timbreMin}" min="0" step="1"
+            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px">
+          <small style="color:var(--text4);font-size:10px">${isAR ? '0 = بدون حد أدنى' : '0 = sans minimum'}</small>
         </div>
-        <button class="btn btn-xs btn-danger" onclick="document.getElementById('slab-${i}').remove()" style="height:36px;margin-bottom:1px">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>`).join('')}
-    </div>
-
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <span><i class="fas fa-info-circle" style="color:var(--primary)"></i> ${isAR ? 'الحد الأدنى للطابع (DA):' : 'Minimum légal du timbre (DA):'}</span>
-      <input type="number" id="timbre-min-input" value="${timbreMin}" min="0" step="1"
-        style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700">
-      <span style="opacity:.6">${isAR ? '(0 = بدون حد أدنى)' : '(0 = sans minimum)'}</span>
+      </div>
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-outline" onclick="SettingsModule._addSlab()">
-        <i class="fas fa-plus"></i> ${isAR ? 'إضافة شريحة' : 'Ajouter tranche'}
-      </button>
       <button class="btn btn-primary" onclick="SettingsModule._saveTimbre()">
         <i class="fas fa-save"></i> ${T.get('save')}
       </button>
       <button class="btn btn-secondary" onclick="SettingsModule._resetTimbre()">
-        <i class="fas fa-undo"></i> ${isAR ? 'إعادة تعيين (LF2025)' : 'Réinitialiser — LF2025'}
+        <i class="fas fa-undo"></i> ${isAR ? 'إعادة تعيين' : 'Réinitialiser'}
       </button>
     </div>`;
   },
 
-  _previewTimbre() {
-    const amt = parseFloat(document.getElementById('timbre-sim-amt')?.value) || 0;
-    const el  = document.getElementById('timbre-sim-result');
-    if (!el) return;
-    const isAR = T.isRTL();
-    if (!amt || amt < 0) {
-      el.innerHTML = `<span style="color:var(--text3)">${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}</span>`;
-      return;
-    }
-    const timbre = DB.calcTimbre(amt);
-    const ttc    = amt + timbre;
-    const slabs  = DB.getSettings().timbreSlabs || [];
-    const slab   = slabs.find(s => amt >= s.min && (s.max === null || s.max === undefined || amt <= s.max));
-    const rpt    = slab?.ratePerTranche ?? 0;
-    const tranches = Math.ceil(amt / 100);
-    const fmtDA  = v => Utils.fmtCurrency(v);
-    const exonere = timbre === 0;
-
-    el.innerHTML = `
-      <div class="timbre-sim-result">
-        <div class="timbre-sim-cell">
-          <div class="label">${isAR ? 'المبلغ HT' : 'Montant HT'}</div>
-          <div class="value" style="color:var(--text)">${fmtDA(amt)}</div>
-        </div>
-        <div class="timbre-sim-cell">
-          <div class="label">${isAR ? 'الطابع الجبائي' : 'Timbre fiscal'}</div>
-          <div class="value" style="color:${exonere ? '#4ade80' : '#f59e0b'}">${exonere ? (isAR ? 'معفى' : 'Exonéré') : fmtDA(timbre)}</div>
-        </div>
-        <div class="timbre-sim-cell" style="background:var(--primary-light,rgba(14,165,233,.08));border:2px solid var(--primary)">
-          <div class="label" style="color:var(--primary)">${isAR ? 'المجموع TTC' : 'Total TTC'}</div>
-          <div class="value" style="color:var(--primary)">${fmtDA(ttc)}</div>
-        </div>
-      </div>
-      ${!exonere ? `
-      <div class="timbre-sim-step">
-        <strong>${isAR ? 'تفاصيل الحساب:' : 'Détail du calcul :'}</strong>
-        &nbsp; ceil(${amt.toLocaleString('fr-FR')} ÷ 100) = <strong>${tranches}</strong> ${isAR ? 'شريحة' : 'tranches'}
-        &nbsp;×&nbsp; <strong>${rpt} DA</strong>
-        = <strong style="color:var(--primary)">${fmtDA(tranches * rpt)}</strong>
-        ${timbre !== tranches * rpt ? ` &rarr; ${isAR ? 'الحد الأدنى' : 'minimum légal appliqué'}: <strong>${fmtDA(timbre)}</strong>` : ''}
-      </div>` : `
-      <div class="timbre-sim-step" style="border-color:#4ade80;color:#4ade80">
-        ✓ ${isAR ? 'الفاتورة معفاة من الطابع (أقل من 300 دج)' : 'Facture exonérée du timbre (montant &lt; 300 DA)'}
-      </div>`}
-    `;
-  },
-
-  _addSlab() {
-    const c = document.getElementById('slabsContainer');
-    if (!c) return;
-    const idx = c.children.length;
-    const isAR = T.isRTL();
-    c.insertAdjacentHTML('beforeend', `
-    <div class="slab-row" id="slab-${idx}" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
-      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label><input type="number" class="slab-min" value="0" min="0"></div>
-      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'إلى (DA)' : 'Max (DA)'}</label><input type="number" class="slab-max" placeholder="∞"></div>
-      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'سعر/شريحة (DA)' : 'DA/tranche'}</label><input type="number" class="slab-rate" value="0" step="0.01"></div>
-      <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove()" style="height:36px;margin-bottom:1px"><i class="fas fa-times"></i></button>
-    </div>`);
-  },
-
   _saveTimbre() {
-    const rows = document.querySelectorAll('#slabsContainer .slab-row');
-    const slabs = Array.from(rows).map(row=>({
-      min: parseFloat(row.querySelector('.slab-min')?.value)||0,
-      max: row.querySelector('.slab-max')?.value ? parseFloat(row.querySelector('.slab-max').value) : null,
-      ratePerTranche: parseFloat(row.querySelector('.slab-rate')?.value)||0,
-    })).sort((a,b)=>a.min-b.min);
-    const timbreMin = parseFloat(document.getElementById('timbre-min-input')?.value)||5;
-    DB.saveSettings({ timbreSlabs: slabs, timbreMin });
-    Utils.notify((T.isRTL()?'تم حفظ شرائح الطابع':'Tranches timbre enregistrées'), 'success');
+    const rate       = parseFloat(document.getElementById('timbre-rate-input')?.value)       || 0.0119;
+    const perTranche = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
+    const timbreMin  = parseFloat(document.getElementById('timbre-min-input')?.value)         || 0;
+    DB.saveSettings({ timbreRate: rate, timbrePerTranche: perTranche, timbreMin });
+    Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع' : 'Paramètres timbre enregistrés'), 'success');
   },
 
   _resetTimbre() {
-    DB.saveSettings({ timbreSlabs: DB._defaultSettings().timbreSlabs, timbreMin: 5 });
-    Utils.notify((T.isRTL()?'تمت إعادة تعيين الشرائح (LF2025)':'Tranches réinitialisées — LF2025'), 'success');
+    const def = DB._defaultSettings();
+    DB.saveSettings({ timbreRate: def.timbreRate, timbrePerTranche: def.timbrePerTranche, timbreMin: def.timbreMin });
+    Utils.notify((T.isRTL() ? 'تمت إعادة تعيين الطابع' : 'Timbre réinitialisé'), 'success');
     App.loadModule('settings');
   },
 
