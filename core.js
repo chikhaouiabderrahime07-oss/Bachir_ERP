@@ -419,12 +419,21 @@ const DB = {
       if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
 
       try {
-        const results = await Promise.allSettled(
-          COLS.map(col => window.API.getAll(col).then(data => ({ col, data })))
-        );
+        const results = await Promise.allSettled([
+          ...COLS.map(col => window.API.getAll(col).then(data => ({ col, data }))),
+          window.API.getSettings().then(data => ({ col: '_settings', data }))
+        ]);
         for (const r of results) {
-          if (r.status !== 'fulfilled' || !r.value?.data || !Array.isArray(r.value.data)) continue;
+          if (r.status !== 'fulfilled' || !r.value) continue;
           const { col, data } = r.value;
+          if (col === '_settings') {
+            // Sync settings from cloud
+            if (data && typeof data === 'object' && Object.keys(data).length) {
+              localStorage.setItem('settings', JSON.stringify(data));
+            }
+            continue;
+          }
+          if (!data || !Array.isArray(data)) continue;
           if (MERGE_COLS.has(col)) {
             const local = JSON.parse(localStorage.getItem(col) || '[]');
             const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
