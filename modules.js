@@ -4959,15 +4959,16 @@ const SettingsModule = {
   },
 
   _saveTimbre() {
-    const rate       = parseFloat(document.getElementById('timbre-rate-input')?.value)       || 0.0119;
-    const perTranche = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
-    const timbreMin  = parseFloat(document.getElementById('timbre-min-input')?.value)         || 0;
+    const _n = (v, fb) => { const p = parseFloat(v); return isNaN(p) ? fb : p; }; // safe: 0 stays 0
+    const rate       = _n(document.getElementById('timbre-rate-input')?.value, 0.0119);
+    const perTranche = _n(document.getElementById('timbre-per-tranche-input')?.value, 1.5);
+    const timbreMin  = _n(document.getElementById('timbre-min-input')?.value, 0);
     const rows = document.querySelectorAll('#slabsContainer .slab-row');
     const slabs = Array.from(rows).map(row => ({
-      min: parseFloat(row.querySelector('.slab-min')?.value)||0,
-      max: row.querySelector('.slab-max')?.value ? parseFloat(row.querySelector('.slab-max').value) : null,
-      rate: parseFloat(row.querySelector('.slab-rate')?.value)||rate,
-      perTranche: parseFloat(row.querySelector('.slab-pt')?.value)||perTranche,
+      min:        _n(row.querySelector('.slab-min')?.value, 0),
+      max:        row.querySelector('.slab-max')?.value.trim() ? _n(row.querySelector('.slab-max').value, null) : null,
+      rate:       _n(row.querySelector('.slab-rate')?.value, rate),
+      perTranche: _n(row.querySelector('.slab-pt')?.value, perTranche),
     })).sort((a,b) => a.min - b.min);
 
     // Save rate/perTranche/min via settings (simple scalar values — work fine)
