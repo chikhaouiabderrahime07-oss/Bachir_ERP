@@ -61,13 +61,18 @@ router.get('/settings/main', async (req, res) => {
 // ─── PATCH /api/data/settings/main ───────────────────────────────
 router.patch('/settings/main', async (req, res) => {
   try {
-    const current = await Settings.findOne({ key: 'main' });
-    const merged  = { ...(current?.value || {}), ...req.body };
-    await Settings.findOneAndUpdate(
-      { key: 'main' },
-      { value: merged },
-      { upsert: true, new: true }
-    );
+    const doc = await Settings.findOne({ key: 'main' });
+    const current = doc?.value || {};
+    // Deep merge: spread current then override with new values
+    // JSON round-trip ensures arrays are plain objects (no Mongoose proxies)
+    const merged = JSON.parse(JSON.stringify({ ...current, ...req.body }));
+    if (doc) {
+      doc.value = merged;
+      doc.markModified('value'); // Required for Mixed-type fields with arrays!
+      await doc.save();
+    } else {
+      await Settings.create({ key: 'main', value: merged });
+    }
     res.json(merged);
   } catch (e) {
     console.error('[SETTINGS/PATCH]', e);
