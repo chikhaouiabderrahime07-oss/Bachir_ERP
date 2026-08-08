@@ -61,24 +61,25 @@ router.get('/settings/main', async (req, res) => {
 // ─── PATCH /api/data/settings/main ───────────────────────────────
 router.patch('/settings/main', async (req, res) => {
   try {
-    const doc = await Settings.findOne({ key: 'main' });
+    const doc = await Settings.findOne({ key: 'main' }).lean();
     const current = doc?.value || {};
-    // Deep merge: spread current then override with new values
-    // JSON round-trip ensures arrays are plain objects (no Mongoose proxies)
+    // Deep merge via JSON round-trip (ensures plain objects, no Mongoose proxies)
     const merged = JSON.parse(JSON.stringify({ ...current, ...req.body }));
-    if (doc) {
-      doc.value = merged;
-      doc.markModified('value'); // Required for Mixed-type fields with arrays!
-      await doc.save();
-    } else {
-      await Settings.create({ key: 'main', value: merged });
-    }
+
+    // Use native MongoDB driver directly — bypasses all Mongoose Mixed-type
+    // tracking issues (markModified not needed, arrays always saved correctly)
+    await Settings.collection.updateOne(
+      { key: 'main' },
+      { $set: { value: merged, updatedAt: new Date() } },
+      { upsert: true }
+    );
     res.json(merged);
   } catch (e) {
     console.error('[SETTINGS/PATCH]', e);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
+
 
 // ─── GET /api/data/:col  (get all docs in a collection) ──────────
 router.get('/:col', async (req, res) => {
