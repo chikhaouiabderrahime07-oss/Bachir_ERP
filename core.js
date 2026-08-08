@@ -520,18 +520,13 @@ const DB = {
     const cur = this.getSettings();
     const upd = { ...cur, ...d };
     localStorage.setItem('settings', JSON.stringify(upd));
-    // Cloud sync settings
+    // Cloud sync — silent background, never show UI error (runs before/after login)
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.saveSettings(upd).then(result => {
-        if (result === null) throw new Error('No response from server');
-        // Verify server acknowledged the save
-        console.log('[DB.saveSettings] cloud sync OK');
+        if (result !== null) console.log('[DB.saveSettings] cloud OK');
+        // null = no token yet (pre-login calls from migrations) — ignore silently
       }).catch(e => {
-        console.error('[DB.saveSettings] cloud sync FAILED:', e.message);
-        // Show visible warning so user knows data is only local
-        if (typeof Utils !== 'undefined' && Utils.notify) {
-          Utils.notify('⚠️ Paramètres sauvegardés localement uniquement (erreur cloud: ' + e.message + ')', 'warning', 6000);
-        }
+        console.warn('[DB.saveSettings] cloud sync failed silently:', e.message);
       });
     }
     return upd;

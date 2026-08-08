@@ -6,7 +6,7 @@
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.44">
+<link rel="stylesheet" href="style.css?v=9.46">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -54,43 +54,80 @@
 </head>
 <body>
 
-<!-- ═══ SPLASH SCREEN — Logo on load ══════════════════════ -->
-<div id="splashScreen" style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity .5s ease, transform .4s ease;background:var(--bg, #fff)">
-  <div id="splashLogo" style="animation:splashPulse 1.5s ease-in-out infinite">
-    <div style="font-size:36px;font-weight:900;color:var(--primary, #2563eb);letter-spacing:-1px">AI</div>
+
+<!-- ═══ SPLASH SCREEN — Animated AI + Company Logo on load ══ -->
+<div id="splashScreen" style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0;background:#fff;">
+
+  <!-- AI Widget (same as login) -->
+  <div class="ai-widget ai-widget-lg" id="splashAiWidget" style="pointer-events:none;margin-bottom:8px">
+    <div class="ai-ring3"></div>
+    <div class="ai-orbit"></div>
+    <div class="ai-orbit ai-orbit-2"></div>
+    <div class="ai-core"></div>
   </div>
-  <div style="margin-top:16px;font-size:11px;color:var(--text4, #999);font-weight:500;letter-spacing:1px">CHARGEMENT...</div>
+
+  <!-- AI Brand Text -->
+  <div style="text-align:center;margin-bottom:24px">
+    <div class="ai-glitch-wrap" style="justify-content:center">
+      <span class="ai-glitch-text" data-text="AI" style="font-size:2.2rem">AI</span>
+    </div>
+    <div style="font-size:10px;letter-spacing:3px;color:#888;font-weight:600;margin-top:2px">INTELLIGENT SYSTEMS</div>
+  </div>
+
+  <!-- Company Logo (loaded from settings) -->
+  <div id="splashCompanyLogo" style="opacity:0;transition:opacity .6s ease .4s;text-align:center"></div>
+
+  <!-- Loading bar -->
+  <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(0,0,0,.06)">
+    <div id="splashBar" style="height:100%;width:0;background:linear-gradient(90deg,var(--primary,#2563eb),#7c3aed);transition:width 1.2s ease;border-radius:0 2px 2px 0"></div>
+  </div>
 </div>
+
 <style>
-  @keyframes splashPulse {
-    0%, 100% { transform: scale(1); opacity:.9; }
-    50% { transform: scale(1.05); opacity:1; }
-  }
+  #splashScreen { transition: opacity .45s ease, transform .4s ease; }
 </style>
+
 <script>
-  // Show splash with company logo if available
-  (function(){
-    try {
-      const s = JSON.parse(localStorage.getItem('settings') || '{}');
-      const logo = s.logoRight || s.rightLogo || s.logoLeft || s.leftLogo || '';
-      const theme = s.themeMode || 'light';
-      const splash = document.getElementById('splashScreen');
-      if (theme === 'dark') {
-        document.documentElement.setAttribute('data-theme','dark');
-        splash.style.background = '#0f172a';
-      }
-      if (logo) {
-        document.getElementById('splashLogo').innerHTML = '<img src="'+logo+'" style="max-height:90px;max-width:200px;border-radius:12px;filter:drop-shadow(0 4px 20px rgba(0,0,0,.15))" alt="Logo">';
-      }
-    } catch(e){}
-    // Hide splash after app loads
-    window.addEventListener('load', function(){
+(function(){
+  try {
+    var s = JSON.parse(localStorage.getItem('settings') || '{}');
+    var logo = s.logoRight || s.rightLogo || s.logoLeft || s.leftLogo || '';
+    var theme = s.themeMode || 'light';
+    var splash = document.getElementById('splashScreen');
+
+    // Apply theme immediately (no flash)
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme','dark');
+      splash.style.background = '#0f172a';
+    }
+
+    // Show company logo if available
+    if (logo) {
+      var logoDiv = document.getElementById('splashCompanyLogo');
+      logoDiv.innerHTML = '<img src="'+logo+'" style="max-height:72px;max-width:180px;border-radius:10px;filter:drop-shadow(0 4px 16px rgba(0,0,0,.15))" alt="Logo"><div style="font-size:9px;letter-spacing:2px;color:#aaa;margin-top:8px;font-weight:600">'+(s.companyName||'')+'</div>';
+      setTimeout(function(){ logoDiv.style.opacity = '1'; }, 100);
+    }
+
+    // Animate loading bar
+    setTimeout(function(){
+      var bar = document.getElementById('splashBar');
+      if(bar) bar.style.width = '85%';
+    }, 50);
+
+  } catch(e){}
+
+  // Hide splash after app loads
+  window.addEventListener('load', function(){
+    setTimeout(function(){
+      var bar = document.getElementById('splashBar');
+      if(bar) { bar.style.width='100%'; bar.style.transition='width .3s ease'; }
       setTimeout(function(){
         var sp = document.getElementById('splashScreen');
-        if(sp){ sp.style.opacity='0'; sp.style.transform='scale(1.05)'; setTimeout(function(){sp.remove()},500); }
-      }, 800);
-    });
-  })();
+        if(sp){ sp.style.opacity='0'; sp.style.transform='scale(1.03)'; setTimeout(function(){sp.remove();},450); }
+      }, 350);
+    }, 700);
+  });
+})();
 </script>
 
 <!-- ═══ LOGIN SCREEN ══════════════════════════════════════ -->
@@ -266,10 +303,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.44"></script>
-<script src="core.js?v=9.44"></script>
-<script src="modules.js?v=9.44"></script>
-<script src="pdf.js?v=9.44"></script>
+<script src="api.js?v=9.46"></script>
+<script src="core.js?v=9.46"></script>
+<script src="modules.js?v=9.46"></script>
+<script src="pdf.js?v=9.46"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -281,6 +318,14 @@ const App = {
 
   init() {
     DB.init();
+
+    // ── Prevent scroll from changing number input values (accidental changes) ──
+    // Uses capture:true so it intercepts before the input handles it
+    document.addEventListener('wheel', e => {
+      if (document.activeElement?.type === 'number') {
+        document.activeElement.blur();
+      }
+    }, { passive: true });
 
     // Apply saved lang
     const lang = localStorage.getItem('lang') || 'fr';
