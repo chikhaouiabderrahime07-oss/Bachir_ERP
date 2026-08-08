@@ -41,10 +41,35 @@ router.get('/next-num/:type', async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════════
 // IMPORTANT: Specific routes MUST come before parameterized routes!
-// Express matches routes in order — /settings/main must be declared
-// before /:col/:id or Express will treat "settings" as :col and
-// "main" as :id, causing a 404.
 // ═══════════════════════════════════════════════════════════════════
+
+// ─── GET /api/data/timbre-slabs ── Dedicated slabs storage ──────
+// Stores slabs as a real Document (not Mixed settings) — 100% reliable
+router.get('/timbre-slabs', async (req, res) => {
+  try {
+    const doc = await Document.findOne({ col: 'timbre_slabs', 'data.key': 'main' }).lean();
+    res.json(doc?.data?.slabs || []);
+  } catch (e) {
+    console.error('[TIMBRE-SLABS/GET]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── PUT /api/data/timbre-slabs ── Save slabs array ──────────────
+router.put('/timbre-slabs', async (req, res) => {
+  try {
+    const slabs = Array.isArray(req.body) ? req.body : [];
+    await Document.findOneAndUpdate(
+      { col: 'timbre_slabs', 'data.key': 'main' },
+      { col: 'timbre_slabs', data: { key: 'main', slabs } },
+      { upsert: true, new: true }
+    );
+    res.json({ ok: true, count: slabs.length });
+  } catch (e) {
+    console.error('[TIMBRE-SLABS/PUT]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ─── GET /api/data/settings/main ─────────────────────────────────
 router.get('/settings/main', async (req, res) => {

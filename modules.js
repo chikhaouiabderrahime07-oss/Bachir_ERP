@@ -4969,13 +4969,32 @@ const SettingsModule = {
       rate: parseFloat(row.querySelector('.slab-rate')?.value)||rate,
       perTranche: parseFloat(row.querySelector('.slab-pt')?.value)||perTranche,
     })).sort((a,b) => a.min - b.min);
-    DB.saveSettings({ timbreRate: rate, timbrePerTranche: perTranche, timbreMin, timbreSlabs: slabs });
-    Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع' : 'Paramètres timbre enregistrés'), 'success');
+
+    // Save rate/perTranche/min via settings (simple scalar values — work fine)
+    DB.saveSettings({ timbreRate: rate, timbrePerTranche: perTranche, timbreMin });
+
+    // Save slabs via DEDICATED collection — bypasses all Mixed-type issues
+    localStorage.setItem('timbre_slabs_data', JSON.stringify(slabs));
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.saveTimbreSlabs(slabs).then(r => {
+        console.log('[timbreSlabs] saved to DB:', r?.count, 'slabs');
+        Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع ✓' : 'Tranches timbre sauvegardées ✓'), 'success');
+      }).catch(e => {
+        console.error('[timbreSlabs] cloud save FAILED:', e.message);
+        Utils.notify('❌ Erreur sauvegarde tranches: ' + e.message, 'danger', 6000);
+      });
+    } else {
+      Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع' : 'Paramètres timbre enregistrés'), 'success');
+    }
   },
 
   _resetTimbre() {
     const def = DB._defaultSettings();
-    DB.saveSettings({ timbreRate: def.timbreRate, timbrePerTranche: def.timbrePerTranche, timbreMin: def.timbreMin, timbreSlabs: [] });
+    DB.saveSettings({ timbreRate: def.timbreRate, timbrePerTranche: def.timbrePerTranche, timbreMin: def.timbreMin });
+    localStorage.setItem('timbre_slabs_data', JSON.stringify([]));
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.saveTimbreSlabs([]).catch(() => {});
+    }
     Utils.notify((T.isRTL() ? 'تمت إعادة تعيين الطابع' : 'Timbre réinitialisé'), 'success');
     App.loadModule('settings');
   },

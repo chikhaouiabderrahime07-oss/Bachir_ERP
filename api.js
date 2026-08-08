@@ -62,20 +62,18 @@ const API = (() => {
 
   // ── Auth ────────────────────────────────────────────────────────
   async function syncCloudToLocal() {
-    // Fetch ALL collections in PARALLEL instead of sequential for 10x faster sync
     const COLS = [
       'users', 'brs', 'bls', 'suppliers', 'clients',
       'caisse_admin', 'sessions', 'history', 'audit_log',
-      // Reference data — shared across all users
       'articles', 'drivers',
-      // Extra collections
       'work_log', 'recycle_bin'
     ];
-    const MERGE_COLS = new Set(['history', 'audit_log']); // These merge instead of overwrite
+    const MERGE_COLS = new Set(['history', 'audit_log']);
 
     const results = await Promise.allSettled([
       ...COLS.map(col => getAll(col).then(data => ({ col, data }))),
-      getSettings().then(data => ({ col: '_settings', data }))
+      getSettings().then(data   => ({ col: '_settings', data })),
+      getTimbreSlabs().then(data => ({ col: '_timbre_slabs', data }))
     ]);
 
     for (const result of results) {
@@ -85,9 +83,13 @@ const API = (() => {
         if (data && Object.keys(data).length) {
           localStorage.setItem('settings', JSON.stringify(data));
         }
+      } else if (col === '_timbre_slabs') {
+        // Store slabs in dedicated key — separate from settings
+        if (Array.isArray(data)) {
+          localStorage.setItem('timbre_slabs_data', JSON.stringify(data));
+        }
       } else if (data && Array.isArray(data)) {
         if (MERGE_COLS.has(col)) {
-          // Merge server + local entries (dedup by ts+action to avoid duplicates)
           const local = JSON.parse(localStorage.getItem(col) || '[]');
           const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
           const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
@@ -146,8 +148,10 @@ const API = (() => {
   async function update(col,id,patch) { return req('PATCH', `/data/${col}/${id}`, patch); }
   async function remove(col,id)  { return req('DELETE', `/data/${col}/${id}`); }
   async function bulkSync(col, items) { return req('PUT', `/data/${col}/bulk`, items); }
-  async function getSettings()   { return req('GET',    '/data/settings/main') || {}; }
-  async function saveSettings(patch) { return req('PATCH', '/data/settings/main', patch); }
+  async function getSettings()      { return req('GET',    '/data/settings/main') || {}; }
+  async function saveSettings(patch){ return req('PATCH',  '/data/settings/main', patch); }
+  async function getTimbreSlabs()   { return req('GET',    '/data/timbre-slabs') || []; }
+  async function saveTimbreSlabs(slabs){ return req('PUT', '/data/timbre-slabs', slabs); }
 
   // ── Backup ──────────────────────────────────────────────────────
   async function listBackups()      { return req('GET',    '/backup'); }
@@ -166,7 +170,7 @@ const API = (() => {
   return {
     syncCloudToLocal, login, logout, isLoggedIn, getUser, initFromToken,
     getAll, getById, insert, update, remove, bulkSync,
-    getSettings, saveSettings,
+    getSettings, saveSettings, getTimbreSlabs, saveTimbreSlabs,
     listBackups, createBackup, restoreBackup, deleteBackup,
     ping,
     _req: req, // exposed for admin utility calls

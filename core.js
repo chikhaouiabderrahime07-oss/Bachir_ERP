@@ -421,15 +421,21 @@ const DB = {
       try {
         const results = await Promise.allSettled([
           ...COLS.map(col => window.API.getAll(col).then(data => ({ col, data }))),
-          window.API.getSettings().then(data => ({ col: '_settings', data }))
+          window.API.getSettings().then(data    => ({ col: '_settings', data })),
+          window.API.getTimbreSlabs().then(data => ({ col: '_timbre_slabs', data }))
         ]);
         for (const r of results) {
           if (r.status !== 'fulfilled' || !r.value) continue;
           const { col, data } = r.value;
           if (col === '_settings') {
-            // Sync settings from cloud
             if (data && typeof data === 'object' && Object.keys(data).length) {
               localStorage.setItem('settings', JSON.stringify(data));
+            }
+            continue;
+          }
+          if (col === '_timbre_slabs') {
+            if (Array.isArray(data)) {
+              localStorage.setItem('timbre_slabs_data', JSON.stringify(data));
             }
             continue;
           }
@@ -498,11 +504,14 @@ const DB = {
       if (!s) return this._resetSettings();
       const def = this._defaultSettings();
       const merged = { ...def, ...s };
-      // Ensure new flat-rate fields exist (migration from old slab system)
       if (merged.timbreRate === undefined) merged.timbreRate = def.timbreRate;
       if (merged.timbrePerTranche === undefined) merged.timbrePerTranche = def.timbrePerTranche;
       if (merged.timbreEnabled === undefined) merged.timbreEnabled = def.timbreEnabled;
-      if (!Array.isArray(merged.timbreSlabs)) merged.timbreSlabs = [];
+      // Read slabs from DEDICATED key (not from settings — avoids Mixed-type cloud issues)
+      try {
+        const slabsRaw = localStorage.getItem('timbre_slabs_data');
+        merged.timbreSlabs = slabsRaw ? JSON.parse(slabsRaw) : (Array.isArray(merged.timbreSlabs) ? merged.timbreSlabs : []);
+      } catch { merged.timbreSlabs = []; }
       return merged;
     } catch { return this._resetSettings(); }
   },
@@ -513,8 +522,16 @@ const DB = {
     localStorage.setItem('settings', JSON.stringify(upd));
     // Cloud sync settings
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      window.API.saveSettings(upd).catch(e => {
-        console.warn('[DB.saveSettings] cloud sync failed', e.message);
+      window.API.saveSettings(upd).then(result => {
+        if (result === null) throw new Error('No response from server');
+        // Verify server acknowledged the save
+        console.log('[DB.saveSettings] cloud sync OK');
+      }).catch(e => {
+        console.error('[DB.saveSettings] cloud sync FAILED:', e.message);
+        // Show visible warning so user knows data is only local
+        if (typeof Utils !== 'undefined' && Utils.notify) {
+          Utils.notify('⚠️ Paramètres sauvegardés localement uniquement (erreur cloud: ' + e.message + ')', 'warning', 6000);
+        }
       });
     }
     return upd;
