@@ -1140,7 +1140,7 @@ const BLModule = {
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
                   ${(!isLocked||Auth.isAdmin())?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
-                  ${!isLocked?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:''}
+                  ${bl.status==='returned'?`<button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none" onclick="BLModule.confirmDelivery(${bl.id})" title="Re-valider ce BL retourné"><i class="fas fa-redo"></i> Re-valider</button>`:((!isLocked)?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:'')}
                   <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="PDF"><i class="fas fa-file-pdf"></i></button>
                   ${(!isLocked||Auth.isAdmin())?`<button class="btn btn-xs btn-danger" onclick="BLModule.deleteBL(${bl.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
                 </td>
@@ -1678,6 +1678,25 @@ const BLModule = {
     if (!bl) return;
     const br = DB.getById('brs', bl.brId);
     const u = Auth.getCurrentUser();
+
+    // ── If BL was returned, open edit modal first so user can modify before re-validating ──
+    if (bl.status === 'returned') {
+      const editFirst = await Dialog.confirm(
+        '🔄 BL Retourné — Modifier avant validation ?',
+        `Ce BL (${Utils.escHTML(bl.ref)}) a été retourné.` +
+        `\n\nVoulez-vous le modifier avant de le re-valider comme livré ?`,
+        'info',
+        ['Modifier d\'abord', 'Valider directement']
+      );
+      if (!editFirst && editFirst !== false) return; // cancelled
+      if (editFirst === true) {
+        // Open edit modal, user will confirm delivery after saving
+        this.showEdit(blId, Auth.isAdmin());
+        return;
+      }
+      // editFirst === false → user chose "Valider directement", continue below
+    }
+
     // Use BL's own totalTTC (may differ from BR if partial delivery)
     const amount = Number(bl.totalTTC || br?.totalTTC || 0);
     const ok = await Utils.confirm2(
@@ -1687,10 +1706,11 @@ const BLModule = {
     if (!ok) return;
 
     const now = new Date().toISOString();
-    // Mark BL delivered + traceability
+    // Mark BL delivered + traceability (clear returned flags if re-delivering)
     DB.update('bls', blId, {
       status: 'delivered', deliveredAt: now,
-      deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu'
+      deliveredBy: u?.id, deliveredByName: u?.name || 'Inconnu',
+      returnedAt: null, returnedBy: null, returnedByName: null
     }, 'Livraison confirmée');
     // Mark BR delivered + traceability
     // Only mark BR as delivered if ALL linked BLs are now delivered
@@ -1706,14 +1726,17 @@ const BLModule = {
     }
 
     // ── Immediate caisse entry ──
-    // Amount comes from the BR (as per client: "caisse amount is calculated from the BR")
-    // But goes to the caisse of whoever CREATED the BL (not the BR creator)
+    // Use NET deposit count: deposits minus withdrawals for this BL
+    // A re-delivered BL after return has: 1 deposit + 1 withdrawal = net 0 → needs new deposit
     const blCreatorId = bl.createdBy || u?.id;
     const blCreator = DB.getById('users', blCreatorId);
     const today = Utils.today();
-    // Avoid double-entry if already exists for this BL (Number() for type-safe comparison)
-    const alreadyExists = DB.getAll('caisse_admin').some(e => Number(e.blId) === Number(blId) && e.source === 'bl_delivery');
-    if (!alreadyExists && amount > 0) {
+    const caisseEntries = DB.getAll('caisse_admin').filter(e => Number(e.blId) === Number(blId));
+    const depositCount = caisseEntries.filter(e => e.type === 'deposit' && e.source === 'bl_delivery').length;
+    const withdrawCount = caisseEntries.filter(e => e.type === 'withdrawal' && (e.source === 'bl_return' || e.source === 'bl_error_delete')).length;
+    const netDeposits = depositCount - withdrawCount;
+
+    if (netDeposits < 1 && amount > 0) {
       DB.insert('caisse_admin', {
         type: 'deposit',
         source: 'bl_delivery',
@@ -1727,7 +1750,7 @@ const BLModule = {
         deliveredBy: u?.id,       // ← who clicked confirm
         deliveredByName: u?.name,
         sessionDate: today,
-        amount: Number(bl.totalTTC || br?.totalTTC || 0),  // ← amount from BL (correct for partial deliveries)
+        amount: Number(bl.totalTTC || br?.totalTTC || 0),
         note: `BL ${bl.ref} (BR ${br?.ref||'?'}) — créé par ${blCreator?.name||'?'}, validé par ${u?.name||'?'}`
       });
     }

@@ -331,26 +331,31 @@ const DB = {
           return true;
         });
 
-        // ── Step 2: Deduplicate bl_delivery deposits (only one per blId) ──
-        const seenDeposits = new Map();
-        cleaned = cleaned.filter(e => {
-          if (e.type === 'deposit' && e.source === 'bl_delivery' && e.blId != null) {
-            const k = Number(e.blId);
-            if (seenDeposits.has(k)) {
-              toRemoveCloud.push(e.id);
-              modified = true;
-              return false;
-            }
-            seenDeposits.set(k, e.id);
+        // ── Step 2: Count NET deposits per BL (deposits minus withdrawals) ──
+        // A returned-then-redelivered BL has: deposit + withdrawal + deposit = net 1 deposit ✓
+        const depositCountByBl = new Map();  // blId → count of bl_delivery deposits
+        const withdrawCountByBl = new Map(); // blId → count of bl_return/bl_error_delete withdrawals
+        cleaned.forEach(e => {
+          if (e.blId == null) return;
+          const k = Number(e.blId);
+          if (e.type === 'deposit' && e.source === 'bl_delivery') {
+            depositCountByBl.set(k, (depositCountByBl.get(k) || 0) + 1);
           }
-          return true;
+          if (e.type === 'withdrawal' && (e.source === 'bl_return' || e.source === 'bl_error_delete')) {
+            withdrawCountByBl.set(k, (withdrawCountByBl.get(k) || 0) + 1);
+          }
         });
 
-        // ── Step 3: Ensure active delivered BLs have exactly one deposit ──
+        // ── Step 3: Ensure active delivered BLs have net positive deposit ──
+        // Net = deposits - withdrawals. Must be exactly 1 for delivered BLs.
         const deliveredBLs = bls.filter(b => b.status === 'delivered' || b.status === 'locked');
         deliveredBLs.forEach(bl => {
           const blId = Number(bl.id);
-          if (!seenDeposits.has(blId)) {
+          const deps = depositCountByBl.get(blId) || 0;
+          const wits = withdrawCountByBl.get(blId) || 0;
+          const netDeposits = deps - wits;
+          if (netDeposits < 1) {
+            // Need one more deposit to bring net to 1
             const amt = Number(bl.totalTTC || 0);
             if (amt > 0) {
               const u = DB.getById('users', bl.createdBy);
