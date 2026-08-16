@@ -5349,6 +5349,7 @@ const UsersModule = {
       data.permissions = perms;
     }
     if (password) data.password = password;
+    console.log('[DEBUG UserSave]', { id, data: JSON.parse(JSON.stringify(data)) });
     if (id) { DB.update('users',id,data); Utils.notify((T.isRTL()?'تم تعديل المستخدم':'Utilisateur modifié'),'success'); }
     else { DB.insert('users',{...data,active:true}); Utils.notify((T.isRTL()?'تم إنشاء المستخدم':'Utilisateur créé'),'success'); }
     UI.closeModal(); SettingsModule._tab='users'; App.loadModule('settings');

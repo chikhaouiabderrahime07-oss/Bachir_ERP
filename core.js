@@ -983,7 +983,9 @@ const Auth = {
       const p = this._defaultPermissions();
       return Object.fromEntries(Object.keys(p).map(k => [k, true]));
     }
-    return { ...this._defaultPermissions(), ...(user.permissions || {}) };
+    // Read LIVE user data from DB (not stale localStorage copy)
+    const liveUser = DB.getAll('users').find(u => u.id === user.id) || user;
+    return { ...this._defaultPermissions(), ...(liveUser.permissions || {}) };
   },
   can(permission) {
     const u = this.getCurrentUser();
