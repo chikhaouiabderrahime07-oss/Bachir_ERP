@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="ERP Fournisseur — Gestion BR/BL, Caisse, Logistique">
 <title>AI — Intelligent Systems</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Cairo:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=9.47">
+<link rel="stylesheet" href="style.css?v=10.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -303,10 +306,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=9.47"></script>
-<script src="core.js?v=9.47"></script>
-<script src="modules.js?v=9.47"></script>
-<script src="pdf.js?v=9.47"></script>
+<script src="api.js?v=10.0"></script>
+<script src="core.js?v=10.0"></script>
+<script src="modules.js?v=10.0"></script>
+<script src="pdf.js?v=10.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -605,31 +608,31 @@ const App = {
     const nav = document.getElementById('sidebarNav');
     if (!nav) return;
 
+    const perms = Auth.myPermissions?.() || {};
     const menu = [
       { section: T.get('sec_documents'), items: [
         { mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') },
-        { mod:'brs',       icon:'fa-file-import',    label:T.get('nav_brs') },
-        { mod:'bls',       icon:'fa-file-export',    label:T.get('nav_bls') },
+        ...(isAdmin || perms.canViewBRs!==false ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
+        ...(isAdmin || perms.canViewBLs!==false ? [{ mod:'bls', icon:'fa-file-export', label:T.get('nav_bls') }] : []),
       ]},
       { section: T.get('sec_cash'), items: [
         ...(isAdmin
           ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }]
-          : [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }]),
+          : (perms.canViewCaisse!==false ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }] : [])),
+        ...(isAdmin || perms.canViewBank ? [{ mod:'bank', icon:'fa-university', label:'Banque' }] : []),
       ]},
       { section: T.get('sec_refs'), items: [
-        { mod:'suppliers', icon:'fa-building', label:T.get('nav_suppliers') },
-        { mod:'clients',   icon:'fa-users',    label:T.get('nav_clients') },
-        ...(isAdmin ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue BD' }] : []),
+        ...(isAdmin || perms.canViewSuppliers!==false || perms.canViewClients!==false ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
+        ...(isAdmin ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue' }] : []),
       ]},
       ...(isAdmin ? [{ section: T.get('sec_analysis'), items: [
         { mod:'stats',   icon:'fa-chart-bar',  label:T.get('nav_stats') },
         { mod:'eval',    icon:'fa-user-clock', label:T.get('nav_eval') },
       ]}] : []),
       ...(isAdmin ? [{ section: T.get('sec_admin'), items: [
-        { mod:'users',        icon:'fa-users',        label:T.get('nav_users') },
-        { mod:'audit',        icon:'fa-shield-alt',   label:T.get('nav_audit') },
+        { mod:'audit',        icon:'fa-shield-alt',    label:T.get('nav_audit') },
         { mod:'recycle_bin',  icon:'fa-trash-restore', label:T.get('nav_recycle') },
-        { mod:'settings',     icon:'fa-cog',          label:T.get('nav_settings') },
+        { mod:'settings',     icon:'fa-cog',           label:T.get('nav_settings') },
       ]}] : []),
     ];
 
@@ -668,6 +671,14 @@ const App = {
   },
 
   loadModule(mod) {
+    const u = Auth.getCurrentUser();
+    // Permission guard
+    const modPerms = {brs:'canViewBRs', bls:'canViewBLs', caisse:'canViewCaisse', bank:'canViewBank', suppliers:'canViewSuppliers', clients:'canViewClients', partners:'canViewClients', stats:'canViewStats', catalogue:'canViewCatalogue'};
+    if (u && u.role !== 'admin' && modPerms[mod] && !Auth.can(modPerms[mod])) {
+      mod = 'dashboard';
+      Utils.notify('Accès non autorisé', 'warning');
+    }
+
     this._currentModule = mod;
     const main = document.getElementById('mainContent');
     const bc = document.getElementById('breadcrumb');
@@ -676,9 +687,9 @@ const App = {
       dashboard:'nav_dashboard', brs:'nav_brs', bls:'nav_bls', caisse:'nav_caisse',
       admin_caisse:'nav_admin_caisse', suppliers:'nav_suppliers', clients:'nav_clients', stats:'nav_stats',
       eval:'nav_eval', users:'nav_users', audit:'nav_audit', settings:'nav_settings',
-      recycle_bin:'nav_recycle'
+      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque'
     };
-    if (bc && labels[mod]) bc.textContent = T.get(labels[mod]);
+    if (bc) bc.textContent = labels[mod]?.startsWith?.('nav_') ? T.get(labels[mod]) : (labels[mod]||mod);
     this._setActiveSidebarItem(mod);
 
     if (!main) return;
@@ -700,10 +711,12 @@ const App = {
         case 'admin_caisse': html = AdminCaisseModule.render(); break;
         case 'suppliers':    html = SuppliersModule.render(); break;
         case 'clients':      html = ClientsModule.render(); break;
+        case 'partners':     html = PartnersModule.render(); break;
         case 'stats':        html = StatsModule.render(); break;
         case 'eval':         html = EvalModule.render(); break;
         case 'catalogue':    html = CatalogueModule.render(); break;
-        case 'users':        html = UsersModule.render(); break;
+        case 'bank':         html = typeof BankModule !== 'undefined' ? BankModule.render() : ''; break;
+        case 'users':        SettingsModule._tab='users'; html = SettingsModule.render(); break;
         case 'audit':        html = AuditModule.render(); break;
         case 'recycle_bin':  html = RecycleBinModule.render(); break;
         case 'settings':     html = SettingsModule.render(); break;

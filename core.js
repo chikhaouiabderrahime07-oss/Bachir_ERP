@@ -244,7 +244,7 @@ const T = {
 
 // ─── DATABASE ──────────────────────────────────────────────────
 const DB = {
-  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin'],
+  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments'],
 
   init() {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
@@ -495,6 +495,8 @@ const DB = {
       timbreMin: 0,               // pas de minimum légal imposé
       timbreEnabled: true,        // timbre activé par défaut
       timbreSlabs: [],            // slab table (empty = use global rate)
+      // ── Banks ─────────────────────────────────────────────────────
+      banks: [],                  // [{ id, name, bankName, accountNum }]
     };
   },
 
@@ -949,6 +951,41 @@ const Auth = {
     if (u.role === 'admin') return true;
     if (doc?.status === 'delivered' || doc?.status === 'locked') return false;
     return doc?.createdBy === u.id;
+  },
+
+  // ── Permission System ──────────────────────────────────────────
+  _defaultPermissions() {
+    return {
+      canCreateBR: true,
+      canCreateBL: true,
+      canViewBRs: true,
+      canViewBLs: true,
+      canViewCaisse: true,
+      canViewSuppliers: true,
+      canViewClients: true,
+      canViewStats: false,
+      canViewCatalogue: false,
+      canViewBank: false,
+      requireDailyLiquid: true,
+    };
+  },
+  getUserPermissions(user) {
+    if (!user) return {};
+    if (user.role === 'admin') {
+      const p = this._defaultPermissions();
+      return Object.fromEntries(Object.keys(p).map(k => [k, true]));
+    }
+    return { ...this._defaultPermissions(), ...(user.permissions || {}) };
+  },
+  can(permission) {
+    const u = this.getCurrentUser();
+    if (!u) return false;
+    if (u.role === 'admin') return true;
+    const perms = this.getUserPermissions(u);
+    return perms[permission] !== false;
+  },
+  myPermissions() {
+    return this.getUserPermissions(this.getCurrentUser());
   }
 };
 
@@ -988,7 +1025,8 @@ const Dialog = {
 
       const close = (val) => {
         overlay.classList.remove('dlg-open');
-        setTimeout(() => { overlay.remove(); resolve(val); }, 260);
+        resolve(val);
+        setTimeout(() => { overlay.remove(); }, 300);
       };
 
       okBtn.addEventListener('click', () => close(hasInput ? (inp?.value ?? '') : true));
@@ -1103,70 +1141,13 @@ const FormGuide = {
   _fields: [],
   _timer: null,
   _lastActiveId: null,
-
-  start(fieldIds) {
-    this.stop();
-    this._fields = fieldIds;
-    this._lastActiveId = null;
-    // Initial scan after DOM settles
-    setTimeout(() => {
-      this._scan(true);
-      // Start polling every 400ms
-      this._timer = setInterval(() => this._scan(false), 400);
-    }, 200);
-  },
-
-  _scan(isInit) {
-    // Remove all previous highlights
-    document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(n => {
-      n.classList.remove('field-guide-active', 'field-guide-done');
-    });
-
-    let firstEmptyId = null;
-    let firstEmptyEl = null;
-
-    for (const id of this._fields) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      // Find wrapping group — try .form-group, then any parent div
-      const group = el.closest('.form-group') || el.parentElement;
-      if (!group) continue;
-
-      const val = (el.value || '').trim();
-      const empty = !val;
-
-      if (empty && !firstEmptyId) {
-        firstEmptyId = id;
-        firstEmptyEl = el;
-        group.classList.add('field-guide-active');
-      } else if (!empty) {
-        group.classList.add('field-guide-done');
-      }
-    }
-
-    // Auto-focus logic
-    if (firstEmptyEl) {
-      if (isInit) {
-        // First run: focus the first empty field right away
-        firstEmptyEl.focus();
-        try { firstEmptyEl.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(e){}
-      } else if (firstEmptyId !== this._lastActiveId && this._lastActiveId) {
-        // A field just got filled — jump to next empty
-        firstEmptyEl.focus();
-        try { firstEmptyEl.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(e){}
-      }
-    }
-
-    this._lastActiveId = firstEmptyId;
-  },
-
+  start() { /* disabled — replaced by red-border validation */ },
+  _scan() {},
   stop() {
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
     document.querySelectorAll('.field-guide-active, .field-guide-done').forEach(n => {
       n.classList.remove('field-guide-active', 'field-guide-done');
     });
-    this._fields = [];
-    this._lastActiveId = null;
   }
 };
 
@@ -1230,14 +1211,21 @@ const SessionMgr = {
       .reduce((s,e) => s + (Number(e.amount)||0), 0);
   },
 
-  startSession(userId, startingMonnaie = 0) {
+  startSession(userId, startingMonnaie = 0, liquidStart = 0, discrepancyFlag = false, discrepancyNote = '') {
     const existing = this.getTodaySession(userId);
     if (existing) return existing;
     return DB.insert('sessions', {
       userId, date: Utils.today(),
       startingMonnaie: Number(startingMonnaie)||0,
+      liquidStart: Number(liquidStart)||0,
+      discrepancyFlag,
+      discrepancyNote: discrepancyNote || '',
+      sarf: [],           // [{blId, blRef, amount, note, at}]
+      sarfTotal: 0,
       status: 'open',
       closedEspeces: null, closedMonnaie: null, ecart: null,
+      liquidEnd: null,
+      liquidEcart: null,
       closedAt: null
     });
   },

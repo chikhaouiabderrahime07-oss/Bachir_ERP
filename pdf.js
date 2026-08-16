@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    PDF.JS — PROFESSIONAL DOCUMENT GENERATOR v15.0
    Exact match: BC_DG_BC_006_2026-7.pdf reference
    + Arabic font support (Amiri TTF auto-loaded from CDN)
@@ -296,7 +296,7 @@
       const cw=CW/items.length;
       items.forEach((it,i)=>{
         const x=ML+i*cw+2;
-        doc.text(`${this._t(it.label)} : ${this._t(String(it.value||'/'))}`  ,x,y+4.2);
+        this._text(doc, `${this._t(it.label)} : ${this._t(String(it.value||'/'))}`, x, y+4.2);
       });
       return y+h+1;
     },
@@ -489,6 +489,9 @@
     async exportBR(id)       { try{ await this._ensureArabicFont(); this._exportBR(id);       }catch(e){console.error(e);this._notify('Erreur BR: '+e.message,'error');} },
     async exportBL(id)       { try{ await this._ensureArabicFont(); this._exportBL(id);       }catch(e){console.error(e);this._notify('Erreur BL: '+e.message,'error');} },
     async exportDecharge(id) { try{ await this._ensureArabicFont(); this._exportDecharge(id); }catch(e){console.error(e);this._notify('Erreur Decharge: '+e.message,'error');} },
+    async exportBankDecharge(id) { try{ await this._ensureArabicFont(); this._exportBankDecharge(id); }catch(e){console.error(e);this._notify('Erreur Bank Decharge: '+e.message,'error');} },
+    async exportSupplierPayDecharge(id) { try{ await this._ensureArabicFont(); this._exportSupplierPayDecharge(id); }catch(e){console.error(e);this._notify('Erreur Pay Decharge: '+e.message,'error');} },
+
 
     /* ══════════════════════════════════════════════════════════
        BR — BON DE RÉCEPTION
@@ -769,7 +772,7 @@
         doc.setFont('helvetica',bold?'bold':'normal');
         doc.setFontSize(bold?11:8.5);
         this._tc(doc,bold?C.PRIMARY:C.BLACK);
-        doc.text(this._t(String(val||'/')),ML+62,cy);
+        this._text(doc, this._t(String(val||'/')), ML+62, cy);
         cy+=6.5;
       };
       rowF('Opérateur :',    userName);
@@ -799,7 +802,150 @@
       this._save(doc,`DECHARGE_${ref.replace(/\//g,'_')}.pdf`);
     },
 
+
+    /* ══════════════════════════════════════════════════════════
+       BANK TRANSACTION DÉCHARGE
+    ══════════════════════════════════════════════════════════ */
+    _exportBankDecharge(txId) {
+      const tx = DB.getById('bank_transactions', txId);
+      if (!tx) { this._notify('Transaction bancaire introuvable','error'); return; }
+      const settings = DB.getSettings();
+      const bank = (settings.banks||[]).find(b=>b.id===tx.bankId);
+      const s    = this._settings();
+      const doc  = this._newDoc();
+
+      const subtypeTitles = {
+        transfer_from_caisse: 'BON DE VIREMENT CAISSE → BANQUE',
+        external_deposit:     'BON DE DÉPÔT EXTERNE',
+        supplier_payment:     'BON DE PAIEMENT FOURNISSEUR (BANQUE)',
+        correction:           'BON DE CORRECTION BANCAIRE',
+      };
+      const title = subtypeTitles[tx.subtype] || (tx.type==='deposit'?'BON DE DÉPÔT BANCAIRE':'BON DE SORTIE BANCAIRE');
+      const ref   = this._t(tx.ref || `BANK-${tx.id}`);
+      const montant = Number(tx.amount)||0;
+      const isD   = tx.type==='deposit';
+
+      let y = this._drawCompanyHeader(doc,s,MT);
+      y = this._drawBanner(doc,title,y);
+      y = this._drawInfoStrip(doc,[
+        {label:'Réf', value:ref},
+        {label:'Date', value:this._fmtDateTime(tx.date||tx.createdAt)},
+        {label:'Compte', value:this._t(bank?.name||'?') + (bank?.bankName?' — '+this._t(bank.bankName):'')},
+      ],y);
+      y+=6;
+
+      const cardH=58;
+      this._rect(doc,ML,y,CW,cardH,C.BG_INFO,C.LINE);
+      this._rect(doc,ML,y,CW,8,C.LIGHT,C.LINE);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.PRIMARY_DARK);
+      doc.text("DÉTAILS DE L'OPÉRATION",ML+4,y+5.5);
+
+      let cy=y+14;
+      const rowF=(lbl,val,bold)=>{
+        doc.setFont('helvetica','bold'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
+        doc.text(lbl,ML+4,cy);
+        doc.setFont('helvetica',bold?'bold':'normal');
+        doc.setFontSize(bold?11:8.5);
+        this._tc(doc,bold?C.PRIMARY:C.BLACK);
+        this._text(doc, this._t(String(val||'/')), ML+62, cy);
+        cy+=6.5;
+      };
+      rowF('Type opération :',  title);
+      rowF('Compte bancaire :',  this._t(bank?.name||'?') + (bank?.accountNum?' ('+this._t(bank.accountNum)+')':''));
+      rowF('Direction :',        isD?'Entrée (+)':'Sortie (−)');
+      if (tx.supplierId) { const sup=DB.getById('suppliers',tx.supplierId); rowF('Fournisseur :',this._t(sup?.name||'?')); }
+      rowF('Note :',             this._t(tx.note||'/'));
+      cy+=2;
+      rowF('MONTANT :',          (isD?'+ ':'− ')+this._fmtMoney(montant), true);
+      y+=cardH+6;
+
+      const wd=this._amountWords(montant);
+      if(wd){ doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK); const wl=doc.splitTextToSize('Arrêtée à la somme de : '+wd+' dinars algériens',CW); doc.text(wl,ML,y); y+=wl.length*4.5+4; }
+
+      this._drawSigBlock(doc,[
+        {label:'Le Responsable Banque', sub:'Signature & Cachet'},
+        {label:'Le Directeur Général',  sub:'Signature & Cachet'},
+      ], Math.max(y+4,PH-62), 44);
+
+      this._drawFooter(doc,1,1);
+      this._save(doc,`DECHARGE_BANK_${ref.replace(/\//g,'_')}.pdf`);
+    },
+
+    /* ══════════════════════════════════════════════════════════
+       SUPPLIER PAYMENT DÉCHARGE
+    ══════════════════════════════════════════════════════════ */
+    _exportSupplierPayDecharge(payId) {
+      const pay = DB.getById('supplier_payments', payId);
+      if (!pay) { this._notify('Paiement introuvable','error'); return; }
+      const settings = DB.getSettings();
+      const sup  = DB.getById('suppliers', pay.supplierId)||{name:'?'};
+      const bank = pay.bankId ? (settings.banks||[]).find(b=>b.id===pay.bankId) : null;
+      const s    = this._settings();
+      const doc  = this._newDoc();
+
+      const ref     = this._t(pay.ref || `PAY-${pay.id}`);
+      const montant = Number(pay.amount)||0;
+      const title   = 'BON DE PAIEMENT FOURNISSEUR';
+      const source  = pay.source==='caisse' ? 'Caisse (espèces)' : (bank ? `${bank.name} (${bank.bankName||''})` : 'Banque');
+
+      let y = this._drawCompanyHeader(doc,s,MT);
+      y = this._drawBanner(doc,title,y);
+      y = this._drawInfoStrip(doc,[
+        {label:'Réf',          value:ref},
+        {label:'Date',         value:this._fmtDateTime(pay.date||pay.createdAt)},
+        {label:'Fournisseur',  value:this._t(sup.name)},
+      ],y);
+      y+=6;
+
+      const cardH=60;
+      this._rect(doc,ML,y,CW,cardH,C.BG_INFO,C.LINE);
+      this._rect(doc,ML,y,CW,8,C.LIGHT,C.LINE);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.PRIMARY_DARK);
+      doc.text('DÉTAILS DU PAIEMENT',ML+4,y+5.5);
+
+      let cy=y+14;
+      const rowF=(lbl,val,bold)=>{
+        doc.setFont('helvetica','bold'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
+        doc.text(lbl,ML+4,cy);
+        doc.setFont('helvetica',bold?'bold':'normal');
+        doc.setFontSize(bold?11:8.5);
+        this._tc(doc,bold?C.PRIMARY:C.BLACK);
+        this._text(doc, this._t(String(val||'/')), ML+62, cy);
+        cy+=6.5;
+      };
+      rowF('Fournisseur :',   this._t(sup.name));
+      if (sup.nif)  rowF('NIF :',  this._t(sup.nif));
+      rowF('Source :',        source);
+      rowF('Note / Réf :',   this._t(pay.note||'/'));
+      rowF('Opérateur :',    this._t(pay.byName||'/'));
+      cy+=2;
+      rowF('MONTANT PAYÉ :', this._fmtMoney(montant), true);
+      y+=cardH+6;
+
+      // Running balance
+      const totalBR   = DB.getAll('brs').filter(b=>b.supplierId===pay.supplierId).reduce((s,b)=>s+(b.totalTTC||0),0);
+      const allPays   = DB.getAll('supplier_payments').filter(p=>p.supplierId===pay.supplierId);
+      const totalPaid = allPays.reduce((s,p)=>s+(p.amount||0),0);
+      const remaining = Math.max(0, totalBR - totalPaid);
+
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
+      doc.text(`Total achats (BR): ${this._fmtMoney(totalBR)} | Total payé: ${this._fmtMoney(totalPaid)} | Reste: ${this._fmtMoney(remaining)}`,ML,y);
+      y+=7;
+
+      const wd=this._amountWords(montant);
+      if(wd){ doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK); const wl=doc.splitTextToSize('Arrêtée à la somme de : '+wd+' dinars algériens',CW); doc.text(wl,ML,y); y+=wl.length*4.5+4; }
+
+      this._drawSigBlock(doc,[
+        {label:'Le Fournisseur',        sub:'Signature & Cachet (Pour acquit)'},
+        {label:'Le Directeur Général',  sub:'Signature & Cachet'},
+      ], Math.max(y+4,PH-62), 44);
+
+      this._drawFooter(doc,1,1);
+      this._save(doc,`DECHARGE_PAY_${Utils.escHTML(sup.name||'').replace(/\s/g,'_')}_${ref.replace(/\//g,'_')}.pdf`);
+    },
+
   }; /* end PDFGen */
+
 
   global.PDFGen = PDFGen;
 

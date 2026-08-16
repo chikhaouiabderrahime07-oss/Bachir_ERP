@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    MODULES.JS — All Application Modules
    ERP v2.0 — Bilingual FR/AR | RTL/LTR
    Dashboard · BR · BL · Caisse · Admin Caisse · Suppliers
@@ -63,90 +63,153 @@ const UI = {
 const DashboardModule = {
   render() {
     const u = Auth.getCurrentUser();
+    const isAdmin = Auth.isAdmin();
     const brs = DB.getAll('brs');
     const bls = DB.getAll('bls');
     const today = Utils.today();
     const session = SessionMgr.getTodaySession(u.id);
-    const todayBRs = brs.filter(b => (b.date||'').slice(0,10) === today && b.createdBy === u.id);
-    const todayTotal = todayBRs.reduce((s,b) => s+(Number(b.totalTTC)||0), 0);
+    const suppliers = DB.getAll('suppliers');
+    const clients = DB.getAll('clients');
+    const supMap = {}; suppliers.forEach(s=>supMap[s.id]=s);
+    const cliMap = {}; clients.forEach(c=>cliMap[c.id]=c);
+
+    // Stats
+    const todayBRs = brs.filter(b => (b.date||'').slice(0,10) === today);
+    const todayBLs = bls.filter(b => (b.date||'').slice(0,10) === today);
     const openBRs = brs.filter(b => b.status === 'open' || !b.status).length;
     const openBLs = bls.filter(b => b.status === 'open' || !b.status).length;
+    const deliveredBLs = bls.filter(b => b.status === 'delivered');
+    const totalRevenue = deliveredBLs.reduce((s,b) => s+(Number(b.totalTTC)||0), 0);
+    const totalPurchases = brs.reduce((s,b) => s+(Number(b.totalTTC)||0), 0);
+    const margin = totalRevenue - totalPurchases;
 
-    let vaultBalance = 0;
-    if (Auth.isAdmin()) {
+    let vaultBalance = 0, bankTotal = 0;
+    if (isAdmin) {
       const ca = DB.getAll('caisse_admin');
-      vaultBalance = ca.filter(t=>t.type==='deposit').reduce((s,t)=>s+(Number(t.amount)||0),0)
-                   - ca.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+(Number(t.amount)||0),0);
+      vaultBalance = ca.filter(t=>t.type==='deposit').reduce((s,t)=>s+(Number(t.amount)||0),0) - ca.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+(Number(t.amount)||0),0);
+      const btx = DB.getAll('bank_transactions');
+      const banks = DB.getSettings().banks || [];
+      banks.forEach(b => {
+        bankTotal += btx.filter(t=>t.bankId===b.id&&t.type==='deposit').reduce((s,t)=>s+(t.amount||0),0) - btx.filter(t=>t.bankId===b.id&&t.type==='payment').reduce((s,t)=>s+(t.amount||0),0);
+      });
     }
 
+    // Monthly chart data (last 6 months)
+    const byMonth = {};
+    deliveredBLs.forEach(b => { const m=(b.date||'').substring(0,7); if(m) byMonth[m]=(byMonth[m]||0)+(b.totalTTC||0); });
+    const months = Object.keys(byMonth).sort().slice(-6);
+    const maxMonth = Math.max(...Object.values(byMonth), 1);
+
+    // Top clients by revenue
+    const clientRevenue = {};
+    deliveredBLs.forEach(b => { clientRevenue[b.clientId] = (clientRevenue[b.clientId]||0) + (b.totalTTC||0); });
+    const topClients = Object.entries(clientRevenue).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+    // Recent activity (last 8 events)
+    const recentBRs = [...brs].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,4);
+    const recentBLs = [...bls].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,4);
+    const activity = [...recentBRs.map(b=>({type:'BR',ref:b.ref,date:b.date,amount:b.totalTTC,name:supMap[b.supplierId]?.name})), ...recentBLs.map(b=>({type:'BL',ref:b.ref,date:b.date,amount:b.totalTTC,name:cliMap[b.clientId]?.name}))].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,8);
+
     const sessionBanner = (!session && u.role !== 'admin') ? `
-    <div class="alert alert-warning mb-2" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <span><i class="fas fa-sun"></i> ${T.get('caisse_no_session')}</span>
-      <button class="btn btn-warning btn-sm" onclick="CaisseModule.showMorningPrompt()">
-        <i class="fas fa-play-circle"></i> ${T.get('caisse_start_now')}
-      </button>
+    <div style="background:linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.2);border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px"><i class="fas fa-sun" style="font-size:20px;color:#f59e0b"></i><div><div style="font-weight:700;font-size:13px;color:var(--text)">${T.get('caisse_no_session')}</div><div style="font-size:11px;color:var(--text4)">Démarrez votre journée pour activer la caisse</div></div></div>
+      <button class="btn btn-warning btn-sm" onclick="CaisseModule.showMorningPrompt()"><i class="fas fa-play-circle"></i> ${T.get('caisse_start_now')}</button>
     </div>` : '';
 
-    const recentBRs = [...brs].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,5);
-    const suppliers = DB.getAll('suppliers');
-    const supMap = {}; suppliers.forEach(s=>supMap[s.id]=s);
-
-    return `<div style="padding:24px">
+    const isAR = T.isRTL();
+    return `<div style="padding:20px 24px;max-width:1200px;margin:0 auto">
     ${sessionBanner}
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-icon blue"><i class="fas fa-file-import"></i></div>
-        <div><div class="kpi-label">${T.get('stat_br_total')} (ouverts)</div><div class="kpi-value">${openBRs}</div><div class="kpi-sub">${brs.length} total</div></div>
+
+    <!-- Hero Stats Strip -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(14,165,233,.08);border-radius:50%"></div>
+        <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'إجمالي المبيعات':'Chiffre d\'affaires'}</div>
+        <div style="font-size:22px;font-weight:900;color:#0ea5e9;margin-top:4px">${Utils.fmtCurrency(totalRevenue)}</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${deliveredBLs.length} BL livrés</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-icon orange"><i class="fas fa-file-export"></i></div>
-        <div><div class="kpi-label">${T.get('stat_bl_total')} (ouverts)</div><div class="kpi-value">${openBLs}</div><div class="kpi-sub">${bls.length} total</div></div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(139,92,246,.08);border-radius:50%"></div>
+        <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'إجمالي المشتريات':'Total achats'}</div>
+        <div style="font-size:22px;font-weight:900;color:#8b5cf6;margin-top:4px">${Utils.fmtCurrency(totalPurchases)}</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${brs.length} BR</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-icon green"><i class="fas fa-coins"></i></div>
-        <div><div class="kpi-label">${T.get('stat_caisse')} (${T.isRTL()?"اليوم":"aujourd'hui"})</div><div class="kpi-value" style="font-size:18px">${Utils.fmtCurrency(todayTotal)}</div><div class="kpi-sub">${todayBRs.length} BR</div></div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(${margin>=0?'16,185,129':'239,68,68'},.08);border-radius:50%"></div>
+        <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'الهامش':'Marge'}</div>
+        <div style="font-size:22px;font-weight:900;color:${margin>=0?'#10b981':'#ef4444'};margin-top:4px">${Utils.fmtCurrency(margin)}</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${margin>=0?'↑ Bénéfice':'↓ Perte'}</div>
       </div>
-      ${Auth.isAdmin() ? `<div class="kpi-card">
-        <div class="kpi-icon purple"><i class="fas fa-vault"></i></div>
-        <div><div class="kpi-label">${T.get('adm_balance')}</div><div class="kpi-value" style="font-size:18px">${Utils.fmtCurrency(vaultBalance)}</div><div class="kpi-sub">${T.get('nav_admin_caisse')}</div></div>
-      </div>` : ''}
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
+        <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(245,158,11,.08);border-radius:50%"></div>
+        <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'في الانتظار':'En attente'}</div>
+        <div style="font-size:22px;font-weight:900;color:#f59e0b;margin-top:4px">${openBRs + openBLs}</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${openBRs} BR + ${openBLs} BL ouverts</div>
+      </div>
     </div>
-    <div class="dash-grid">
-      <div class="card">
-        <div class="card-header"><h3><i class="fas fa-history"></i> ${T.isRTL()?"آخر وصولات الاستلام":"Derniers BR"}</h3>
-          <button class="btn btn-sm btn-outline" onclick="App.loadModule('brs')"><i class="fas fa-arrow-right"></i> ${T.get('view')} ${T.get('all')}</button>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>${T.get('col_ref')}</th><th>${T.get('col_date')}</th><th>${T.get('col_supplier')}</th><th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th></tr></thead>
-            <tbody>
-              ${recentBRs.length ? recentBRs.map(br=>`<tr>
-                <td><strong>${Utils.escHTML(br.ref||'')}</strong></td>
-                <td>${Utils.fmtDate(br.date)}</td>
-                <td>${Utils.escHTML(supMap[br.supplierId]?.name||'-')}</td>
-                <td class="fw-bold text-primary">${Utils.fmtCurrency(br.totalTTC)}</td>
-                <td>${Utils.statusBadge(br.status||'open')}</td>
-              </tr>`).join('') : `<tr><td colspan="5"><div class="empty-state" style="padding:20px"><i class="fas fa-inbox"></i><p>${T.isRTL()?"لا توجد وصولات":"Aucun BR"}</p></div></td></tr>`}
-            </tbody>
-          </table>
+
+    ${isAdmin ? `<!-- Admin Finance Strip -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+      <div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:14px;padding:16px 20px;color:#fff;cursor:pointer" onclick="App.loadModule('admin_caisse')">
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">SOLDE CAISSE</div><i class="fas fa-vault" style="opacity:.3"></i></div>
+        <div style="font-size:24px;font-weight:900;margin-top:6px">${Utils.fmtCurrency(vaultBalance)}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,#064e3b,#065f46);border-radius:14px;padding:16px 20px;color:#fff;cursor:pointer" onclick="App.loadModule('bank')">
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">SOLDE BANQUE</div><i class="fas fa-university" style="opacity:.3"></i></div>
+        <div style="font-size:24px;font-weight:900;margin-top:6px">${Utils.fmtCurrency(bankTotal)}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,#312e81,#4338ca);border-radius:14px;padding:16px 20px;color:#fff">
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">AUJOURD'HUI</div><i class="fas fa-calendar-day" style="opacity:.3"></i></div>
+        <div style="font-size:24px;font-weight:900;margin-top:6px">${todayBRs.length + todayBLs.length} docs</div>
+        <div style="font-size:10px;opacity:.7;margin-top:2px">${todayBRs.length} BR · ${todayBLs.length} BL</div>
+      </div>
+    </div>` : ''}
+
+    <!-- Quick Actions -->
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="App.loadModule('brs')"><i class="fas fa-plus"></i> Nouveau BR</button>
+      <button class="btn btn-sm" style="background:rgba(14,165,233,.1);color:#0ea5e9;border:1px solid rgba(14,165,233,.2)" onclick="App.loadModule('bls')"><i class="fas fa-file-export"></i> Voir les BL</button>
+      <button class="btn btn-sm" style="background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)" onclick="App.loadModule('partners')"><i class="fas fa-handshake"></i> Hub Commercial</button>
+      ${isAdmin?'<button class="btn btn-sm" style="background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.2)" onclick="App.loadModule(\'admin_caisse\')"><i class="fas fa-vault"></i> Caisse Admin</button>':''}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- Monthly Revenue Chart -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px"><i class="fas fa-chart-bar" style="color:var(--primary)"></i> ${isAR?'المبيعات الشهرية':'CA mensuel'}</div>
+        <div style="padding:16px 18px">
+          ${months.length>0 ? `<div style="display:flex;align-items:flex-end;gap:8px;height:120px">
+            ${months.map(m => { const h=(byMonth[m]/maxMonth)*100; return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:9px;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(byMonth[m])}</div><div style="width:100%;background:linear-gradient(180deg,var(--primary),rgba(var(--primary-rgb),.4));border-radius:6px 6px 0 0;height:${Math.max(h,8)}%;transition:height .5s"></div><div style="font-size:9px;color:var(--text4);font-weight:600">${m.substring(5)}</div></div>`; }).join('')}
+          </div>` : '<div style="text-align:center;color:var(--text4);padding:30px">Pas encore de données</div>'}
         </div>
       </div>
-      <div class="card">
-        <div class="card-header"><h3><i class="fas fa-info-circle"></i> ${T.isRTL()?"دليل سريع":"Guide rapide"}</h3></div>
-        <div class="card-body">
-          ${[
-            ['1','fa-file-import','blue','Créer un BR','Module BR → Nouveau BR → Remplir les articles → Enregistrer'],
-            ['2','fa-file-export','green','Générer un BL','Sur la ligne BR → bouton vert "Générer BL" → Saisir camion/chauffeur'],
-            ['3','fa-check-circle','orange','Confirmer livraison','Sur le BL → "Confirmer Livraison" → Verrouille définitivement'],
-            ['4','fa-cash-register','purple','Clôture journée','Ma Caisse → Clôture → Saisir espèces + monnaie'],
-          ].map(([n,icon,color,title,desc])=>`
-          <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border)">
-            <div class="kpi-icon ${color}" style="width:36px;height:36px;font-size:14px;flex-shrink:0"><i class="fas ${icon}"></i></div>
-            <div><strong style="color:var(--text);font-size:13px">${title}</strong><p style="color:var(--text3);font-size:12px;margin-top:3px">${desc}</p></div>
-          </div>`).join('')}
+
+      <!-- Activity Timeline -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px"><i class="fas fa-stream" style="color:var(--primary)"></i> ${isAR?'النشاط الأخير':'Activité récente'}</div>
+        <div style="padding:8px 12px;max-height:200px;overflow-y:auto">
+          ${activity.length ? activity.map(a => `<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border)">
+            <div style="width:28px;height:28px;border-radius:8px;background:${a.type==='BR'?'rgba(139,92,246,.1)':'rgba(14,165,233,.1)'};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas ${a.type==='BR'?'fa-file-import':'fa-file-export'}" style="font-size:10px;color:${a.type==='BR'?'#8b5cf6':'#0ea5e9'}"></i></div>
+            <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--text)">${Utils.escHTML(a.ref||'')}</div><div style="font-size:10px;color:var(--text4)">${Utils.escHTML(a.name||'')} · ${a.date||''}</div></div>
+            <div style="font-size:12px;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(a.amount||0)}</div>
+          </div>`).join('') : '<div style="padding:20px;text-align:center;color:var(--text4)">Aucune activité</div>'}
         </div>
       </div>
-    </div></div>`;
+    </div>
+
+    ${topClients.length > 0 ? `
+    <!-- Top Clients -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:16px">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px"><i class="fas fa-trophy" style="color:#f59e0b"></i> ${isAR?'أفضل الزبائن':'Top Clients'}</div>
+      <div style="padding:8px 12px">
+        ${topClients.map(([cId, rev], i) => { const c = cliMap[cId]; const pct = (rev/totalRevenue)*100; return `<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border)">
+          <div style="width:24px;height:24px;border-radius:8px;background:${i<3?'linear-gradient(135deg,#f59e0b,#d97706)':'var(--bg3)'};display:flex;align-items:center;justify-content:center;color:${i<3?'#fff':'var(--text4)'};font-size:10px;font-weight:900;flex-shrink:0">${i+1}</div>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600">${Utils.escHTML(c?.name||'Client #'+cId)}</div><div style="margin-top:4px;background:var(--bg3);border-radius:20px;height:4px;overflow:hidden"><div style="height:100%;background:linear-gradient(90deg,#0ea5e9,#0284c7);border-radius:20px;width:${pct}%"></div></div></div>
+          <div style="font-size:12px;font-weight:800;color:#0ea5e9">${Utils.fmtCurrency(rev)}</div>
+        </div>`; }).join('')}
+      </div>
+    </div>` : ''}
+    </div>`;
   }
 };
 
@@ -315,6 +378,10 @@ const BRModule = {
     DB.getAll('bls').forEach(bl => blMap[bl.brId] = bl);
     DB.getAll('recycle_bin').filter(e => e.collection === 'bls').forEach(e => { if (!blMap[e.item?.brId]) blMap[e.item?.brId] = e.item; });
 
+    const isAdmin = Auth.isAdmin();
+    const perms   = Auth.getCurrentUser()?.permissions || {};
+    const canCreate = isAdmin || perms.canCreateBR !== false;
+
     return `<div style="padding:24px">
     <div class="card">
       <div class="card-header">
@@ -322,7 +389,7 @@ const BRModule = {
         <div class="card-actions">
           <span class="badge badge-secondary">${items.length}</span>
           <button class="btn btn-sm" onclick="BRModule.exportBRCSV()" title="Exporter CSV" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px"><i class="fas fa-file-csv"></i> CSV</button>
-          <button class="btn btn-primary" onclick="BRModule.showCreate()"><i class="fas fa-plus"></i> ${T.get('br_new')}</button>
+          ${canCreate ? `<button class="btn btn-primary" onclick="BRModule.showCreate()"><i class="fas fa-plus"></i> ${T.get('br_new')}</button>` : ''}
         </div>
       </div>
       <div class="filters-bar">
@@ -706,6 +773,21 @@ const BRModule = {
   },
 
   async showCreate() {
+    // Admin must pick a user to assign this BR to (caisse attribution)
+    if (Auth.isAdmin()) {
+      // Only show users who have canCreateBR permission
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && u.permissions?.canCreateBR !== false);
+      if (users.length > 0) {
+        const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
+        const picked = await Dialog.show({
+          title: '👤 Créer en tant que...',
+          message: `<div style="margin-bottom:10px;font-size:13px">Ce BR sera attribué à la caisse de :</div><select id="dlg_as_user">${opts}</select><div style="margin-top:10px;font-size:11px">Vous restez affiché comme "Modifié par" pour transparence</div>`,
+          type: 'info', confirmText: 'Continuer', cancelText: 'Annuler'
+        });
+        if (!picked) return;
+        BRModule._adminActAsUserId = parseInt(document.getElementById('dlg_as_user')?.value);
+      }
+    }
     const body = await this._modalBody(null);
     UI.showModal(`<i class="fas fa-file-import"></i> ${T.get('br_new')}`, body, `
       <button class="btn btn-secondary" onclick="UI.closeModal()"> ${T.get('cancel')}</button>
@@ -725,6 +807,12 @@ const BRModule = {
   },
 
   _saveBR(editId, andPrint) {
+    // Permission guard: non-admin users must have canCreateBR permission
+    const curUser = Auth.getCurrentUser();
+    if (!Auth.isAdmin() && curUser?.permissions?.canCreateBR === false) {
+      Utils.notify('⛔ Permission refusée : création BR', 'error');
+      UI.closeModal(); return;
+    }
     const brNum    = parseInt(document.getElementById('br-num')?.value);
     const year     = parseInt(document.getElementById('br-year')?.value) || new Date().getFullYear();
     const supplierId = parseInt(document.getElementById('br-supplier')?.value);
@@ -756,6 +844,16 @@ const BRModule = {
       totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       notes, receivedBy, controlledBy, status: 'open'
     };
+
+    // ── Admin acting as another user ──────────────────────────────
+    const adminU = Auth.getCurrentUser();
+    const targetUserId = Auth.isAdmin() && BRModule._adminActAsUserId ? BRModule._adminActAsUserId : adminU?.id;
+    const targetUser = DB.getById('users', targetUserId) || adminU;
+    data.createdBy = targetUserId;
+    data.createdByName = targetUser?.name || targetUser?.username || '?';
+    data.lastModifiedBy = adminU?.id;
+    data.lastModifiedByName = adminU?.name;
+    BRModule._adminActAsUserId = null; // reset
 
     let savedBR;
     if (editId) {
@@ -837,7 +935,7 @@ const BRModule = {
     }
     DB.delete('brs', id);
     Utils.notify((T.isRTL()?'تم حذف الوصل':'BR supprimé'), 'success');
-    App.loadModule('brs');
+  App.loadModule('brs');
   },
 
   // Remove the caisse_admin bl_delivery entry for a specific BL (called on delete)
@@ -939,9 +1037,7 @@ const BLModule = {
           <span class="badge badge-secondary">${items.length}</span>
           <button class="btn btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter CSV" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px"><i class="fas fa-file-csv"></i> CSV</button>
           <button class="btn btn-outline" onclick="BLModule.showHistory()"><i class="fas fa-history"></i> Historique</button>
-          <button class="btn btn-success" onclick="BLModule.showNewBL()">
-            <i class="fas fa-plus"></i> ${T.get('bl_new')}
-          </button>
+          ${(Auth.isAdmin()||(Auth.getCurrentUser()?.permissions?.canCreateBL!==false))?`<button class="btn btn-success" onclick="BLModule.showNewBL()"><i class="fas fa-plus"></i> ${T.get('bl_new')}</button>`:''}
         </div>
       </div>
       <div class="filters-bar">
@@ -1033,7 +1129,7 @@ const BLModule = {
                 </td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
-                  ${!isLocked?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
+                  ${(!isLocked||Auth.isAdmin())?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
                   ${!isLocked?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:''}
                   <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="PDF"><i class="fas fa-file-pdf"></i></button>
                   ${(!isLocked||Auth.isAdmin())?`<button class="btn btn-xs btn-danger" onclick="BLModule.deleteBL(${bl.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
@@ -1047,7 +1143,21 @@ const BLModule = {
   },
 
 
-  showNewBL() {
+  async showNewBL() {
+    // Admin picks a user who has canCreateBL permission
+    if (Auth.isAdmin()) {
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && u.permissions?.canCreateBL !== false);
+      if (users.length > 0) {
+        const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
+        const picked = await Dialog.show({
+          title: '👤 Créer en tant que...',
+          message: `<div style="margin-bottom:10px;font-size:13px">Ce BL sera attribué à la caisse de :</div><select id="dlg_bl_as_user">${opts}</select><div style="margin-top:10px;font-size:11px">Vous restez affiché comme "Modifié par" pour transparence</div>`,
+          type: 'info', confirmText: 'Continuer', cancelText: 'Annuler'
+        });
+        if (!picked) return;
+        BLModule._adminActAsUserId = parseInt(document.getElementById('dlg_bl_as_user')?.value);
+      }
+    }
     const allBRs = DB.getAll('brs');
     const openBRs = allBRs.filter(b => b.status !== 'delivered' && b.status !== 'locked');
     const supMap = {}; DB.getAll('suppliers').forEach(s => supMap[s.id] = s);
@@ -1112,14 +1222,24 @@ const BLModule = {
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
-  showEdit(blId) {
+  showEdit(blId, adminOverride = false) {
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     const br = DB.getById('brs', bl.brId);
     if (!br) return;
-    UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} BL — ${bl.ref}`, this._blModalBody(br, bl), `
+    const title = adminOverride
+      ? `<i class="fas fa-shield-alt" style="color:#a78bfa"></i> Admin Edit — ${bl.ref} <span style="font-size:11px;background:rgba(99,102,241,.15);color:#a78bfa;padding:2px 8px;border-radius:6px;margin-left:6px">Override</span>`
+      : `<i class="fas fa-edit"></i> ${T.get('edit')} BL — ${bl.ref}`;
+    const sarfBtn = Auth.isAdmin()
+      ? `<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none" onclick="UI.closeModal();BLModule.adminEditSarf(${blId})"><i class="fas fa-coins"></i> صرف</button>`
+      : '';
+    UI.showModal(title, this._blModalBody(br, bl), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
-      <button class="btn btn-warning" onclick="BLModule._saveBL(${bl.brId},${blId},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
+      ${sarfBtn}
+      ${adminOverride
+        ? `<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff" onclick="BLModule._saveBL(${bl.brId},${blId},false,true)"><i class="fas fa-shield-alt"></i> Sauver (Admin)</button>`
+        : `<button class="btn btn-warning" onclick="BLModule._saveBL(${bl.brId},${blId},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`
+      }`, 'xl');
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
@@ -1422,7 +1542,13 @@ const BLModule = {
     }
   },
 
-  _saveBL(brId, editBlId, andPrint) {
+  _saveBL(brId, editBlId, andPrint, adminOverride = false) {
+    // Permission guard: non-admin users must have canCreateBL permission
+    const curUser = Auth.getCurrentUser();
+    if (!Auth.isAdmin() && !adminOverride && curUser?.permissions?.canCreateBL === false) {
+      Utils.notify('⛔ Vous n’avez pas la permission de créer des BL', 'error');
+      UI.closeModal(); return;
+    }
     const driverName = (document.getElementById('bl-driver')?.value||'').trim();
     const truckIMM   = (document.getElementById('bl-truck')?.value||'').trim();
     const date       = document.getElementById('bl-date')?.value || Utils.today();
@@ -1488,13 +1614,35 @@ const BLModule = {
       ref, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
       destinationAddress: (document.getElementById('bl-destination')?.value||'').trim(),
       lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
-      isPartial, partNum, status: 'open'
+      isPartial, partNum,
+      // On admin override keep delivered status; otherwise new BL starts as open
+      status: (adminOverride && editBlId) ? (DB.getById('bls', editBlId)?.status || 'open') : 'open'
     };
+
+    // Admin acting as user attribution (new BL only)
+    if (!editBlId) {
+      const adminU = Auth.getCurrentUser();
+      const targetUserId = Auth.isAdmin() && BLModule._adminActAsUserId ? BLModule._adminActAsUserId : adminU?.id;
+      const targetUser = DB.getById('users', targetUserId) || adminU;
+      data.createdBy = targetUserId;
+      data.createdByName = targetUser?.name || targetUser?.username || '?';
+      data.lastModifiedBy = adminU?.id;
+      data.lastModifiedByName = adminU?.name;
+      BLModule._adminActAsUserId = null; // reset
+    }
+
+    // Admin override edit: tag the record
+    if (adminOverride && editBlId) {
+      const adminU = Auth.getCurrentUser();
+      data.lastAdminEdit = new Date().toISOString();
+      data.lastAdminEditBy = adminU?.name;
+    }
 
     let savedBL;
     if (editBlId) {
-      savedBL = DB.update('bls', editBlId, data);
-      Utils.notify((T.isRTL()?'تم تعديل وصل التسليم':'BL modifié'), 'success');
+      savedBL = DB.update('bls', editBlId, data,
+        adminOverride ? `Admin override edit (${Auth.getCurrentUser()?.name})` : null);
+      Utils.notify((T.isRTL()?'تم تعديل وصل التسليم': adminOverride ? '✅ BL modifié (Admin Override)' : 'BL modifié'), 'success');
     } else {
       savedBL = DB.insert('bls', data);
       if (!isPartial) DB.update('brs', brId, { status:'delivered', deliveredAt:new Date().toISOString() }, 'Livraison complète via BL');
@@ -1565,6 +1713,75 @@ const BLModule = {
     }
 
     Utils.notify((T.isRTL()?'تم تأكيد التسليم! الوثائق مقفلة.':'Livraison confirmée ! Documents verrouillés.'), 'success');
+
+    // ── صرف (Sarf) Popup — always ask after delivery ──
+    const sarfPopup = async () => {
+      const sessions = DB.getAll('sessions');
+      const todaySession = sessions.find(s => s.userId === u?.id && s.date === Utils.today() && s.status === 'open');
+      const liqRemain = todaySession ? (todaySession.liquidStart||0)-(todaySession.sarfTotal||0) : 0;
+      const hasSarf = await Dialog.show({
+        title: T.isRTL()?'مصاريف التسليمة':'Frais de livraison',
+        message: `<div style="padding:4px 0">
+          <div style="display:flex;align-items:center;gap:12px;padding:14px;background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.15);border-radius:12px;margin-bottom:14px">
+            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas fa-receipt" style="color:#fff;font-size:16px"></i></div>
+            <div><div style="font-weight:700;font-size:13px;color:var(--text)">${T.isRTL()?'هل دفعت مصاريف إضافية؟':'Avez-vous eu des frais suppl\u00e9mentaires ?'}</div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${Utils.escHTML(bl.ref||'')} \u00b7 ${Utils.fmtCurrency(amount)}</div></div>
+          </div>
+          ${todaySession ? '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:6px">' +
+            '<div style="text-align:center;padding:8px;background:var(--bg3);border-radius:8px"><div style="font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">D\u00e9part</div><div style="font-weight:800;font-size:14px;margin-top:2px">' + Utils.fmtCurrency(todaySession.liquidStart||0) + '</div></div>' +
+            '<div style="text-align:center;padding:8px;background:rgba(245,158,11,.06);border-radius:8px"><div style="font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">D\u00e9pens\u00e9</div><div style="font-weight:800;font-size:14px;color:#f59e0b;margin-top:2px">' + Utils.fmtCurrency(todaySession.sarfTotal||0) + '</div></div>' +
+            '<div style="text-align:center;padding:8px;background:rgba(' + (liqRemain>0?'16,185,129':'239,68,68') + ',.06);border-radius:8px"><div style="font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">Restant</div><div style="font-weight:800;font-size:14px;color:' + (liqRemain>0?'#10b981':'#ef4444') + ';margin-top:2px">' + Utils.fmtCurrency(liqRemain) + '</div></div></div>' : ''}
+        </div>`,
+        type: 'info',
+        confirmText: T.isRTL()?'\u0646\u0639\u0645\u060c \u0623\u0633\u062c\u0644':'Oui, d\u00e9clarer',
+        cancelText: T.isRTL()?'\u0644\u0627 \u0634\u064a\u0621':'Non, rien'
+      });
+      if (hasSarf) {
+        const sarfResult = await Dialog.show({
+          title: T.isRTL()?'\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u0645\u0635\u0627\u0631\u064a\u0641':'D\u00e9clarer les frais',
+          message: `<div style="padding:4px 0">
+            <div style="margin-bottom:14px">
+              <label style="font-weight:700;font-size:12px;display:block;margin-bottom:6px"><i class="fas fa-coins" style="color:#f59e0b"></i> ${T.isRTL()?'\u0627\u0644\u0645\u0628\u0644\u063a (\u062f\u062c)':'Montant (DA)'}</label>
+              <input type="number" id="sarf_amount" placeholder="0.00" style="width:100%;font-size:22px;font-weight:800;text-align:center;padding:12px;background:var(--bg3);border:2px solid var(--border);border-radius:10px;color:var(--text)" min="0" step="any">
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <button type="button" style="flex:1;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:11px;font-weight:700;cursor:pointer" onclick="document.getElementById('sarf_amount').value=500">500</button>
+                <button type="button" style="flex:1;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:11px;font-weight:700;cursor:pointer" onclick="document.getElementById('sarf_amount').value=1000">1 000</button>
+                <button type="button" style="flex:1;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:11px;font-weight:700;cursor:pointer" onclick="document.getElementById('sarf_amount').value=2000">2 000</button>
+                <button type="button" style="flex:1;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:11px;font-weight:700;cursor:pointer" onclick="document.getElementById('sarf_amount').value=5000">5 000</button>
+              </div>
+            </div>
+            <div style="margin-bottom:8px">
+              <label style="font-weight:600;font-size:12px;display:block;margin-bottom:6px"><i class="fas fa-sticky-note" style="color:var(--text4)"></i> ${T.isRTL()?'\u0627\u0644\u0645\u0644\u0627\u062d\u0638\u0629':'Motif'}</label>
+              <input type="text" id="sarf_note" placeholder="${T.isRTL()?'\u0648\u0642\u0648\u062f\u060c \u0631\u0633\u0648\u0645 \u0637\u0631\u064a\u0642...':'Carburant, p\u00e9age, repas...'}" style="width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">
+            </div>
+          </div>`,
+          type: 'warning',
+          confirmText: T.isRTL()?'\u062a\u0633\u062c\u064a\u0644':'Enregistrer',
+          cancelText: T.isRTL()?'\u0625\u0644\u063a\u0627\u0621':'Annuler'
+        });
+        if (sarfResult) {
+          const sarfAmt = parseFloat(document.getElementById('sarf_amount')?.value||0);
+          const sarfNote = document.getElementById('sarf_note')?.value||'';
+          if (sarfAmt > 0) {
+            if (todaySession) {
+              const sarf = todaySession.sarf || [];
+              sarf.push({ blId, blRef: bl.ref, amount: sarfAmt, note: sarfNote, at: new Date().toISOString() });
+              const newSarfTotal = sarf.reduce((s,e) => s + e.amount, 0);
+              DB.update('sessions', todaySession.id, { sarf, sarfTotal: newSarfTotal });
+              Utils.notify('\u2705 \u0635\u0631\u0641 ' + Utils.fmtCurrency(sarfAmt) + ' \u2014 Restant: ' + Utils.fmtCurrency((todaySession.liquidStart||0) - newSarfTotal), 'success', 5000);
+            } else {
+              DB.insert('caisse_admin', {
+                type: 'withdrawal', source: 'sarf', blId, blRef: bl.ref,
+                userId: u?.id, userName: u?.name, sessionDate: Utils.today(),
+                amount: sarfAmt, note: '\u0635\u0631\u0641: ' + (sarfNote || 'BL ' + bl.ref)
+              });
+              Utils.notify('\u2705 \u0635\u0631\u0641 ' + Utils.fmtCurrency(sarfAmt) + ' enregistr\u00e9', 'success', 5000);
+            }
+          }
+        }
+      }
+    };
+    await sarfPopup();
     App.loadModule('bls');
   },
 
@@ -1596,9 +1813,65 @@ const BLModule = {
     const footer = `
       ${!isLocked?`<button class="btn btn-outline" onclick="UI.closeModal();BLModule.showEdit(${blId})"><i class="fas fa-edit"></i> ${T.get('edit')}</button>`:''}
       ${!isLocked?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')}</button>`:''}
+      ${isLocked&&Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin Modif</button>`:''}
+      ${isLocked&&Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none" onclick="UI.closeModal();BLModule.adminEditSarf(${blId})"><i class="fas fa-coins"></i> صرف</button>`:''}
       <button class="btn btn-outline" onclick="PDFGen.exportBL(${blId})"><i class="fas fa-file-pdf"></i> PDF</button>
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')}</button>`;
     UI.showModal(`<i class="fas fa-file-export"></i> ${bl.ref}`, body, footer, 'lg');
+  },
+
+  async adminOverrideEdit(blId) {
+    if (!Auth.isAdmin()) return;
+    const bl = DB.getById('bls', blId);
+    if (!bl) return;
+    // Admin gets the FULL edit modal — same as regular edit
+    // Temporarily unlock for this admin action
+    UI.closeModal();
+    BLModule.showEdit(blId, true /* adminOverride */);
+  },
+
+  async adminEditSarf(blId) {
+    if (!Auth.isAdmin()) return;
+    const bl = DB.getById('bls', blId);
+    if (!bl) return;
+    // Find existing sarf entries linked to this BL across all sessions
+    const allSessions = DB.getAll('sessions');
+    let existing = [];
+    allSessions.forEach(s => { (s.sarf||[]).forEach(e => { if(Number(e.blId)===Number(blId)) existing.push({...e,sessionId:s.id,sessionUserId:s.userId}); }); });
+    // Also check caisse_admin sarf withdrawals
+    const admSarf = DB.getAll('caisse_admin').filter(e => Number(e.blId)===Number(blId) && e.source==='sarf');
+    const existingHtml = existing.length+admSarf.length > 0 ? ('<div style="margin-bottom:14px;background:#1e2a3e;border-radius:10px;padding:10px 14px;border:1px solid rgba(255,255,255,.08)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#64748b;letter-spacing:.5px;margin-bottom:8px">صرف existants</div>'+[...existing,...admSarf].map(e=>'<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)"><span style="color:#94a3b8">'+Utils.escHTML(e.note||'—')+'</span><span style="font-weight:700;color:#f59e0b">'+Utils.fmtCurrency(e.amount)+'</span></div>').join('')+'</div>') : '';
+    const users = DB.getAll('users').filter(u=>u.role!=='admin');
+    const blCreatorId = bl.createdBy;
+    const sarfUsers = users.map(u=>'<option value="'+u.id+'" '+(String(u.id)===String(blCreatorId)?'selected':'')+'>'+Utils.escHTML(u.name||u.username)+'</option>').join('');
+    const res = await Dialog.show({
+      title: `✏️ Modifier صرف — ${bl.ref}`,
+      message: existingHtml+'<div class="form-group"><label>Utilisateur (caisse concernée)</label><select id="adm_sarf_user">'+sarfUsers+'</select></div><div class="form-group"><label>Montant صرف (DA)</label><input type="number" id="adm_sarf_amt" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0"></div><div class="form-group"><label>Motif</label><input type="text" id="adm_sarf_note" placeholder="Carburant, péage..."></div>',
+      type: 'warning', confirmText: 'Ajouter صرف', cancelText: 'Annuler'
+    });
+    if (!res) return;
+    const targetUserId = parseInt(document.getElementById('adm_sarf_user')?.value);
+    const sarfAmt = parseFloat(document.getElementById('adm_sarf_amt')?.value||0);
+    const sarfNote = document.getElementById('adm_sarf_note')?.value||'';
+    if (!sarfAmt || sarfAmt <= 0) { Utils.notify('Montant invalide','warning'); return; }
+    const adm = Auth.getCurrentUser();
+    const targetUser = DB.getById('users', targetUserId);
+    // Find today's session for that user OR use admin's
+    const tSess = DB.getAll('sessions').find(s => s.userId===targetUserId && s.status==='open');
+    if (tSess) {
+      const sarf = tSess.sarf || [];
+      sarf.push({ blId, blRef: bl.ref, amount: sarfAmt, note: sarfNote, at: new Date().toISOString(), addedBy: adm?.name });
+      DB.update('sessions', tSess.id, { sarf, sarfTotal: sarf.reduce((s,e)=>s+e.amount,0) });
+    } else {
+      DB.insert('caisse_admin', {
+        type:'withdrawal', source:'sarf', blId, blRef: bl.ref,
+        userId: targetUserId, userName: targetUser?.name||'?',
+        sessionDate: Utils.today(), amount: sarfAmt,
+        note: `صرف (admin ${adm?.name}): ${sarfNote||'BL '+bl.ref}`
+      });
+    }
+    Utils.notify(`✅ صرف ${Utils.fmtCurrency(sarfAmt)} ajouté pour ${targetUser?.name||'?'}`, 'success');
+    App.loadModule('bls');
   },
 
   async deleteBL(id) {
@@ -1937,6 +2210,11 @@ const CaisseModule = {
             <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${T.get('caisse_monnaie')} ${isAR?'أولي':'départ'}</div>
             <div style="font-size:24px;font-weight:900;color:var(--warning)">${Utils.fmtCurrency(session.startingMonnaie||0)}</div>
           </div>
+          <div style="background:var(--bg-inset);border-radius:var(--radius);padding:14px;text-align:center;border-left:3px solid #f59e0b">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${isAR?'السيولة / الصرف':'Liquide / صرف'}</div>
+            <div style="font-size:18px;font-weight:900;color:#f59e0b">${Utils.fmtCurrency(session.liquidStart||0)}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${isAR?'صرف':'صرف'}: −${Utils.fmtCurrency(session.sarfTotal||0)} → ${Utils.fmtCurrency((session.liquidStart||0)-(session.sarfTotal||0))}</div>
+          </div>
           ${closedCards}
         </div>
         ${alertMsg}
@@ -1972,6 +2250,28 @@ const CaisseModule = {
         </table>
       </div>
     </div>
+    ${(session.sarf||[]).length > 0 ? `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:16px;box-shadow:var(--shadow-sm)">
+      <div style="padding:14px 18px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+        <i class="fas fa-money-bill-wave" style="color:#f59e0b"></i>
+        <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR?'مصاريف الصرف اليوم':'Dépenses صرف du jour'}</h3>
+        <span style="margin-${isAR?'right':'left'}:auto;font-size:11px;color:var(--text-muted)">${(session.sarf||[]).length} — Total: ${Utils.fmtCurrency(session.sarfTotal||0)}</span>
+      </div>
+      <div style="padding:12px">
+        ${(session.sarf||[]).map(s => `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg3);border-radius:10px;border-left:3px solid #f59e0b;margin-bottom:6px">
+          <div style="font-size:20px">💸</div>
+          <div style="flex:1">
+            <div style="font-weight:800;color:#d97706;font-size:15px">${Utils.fmtCurrency(s.amount)}</div>
+            <div style="font-size:11px;color:var(--text4)">${Utils.escHTML(s.note||'Sans motif')}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text4)">BL: ${Utils.escHTML(s.blRef||'?')}</div>
+            <div style="font-size:10px;color:var(--text4)">${s.at ? new Date(s.at).toLocaleTimeString('fr',{hour:'2-digit',minute:'2-digit'}) : ''}</div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
     ${this._renderUserHistory(u)}
     </div>`;
   },
@@ -2031,10 +2331,11 @@ const CaisseModule = {
             <div style="font-size:11px;color:var(--text3)">${Utils.escHTML(t.userName||'-')}${t.deliveredByName && t.deliveredByName!==t.userName ? ` — livré par <strong>${Utils.escHTML(t.deliveredByName)}</strong>` : ''}</div>
           </div>
         </div>
-        <div style="text-align:right">
+        <div style="text-align:right;display:flex;align-items:center;gap:6px">
           <div class="badge ${t.type==='deposit'?'badge-success':'badge-danger'}" style="font-size:12px">
             ${t.type==='deposit'?'+':'-'}${Utils.fmtCurrency(t.amount)}
           </div>
+          <button class="btn-correct" onclick="event.stopPropagation();AdminCaisseModule._correctEntry(${t.id})" title="Corriger"><i class="fas fa-edit"></i></button>
         </div>
       </div>`).join('');
 
@@ -2109,30 +2410,83 @@ const CaisseModule = {
   showMorningPrompt() {
     const u = Auth.getCurrentUser();
     if (!u) return;
+    // Skip if user doesn't require daily liquid (permission based)
+    const perms = Auth.getUserPermissions(u);
+    if (perms.requireDailyLiquid === false) {
+      // Auto-start session with 0 liquid
+      SessionMgr.startSession(u.id, 0, 0, false, '');
+      App.reloadCurrent();
+      return;
+    }
     const isAR = T.isRTL();
+    const lastSession = SessionMgr.getLastClosedSession(u.id);
+    const prevMonnaie = lastSession?.closedMonnaie || 0;
     const html = `
-      <div class="form-group mb-0">
-        <label>${isAR ? 'الصندوق الأولي (Monnaie)' : 'Fond de caisse initial (Monnaie)'}</label>
+      <div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4);margin-bottom:6px">
+          ${isAR ? 'صندوق الأمس (مرجع)' : "Monnaie d'hier (référence)"}
+        </div>
+        <div style="font-size:24px;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(prevMonnaie)}</div>
+        ${lastSession ? `<div style="font-size:11px;color:var(--text4);margin-top:4px">${lastSession.date}</div>` : ''}
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>${isAR ? 'الصندوق الأولي (Monnaie en caisse)' : 'Fond de caisse initial (Monnaie)'}</label>
         <div style="position:relative">
-          <input type="number" id="startMonnaieInput" class="form-control" step="0.01" min="0" value="0">
+          <input type="number" id="startMonnaieInput" class="form-control" step="0.01" min="0" value="${prevMonnaie.toFixed(2)}">
           <span style="position:absolute;top:50%;${isAR?'left:12px':'right:12px'};transform:translateY(-50%);color:var(--text-muted);font-weight:700">DA</span>
         </div>
-        <small style="color:var(--text4);display:block;margin-top:6px">${isAR ? 'أدخل المبلغ الموجود في الصندوق في بداية اليوم' : 'Saisissez le montant présent en caisse en début de journée'}</small>
       </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label style="font-weight:700;color:var(--primary)"><i class="fas fa-wallet"></i> ${isAR ? 'السيولة في اليد (Liquide)' : 'Liquide en main'}</label>
+        <div style="position:relative">
+          <input type="number" id="liquidStartInput" class="form-control" step="0.01" min="0" value="${prevMonnaie.toFixed(2)}"
+            oninput="CaisseModule._checkLiquidDiscrepancy(${prevMonnaie})">
+          <span style="position:absolute;top:50%;${isAR?'left:12px':'right:12px'};transform:translateY(-50%);color:var(--text-muted);font-weight:700">DA</span>
+        </div>
+      </div>
+      <div id="liquidDiscrepancyWarn" style="display:none;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:10px;padding:12px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <i class="fas fa-exclamation-triangle" style="color:#ef4444;font-size:16px"></i>
+          <strong style="color:#ef4444;font-size:13px">${isAR ? 'فرق مع صندوق الأمس!' : "Écart avec le montant d'hier !"}</strong>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label style="color:#ef4444;font-size:12px">${isAR ? 'سبب الفرق (إجباري)' : "Motif de l'écart (obligatoire)"} *</label>
+          <input type="text" id="discrepancyNote" placeholder="${isAR ? 'اشرح سبب الفرق...' : 'Expliquez la différence...'}" style="width:100%;border-color:rgba(239,68,68,.4)">
+        </div>
+      </div>
+      <small style="color:var(--text4);display:block;margin-top:6px">${isAR ? 'أدخل المبالغ الموجودة معك في بداية اليوم' : 'Saisissez les montants en votre possession en début de journée'}</small>
     `;
     const footer = `
       <button class="btn btn-outline" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="CaisseModule._saveMorningSession()">${isAR ? 'بدء الجلسة' : 'Démarrer la session'}</button>
     `;
-    UI.showModal(isAR ? 'فتح جلسة اليوم' : 'Ouverture de session', html, footer, 'sm');
+    UI.showModal(isAR ? 'فتح جلسة اليوم' : 'Ouverture de session', html, footer, 'md');
     setTimeout(() => document.getElementById('startMonnaieInput')?.focus(), 100);
+  },
+
+  _checkLiquidDiscrepancy(prevAmount) {
+    const liquid = parseFloat(document.getElementById('liquidStartInput')?.value) || 0;
+    const diff = Math.abs(liquid - prevAmount);
+    const warnEl = document.getElementById('liquidDiscrepancyWarn');
+    if (warnEl) warnEl.style.display = diff > 1 ? 'block' : 'none';
   },
 
   _saveMorningSession() {
     const u = Auth.getCurrentUser();
     if (!u) return;
-    const val = Number(document.getElementById('startMonnaieInput')?.value) || 0;
-    SessionMgr.startSession(u.id, val);
+    const monnaie = Number(document.getElementById('startMonnaieInput')?.value) || 0;
+    const liquidStart = Number(document.getElementById('liquidStartInput')?.value) || 0;
+    const lastSession = SessionMgr.getLastClosedSession(u.id);
+    const prevMonnaie = lastSession?.closedMonnaie || 0;
+    const diff = Math.abs(liquidStart - prevMonnaie);
+    const hasDiscrepancy = diff > 1;
+    const discrepancyNote = document.getElementById('discrepancyNote')?.value?.trim() || '';
+    if (hasDiscrepancy && !discrepancyNote) {
+      Utils.notify("Vous devez expliquer l'écart avec le montant d'hier", 'warning');
+      document.getElementById('discrepancyNote')?.focus();
+      return;
+    }
+    SessionMgr.startSession(u.id, monnaie, liquidStart, hasDiscrepancy, discrepancyNote);
     UI.closeModal();
     App.reloadCurrent();
   },
@@ -2146,26 +2500,67 @@ const CaisseModule = {
     const prevEspeces = session?.closedEspeces ?? deliveryTotal;
     const prevMonnaie = session?.closedMonnaie ?? (session?.startingMonnaie ?? 0);
     const todayDeliveries = DB.getAll('caisse_admin').filter(e => e.source==='bl_delivery' && e.userId===u.id && e.sessionDate===today);
+    const isAR = T.isRTL();
+    const sarf = session?.sarf || [];
+    const sarfTotal = sarf.reduce((s,e) => s + (e.amount||0), 0);
+    const liquidStart = session?.liquidStart || 0;
+    const expectedLiquid = liquidStart - sarfTotal;
+    const prevLiquidEnd = session?.liquidEnd ?? expectedLiquid;
+
+    const sarfListHTML = sarf.length ? sarf.map(s => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);border-radius:8px;border-left:3px solid #f59e0b;margin-bottom:6px">
+        <div style="font-size:16px">💸</div>
+        <div style="flex:1">
+          <div style="font-weight:700;color:#d97706">${Utils.fmtCurrency(s.amount)}</div>
+          <div style="font-size:11px;color:var(--text4)">${Utils.escHTML(s.note||'')} — BL: ${Utils.escHTML(s.blRef||'?')}</div>
+        </div>
+        <div style="font-size:10px;color:var(--text4)">${s.at ? new Date(s.at).toLocaleTimeString('fr',{hour:'2-digit',minute:'2-digit'}) : ''}</div>
+      </div>`).join('') : `<div style="color:var(--text4);font-size:12px;text-align:center;padding:12px">Aucun صرف aujourd'hui</div>`;
 
     UI.showModal(`🌙 ${T.get('caisse_cloture')}`, `
+    <!-- Reconciliation Summary -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:var(--bg3);border-radius:10px;padding:12px;text-align:center;border-top:3px solid var(--primary)">
+        <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.4px">BL Livrés</div>
+        <div style="font-size:20px;font-weight:900;color:var(--primary);margin-top:4px">${Utils.fmtCurrency(deliveryTotal)}</div>
+        <div style="font-size:10px;color:var(--text4)">${todayDeliveries.length} livraison(s)</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:10px;padding:12px;text-align:center;border-top:3px solid #f59e0b">
+        <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.4px">Total صرف</div>
+        <div style="font-size:20px;font-weight:900;color:#f59e0b;margin-top:4px">${Utils.fmtCurrency(sarfTotal)}</div>
+        <div style="font-size:10px;color:var(--text4)">${sarf.length} dépense(s)</div>
+      </div>
+    </div>
+
+    <!-- Liquid Reconciliation -->
+    <div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;padding:16px;color:#fff;margin-bottom:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px"><i class="fas fa-wallet"></i> ${isAR?'مقارنة السيولة':'Réconciliation Liquide'}</div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:13px">
+        <span style="opacity:.7">Liquide départ</span><span style="font-weight:700">${Utils.fmtCurrency(liquidStart)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:13px">
+        <span style="opacity:.7">− Total صرف</span><span style="font-weight:700;color:#f59e0b">−${Utils.fmtCurrency(sarfTotal)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:15px;font-weight:900">
+        <span>= Liquide attendu</span><span style="color:#4ade80">${Utils.fmtCurrency(expectedLiquid)}</span>
+      </div>
+    </div>
+
+    <!-- صرف Details -->
+    ${sarf.length > 0 ? `
+    <details style="margin-bottom:16px">
+      <summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--text);padding:6px 0">
+        <i class="fas fa-list" style="color:#f59e0b"></i> Détail des صرف (${sarf.length})
+      </summary>
+      <div style="margin-top:8px">${sarfListHTML}</div>
+    </details>` : ''}
+
     <div class="alert alert-info mb-2">
       <i class="fas fa-info-circle"></i>
       <strong>${T.get('caisse_expected')}:</strong> ${Utils.fmtCurrency(deliveryTotal)}
       (${todayDeliveries.length} BL livrés)
-      ${brTotal !== deliveryTotal ? `<br><small style="opacity:.7">Total BR créés: ${Utils.fmtCurrency(brTotal)} — ${DB.getAll('brs').filter(b=>(b.date||'').slice(0,10)===today&&b.createdBy===u.id).length} BR</small>` : ''}
     </div>
-    <p style="color:var(--text2);margin-bottom:16px">${T.get('caisse_cloture_msg')}</p>
-    <div class="cloture-compare mb-2">
-      <div class="compare-box expected">
-        <div class="cb-label">${T.get('caisse_expected')}</div>
-        <div class="cb-value">${Utils.fmtCurrency(deliveryTotal)}</div>
-      </div>
-      <div class="compare-box actual">
-        <div class="cb-label">${T.get('caisse_ecart')} (en temps réel)</div>
-        <div class="cb-value" id="clotureEcartDisplay">—</div>
-      </div>
-    </div>
-    <div class="form-grid cols-2">
+    <div class="form-grid cols-2" style="margin-bottom:12px">
       <div class="form-group">
         <label class="required"><i class="fas fa-money-bill-wave"></i> ${T.get('caisse_especes')}</label>
         <input type="number" id="cloEspeces" value="${prevEspeces.toFixed(2)}" min="0" step="any"
@@ -2177,12 +2572,42 @@ const CaisseModule = {
         <input type="number" id="cloMonnaie" value="${prevMonnaie.toFixed(2)}" min="0" step="any"
           style="font-size:18px;font-weight:700;text-align:center">
       </div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="required" style="color:#f59e0b"><i class="fas fa-wallet"></i> ${isAR?'السيولة المتبقية في اليد':'Liquide restant en main'}</label>
+      <input type="number" id="cloLiquidEnd" value="${prevLiquidEnd.toFixed(2)}" min="0" step="any"
+        style="font-size:18px;font-weight:700;text-align:center;border-color:#f59e0b"
+        oninput="CaisseModule._updateLiquidEcart(${expectedLiquid})">
+      <div id="liquidEcartDisplay" style="margin-top:6px;font-size:13px;font-weight:700"></div>
+    </div>
+    <div class="cloture-compare mb-2">
+      <div class="compare-box expected">
+        <div class="cb-label">${T.get('caisse_expected')}</div>
+        <div class="cb-value">${Utils.fmtCurrency(deliveryTotal)}</div>
+      </div>
+      <div class="compare-box actual">
+        <div class="cb-label">${T.get('caisse_ecart')} Caisse</div>
+        <div class="cb-value" id="clotureEcartDisplay">—</div>
+      </div>
     </div>`,
     `<button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
      <button class="btn btn-primary btn-lg" onclick="CaisseModule._saveCloture(${isEdit})">
        <i class="fas fa-door-closed"></i> ${isEdit?T.get('save'):T.get('caisse_cloture')}
-     </button>`, 'md');
-    setTimeout(()=>CaisseModule._updateEcartDisplay(deliveryTotal), 100);
+     </button>`, 'lg');
+    setTimeout(()=>{
+      CaisseModule._updateEcartDisplay(deliveryTotal);
+      CaisseModule._updateLiquidEcart(expectedLiquid);
+    }, 100);
+  },
+
+  _updateLiquidEcart(expected) {
+    const liquid = parseFloat(document.getElementById('cloLiquidEnd')?.value)||0;
+    const ecart = liquid - expected;
+    const el = document.getElementById('liquidEcartDisplay');
+    if (el) {
+      const color = Math.abs(ecart)<1?'#10b981':'#ef4444';
+      el.innerHTML = `<span style="color:${color}">Écart liquide: ${ecart>=0?'+':''}${Utils.fmtCurrency(ecart)} ${Math.abs(ecart)<1?'✅':'⚠️'}</span>`;
+    }
   },
 
   _updateEcartDisplay(expected) {
@@ -2198,9 +2623,17 @@ const CaisseModule = {
   async _saveCloture(isEdit) {
     const especes = parseFloat(document.getElementById('cloEspeces')?.value)||0;
     const monnaie = parseFloat(document.getElementById('cloMonnaie')?.value)||0;
+    const liquidEnd = parseFloat(document.getElementById('cloLiquidEnd')?.value)||0;
     const u = Auth.getCurrentUser();
-    const ok = await Dialog.confirm(T.isRTL() ? 'إغلاق اليوم' : 'Clôture', `Confirmer la clôture ?\n${T.get('caisse_especes')}: ${Utils.fmtCurrency(especes)}\n${T.get('caisse_monnaie')}: ${Utils.fmtCurrency(monnaie)}`, 'warning');
+    const session = SessionMgr.getTodaySession(u.id);
+    const expectedLiquid = (session?.liquidStart||0) - (session?.sarfTotal||0);
+    const liquidEcart = liquidEnd - expectedLiquid;
+    const ok = await Dialog.confirm(T.isRTL() ? 'إغلاق اليوم' : 'Clôture', `Confirmer la clôture ?\n${T.get('caisse_especes')}: ${Utils.fmtCurrency(especes)}\n${T.get('caisse_monnaie')}: ${Utils.fmtCurrency(monnaie)}\nLiquide: ${Utils.fmtCurrency(liquidEnd)}`, 'warning');
     if (!ok) return;
+    // Save liquid data to session
+    if (session) {
+      DB.update('sessions', session.id, { liquidEnd, liquidEcart });
+    }
     if (isEdit) {
       SessionMgr.updateCloture(u.id, especes, monnaie);
       Utils.notify((T.isRTL()?'تم تحديث الإغلاق':'Clôture mise à jour'), 'success');
@@ -2465,6 +2898,7 @@ const AdminCaisseModule = {
       {id:'overview',       icon:'fa-th-large',        label:isAR?'نظرة عامة':'Vue d\'ensemble'},
       {id:'deposits',       icon:'fa-arrow-alt-circle-down', label:isAR?'الإيداعات':'Dépôts',   accent:'#22c55e'},
       {id:'withdrawals',    icon:'fa-arrow-alt-circle-up',   label:isAR?'السحوبات':'Retraits', accent:'#ef4444'},
+      {id:'sarf',           icon:'fa-coins',            label:isAR?'الصرف':'Suivi صرف',  accent:'#f59e0b'},
       {id:'reconciliation', icon:'fa-balance-scale',    label:isAR?'تسوية يومية':'Rapprochement'},
       {id:'sessions',       icon:'fa-calendar-check',   label:isAR?'جلسات الصندوق':'Sessions Caisse', accent:'#8b5cf6'},
       {id:'caissiers',      icon:'fa-users',            label:isAR?'الكشافون':'Caissiers'},
@@ -2878,10 +3312,106 @@ const AdminCaisseModule = {
       ${userSummaryCards || `<div class="empty-state"><i class="fas fa-users"></i><h4>${T.get('no_data')}</h4></div>`}
     </div>`;
 
-    // ── Tab switcher helper ──
+    // ── Tab: صرف Monitor ──────────────────────────────────────────
+    const sarfDf = this._filters.dateFrom;
+    const sarfDt = this._filters.dateTo;
+    const allSessions2 = DB.getAll('sessions');
+    // Collect all sarf entries from sessions
+    const sarfEntries = [];
+    allSessions2.forEach(sess => {
+      (sess.sarf||[]).forEach(e => {
+        if (sarfDf && e.at && e.at.slice(0,10) < sarfDf) return;
+        if (sarfDt && e.at && e.at.slice(0,10) > sarfDt) return;
+        const u = allUsers.find(x=>x.id===sess.userId);
+        sarfEntries.push({...e, userName: u?.name||u?.username||'?', userId: sess.userId, sessionId: sess.id, src:'session'});
+      });
+    });
+    // Also collect from caisse_admin source=sarf
+    DB.getAll('caisse_admin').filter(e=>e.source==='sarf').forEach(e=>{
+      if (sarfDf && e.sessionDate && e.sessionDate < sarfDf) return;
+      if (sarfDt && e.sessionDate && e.sessionDate > sarfDt) return;
+      const u = allUsers.find(x=>x.id===e.userId);
+      sarfEntries.push({...e, userName: u?.name||u?.username||e.userName||'?', src:'caisse', at: e.createdAt||e.sessionDate});
+    });
+    sarfEntries.sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+    const sarfTotal = sarfEntries.reduce((s,e)=>s+(e.amount||0),0);
+    // Group by user
+    const sarfByUser = {};
+    sarfEntries.forEach(e=>{
+      if (!sarfByUser[e.userId]) sarfByUser[e.userId]={name:e.userName, entries:[], total:0};
+      sarfByUser[e.userId].entries.push(e);
+      sarfByUser[e.userId].total += (e.amount||0);
+    });
+    const tabSarf = `
+    <div style="margin-bottom:20px">
+      <!-- Filters -->
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;background:var(--bg2);padding:14px 16px;border-radius:12px;border:1px solid var(--border)">
+        <i class="fas fa-coins" style="color:#f59e0b;font-size:18px"></i>
+        <strong style="color:var(--text);font-size:14px">Suivi صرف — Frais de livraison</strong>
+        <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="date" value="${sarfDf}" onchange="AdminCaisseModule._filters.dateFrom=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)">
+          <span style="color:var(--text4)">→</span>
+          <input type="date" value="${sarfDt}" onchange="AdminCaisseModule._filters.dateTo=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)">
+          <select onchange="AdminCaisseModule._filters.userId=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)">
+            <option value="all">Tous les utilisateurs</option>
+            ${users.map(u=>`<option value="${u.id}" ${fu===String(u.id)?'selected':''}>${Utils.escHTML(u.name||u.username)}</option>`).join('')}
+          </select>
+          <button class="btn btn-outline" onclick="AdminCaisseModule._filters={dateFrom:'',dateTo:'',userId:'all'};App.loadModule('admin_caisse')" style="font-size:11px;padding:7px 12px"><i class="fas fa-times"></i></button>
+        </div>
+      </div>
+      <!-- Total KPI -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+        <div class="stat-card-v2">
+          <div class="stat-icon-v2 orange"><i class="fas fa-coins"></i></div>
+          <div class="stat-body-v2"><div class="stat-value-v2" style="font-size:18px">${Utils.fmtCurrency(sarfTotal)}</div><div class="stat-label-v2">Total صرف</div></div>
+        </div>
+        <div class="stat-card-v2">
+          <div class="stat-icon-v2 purple"><i class="fas fa-receipt"></i></div>
+          <div class="stat-body-v2"><div class="stat-value-v2">${sarfEntries.length}</div><div class="stat-label-v2">Entrées صرف</div></div>
+        </div>
+        <div class="stat-card-v2">
+          <div class="stat-icon-v2 blue"><i class="fas fa-users"></i></div>
+          <div class="stat-body-v2"><div class="stat-value-v2">${Object.keys(sarfByUser).length}</div><div class="stat-label-v2">Utilisateurs</div></div>
+        </div>
+        ${sarfEntries.length>0?`<div class="stat-card-v2"><div class="stat-icon-v2 green"><i class="fas fa-calculator"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(sarfTotal/sarfEntries.length)}</div><div class="stat-label-v2">Moy. / entrée</div></div></div>`:''}
+      </div>
+      <!-- Per-user breakdown -->
+      ${Object.values(sarfByUser).sort((a,b)=>b.total-a.total).map(ug=>`
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px">
+        <div style="padding:12px 16px;background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px">${(ug.name||'?')[0].toUpperCase()}</div>
+            <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(ug.name)}</div>
+          </div>
+          <div style="font-size:20px;font-weight:900;color:#f59e0b">${Utils.fmtCurrency(ug.total)}</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg3)">
+              <th style="padding:8px 12px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Date</th>
+              <th style="padding:8px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">BL Ref</th>
+              <th style="padding:8px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Motif</th>
+              <th style="padding:8px;text-align:right;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Montant</th>
+              <th style="padding:8px;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Ajouté par</th>
+            </tr></thead>
+            <tbody>${ug.entries.map(e=>`
+              <tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
+                <td style="padding:8px 12px;color:var(--text3)">${(e.at||e.sessionDate||'').slice(0,10)}</td>
+                <td style="padding:8px;font-weight:600;color:var(--text)">${Utils.escHTML(e.blRef||'—')}</td>
+                <td style="padding:8px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escHTML(e.note||'')}</td>
+                <td style="padding:8px;text-align:right;font-weight:800;color:#f59e0b">${Utils.fmtCurrency(e.amount)}</td>
+                <td style="padding:8px;font-size:11px;color:var(--text4)">${Utils.escHTML(e.addedBy||'auto')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`).join('') || `<div class="empty-state"><i class="fas fa-coins" style="font-size:40px;color:var(--text4)"></i><p>Aucun صرف trouvé</p></div>`}
+    </div>`;
+
     const tabContent = tab==='overview' ? tabOverview
       : tab==='deposits'       ? tabDeposits
       : tab==='withdrawals'    ? tabWithdrawals
+      : tab==='sarf'           ? tabSarf
       : tab==='reconciliation' ? tabReconciliation
       : tab==='sessions'       ? tabSessions
       : tab==='caissiers'      ? tabCaissiers
@@ -3030,6 +3560,9 @@ const AdminCaisseModule = {
   showWithdrawal() {
     const ca = DB.getAll('caisse_admin');
     const balance = ca.filter(t=>t.type==='deposit').reduce((s,t)=>s+t.amount,0) - ca.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+t.amount,0);
+    const settings = DB.getSettings();
+    const banks = settings.banks || [];
+    const bankOpts = `<option value="">-- Autre destination --</option>` + banks.map(b=>`<option value="${b.id}">${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
     UI.showModal(`<i class="fas fa-arrow-up" style="color:var(--danger)"></i> ${T.get('adm_withdrawal')}`, `
     <div class="alert alert-warning mb-2">
       <i class="fas fa-exclamation-triangle"></i>
@@ -3039,6 +3572,15 @@ const AdminCaisseModule = {
     <div class="alert alert-info mb-2">
       <i class="fas fa-vault"></i> ${T.isRTL()?"الرصيد الحالي:":"Solde actuel:"} <strong>${Utils.fmtCurrency(balance)}</strong>
     </div>
+    ${banks.length ? `
+    <div class="form-group" style="margin-bottom:12px">
+      <label style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;display:block">
+        <i class="fas fa-university" style="color:var(--primary);margin-right:6px"></i>Compte bancaire destinataire
+      </label>
+      <select id="withBankId" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:var(--bg3);color:var(--text)"
+        onchange="(function(){ const bid=document.getElementById('withBankId').value; const s=DB.getSettings(); const bank=(s.banks||[]).find(b=>b.id===bid); const d=document.getElementById('withDest'); if(bank) d.value='Versement \u2192 '+bank.name+' ('+bank.bankName+')'; else if(d.value.indexOf('Versement')===0) d.value=''; })()"
+      >${bankOpts}</select>
+    </div>` : ''}
     <div class="form-grid cols-2">
       <div class="form-group">
         <label class="required">${T.get('amount')}</label>
@@ -3069,6 +3611,7 @@ const AdminCaisseModule = {
     const destination = (document.getElementById('withDest')?.value||'').trim();
     const bankRef = document.getElementById('withBankRef')?.value||'';
     const note = document.getElementById('withNote')?.value||'';
+    const bankId = document.getElementById('withBankId')?.value||'';
     if (!amount||amount<=0) { Utils.notify((T.isRTL()?'المبلغ غير صالح':'Montant invalide'), 'error'); return; }
     if (!destination) { Utils.notify(T.get('adm_dest')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const ok = await Utils.confirm2(
@@ -3076,13 +3619,33 @@ const AdminCaisseModule = {
       T.get('adm_confirm2') + '\n\nMontant: ' + Utils.fmtCurrency(amount) + '\nDestination: ' + destination
     );
     if (!ok) return;
+    // ── STRICT BALANCE CHECK — NEVER allow caisse to go negative ──
+    const caisseBalance = DB.getAll('caisse_admin').reduce((s,t) => t.type==='deposit' ? s+t.amount : s-t.amount, 0);
+    if (amount > caisseBalance) {
+      Utils.notify(`⛔ Solde caisse insuffisant ! Disponible: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}`, 'danger');
+      return;
+    }
     const u = Auth.getCurrentUser();
-    const tx = DB.insert('caisse_admin', { type:'withdrawal', source:'admin_withdrawal', userId:u.id, userName:u.name, amount, destination, bankRef, note });
+    const src = bankId ? 'bank_transfer' : 'admin_withdrawal';
+    const tx = DB.insert('caisse_admin', { type:'withdrawal', source: src, userId:u.id, userName:u.name, amount, destination, bankRef, note, bankId: bankId||null });
+    // If a specific bank was selected → auto-credit that bank account
+    if (bankId) {
+      const s2 = DB.getSettings();
+      const bank = (s2.banks||[]).find(b=>b.id===bankId);
+      DB.insert('bank_transactions', {
+        bankId, type:'deposit', amount,
+        note: `Versement depuis caisse${note?' — '+note:''}`,
+        date: Utils.today(), by: u?.id, caisseRef: tx?.id
+      });
+      Utils.notify(`✅ ${Utils.fmtCurrency(amount)} versé vers ${bank?.name||'banque'} — les deux registres mis à jour`, 'success', 5000);
+    } else {
+      Utils.notify((T.isRTL()?'تم حفظ السحب':'Retrait enregistré'), 'success');
+    }
     UI.closeModal();
-    Utils.notify((T.isRTL()?'تم حفظ السحب':'Retrait enregistré'), 'success');
     App.loadModule('admin_caisse');
     if (tx) setTimeout(()=>PDFGen.exportDecharge(tx.id), 400);
   },
+
 
   showDetail(id) {
     const t = DB.getById('caisse_admin', id);
@@ -3283,6 +3846,7 @@ const SuppliersModule = {
               <td>${Utils.escHTML(s.contact||'-')}</td>
               <td><span class="badge badge-primary">${brMap[s.id]||0}</span></td>
               <td class="td-actions">
+                <button class="btn btn-xs btn-primary" onclick="SuppliersModule.showSupplierDetail(${s.id})" title="Détails"><i class="fas fa-chart-line"></i></button>
                 <button class="btn btn-xs btn-outline" onclick="SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="SuppliersModule.deleteSup(${s.id})"><i class="fas fa-trash"></i></button>
               </td>
@@ -3384,6 +3948,7 @@ const ClientsModule = {
               <td>${Utils.escHTML(s.contact||'-')}</td>
               <td><span class="badge badge-primary">${DB.getAll('bls').filter(b=>String(b.clientId)===String(s.id)).length}</span></td>
               <td class="td-actions">
+                <button class="btn btn-xs btn-primary" onclick="ClientsModule.showClientDetail(${s.id})" title="Détails"><i class="fas fa-chart-line"></i></button>
                 <button class="btn btn-xs btn-outline" onclick="ClientsModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="ClientsModule.deleteCli(${s.id})"><i class="fas fa-trash"></i></button>
               </td>
@@ -4208,6 +4773,76 @@ const EvalModule = {
       </div>`;
     }).join('');
 
+    // ── BL history with sarf per BL ──────────────────────────
+    const userBLs = DB.getAll('bls').filter(bl => {
+      // BLs created by this user or attributed via createdBy
+      if (String(bl.createdBy) === String(u.id)) return true;
+      // Also BLs from this user's BRs
+      const br2 = DB.getById('brs', bl.brId);
+      return br2 && String(br2.createdBy) === String(u.id);
+    }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    const blTotal = userBLs.reduce((s,bl) => s+(Number(bl.totalTTC||0)),0);
+    const blSarfTotal = userBLs.reduce((s,bl) => {
+      const sess = DB.getAll('sessions').find(ss => ss.userId===u.id && (ss.sarf||[]).some(e=>Number(e.blId)===Number(bl.id)));
+      if (sess) return s + (sess.sarf||[]).filter(e=>Number(e.blId)===Number(bl.id)).reduce((t,e)=>t+e.amount,0);
+      return s;
+    }, 0);
+
+    const blRows = userBLs.map(bl => {
+      const br2 = DB.getById('brs', bl.brId);
+      const sess = DB.getAll('sessions').find(ss => ss.userId===u.id && (ss.sarf||[]).some(e=>Number(e.blId)===Number(bl.id)));
+      const blSarf = sess ? (sess.sarf||[]).filter(e=>Number(e.blId)===Number(bl.id)) : [];
+      const admSarf = DB.getAll('caisse_admin').filter(e => Number(e.blId)===Number(bl.id) && e.source==='sarf' && e.userId===u.id);
+      const sarfEntries = [...blSarf, ...admSarf];
+      const sarfTotal2  = sarfEntries.reduce((t,e)=>t+(e.amount||0),0);
+      const sarfBadge = sarfTotal2 > 0
+        ? `<span style="background:rgba(245,158,11,.15);color:#f59e0b;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">صرف ${Utils.fmtCurrency(sarfTotal2)}</span>`
+        : `<span style="color:var(--text4);font-size:11px">—</span>`;
+      return `<tr>
+        <td style="padding:8px 14px;font-weight:700">${Utils.escHTML(bl.ref||'')}</td>
+        <td style="padding:8px">${Utils.escHTML(bl.clientName||'—')}</td>
+        <td style="padding:8px">${Utils.escHTML(br2?.ref||'—')}</td>
+        <td style="padding:8px">${(bl.deliveredAt||bl.createdAt||'').slice(0,10)}</td>
+        <td style="padding:8px;text-align:right;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(bl.totalTTC||br2?.totalTTC||0)}</td>
+        <td style="padding:8px">${sarfBadge}</td>
+        <td style="padding:8px">${Utils.statusBadge(bl.status||'open')}</td>
+      </tr>`;
+    }).join('');
+
+    const blSection = `
+    <div class="card mb-2" style="overflow:hidden">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h3><i class="fas fa-truck" style="color:var(--success)"></i> Historique BL <span class="badge badge-secondary">${userBLs.length}</span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:var(--text3)">صرف total: <strong style="color:#f59e0b">${Utils.fmtCurrency(blSarfTotal)}</strong></span>
+          <button class="btn btn-sm btn-outline" onclick="EvalModule._exportBLCSV(${u.id})" style="font-size:11px">
+            <i class="fas fa-file-csv"></i> Exporter CSV
+          </button>
+        </div>
+      </div>
+      ${userBLs.length ? `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
+            <th style="padding:8px 14px;text-align:left;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">BL Réf</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Client</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">BR lié</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Date</th>
+            <th style="padding:8px;text-align:right;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">TTC</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">صرف</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Statut</th>
+          </tr></thead>
+          <tbody>${blRows}</tbody>
+          <tfoot><tr style="border-top:2px solid var(--border);background:var(--bg3)">
+            <td colspan="4" style="padding:9px 14px;font-weight:700;text-align:right">TOTAL</td>
+            <td style="padding:9px 14px;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(blTotal)}</td>
+            <td style="padding:9px 14px;font-weight:900;color:#f59e0b">${Utils.fmtCurrency(blSarfTotal)}</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>` : `<div style="padding:20px;text-align:center;color:var(--text4)"><i class="fas fa-inbox"></i> Aucun BL</div>`}
+    </div>`;
+
     return `<div style="padding:24px">
     <!-- Back + title -->
     <div class="d-flex flex-between mb-2" style="flex-wrap:wrap;gap:12px;align-items:center">
@@ -4237,8 +4872,12 @@ const EvalModule = {
         <div><div class="kpi-label">Sessions clôturées</div><div class="kpi-value">${closedSess.length}/${allSessions.length}</div></div></div>
       <div class="kpi-card"><div class="kpi-icon green"><i class="fas fa-file-import"></i></div>
         <div><div class="kpi-label">Total BR créés</div><div class="kpi-value">${allBRs.length}</div></div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:rgba(16,185,129,.1);color:var(--success)"><i class="fas fa-truck"></i></div>
+        <div><div class="kpi-label">BL livrés</div><div class="kpi-value">${userBLs.filter(b=>b.status==='delivered').length}</div></div></div>
       <div class="kpi-card"><div class="kpi-icon orange"><i class="fas fa-coins"></i></div>
         <div><div class="kpi-label">Total TTC</div><div class="kpi-value" style="font-size:16px">${Utils.fmtCurrency(totalTTC)}</div></div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:rgba(245,158,11,.1);color:#f59e0b"><i class="fas fa-coins"></i></div>
+        <div><div class="kpi-label">Total صرف</div><div class="kpi-value" style="font-size:16px;color:#f59e0b">${Utils.fmtCurrency(blSarfTotal)}</div></div></div>
       <div class="kpi-card"><div class="kpi-icon red"><i class="fas fa-balance-scale"></i></div>
         <div><div class="kpi-label">Total Écarts</div><div class="kpi-value" style="font-size:16px;color:${totalEcart>0?'var(--warning)':'var(--success)'}">${Utils.fmtCurrency(totalEcart)}</div></div></div>
       <div class="kpi-card"><div class="kpi-icon purple"><i class="fas fa-clock"></i></div>
@@ -4254,6 +4893,9 @@ const EvalModule = {
         </div>
       </div>
     </div>
+
+    <!-- BL History with Sarf -->
+    ${blSection}
 
     <!-- Écart breakdown -->
     ${closedSess.length ? `
@@ -4284,8 +4926,28 @@ const EvalModule = {
     </h3>
     ${sessions.length ? dayCards : `<div class="empty-state"><i class="fas fa-calendar-times"></i><h4>Aucune session</h4><p>Aucune activité pour cette période.</p></div>`}
     </div>`;
+  },
+
+  _exportBLCSV(userId) {
+    const u = DB.getById('users', userId);
+    const userBLs = DB.getAll('bls').filter(bl => {
+      if (String(bl.createdBy) === String(userId)) return true;
+      const br2 = DB.getById('brs', bl.brId);
+      return br2 && String(br2.createdBy) === String(userId);
+    }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    const rows = [['BL Ref','Client','BR Ref','Date','TTC','صرف Total','Statut']];
+    userBLs.forEach(bl => {
+      const br2 = DB.getById('brs', bl.brId);
+      const sess = DB.getAll('sessions').find(ss => ss.userId===userId && (ss.sarf||[]).some(e=>Number(e.blId)===Number(bl.id)));
+      const blSarf = sess ? (sess.sarf||[]).filter(e=>Number(e.blId)===Number(bl.id)).reduce((t,e)=>t+e.amount,0) : 0;
+      rows.push([bl.ref||'', bl.clientName||'', br2?.ref||'', (bl.deliveredAt||bl.createdAt||'').slice(0,10), bl.totalTTC||br2?.totalTTC||0, blSarf, bl.status||'']);
+    });
+    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+(encodeURIComponent('\uFEFF'+csv));
+    a.download=`BL_${u?.name||userId}_${Utils.today()}.csv`; a.click();
+    Utils.notify('CSV exporté','success');
   }
-};
+}; // ── end EvalModule ──
 
 // ═══════════════════════════════════════════════════════════════
 // CATALOGUE MODULE — Articles + Drivers management
@@ -4506,14 +5168,35 @@ const UsersModule = {
     </div></div>`;
   },
   _form(u={}) {
+    const pl = {
+      canCreateBR:{label:'Créer des BR',icon:'fa-file-import'},canCreateBL:{label:'Créer des BL',icon:'fa-file-export'},
+      canViewBRs:{label:'Voir les BR',icon:'fa-eye'},canViewBLs:{label:'Voir les BL',icon:'fa-eye'},
+      canViewCaisse:{label:'Voir sa caisse',icon:'fa-cash-register'},canViewSuppliers:{label:'Voir fournisseurs',icon:'fa-building'},
+      canViewClients:{label:'Voir clients',icon:'fa-users'},canViewStats:{label:'Voir statistiques',icon:'fa-chart-bar'},
+      canViewCatalogue:{label:'Catalogue',icon:'fa-database'},canViewBank:{label:'Comptes banque',icon:'fa-university'},
+      requireDailyLiquid:{label:'Doit déclarer liquide',icon:'fa-coins'},
+    };
+    const cp = u.id ? Auth.getUserPermissions(u) : Auth._defaultPermissions();
+    const pg = Object.entries(pl).map(([k,m])=>{
+      const c = cp[k]!==false;
+      return `<label class="perm-item ${c?'checked':''}" onclick="this.classList.toggle('checked')">
+        <input type="checkbox" data-perm="${k}" ${c?'checked':''} onchange="this.parentElement.classList.toggle('checked',this.checked)">
+        <i class="fas ${m.icon}" style="color:var(--primary);font-size:12px"></i>
+        <span style="font-size:12px">${m.label}</span>
+      </label>`;
+    }).join('');
     return `<div class="form-grid cols-2">
       <div class="form-group"><label class="required">${T.get('usr_name')}</label><input id="uName" value="${Utils.escHTML(u.name||'')}" required></div>
       <div class="form-group"><label class="required">${T.get('usr_login')}</label><input id="uUsername" value="${Utils.escHTML(u.username||'')}" required autocomplete="off"></div>
       <div class="form-group"><label ${!u.id?'class="required"':''}>${T.get('usr_pass')} ${u.id?`(${T.isRTL()?"فارغ = بدون تغيير":"vide = inchangé"})`:''}</label>
         <input type="password" id="uPassword" ${!u.id?'required':''} autocomplete="new-password"></div>
       <div class="form-group"><label>${T.get('usr_role')}</label>
-        <select id="uRole"><option value="user" ${u.role!=='admin'?'selected':''}>${T.get('role_user')}</option><option value="admin" ${u.role==='admin'?'selected':''}>${T.get('role_admin')}</option></select>
+        <select id="uRole" onchange="document.getElementById('permSection').style.display=this.value==='admin'?'none':'block'"><option value="user" ${u.role!=='admin'?'selected':''}>${T.get('role_user')}</option><option value="admin" ${u.role==='admin'?'selected':''}>${T.get('role_admin')}</option></select>
       </div>
+    </div>
+    <div id="permSection" style="display:${u.role==='admin'?'none':'block'};margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px"><i class="fas fa-shield-alt" style="color:var(--primary)"></i> Permissions d'accès</div>
+      <div class="perm-grid">${pg}</div>
     </div>`;
   },
   showCreate() {
@@ -4538,10 +5221,15 @@ const UsersModule = {
     const dup = DB.getAll('users').find(u=>u.username===username&&u.id!==id);
     if (dup) { Utils.notify((T.isRTL()?'المعرف مستخدم بالفعل':'Identifiant déjà utilisé'), 'error'); return; }
     const data = { name, username, role };
+    if (role !== 'admin') {
+      const perms = {};
+      document.querySelectorAll('[data-perm]').forEach(cb => { perms[cb.dataset.perm] = cb.checked; });
+      data.permissions = perms;
+    }
     if (password) data.password = password;
     if (id) { DB.update('users',id,data); Utils.notify((T.isRTL()?'تم تعديل المستخدم':'Utilisateur modifié'),'success'); }
     else { DB.insert('users',{...data,active:true}); Utils.notify((T.isRTL()?'تم إنشاء المستخدم':'Utilisateur créé'),'success'); }
-    UI.closeModal(); App.loadModule('users');
+    UI.closeModal(); SettingsModule._tab='users'; App.loadModule('settings');
   },
   toggleActive(id) {
     const u = DB.getById('users', id);
@@ -4555,7 +5243,7 @@ const UsersModule = {
     }
     DB.update('users', id, { active: u.active === false });
     Utils.notify(T.isRTL() ? 'تم تغيير الحالة' : 'Statut modifié', 'success');
-    App.loadModule('users');
+    SettingsModule._tab='users'; App.loadModule('settings');
   },
 
   async deleteUser(id) {
@@ -4582,7 +5270,7 @@ const UsersModule = {
     if (!ok) return;
     DB.delete('users', id);
     Utils.notify('✅ ' + (T.isRTL() ? 'تم حذف المستخدم' : 'Utilisateur supprimé'), 'success');
-    App.loadModule('users');
+    SettingsModule._tab='users'; App.loadModule('settings');
   }
 };
 
@@ -4600,7 +5288,9 @@ const SettingsModule = {
       {id:'company', icon:'fa-building',   label:T.get('set_company'),  color:'#3b82f6'},
       {id:'timbre',  icon:'fa-stamp',       label:T.get('set_timbre'),   color:'#f59e0b'},
       {id:'appear',  icon:'fa-palette',     label:T.get('set_theme'),    color:'#8b5cf6'},
-      {id:'data',    icon:'fa-database',    label:T.get('set_data'),     color:'#10b981'},
+      {id:'banks',   icon:'fa-university',  label:'Banques',             color:'#10b981'},
+      {id:'users',   icon:'fa-users-cog',   label:T.get('nav_users'),    color:'#ef4444'},
+      {id:'data',    icon:'fa-database',    label:T.get('set_data'),     color:'#6366f1'},
     ];
     const active = this._tab || 'company';
     const accentColor = TABS.find(t=>t.id===active)?.color || 'var(--primary)';
@@ -4636,9 +5326,87 @@ const SettingsModule = {
       ${this._tab==='company'?this._tabCompany(s):''}
       ${this._tab==='timbre'?this._tabTimbre(s):''}
       ${this._tab==='appear'?this._tabAppear(s):''}
+      ${this._tab==='banks'?this._tabBanks(s):''}
+      ${this._tab==='users'?this._tabUsers():''}
       ${this._tab==='data'?this._tabData():''}
     </div>
     </div>`;
+  },
+
+  _tabUsers() {
+    const users = DB.getAll('users').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const isAR = T.isRTL();
+    return `<div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div><div style="font-weight:800;font-size:16px">${T.get('nav_users')}</div><div style="font-size:12px;color:var(--text4);margin-top:4px">${isAR?'إدارة المستخدمين والصلاحيات':'Gérez les utilisateurs et leurs permissions'}</div></div>
+        <button class="btn btn-primary" onclick="UsersModule.showCreate()"><i class="fas fa-user-plus"></i> ${T.get('usr_new')}</button>
+      </div>
+      <div style="display:grid;gap:10px">
+        ${users.map(u => {
+          const isAdmin = u.role==='admin';
+          const perms = !isAdmin ? Auth.getUserPermissions(u) : null;
+          const activePerms = perms ? Object.entries(perms).filter(([k,v])=>v!==false).length : 0;
+          return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;transition:all .15s" onmouseenter="this.style.borderColor='var(--primary)'" onmouseleave="this.style.borderColor='var(--border)'">
+            <div style="width:42px;height:42px;border-radius:12px;background:${isAdmin?'linear-gradient(135deg,#f59e0b,#d97706)':'linear-gradient(135deg,var(--primary),#7c3aed)'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;flex-shrink:0">${(u.name||'?')[0].toUpperCase()}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(u.name)} ${isAdmin?'<span style="background:#f59e0b;color:#fff;padding:1px 8px;border-radius:20px;font-size:9px;font-weight:800;margin-left:6px">ADMIN</span>':''}</div>
+              <div style="font-size:11px;color:var(--text4);margin-top:2px">@${Utils.escHTML(u.username)} ${!isAdmin?'· '+activePerms+' permissions':''}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="btn btn-sm btn-outline" onclick="UsersModule.showEdit(${u.id})"><i class="fas fa-edit"></i></button>
+              ${u.id!==Auth.getCurrentUser()?.id?`<button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)" onclick="UsersModule.deleteUser(${u.id})"><i class="fas fa-trash"></i></button>`:''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  },
+
+  _tabBanks(s) {
+    const banks = s.banks || [];
+    return `<div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div><div style="font-weight:800;font-size:16px">Comptes Bancaires</div><div style="font-size:12px;color:var(--text4);margin-top:4px">Gérez vos comptes pour les virements et paiements fournisseurs</div></div>
+        <button class="btn btn-primary" onclick="SettingsModule._addBank()"><i class="fas fa-plus"></i> Ajouter</button>
+      </div>
+      ${banks.length===0?`<div class="empty-state"><i class="fas fa-university" style="font-size:40px;color:var(--text4)"></i><p>Aucun compte bancaire configuré</p></div>`:`
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+        ${banks.map(b=>`<div class="card-v2"><div style="display:flex;align-items:flex-start;gap:12px">
+            <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--primary),#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0"><i class="fas fa-university"></i></div>
+            <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15px">${Utils.escHTML(b.name)}</div><div style="font-size:12px;color:var(--text4)">${Utils.escHTML(b.bankName||'')}</div>
+              ${b.accountNum?`<div style="font-size:11px;color:var(--text4);font-family:monospace;margin-top:4px">${Utils.escHTML(b.accountNum)}</div>`:''}</div>
+            <div style="display:flex;gap:6px"><button class="btn btn-sm btn-outline" onclick="SettingsModule._editBank('${b.id}')"><i class="fas fa-edit"></i></button>
+              <button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)" onclick="SettingsModule._deleteBank('${b.id}')"><i class="fas fa-trash"></i></button></div>
+          </div></div>`).join('')}
+      </div>`}
+    </div>`;
+  },
+  async _addBank() {
+    const dzBanks=["BNA - Banque Nationale d'Algérie","CPA - Crédit Populaire d'Algérie","BADR - Banque de l'Agriculture et du Développement Rural","BEA - Banque Extérieure d'Algérie","BDL - Banque de Développement Local","CNEP - Caisse Nationale d'Épargne et de Prévoyance","AGB - Algeria Gulf Bank","SGA - Société Générale Algérie","ABC - Arab Banking Corporation","BNP Paribas El Djazaïr","Natixis Algérie","CITIBANK Algeria","HSBC Algeria","Al Baraka Bank","Al Salam Bank","Trust Bank Algeria","Housing Bank","Franç. Banque d'Algérie"];
+    const opts = dzBanks.map(b=>`<option value="${b}">${b}</option>`).join('');
+    const selHtml = `<select id="bank_bname" style="width:100%" onchange="document.getElementById('bank_bname_custom').style.display=this.value==='Autre'?'block':'none'"><option value="">-- Sélectionner --</option>${opts}<option value="Autre">Autre...</option></select><input type="text" id="bank_bname_custom" placeholder="Saisir le nom de la banque" style="width:100%;margin-top:5px;display:none;">`;
+    const r = await Dialog.show({title:'Ajouter un compte bancaire',message:`<div class="form-group" style="margin-bottom:10px"><label>Nom du compte <span style="color:red">*</span></label><input type="text" id="bank_name" placeholder="Ex: Compte courant" style="width:100%"></div><div class="form-group" style="margin-bottom:10px"><label>Nom de la banque</label>${selHtml}</div><div class="form-group"><label>N° de compte</label><input type="text" id="bank_num" placeholder="Ex: 000 12345 67890" style="width:100%"></div>`,type:'info',confirmText:'Ajouter',cancelText:'Annuler'});
+    if(!r)return;const name=document.getElementById('bank_name')?.value?.trim();if(!name){Utils.notify('Le nom est requis','warning',3000);return;}
+    let bname=document.getElementById('bank_bname')?.value||'';if(bname==='Autre')bname=document.getElementById('bank_bname_custom')?.value?.trim()||'';
+    const s=DB.getSettings();const banks=s.banks||[];banks.push({id:'bank_'+Date.now(),name,bankName:bname,accountNum:document.getElementById('bank_num')?.value?.trim()||''});
+    DB.saveSettings({banks});Utils.notify('\u2705 Compte ajouté','success');App.loadModule('settings');
+  },
+  async _editBank(bankId) {
+    const s=DB.getSettings();const banks=s.banks||[];const b=banks.find(x=>x.id===bankId);if(!b)return;
+    const dzBanks=["BNA - Banque Nationale d'Algérie","CPA - Crédit Populaire d'Algérie","BADR - Banque de l'Agriculture et du Développement Rural","BEA - Banque Extérieure d'Algérie","BDL - Banque de Développement Local","CNEP - Caisse Nationale d'Épargne et de Prévoyance","AGB - Algeria Gulf Bank","SGA - Société Générale Algérie","ABC - Arab Banking Corporation","BNP Paribas El Djazaïr","Natixis Algérie","CITIBANK Algeria","HSBC Algeria","Al Baraka Bank","Al Salam Bank","Trust Bank Algeria","Housing Bank","Franç. Banque d'Algérie"];
+    const isOther = b.bankName && !dzBanks.includes(b.bankName);
+    const opts = dzBanks.map(bk=>`<option value="${bk}" ${b.bankName===bk?'selected':''}>${bk}</option>`).join('');
+    const selHtml = `<select id="bank_bname" style="width:100%" onchange="document.getElementById('bank_bname_custom').style.display=this.value==='Autre'?'block':'none'"><option value="">-- Sélectionner --</option>${opts}<option value="Autre" ${isOther?'selected':''}>Autre...</option></select><input type="text" id="bank_bname_custom" placeholder="Saisir le nom de la banque" value="${isOther?Utils.escHTML(b.bankName):''}" style="width:100%;margin-top:5px;display:${isOther?'block':'none'};">`;
+    const r=await Dialog.show({title:'Modifier le compte',message:`<div class="form-group" style="margin-bottom:10px"><label>Nom du compte</label><input type="text" id="bank_name" value="${Utils.escHTML(b.name)}" style="width:100%"></div><div class="form-group" style="margin-bottom:10px"><label>Nom de la banque</label>${selHtml}</div><div class="form-group"><label>N° de compte</label><input type="text" id="bank_num" value="${Utils.escHTML(b.accountNum||'')}" style="width:100%"></div>`,type:'info',confirmText:'Enregistrer',cancelText:'Annuler'});
+    if(!r)return;b.name=document.getElementById('bank_name')?.value?.trim()||b.name;
+    let bname=document.getElementById('bank_bname')?.value||'';if(bname==='Autre')bname=document.getElementById('bank_bname_custom')?.value?.trim()||'';
+    b.bankName=bname;
+    b.accountNum=document.getElementById('bank_num')?.value?.trim()||'';
+    DB.saveSettings({banks});Utils.notify('\u2705 Compte mis à jour','success');App.loadModule('settings');
+  },
+  async _deleteBank(bankId) {
+    const ok=await Dialog.confirm('Supprimer ce compte ?','Les transactions passées seront conservées.','danger');if(!ok)return;
+    const s=DB.getSettings();const banks=(s.banks||[]).filter(b=>b.id!==bankId);DB.saveSettings({banks});Utils.notify('Compte supprimé','info');App.loadModule('settings');
   },
 
   _tabCompany(s) {
@@ -5923,3 +6691,1256 @@ const Modules = {
 };
 window.Modules = Modules;
 
+
+// ═══════════════════════════════════════════════════════════════
+// BANK MODULE — Accounts, transfers, supplier payments
+// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// BANK MODULE — Full rework: accounts, deposits, transfers, supplier payments
+// ═══════════════════════════════════════════════════════════════
+const BankModule = {
+  _filters: null,
+  _page: 0,
+  _activeBank: null, // bankId for detail view, null for overview
+
+  // ── Auto-reference generator ─────────────────────────────────
+  _ref(prefix) {
+    const d = new Date();
+    return `${prefix}-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
+  },
+
+  // ── Balance calculator for one bank account ───────────────────
+  _bankBalance(bankId) {
+    const txs = DB.getAll('bank_transactions').filter(t => t.bankId === bankId);
+    const dep = txs.filter(t => t.type === 'deposit').reduce((s,t) => s+(t.amount||0), 0);
+    const out = txs.filter(t => t.type === 'payment').reduce((s,t) => s+(t.amount||0), 0);
+    return { balance: dep - out, totalIn: dep, totalOut: out, txCount: txs.length };
+  },
+
+  render() {
+    if (!Auth.isAdmin() && !Auth.can('canViewBank'))
+      return `<div class="empty-state"><i class="fas fa-lock" style="font-size:40px;color:var(--text4)"></i><p>Accès non autorisé</p></div>`;
+
+    if (BankModule._activeBank) return BankModule._renderAccountDetail(BankModule._activeBank);
+
+    if (!BankModule._filters) BankModule._filters = { bankId:'all', type:'all', dateFrom:'', dateTo:'', q:'' };
+    if (typeof BankModule._page !== 'number') BankModule._page = 0;
+
+    window.updateBankFilter = (k,v) => { BankModule._filters[k]=v; BankModule._page=0; App.loadModule('bank'); };
+    window.setBankPage = p => { BankModule._page=p; App.loadModule('bank'); };
+
+    const settings = DB.getSettings();
+    const banks    = settings.banks || [];
+    const allTxs   = DB.getAll('bank_transactions');
+    const supPays  = DB.getAll('supplier_payments');
+
+    // Per-account stats
+    const accountStats = {};
+    banks.forEach(b => { accountStats[b.id] = BankModule._bankBalance(b.id); });
+    const grandTotal = Object.values(accountStats).reduce((s,v) => s + v.balance, 0);
+    const grandIn    = Object.values(accountStats).reduce((s,v) => s + v.totalIn, 0);
+    const grandOut   = Object.values(accountStats).reduce((s,v) => s + v.totalOut, 0);
+
+    // Total paid to suppliers (across all bank accounts + caisse)
+    const totalSupPaid = supPays.reduce((s,p) => s+(p.amount||0), 0);
+    const totalBR      = DB.getAll('brs').reduce((s,b) => s+(b.totalTTC||0), 0);
+    const totalDue     = Math.max(0, totalBR - totalSupPaid);
+
+    // Filter transactions
+    const f = BankModule._filters;
+    let filteredTxs = allTxs.filter(t => {
+      if (f.bankId !== 'all' && t.bankId !== f.bankId) return false;
+      if (f.type   !== 'all' && t.type   !== f.type)   return false;
+      if (f.dateFrom && (t.date||'') < f.dateFrom) return false;
+      if (f.dateTo   && (t.date||'') > f.dateTo)   return false;
+      if (f.q && !(t.note||'').toLowerCase().includes(f.q.toLowerCase()) &&
+                !(t.ref||'').toLowerCase().includes(f.q.toLowerCase())) return false;
+      return true;
+    });
+    filteredTxs.sort((a,b) => (b.date||'').localeCompare(a.date||'') || b.id - a.id);
+    const totalTxs = filteredTxs.length;
+    const limit = 25;
+    const pages = Math.ceil(totalTxs / limit) || 1;
+    if (BankModule._page >= pages) BankModule._page = Math.max(0, pages-1);
+    const pageTxs = filteredTxs.slice(BankModule._page * limit, (BankModule._page+1) * limit);
+
+    const supMap = {}; DB.getAll('suppliers').forEach(s => supMap[s.id]=s);
+
+    const isAdmin = Auth.isAdmin();
+
+    return `<div style="padding:24px;max-width:1300px;margin:0 auto">
+
+  <!-- ── Header ── -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:22px;font-weight:900;margin:0;display:flex;align-items:center;gap:10px;color:var(--text)">
+        <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#1e40af,#3b82f6);display:flex;align-items:center;justify-content:center">
+          <i class="fas fa-university" style="color:#fff;font-size:18px"></i>
+        </div>
+        Comptes Bancaires
+      </h2>
+      <p style="font-size:13px;color:var(--text4);margin:6px 0 0 50px">Gérez vos dépôts, virements et paiements fournisseurs</p>
+    </div>
+    ${isAdmin ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;gap:6px" onclick="BankModule._depositExternal()">
+        <i class="fas fa-plus-circle"></i> Dépôt Externe
+      </button>
+      <button class="btn" style="background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;border:none;gap:6px" onclick="BankModule._transferFromCaisse()">
+        <i class="fas fa-exchange-alt"></i> Virement Caisse→Banque
+      </button>
+      <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;border:none;gap:6px" onclick="BankModule.paySupplierModal()">
+        <i class="fas fa-hand-holding-usd"></i> Payer Fournisseur
+      </button>
+    </div>` : ''}
+  </div>
+
+  <!-- ── Global KPI strip ── -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px">
+    ${[
+      {label:'Solde Total Banque', val:Utils.fmtCurrency(grandTotal), icon:'fa-wallet', color:'#3b82f6', bg:'rgba(59,130,246,.1)'},
+      {label:'Total Entrants',     val:Utils.fmtCurrency(grandIn),    icon:'fa-arrow-circle-down', color:'#10b981', bg:'rgba(16,185,129,.1)'},
+      {label:'Total Sortants',     val:Utils.fmtCurrency(grandOut),   icon:'fa-arrow-circle-up',   color:'#ef4444', bg:'rgba(239,68,68,.1)'},
+      {label:'Payé Fournisseurs',  val:Utils.fmtCurrency(totalSupPaid),icon:'fa-building',         color:'#f59e0b', bg:'rgba(245,158,11,.1)'},
+      {label:'Reste à Payer',      val:Utils.fmtCurrency(totalDue),   icon:'fa-exclamation-circle', color:'#e11d48', bg:'rgba(225,29,72,.1)'},
+    ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px">${k.label}</span>
+        <div style="width:30px;height:30px;border-radius:8px;background:${k.bg};display:flex;align-items:center;justify-content:center">
+          <i class="fas ${k.icon}" style="color:${k.color};font-size:13px"></i>
+        </div>
+      </div>
+      <div style="font-size:18px;font-weight:800;color:var(--text)">${k.val}</div>
+    </div>`).join('')}
+  </div>
+
+  <!-- ── Account cards ── -->
+  ${banks.length === 0
+    ? `<div class="empty-state" style="margin-bottom:24px">
+        <i class="fas fa-university" style="font-size:40px;color:var(--text4)"></i>
+        <p>Aucun compte bancaire configuré</p>
+        ${isAdmin ? `<button class="btn btn-primary" onclick="SettingsModule._tab='banks';App.loadModule('settings')"><i class="fas fa-cog"></i> Configurer</button>` : ''}
+      </div>`
+    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-bottom:24px">
+    ${banks.map(b => {
+      const st = accountStats[b.id] || {balance:0,totalIn:0,totalOut:0,txCount:0};
+      const pct = st.totalIn > 0 ? Math.round((st.totalOut/st.totalIn)*100) : 0;
+      const sup = DB.getAll('supplier_payments').filter(p=>p.bankId===b.id).reduce((s,p)=>s+(p.amount||0),0);
+      return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:20px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden"
+        onclick="BankModule._activeBank='${b.id}';App.loadModule('bank')"
+        onmouseenter="this.style.transform='translateY(-3px)';this.style.borderColor='#3b82f6';this.style.boxShadow='0 8px 24px rgba(59,130,246,.15)'"
+        onmouseleave="this.style.transform='';this.style.borderColor='var(--border)';this.style.boxShadow='none'">
+        <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:rgba(59,130,246,.05)"></div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3b82f6;margin-bottom:4px">${Utils.escHTML(b.bankName||'Banque')}</div>
+        <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:2px">${Utils.escHTML(b.name)}</div>
+        ${b.accountNum ? `<div style="font-size:11px;color:var(--text4);font-family:monospace;margin-bottom:12px">${Utils.escHTML(b.accountNum)}</div>` : '<div style="margin-bottom:12px"></div>'}
+        <div style="font-size:28px;font-weight:900;color:${st.balance>=0?'var(--text)':'#ef4444'};margin-bottom:16px">${Utils.fmtCurrency(st.balance)}</div>
+        <!-- Progress bar: paid/deposited -->
+        <div style="background:rgba(255,255,255,.06);border-radius:4px;height:4px;margin-bottom:12px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#10b981,#ef4444);border-radius:4px;transition:width .3s"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">
+          <div style="text-align:center;background:rgba(16,185,129,.08);border-radius:8px;padding:6px">
+            <div style="color:#10b981;font-weight:700">${Utils.fmtCurrency(st.totalIn)}</div>
+            <div style="color:var(--text4);margin-top:2px">Déposé</div>
+          </div>
+          <div style="text-align:center;background:rgba(239,68,68,.08);border-radius:8px;padding:6px">
+            <div style="color:#ef4444;font-weight:700">${Utils.fmtCurrency(st.totalOut)}</div>
+            <div style="color:var(--text4);margin-top:2px">Sorti</div>
+          </div>
+        </div>
+        ${isAdmin ? `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);display:flex;gap:6px">
+          <button class="btn btn-xs" style="flex:1;background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="event.stopPropagation();BankModule._depositExternal('${b.id}')"><i class="fas fa-plus"></i> Dépôt</button>
+          <button class="btn btn-xs" style="flex:1;background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)" onclick="event.stopPropagation();BankModule.paySupplierModal('${b.id}')"><i class="fas fa-hand-holding-usd"></i> Payer</button>
+        </div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>`}
+
+  <!-- ── Transaction history ── -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div style="font-weight:800;font-size:15px;color:var(--text)">Toutes les transactions <span style="font-size:12px;color:var(--text4);font-weight:400">(${totalTxs})</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="date" value="${f.dateFrom}" onchange="updateBankFilter('dateFrom',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
+        <input type="date" value="${f.dateTo}" onchange="updateBankFilter('dateTo',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
+        <select onchange="updateBankFilter('bankId',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
+          <option value="all">Tous comptes</option>
+          ${banks.map(b=>`<option value="${b.id}" ${f.bankId===b.id?'selected':''}>${Utils.escHTML(b.name)}</option>`).join('')}
+        </select>
+        <select onchange="updateBankFilter('type',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
+          <option value="all">Tous types</option>
+          <option value="deposit" ${f.type==='deposit'?'selected':''}>Entrants (+)</option>
+          <option value="payment" ${f.type==='payment'?'selected':''}>Sortants (−)</option>
+        </select>
+        <input type="text" placeholder="🔍 Recherche..." value="${Utils.escHTML(f.q)}" onkeyup="if(event.key==='Enter')updateBankFilter('q',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:150px">
+        <button class="btn btn-xs" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="BankModule.exportExcel()">
+          <i class="fas fa-file-excel"></i> Excel
+        </button>
+      </div>
+    </div>
+
+    ${totalTxs === 0
+      ? `<div style="padding:60px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:36px;margin-bottom:12px;display:block"></i>Aucune transaction trouvée</div>`
+      : `<div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg3)">
+            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Réf</th>
+            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Date</th>
+            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Compte</th>
+            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Type</th>
+            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Fournisseur</th>
+            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Note</th>
+            <th style="padding:12px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Montant</th>
+            <th style="padding:12px 16px;width:80px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageTxs.map((t,i) => {
+            const bank = banks.find(x=>x.id===t.bankId);
+            const sup  = t.supplierId ? supMap[t.supplierId] : null;
+            const isD  = t.type === 'deposit';
+            const subtypeLabel = {
+              transfer_from_caisse: '🔄 Virement Caisse',
+              external_deposit:     '💵 Dépôt Externe',
+              supplier_payment:     '🏭 Paiement Fournisseur',
+              correction:           '✏️ Correction',
+            }[t.subtype] || (isD ? '➕ Entrée' : '➖ Sortie');
+            return `<tr style="border-bottom:1px solid var(--border);transition:background .15s" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
+              <td style="padding:11px 16px;font-family:monospace;font-size:11px;color:var(--text4)">${Utils.escHTML(t.ref||'—')}</td>
+              <td style="padding:11px 16px;color:var(--text2)">${t.date||'—'}</td>
+              <td style="padding:11px 16px;font-weight:700;color:var(--text)">${Utils.escHTML(bank?.name||'?')}</td>
+              <td style="padding:11px 16px"><span style="padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;background:${isD?'rgba(16,185,129,.12)':'rgba(239,68,68,.12)'};color:${isD?'#10b981':'#ef4444'}">${subtypeLabel}</span></td>
+              <td style="padding:11px 16px;color:var(--text2)">${sup ? Utils.escHTML(sup.name) : '—'}</td>
+              <td style="padding:11px 16px;color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(t.note||'')}">${Utils.escHTML(t.note||'—')}</td>
+              <td style="padding:11px 16px;text-align:right;font-weight:800;font-size:14px;color:${isD?'#10b981':'#ef4444'}">${isD?'+':'−'}${Utils.fmtCurrency(t.amount||0)}</td>
+              <td style="padding:11px 16px;text-align:right">
+                <button title="Décharge PDF" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;transition:all .15s" onclick="BankModule._printDecharge(${t.id})" onmouseenter="this.style.background='rgba(59,130,246,.1)';this.style.color='#3b82f6'" onmouseleave="this.style.background='transparent';this.style.color='var(--text4)'"><i class="fas fa-file-pdf"></i></button>
+                ${isAdmin ? `<button title="Corriger" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;transition:all .15s" onclick="BankModule._correctTx(${t.id})" onmouseenter="this.style.background='rgba(245,158,11,.1)';this.style.color='#f59e0b'" onmouseleave="this.style.background='transparent';this.style.color='var(--text4)'"><i class="fas fa-edit"></i></button>` : ''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${pages > 1 ? `<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:12px;color:var(--text4)">Page ${BankModule._page+1} / ${pages} — ${totalTxs} transaction(s)</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-xs" onclick="setBankPage(${BankModule._page-1})" ${BankModule._page===0?'disabled':''}>‹ Préc.</button>
+        <button class="btn btn-xs" onclick="setBankPage(${BankModule._page+1})" ${BankModule._page>=pages-1?'disabled':''}>Suiv. ›</button>
+      </div>
+    </div>` : ''}
+    `}
+  </div>
+</div>`;
+  },
+
+  // ── Per-account detail view ───────────────────────────────────
+  _renderAccountDetail(bankId) {
+    const settings = DB.getSettings();
+    const bank = (settings.banks||[]).find(b=>b.id===bankId);
+    if (!bank) { BankModule._activeBank=null; App.loadModule('bank'); return ''; }
+
+    const txs = DB.getAll('bank_transactions').filter(t=>t.bankId===bankId);
+    txs.sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
+    const st  = BankModule._bankBalance(bankId);
+
+    const supPaysForBank = DB.getAll('supplier_payments').filter(p=>p.bankId===bankId);
+    const supMap = {}; DB.getAll('suppliers').forEach(s=>supMap[s.id]=s);
+
+    const isAdmin = Auth.isAdmin();
+
+    return `<div style="padding:24px;max-width:1100px;margin:0 auto">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+    <button class="btn btn-xs" style="background:var(--bg2);border:1px solid var(--border);color:var(--text)" onclick="BankModule._activeBank=null;App.loadModule('bank')">
+      <i class="fas fa-arrow-left"></i> Retour
+    </button>
+    <h2 style="font-size:20px;font-weight:900;margin:0;color:var(--text)">${Utils.escHTML(bank.bankName||'Banque')} — ${Utils.escHTML(bank.name)}</h2>
+    ${bank.accountNum?`<span style="font-family:monospace;font-size:12px;background:var(--bg3);padding:4px 10px;border-radius:8px;color:var(--text4)">${Utils.escHTML(bank.accountNum)}</span>`:''}
+  </div>
+
+  <!-- KPIs -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px">
+    ${[
+      {label:'Solde Actuel',   val:Utils.fmtCurrency(st.balance),  color:st.balance>=0?'#3b82f6':'#ef4444', icon:'fa-scale-balanced'},
+      {label:'Total Entrants', val:Utils.fmtCurrency(st.totalIn),  color:'#10b981', icon:'fa-arrow-circle-down'},
+      {label:'Total Sortants', val:Utils.fmtCurrency(st.totalOut), color:'#ef4444', icon:'fa-arrow-circle-up'},
+      {label:'Payé Fournisseurs', val:Utils.fmtCurrency(supPaysForBank.reduce((s,p)=>s+p.amount,0)), color:'#f59e0b', icon:'fa-building'},
+      {label:'Transactions',   val:st.txCount, color:'#8b5cf6', icon:'fa-list'},
+    ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:6px">${k.label}</div>
+      <div style="font-size:20px;font-weight:900;color:${k.color}">${k.val}</div>
+    </div>`).join('')}
+  </div>
+
+  ${isAdmin ? `<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+    <button class="btn" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.3)" onclick="BankModule._depositExternal('${bankId}')"><i class="fas fa-plus"></i> Dépôt Externe</button>
+    <button class="btn" style="background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.3)" onclick="BankModule._transferFromCaisse('${bankId}')"><i class="fas fa-exchange-alt"></i> Virement Caisse</button>
+    <button class="btn" style="background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.3)" onclick="BankModule.paySupplierModal('${bankId}')"><i class="fas fa-hand-holding-usd"></i> Payer Fournisseur</button>
+  </div>` : ''}
+
+  <!-- Transaction list -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-weight:800;font-size:14px;color:var(--text)">
+      Historique des transactions (${txs.length})
+    </div>
+    ${txs.length===0
+      ? `<div style="padding:60px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>Aucune transaction</div>`
+      : `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--bg3)">
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Réf</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Date</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Type</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Fournisseur / Note</th>
+          <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">Montant</th>
+          <th style="padding:10px 16px;width:70px"></th>
+        </tr></thead>
+        <tbody>
+        ${txs.map(t=>{
+          const sup = t.supplierId ? supMap[t.supplierId] : null;
+          const isD = t.type==='deposit';
+          const stl = {transfer_from_caisse:'🔄 Virement Caisse',external_deposit:'💵 Dépôt Externe',supplier_payment:'🏭 Paiement Fournisseur',correction:'✏️ Correction'}[t.subtype]||(isD?'➕ Entrée':'➖ Sortie');
+          return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
+            <td style="padding:10px 16px;font-family:monospace;font-size:11px;color:var(--text4)">${Utils.escHTML(t.ref||'—')}</td>
+            <td style="padding:10px 16px;color:var(--text2)">${t.date||'—'}</td>
+            <td style="padding:10px 16px"><span style="padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;background:${isD?'rgba(16,185,129,.12)':'rgba(239,68,68,.12)'};color:${isD?'#10b981':'#ef4444'}">${stl}</span></td>
+            <td style="padding:10px 16px;color:var(--text3)"><div style="font-weight:600;color:var(--text)">${sup?Utils.escHTML(sup.name):''}</div><div style="font-size:11px">${Utils.escHTML(t.note||'—')}</div></td>
+            <td style="padding:10px 16px;text-align:right;font-weight:800;color:${isD?'#10b981':'#ef4444'}">${isD?'+':'−'}${Utils.fmtCurrency(t.amount||0)}</td>
+            <td style="padding:10px 16px;text-align:right">
+              <button title="Décharge PDF" style="background:transparent;border:none;cursor:pointer;color:var(--text4);padding:4px" onclick="BankModule._printDecharge(${t.id})"><i class="fas fa-file-pdf"></i></button>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>`}
+  </div>
+</div>`;
+  },
+
+  // ── External Deposit ──────────────────────────────────────────
+  async _depositExternal(prefillBankId) {
+    if (!Auth.isAdmin()) return;
+    const banks = DB.getSettings().banks || [];
+    if (!banks.length) { Utils.notify('Configurez un compte dans Paramètres → Banques','warning'); return; }
+    const opts = banks.map(b=>`<option value="${b.id}" ${b.id===prefillBankId?'selected':''}>${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
+    const r = await Dialog.show({
+      title: '💵 Dépôt Externe — Banque',
+      message: `<div style="margin-bottom:14px;padding:10px 14px;background:#1e2a3e;border-radius:10px;border-left:3px solid #10b981;font-size:12px;color:#94a3b8">Dépôt direct sur le compte bancaire (hors caisse — ex: dépôt personnel, crédit bancaire)</div><div class="form-group"><label>Compte bancaire</label><select id="dep_bank">${opts}</select></div><div class="form-group"><label>Montant (DA)</label><input type="number" id="dep_amt" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0"></div><div class="form-group"><label>Date</label><input type="date" id="dep_date" value="${Utils.today()}"></div><div class="form-group"><label>Note / Référence</label><input type="text" id="dep_note" placeholder="Dépôt bordereau n°..."></div>`,
+      type: 'info', confirmText: '✅ Enregistrer le dépôt', cancelText: 'Annuler'
+    });
+    if (!r) return;
+    const bankId = document.getElementById('dep_bank')?.value;
+    const amount = parseFloat(document.getElementById('dep_amt')?.value||0);
+    const date   = document.getElementById('dep_date')?.value || Utils.today();
+    const note   = document.getElementById('dep_note')?.value || '';
+    if (!amount || amount <= 0) { Utils.notify('Montant invalide','warning'); return; }
+    const u   = Auth.getCurrentUser();
+    const ref = BankModule._ref('DEP');
+    const tx  = DB.insert('bank_transactions', { bankId, type:'deposit', subtype:'external_deposit', amount, note, date, ref, by:u?.id, byName:u?.name });
+    Utils.notify(`✅ Dépôt de ${Utils.fmtCurrency(amount)} enregistré`, 'success');
+    App.loadModule('bank');
+    setTimeout(() => PDFGen.exportBankDecharge(tx.id), 500);
+  },
+
+  // ── Transfer Caisse → Banque ──────────────────────────────────
+  async _transferFromCaisse(prefillBankId) {
+    if (!Auth.isAdmin()) return;
+    const banks = DB.getSettings().banks || [];
+    if (!banks.length) { Utils.notify('Configurez un compte dans Paramètres → Banques','warning'); return; }
+    const cBal = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
+    const opts = banks.map(b=>`<option value="${b.id}" ${b.id===prefillBankId?'selected':''}>${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
+    const r = await Dialog.show({
+      title: '🔄 Virement Caisse → Banque',
+      message: `<div style="margin-bottom:14px;padding:10px 14px;background:#1e2a3e;border-radius:10px;border-left:3px solid #3b82f6;font-size:12px;color:#94a3b8">Solde caisse disponible : <span style="font-weight:800;color:#e2e8f0">${Utils.fmtCurrency(cBal)}</span></div><div class="form-group"><label>Compte bancaire destinataire</label><select id="dlg_bank">${opts}</select></div><div class="form-group"><label>Montant (DA)</label><input type="number" id="dlg_amount" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0" max="${cBal}"></div><div class="form-group"><label>Date</label><input type="date" id="dlg_date" value="${Utils.today()}"></div><div class="form-group"><label>Note</label><input type="text" id="dlg_note" placeholder="Virement mensuel..."></div>`,
+      type: 'info', confirmText: '✅ Effectuer le virement', cancelText: 'Annuler'
+    });
+    if (!r) return;
+    const bankId = document.getElementById('dlg_bank')?.value;
+    const amount = parseFloat(document.getElementById('dlg_amount')?.value||0);
+    const date   = document.getElementById('dlg_date')?.value || Utils.today();
+    const note   = document.getElementById('dlg_note')?.value || '';
+    if (!amount || amount <= 0) { Utils.notify('Montant invalide','warning'); return; }
+    if (amount > cBal) { Utils.notify(`Solde caisse insuffisant (${Utils.fmtCurrency(cBal)})`, 'danger'); return; }
+    const u    = Auth.getCurrentUser();
+    const bank = (DB.getSettings().banks||[]).find(b=>b.id===bankId);
+    const ref  = BankModule._ref('VIR');
+    // Deduct from caisse
+    DB.insert('caisse_admin', { type:'withdrawal', source:'bank_transfer', amount, note:`Virement → ${bank?.name||bankId}: ${note}`, ref, userId:u?.id, userName:u?.name, date });
+    // Add to bank
+    const tx = DB.insert('bank_transactions', { bankId, type:'deposit', subtype:'transfer_from_caisse', amount, note:`Depuis caisse: ${note}`, date, ref, by:u?.id, byName:u?.name });
+    Utils.notify(`✅ Virement de ${Utils.fmtCurrency(amount)} vers ${bank?.name}`, 'success');
+    App.loadModule('bank');
+    setTimeout(() => PDFGen.exportBankDecharge(tx.id), 500);
+  },
+
+  // ── Unified Supplier Payment Modal (from bank OR supplier module) ──
+  async paySupplierModal(prefillBankId, prefillSupplierId) {
+    if (!Auth.isAdmin()) return;
+    const suppliers = DB.getAll('suppliers');
+    if (!suppliers.length) { Utils.notify('Aucun fournisseur configuré','warning'); return; }
+    const banks   = DB.getSettings().banks || [];
+
+    const supOpts  = suppliers.map(s=>`<option value="${s.id}" ${String(s.id)===String(prefillSupplierId)?'selected':''}>${Utils.escHTML(s.name)}</option>`).join('');
+    const bankOpts = banks.map(b=>{
+      const bal = BankModule._bankBalance(b.id).balance;
+      return `<option value="${b.id}" ${b.id===prefillBankId?'selected':''}>${Utils.escHTML(b.name)} — ${Utils.fmtCurrency(bal)}</option>`;
+    }).join('');
+
+    // Initialize info WHEN dialog renders
+    setTimeout(() => { BankModule._onSupChange(); BankModule._onSourceChange(); BankModule._validatePayAmt(); }, 120);
+
+    const r = await Dialog.show({
+      title: '🏭 Paiement Fournisseur',
+      message: `
+<div class="form-group"><label style="color:#e2e8f0;font-weight:700">Fournisseur</label><select id="pay_sup" onchange="BankModule._onSupChange();BankModule._validatePayAmt()" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155">${supOpts}</select></div>
+
+<!-- Supplier info panel -->
+<div id="pay_sup_info" style="margin-bottom:14px;padding:12px 14px;background:linear-gradient(135deg,#0f1729,#162032);border-radius:10px;border:1px solid #1e3a5f;font-size:12px;color:#94a3b8">Chargement...</div>
+
+<div class="form-group"><label style="color:#e2e8f0;font-weight:700">Source du paiement</label><select id="pay_source" onchange="BankModule._onSourceChange();BankModule._validatePayAmt()" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155"><option value="bank">🏦 Banque</option><option value="caisse">💵 Caisse (espèces)</option></select></div>
+
+<div id="pay_bank_row" class="form-group"><label style="color:#e2e8f0;font-weight:700">Compte bancaire</label><select id="pay_bank" onchange="BankModule._onSourceChange();BankModule._validatePayAmt()" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155">${bankOpts||'<option value="">Aucun compte</option>'}</select></div>
+
+<!-- Available balance bar -->
+<div id="pay_bal_info" style="margin-bottom:14px;padding:10px 14px;background:#0c1524;border-radius:10px;border-left:4px solid #3b82f6;display:flex;justify-content:space-between;align-items:center">
+  <span style="font-size:12px;color:#94a3b8">💰 Solde disponible :</span>
+  <strong id="pay_avail_lbl" style="font-size:16px;color:#10b981">—</strong>
+</div>
+
+<div class="form-group"><label style="color:#e2e8f0;font-weight:700">Montant à payer (DA)</label><input type="number" id="pay_amt" placeholder="0" oninput="BankModule._validatePayAmt()" style="font-size:22px;font-weight:800;text-align:center;background:#1e293b;color:#e2e8f0;border:1px solid #334155" min="0" step="1"></div>
+
+<!-- Live validation / preview panel -->
+<div id="pay_validation" style="margin-bottom:10px;padding:10px 14px;border-radius:10px;font-size:12px;display:none"></div>
+
+<!-- After-payment preview -->
+<div id="pay_preview" style="margin-bottom:14px;padding:12px 14px;background:#0f1729;border-radius:10px;border:1px solid #1e3a5f;display:none">
+  <div style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:1px;color:#64748b;margin-bottom:8px">📊 APERÇU APRÈS PAIEMENT</div>
+  <div id="pay_preview_content" style="font-size:12px;color:#94a3b8"></div>
+</div>
+
+<div class="form-group"><label style="color:#e2e8f0;font-weight:700">Date</label><input type="date" id="pay_date" value="${Utils.today()}" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155"></div>
+<div class="form-group"><label style="color:#e2e8f0;font-weight:700">Note / Référence</label><input type="text" id="pay_note" placeholder="Paiement BR n°..." style="background:#1e293b;color:#e2e8f0;border:1px solid #334155"></div>`,
+      type: 'info', confirmText: '✅ Enregistrer & Décharge', cancelText: 'Annuler'
+    });
+
+    if (!r) return;
+
+    const supplierId = parseInt(document.getElementById('pay_sup')?.value);
+    const source     = document.getElementById('pay_source')?.value || 'bank';
+    const bankId     = source === 'bank' ? (document.getElementById('pay_bank')?.value || null) : null;
+    const amount     = parseFloat(document.getElementById('pay_amt')?.value || 0);
+    const date       = document.getElementById('pay_date')?.value || Utils.today();
+    const note       = document.getElementById('pay_note')?.value || '';
+
+    if (!supplierId) { Utils.notify('Sélectionnez un fournisseur','warning'); return; }
+    if (!amount || amount <= 0) { Utils.notify('Montant invalide','warning'); return; }
+
+    // ── STRICT BALANCE ENFORCEMENT ──
+    if (source === 'bank') {
+      if (!bankId) { Utils.notify('Sélectionnez un compte bancaire','warning'); return; }
+      const bankBal = BankModule._bankBalance(bankId).balance;
+      if (amount > bankBal) { Utils.notify(`⛔ Solde insuffisant — disponible: ${Utils.fmtCurrency(bankBal)}`, 'danger'); return; }
+    } else {
+      const caisseBalance = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
+      if (amount > caisseBalance) { Utils.notify(`⛔ Solde caisse insuffisant — disponible: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}`, 'danger'); return; }
+    }
+
+    const u   = Auth.getCurrentUser();
+    const sup = DB.getById('suppliers', supplierId);
+    const ref = BankModule._ref('PAY');
+
+    const pay = DB.insert('supplier_payments', {
+      supplierId, bankId: source==='bank'?bankId:null, source, amount, note, date, ref,
+      by: u?.id, byName: u?.name
+    });
+
+    if (source === 'bank') {
+      DB.insert('bank_transactions', {
+        bankId, type:'payment', subtype:'supplier_payment',
+        supplierId, amount, note, date, ref, by:u?.id, byName:u?.name
+      });
+    } else {
+      DB.insert('caisse_admin', {
+        type:'withdrawal', source:'supplier_payment',
+        supplierId, amount, ref,
+        note:`Paiement fournisseur ${sup?.name||'?'}: ${note}`,
+        userId:u?.id, userName:u?.name, date
+      });
+    }
+
+    Utils.notify(`✅ Paiement de ${Utils.fmtCurrency(amount)} à ${sup?.name} — Réf: ${ref}`, 'success');
+    App.loadModule('bank');
+    setTimeout(() => PDFGen.exportSupplierPayDecharge(pay.id), 600);
+  },
+
+  // ── Helper: update supplier info panel ────────────────────────
+  _onSupChange() {
+    const supId = parseInt(document.getElementById('pay_sup')?.value);
+    const el = document.getElementById('pay_sup_info');
+    if (!el || !supId) return;
+    const sup      = DB.getById('suppliers', supId);
+    const totalBR  = DB.getAll('brs').filter(b=>b.supplierId===supId).reduce((s,b)=>s+(b.totalTTC||0),0);
+    const totalPaid= DB.getAll('supplier_payments').filter(p=>p.supplierId===supId).reduce((s,p)=>s+(p.amount||0),0);
+    const due      = totalBR - totalPaid;
+    const pct      = totalBR > 0 ? Math.min(100, Math.round((totalPaid/totalBR)*100)) : 0;
+    const nbBR     = DB.getAll('brs').filter(b=>b.supplierId===supId).length;
+    const nbPays   = DB.getAll('supplier_payments').filter(p=>p.supplierId===supId).length;
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:32px;height:32px;border-radius:8px;background:rgba(139,92,246,.2);display:flex;align-items:center;justify-content:center;color:#a78bfa;font-weight:900;font-size:14px">${(sup?.name||'?')[0].toUpperCase()}</div>
+        <div>
+          <div style="font-weight:700;color:#e2e8f0;font-size:13px">${Utils.escHTML(sup?.name||'?')}</div>
+          <div style="font-size:10px;color:#64748b">${nbBR} BR · ${nbPays} paiements</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div style="background:rgba(139,92,246,.1);border-radius:8px;padding:6px">
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">Total BR</div>
+          <div style="font-weight:800;color:#a78bfa;font-size:13px">${Utils.fmtCurrency(totalBR)}</div>
+        </div>
+        <div style="background:rgba(16,185,129,.1);border-radius:8px;padding:6px">
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">Déjà payé</div>
+          <div style="font-weight:800;color:#10b981;font-size:13px">${Utils.fmtCurrency(totalPaid)}</div>
+        </div>
+        <div style="background:${due>0?'rgba(239,68,68,.12)':'rgba(16,185,129,.12)'};border-radius:8px;padding:6px">
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">Reste dû</div>
+          <div style="font-weight:800;color:${due>0?'#ef4444':'#10b981'};font-size:13px">${Utils.fmtCurrency(Math.max(0,due))}</div>
+        </div>
+      </div>
+      <div style="background:rgba(255,255,255,.06);border-radius:4px;height:5px;margin-top:8px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#10b981,${pct>=100?'#059669':'#a78bfa'});border-radius:4px;transition:width .3s"></div>
+      </div>
+      <div style="text-align:right;font-size:10px;color:#64748b;margin-top:3px">${pct}% payé</div>`;
+
+    // Pre-fill amount with remaining due
+    const amtEl = document.getElementById('pay_amt');
+    if (amtEl && !amtEl.value && due > 0) amtEl.value = due;
+    BankModule._validatePayAmt();
+  },
+
+  // ── Helper: toggle bank row + update available balance ────────
+  _onSourceChange() {
+    const source  = document.getElementById('pay_source')?.value;
+    const bankRow = document.getElementById('pay_bank_row');
+    if (bankRow) bankRow.style.display = source === 'bank' ? 'block' : 'none';
+
+    const lbl = document.getElementById('pay_avail_lbl');
+    if (!lbl) return;
+
+    if (source === 'bank') {
+      const bankId = document.getElementById('pay_bank')?.value;
+      if (bankId) {
+        const bal = BankModule._bankBalance(bankId).balance;
+        lbl.textContent = Utils.fmtCurrency(Math.max(0, bal));
+        lbl.style.color = bal > 0 ? '#10b981' : '#ef4444';
+      }
+    } else {
+      const cBal = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
+      lbl.textContent = Utils.fmtCurrency(Math.max(0, cBal));
+      lbl.style.color = cBal > 0 ? '#10b981' : '#ef4444';
+    }
+    BankModule._validatePayAmt();
+  },
+
+  // ── Live validation: check amount vs balance + show preview ───
+  _validatePayAmt() {
+    const amt      = parseFloat(document.getElementById('pay_amt')?.value || 0);
+    const source   = document.getElementById('pay_source')?.value || 'bank';
+    const bankId   = document.getElementById('pay_bank')?.value;
+    const supId    = parseInt(document.getElementById('pay_sup')?.value);
+    const valEl    = document.getElementById('pay_validation');
+    const prevEl   = document.getElementById('pay_preview');
+    const prevC    = document.getElementById('pay_preview_content');
+    const confirmBtn = document.querySelector('.dlg-actions .btn-primary, .dlg-actions button:first-child');
+
+    if (!valEl) return;
+
+    // Get available balance
+    let available = 0;
+    let sourceName = '';
+    if (source === 'bank' && bankId) {
+      available = BankModule._bankBalance(bankId).balance;
+      const bank = (DB.getSettings().banks||[]).find(b=>b.id===bankId);
+      sourceName = bank?.name || 'Banque';
+    } else if (source === 'caisse') {
+      available = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
+      sourceName = 'Caisse';
+    }
+
+    const overBudget = amt > 0 && amt > available;
+
+    // Show validation error if over budget
+    if (overBudget) {
+      valEl.style.display = 'block';
+      valEl.style.background = 'rgba(239,68,68,.15)';
+      valEl.style.border = '1px solid rgba(239,68,68,.4)';
+      valEl.style.color = '#fca5a5';
+      valEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><i class="fas fa-exclamation-triangle" style="font-size:16px;color:#ef4444"></i><div><strong style="color:#ef4444">⛔ Solde insuffisant !</strong><br>Vous voulez payer <strong>${Utils.fmtCurrency(amt)}</strong> mais ${sourceName} n'a que <strong>${Utils.fmtCurrency(Math.max(0,available))}</strong></div></div>`;
+      // Disable confirm button
+      if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.4'; confirmBtn.style.pointerEvents = 'none'; }
+    } else if (amt <= 0) {
+      valEl.style.display = 'none';
+      if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.4'; confirmBtn.style.pointerEvents = 'none'; }
+    } else {
+      valEl.style.display = 'none';
+      // Re-enable confirm button
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.style.opacity = '1'; confirmBtn.style.pointerEvents = 'auto'; }
+    }
+
+    // Show after-payment preview
+    if (prevEl && prevC && amt > 0 && !overBudget && supId) {
+      const totalBR   = DB.getAll('brs').filter(b=>b.supplierId===supId).reduce((s,b)=>s+(b.totalTTC||0),0);
+      const totalPaid = DB.getAll('supplier_payments').filter(p=>p.supplierId===supId).reduce((s,p)=>s+(p.amount||0),0);
+      const dueNow    = totalBR - totalPaid;
+      const dueAfter  = dueNow - amt;
+      const balAfter  = available - amt;
+
+      prevEl.style.display = 'block';
+      prevC.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:rgba(59,130,246,.08);border-radius:8px;padding:8px;text-align:center">
+          <div style="font-size:10px;color:#64748b;margin-bottom:3px">Solde ${sourceName} après</div>
+          <div style="font-weight:800;color:#3b82f6;font-size:14px">${Utils.fmtCurrency(Math.max(0,balAfter))}</div>
+        </div>
+        <div style="background:${dueAfter<=0?'rgba(16,185,129,.08)':'rgba(245,158,11,.08)'};border-radius:8px;padding:8px;text-align:center">
+          <div style="font-size:10px;color:#64748b;margin-bottom:3px">Reste fournisseur après</div>
+          <div style="font-weight:800;color:${dueAfter<=0?'#10b981':'#f59e0b'};font-size:14px">${dueAfter<=0?'✅ Soldé':Utils.fmtCurrency(dueAfter)}</div>
+        </div>
+      </div>`;
+    } else if (prevEl) {
+      prevEl.style.display = 'none';
+    }
+  },
+  // ── Print décharge for a bank transaction ─────────────────────
+  _printDecharge(txId) {
+    PDFGen.exportBankDecharge(txId);
+  },
+
+  // ── Correct a transaction (admin only) ───────────────────────
+  async _correctTx(txId) {
+    if (!Auth.isAdmin()) return;
+    const tx = DB.getById('bank_transactions', txId);
+    if (!tx) return;
+    const r = await Dialog.show({
+      title: '✏️ Corriger transaction',
+      message: `<div class="form-group"><label>Nouveau montant</label><input type="number" id="dlg_ca" value="${tx.amount}" style="font-size:20px;font-weight:800;text-align:center"></div><div class="form-group"><label>Motif de correction</label><input type="text" id="dlg_cn" placeholder="Erreur de saisie..."></div>`,
+      type: 'warning', confirmText: 'Corriger', cancelText: 'Annuler'
+    });
+    if (!r) return;
+    const newAmt = parseFloat(document.getElementById('dlg_ca')?.value||tx.amount);
+    const cn     = document.getElementById('dlg_cn')?.value || '';
+    const u = Auth.getCurrentUser();
+    DB.update('bank_transactions', txId, { amount:newAmt, subtype:'correction', note:(tx.note||'')+` [Corrigé ${u?.name}: ${cn}]`, correctedBy:u?.id, correctedAt:new Date().toISOString() });
+    Utils.notify('Transaction corrigée','success');
+    App.loadModule('bank');
+  },
+
+  // ── Excel export ─────────────────────────────────────────────
+  exportExcel() {
+    const f = BankModule._filters || {};
+    const banks = DB.getSettings().banks || [];
+    const supMap = {}; DB.getAll('suppliers').forEach(s=>supMap[s.id]=s);
+    const txs = DB.getAll('bank_transactions').filter(t => {
+      if (f.bankId && f.bankId !== 'all' && t.bankId !== f.bankId) return false;
+      if (f.type   && f.type   !== 'all' && t.type   !== f.type)   return false;
+      if (f.dateFrom && (t.date||'') < f.dateFrom) return false;
+      if (f.dateTo   && (t.date||'') > f.dateTo)   return false;
+      return true;
+    });
+    txs.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    if (typeof exportXLSX !== 'undefined') {
+      const rows = txs.map(t => {
+        const b = banks.find(x=>x.id===t.bankId);
+        const s = t.supplierId ? supMap[t.supplierId] : null;
+        return [t.date||'', t.ref||'', b?.name||'?', t.type==='deposit'?'Entrée':'Sortie', t.subtype||'', s?.name||'', t.note||'', t.type==='deposit'?(t.amount||0):0, t.type!=='deposit'?(t.amount||0):0];
+      });
+      exportXLSX(['Date','Référence','Compte','Sens','Sous-type','Fournisseur','Note','Entrant (DA)','Sortant (DA)'], rows, 'transactions_bancaires');
+    } else if (typeof CSVExport !== 'undefined') {
+      const rows = txs.map(t => {
+        const b = banks.find(x=>x.id===t.bankId);
+        const s = t.supplierId ? supMap[t.supplierId] : null;
+        return [t.date||'', t.ref||'', b?.name||'?', t.type==='deposit'?'Entree':'Sortie', s?.name||'', t.note||'', t.amount||0];
+      });
+      CSVExport.download('Transactions_Bancaires', ['Date','Ref','Compte','Sens','Fournisseur','Note','Montant'], rows);
+    } else {
+      Utils.notify('Export non disponible','warning');
+    }
+  },
+
+  // ── Legacy alias ─────────────────────────────────────────────
+  exportCsv() { BankModule.exportExcel(); },
+  _openBank(bankId) { BankModule._activeBank = bankId; App.loadModule('bank'); },
+  _updSupBal(supId) { BankModule._onSupChange(); },
+  _paySupplier(bankId) { BankModule.paySupplierModal(bankId); },
+};
+Modules.bank = BankModule;
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// PARTNERS MODULE — Merged Clients + Suppliers with tabs
+// ═══════════════════════════════════════════════════════════════
+const PartnersModule = {
+  _tab: 'clients',
+  _detailId: null,
+  _detailType: null,
+
+  render() {
+    if (this._detailId && this._detailType) return this._renderDetail();
+    return this._renderList();
+  },
+
+  _renderList() {
+    if (!this._listFilters) this._listFilters = {q:'', wilaya:'all', sort:'name', supStatus:'all'};
+    this._exportList = (type) => {
+      if (type === 'clients') {
+        const cls = DB.getAll('clients');
+        const b = DB.getAll('bls');
+        const rows = cls.map(c => {
+          const cB = b.filter(x=>String(x.clientId)===String(c.id));
+          const rev = cB.filter(x=>x.status==='delivered').reduce((s,x)=>s+(x.totalTTC||0),0);
+          return [c.name, c.phone||'', c.wilaya||'', c.address||'', cB.length, rev];
+        });
+        CSVExport.download('Clients', ['Nom','Telephone','Wilaya','Adresse','Nb_BL','CA'], rows);
+      } else {
+        const sups = DB.getAll('suppliers');
+        const br = DB.getAll('brs');
+        const pays = DB.getAll('supplier_payments');
+        const rows = sups.map(s => {
+          const pur = br.filter(x=>x.supplierId===s.id).reduce((sum,x)=>sum+(x.totalTTC||0),0);
+          const pd = pays.filter(p=>p.supplierId===s.id).reduce((sum,p)=>sum+(p.amount||0),0);
+          return [s.name, s.phone||'', s.address||'', pur, pd, pur-pd];
+        });
+        CSVExport.download('Fournisseurs', ['Nom','Telephone','Adresse','Achats','Paye','Reste'], rows);
+      }
+    };
+    
+    const isAR = T.isRTL();
+    const clients = DB.getAll('clients');
+    const suppliers = DB.getAll('suppliers');
+    const bls = DB.getAll('bls');
+    const brs = DB.getAll('brs');
+    const supPayments = DB.getAll('supplier_payments');
+    const tab = this._tab || 'clients';
+
+    let totalRevenue = 0, totalPurchases = 0, totalOutstandingSup = 0;
+    
+    let deliveredBLs = bls.filter(b=>b.status==='delivered');
+    totalRevenue = deliveredBLs.reduce((s,b)=>s+(b.totalTTC||0),0);
+    
+    totalPurchases = brs.reduce((s,b)=>s+(b.totalTTC||0),0);
+    const totalPayments = supPayments.reduce((s,p)=>s+(p.amount||0),0);
+    totalOutstandingSup = totalPurchases - totalPayments;
+
+    const tabBtn = (id, icon, label, count, color) => `<button onclick="PartnersModule._tab='${id}';PartnersModule._detailId=null;PartnersModule._listFilters={q:'',wilaya:'all',sort:'name',supStatus:'all'};App.loadModule('partners')" style="display:flex;align-items:center;gap:8px;padding:8px 20px;border:none;cursor:pointer;font-size:13px;font-weight:700;border-radius:24px;transition:all .2s;background:${tab===id?color:'var(--bg2)'};color:${tab===id?'#fff':'var(--text)'};border:1px solid ${tab===id?color:'var(--border)'};box-shadow:${tab===id?'0 4px 12px '+color+'40':'none'}"><i class="fas ${icon}"></i>${label}<span style="background:${tab===id?'rgba(255,255,255,0.2)':'var(--bg3)'};color:${tab===id?'#fff':'var(--text4)'};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:800">${count}</span></button>`;
+
+    return `<div style="padding:0">
+    <div style="padding:24px 24px 0;background:var(--bg);border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--primary),#7c3aed);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,0.1)"><i class="fas fa-handshake" style="color:#fff;font-size:20px"></i></div>
+          <div><h2 style="font-size:24px;font-weight:900;color:var(--text);margin:0;letter-spacing:-0.5px">${isAR?'الشركاء':'Partenaires'}</h2><p style="font-size:13px;color:var(--text4);margin:4px 0 0">${isAR?'إدارة الزبائن والموردين':'Gérez vos clients et fournisseurs'}</p></div>
+        </div>
+        <div style="display:flex;gap:24px;text-align:right;background:var(--bg2);padding:12px 24px;border-radius:16px;border:1px solid var(--border)">
+          <div><div style="font-size:11px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">${isAR?'إجمالي المبيعات':"Chiffre d'Affaires"}</div><div style="font-size:18px;font-weight:800;color:#0ea5e9">${Utils.fmtCurrency(totalRevenue)}</div></div>
+          <div style="width:1px;background:var(--border)"></div>
+          <div><div style="font-size:11px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">${isAR?'إجمالي المشتريات':'Total Achats'}</div><div style="font-size:18px;font-weight:800;color:#8b5cf6">${Utils.fmtCurrency(totalPurchases)}</div></div>
+          <div style="width:1px;background:var(--border)"></div>
+          <div><div style="font-size:11px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:4px">${isAR?'ديون الموردين':'Dettes Fournisseurs'}</div><div style="font-size:18px;font-weight:800;color:#f59e0b">${Utils.fmtCurrency(totalOutstandingSup)}</div></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:20px">
+        ${tabBtn('clients','fa-users',isAR?'الزبائن':'Clients',clients.length,'#0ea5e9')}
+        ${tabBtn('suppliers','fa-building',isAR?'الموردون':'Fournisseurs',suppliers.length,'#8b5cf6')}
+      </div>
+    </div>
+    <div style="padding:24px;background:var(--bg3);min-height:calc(100vh - 200px)">
+      ${tab==='clients' ? this._clientsList(clients, bls) : this._suppliersList(suppliers, brs, supPayments)}
+    </div>
+    </div>`;
+  },
+
+  _clientsList(clients, bls) {
+    const isAR = T.isRTL();
+    let f = this._listFilters || {q:'', wilaya:'all', sort:'name', supStatus:'all'};
+    const wilayas = [...new Set(clients.map(c=>c.wilaya).filter(w=>w))].sort();
+    
+    let clientStats = clients.map(c => {
+      const cBLs = bls.filter(b=>String(b.clientId)===String(c.id));
+      const delivered = cBLs.filter(b=>b.status==='delivered');
+      const revenue = delivered.reduce((s,b)=>s+(b.totalTTC||0),0);
+      return { ...c, blCount: cBLs.length, revenue };
+    });
+
+    if (f.q) {
+      const q = f.q.toLowerCase();
+      clientStats = clientStats.filter(c => (c.name||'').toLowerCase().includes(q) || (c.phone||'').toLowerCase().includes(q));
+    }
+    if (f.wilaya && f.wilaya !== 'all') {
+      clientStats = clientStats.filter(c => c.wilaya === f.wilaya);
+    }
+    
+    if (f.sort === 'name') clientStats.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    else if (f.sort === 'revenue') clientStats.sort((a,b)=>b.revenue - a.revenue);
+    else if (f.sort === 'date') clientStats.sort((a,b)=>b.id - a.id);
+
+    return `
+    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;align-items:center;justify-content:space-between;background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="position:relative">
+          <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text4)"></i>
+          <input type="text" placeholder="${isAR?'بحث...':'Rechercher...'}" value="${Utils.escHTML(f.q)}" oninput="PartnersModule._listFilters.q=this.value;App.loadModule('partners')" style="padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:240px;background:var(--bg);color:var(--text);outline:none" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <select onchange="PartnersModule._listFilters.wilaya=this.value;App.loadModule('partners')" style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);outline:none;cursor:pointer">
+          <option value="all">${isAR?'كل الولايات':'Toutes les wilayas'}</option>
+          ${wilayas.map(w => `<option value="${Utils.escHTML(w)}" ${f.wilaya===w?'selected':''}>${Utils.escHTML(w)}</option>`).join('')}
+        </select>
+        <select onchange="PartnersModule._listFilters.sort=this.value;App.loadModule('partners')" style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);outline:none;cursor:pointer">
+          <option value="name" ${f.sort==='name'?'selected':''}>${isAR?'الاسم':'Nom'}</option>
+          <option value="revenue" ${f.sort==='revenue'?'selected':''}>${isAR?'المبيعات':"Chiffre d'Affaires"}</option>
+          <option value="date" ${f.sort==='date'?'selected':''}>${isAR?'تاريخ الإضافة':"Date d'ajout"}</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-outline" style="border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600" onclick="PartnersModule._exportList('clients')"><i class="fas fa-file-csv" style="margin-right:6px"></i> CSV</button>
+        <button class="btn btn-primary" style="background:#0ea5e9;border-color:#0ea5e9;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(14,165,233,0.3)" onclick="ClientsModule.showCreate()"><i class="fas fa-plus" style="margin-right:6px"></i> ${T.get('cli_new')}</button>
+      </div>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px" id="partnerCliGrid">
+      ${clientStats.length ? clientStats.map(c => `
+      <div class="partner-card" onclick="PartnersModule._detailType='client';PartnersModule._detailId=${c.id};App.loadModule('partners')" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;gap:16px" onmouseenter="this.style.borderColor='#0ea5e9';this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.06)'" onmouseleave="this.style.borderColor='var(--border)';this.style.transform='none';this.style.boxShadow='none'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;flex-shrink:0;box-shadow:0 4px 8px rgba(14,165,233,0.3)">${(c.name||'?')[0].toUpperCase()}</div>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(c.name)}</div>
+              <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-phone" style="margin-right:4px"></i>${Utils.escHTML(c.phone||'-')}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-xs btn-outline" style="border:none;background:var(--bg3);width:28px;height:28px;padding:0;border-radius:6px;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();ClientsModule.showEdit(${c.id})"><i class="fas fa-edit"></i></button>
+            <button class="btn btn-xs btn-outline" style="border:none;background:var(--bg3);color:#ef4444;width:28px;height:28px;padding:0;border-radius:6px;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();ClientsModule.deleteCli(${c.id})"><i class="fas fa-trash"></i></button>
+          </div>
+        </div>
+        ${c.wilaya ? `<div style="font-size:11px;color:var(--text4);background:var(--bg3);padding:4px 8px;border-radius:6px;display:inline-block;align-self:flex-start"><i class="fas fa-map-marker-alt" style="margin-right:6px"></i>${Utils.escHTML(c.wilaya)}</div>` : ''}
+        <div style="margin-top:auto;padding-top:16px;border-top:1px dashed var(--border);display:flex;justify-content:space-between;align-items:flex-end">
+          <div><div style="font-size:10px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">${isAR?'إجمالي المبيعات':'Total CA'}</div><div style="font-size:14px;font-weight:800;color:#0ea5e9;margin-top:4px">${Utils.fmtCurrency(c.revenue)}</div></div>
+          <div style="text-align:right"><div style="font-size:10px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">${isAR?'سندات التسليم':'Bons de Livraison'}</div><div style="font-size:13px;font-weight:700;color:var(--text2);margin-top:4px">${c.blCount} BL</div></div>
+        </div>
+      </div>`).join('') : `<div style="grid-column:1/-1;padding:40px;text-align:center;background:var(--bg2);border-radius:12px;border:1px dashed var(--border)"><i class="fas fa-users" style="font-size:48px;color:var(--text4);margin-bottom:16px"></i><div style="font-size:15px;font-weight:700;color:var(--text)">${T.get('no_data')}</div><div style="font-size:13px;color:var(--text4);margin-top:8px">Aucun client trouvé</div></div>`}
+    </div>`;
+  },
+
+  _suppliersList(suppliers, brs, payments) {
+    const isAR = T.isRTL();
+    let f = this._listFilters || {q:'', wilaya:'all', sort:'name', supStatus:'all'};
+    
+    let supStats = suppliers.map(s => {
+      const sBRs = brs.filter(b=>b.supplierId===s.id);
+      const totalPurchase = sBRs.reduce((sum,b)=>sum+(b.totalTTC||0),0);
+      const totalPaid = payments.filter(p=>p.supplierId===s.id).reduce((sum,p)=>sum+(p.amount||0),0);
+      const remaining = totalPurchase - totalPaid;
+      return { ...s, brCount: sBRs.length, totalPurchase, totalPaid, remaining };
+    });
+
+    if (f.q) {
+      const q = f.q.toLowerCase();
+      supStats = supStats.filter(s => (s.name||'').toLowerCase().includes(q) || (s.phone||'').toLowerCase().includes(q));
+    }
+    if (f.supStatus === 'paid') {
+      supStats = supStats.filter(s => s.remaining <= 0 && s.totalPurchase > 0);
+    } else if (f.supStatus === 'unpaid') {
+      supStats = supStats.filter(s => s.remaining > 0);
+    }
+    
+    if (f.sort === 'name') supStats.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    else if (f.sort === 'purchases') supStats.sort((a,b)=>b.totalPurchase - a.totalPurchase);
+    else if (f.sort === 'date') supStats.sort((a,b)=>b.id - a.id);
+
+    return `
+    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;align-items:center;justify-content:space-between;background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="position:relative">
+          <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text4)"></i>
+          <input type="text" placeholder="${isAR?'بحث...':'Rechercher...'}" value="${Utils.escHTML(f.q)}" oninput="PartnersModule._listFilters.q=this.value;App.loadModule('partners')" style="padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:240px;background:var(--bg);color:var(--text);outline:none" onfocus="this.style.borderColor='#8b5cf6'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <select onchange="PartnersModule._listFilters.supStatus=this.value;App.loadModule('partners')" style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);outline:none;cursor:pointer">
+          <option value="all" ${f.supStatus==='all'?'selected':''}>${isAR?'كل الحالات':'Tous les statuts'}</option>
+          <option value="unpaid" ${f.supStatus==='unpaid'?'selected':''}>${isAR?'غير مدفوع':'Non payé'}</option>
+          <option value="paid" ${f.supStatus==='paid'?'selected':''}>${isAR?'مدفوع':'Payé (Soldé)'}</option>
+        </select>
+        <select onchange="PartnersModule._listFilters.sort=this.value;App.loadModule('partners')" style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);outline:none;cursor:pointer">
+          <option value="name" ${f.sort==='name'?'selected':''}>${isAR?'الاسم':'Nom'}</option>
+          <option value="purchases" ${f.sort==='purchases'?'selected':''}>${isAR?'المشتريات':'Total Achats'}</option>
+          <option value="date" ${f.sort==='date'?'selected':''}>${isAR?'تاريخ الإضافة':"Date d'ajout"}</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-outline" style="border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600" onclick="PartnersModule._exportList('suppliers')"><i class="fas fa-file-csv" style="margin-right:6px"></i> CSV</button>
+        <button class="btn btn-primary" style="background:#8b5cf6;border-color:#8b5cf6;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(139,92,246,0.3)" onclick="SuppliersModule.showCreate()"><i class="fas fa-plus" style="margin-right:6px"></i> ${T.get('sup_new')}</button>
+      </div>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px" id="partnerSupGrid">
+      ${supStats.length ? supStats.map(s => {
+        const pct = s.totalPurchase>0?Math.min(100,(s.totalPaid/s.totalPurchase)*100):0;
+        return `
+      <div class="partner-card" onclick="PartnersModule._detailType='supplier';PartnersModule._detailId=${s.id};App.loadModule('partners')" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;gap:16px" onmouseenter="this.style.borderColor='#8b5cf6';this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 16px rgba(0,0,0,0.06)'" onmouseleave="this.style.borderColor='var(--border)';this.style.transform='none';this.style.boxShadow='none'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;flex-shrink:0;box-shadow:0 4px 8px rgba(139,92,246,0.3)">${(s.name||'?')[0].toUpperCase()}</div>
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(s.name)}</div>
+              <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-phone" style="margin-right:4px"></i>${Utils.escHTML(s.phone||'-')}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-xs btn-outline" style="border:none;background:var(--bg3);width:28px;height:28px;padding:0;border-radius:6px;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
+            <button class="btn btn-xs btn-outline" style="border:none;background:var(--bg3);color:#ef4444;width:28px;height:28px;padding:0;border-radius:6px;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();SuppliersModule.deleteSup(${s.id})"><i class="fas fa-trash"></i></button>
+          </div>
+        </div>
+        
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:0.5px">
+            <span>Paiements (${Math.round(pct)}%)</span>
+            <span style="color:${s.remaining>0?'#f59e0b':'#10b981'}">${s.remaining>0?'Reste '+Utils.fmtCurrency(s.remaining):'✅ Soldé'}</span>
+          </div>
+          <div style="background:var(--bg3);border-radius:20px;height:6px;overflow:hidden;width:100%"><div style="height:100%;border-radius:20px;background:${pct>=100?'#10b981':'linear-gradient(90deg,#8b5cf6,#7c3aed)'};width:${Math.min(pct,100)}%;transition:width .5s"></div></div>
+        </div>
+
+        <div style="margin-top:auto;padding-top:16px;border-top:1px dashed var(--border);display:flex;justify-content:space-between;align-items:flex-end">
+          <div><div style="font-size:10px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">${isAR?'إجمالي المشتريات':'Total Achats'}</div><div style="font-size:14px;font-weight:800;color:#8b5cf6;margin-top:4px">${Utils.fmtCurrency(s.totalPurchase)}</div></div>
+          <div style="text-align:right"><div style="font-size:10px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">${isAR?'سندات الاستلام':'Bons de Réception'}</div><div style="font-size:13px;font-weight:700;color:var(--text2);margin-top:4px">${s.brCount} BR</div></div>
+        </div>
+      </div>`;
+      }).join('') : `<div style="grid-column:1/-1;padding:40px;text-align:center;background:var(--bg2);border-radius:12px;border:1px dashed var(--border)"><i class="fas fa-building" style="font-size:48px;color:var(--text4);margin-bottom:16px"></i><div style="font-size:15px;font-weight:700;color:var(--text)">${T.get('no_data')}</div><div style="font-size:13px;color:var(--text4);margin-top:8px">Aucun fournisseur trouvé</div></div>`}
+    </div>`;
+  },
+
+  _filterRows(q, type) {
+    const id = type==='cli'?'partnerCliRows':'partnerSupRows';
+    const rows = document.querySelectorAll('#'+id+' .partner-row');
+    const ql = q.toLowerCase();
+    rows.forEach(r => r.style.display = r.dataset.name.includes(ql)?'flex':'none');
+  },
+
+  _renderDetail() {
+    if (this._detailType === 'client') return this._clientDetail(this._detailId);
+    return this._supplierDetail(this._detailId);
+  },
+
+  _clientDetail(clientId) {
+    const c = DB.getById('clients', clientId);
+    if (!c) { this._detailId=null; return this._renderList(); }
+    const isAR = T.isRTL();
+    const bls = DB.getAll('bls').filter(b=>String(b.clientId)===String(clientId));
+    const delivered = bls.filter(b=>b.status==='delivered');
+    const pending = bls.filter(b=>b.status!=='delivered');
+    const totalRevenue = delivered.reduce((s,b)=>s+(b.totalTTC||0),0);
+    const avgBL = delivered.length>0?totalRevenue/delivered.length:0;
+
+    // Monthly breakdown
+    const byMonth = {};
+    delivered.forEach(b => { const m=(b.date||'').substring(0,7); if(m) byMonth[m]=(byMonth[m]||0)+(b.totalTTC||0); });
+    const months = Object.keys(byMonth).sort().slice(-6);
+    const maxMonth = Math.max(...Object.values(byMonth), 1);
+
+    return `<div style="padding:16px;max-width:1100px;margin:0 auto">
+    <button class="btn btn-outline" style="margin-bottom:16px" onclick="PartnersModule._detailId=null;PartnersModule._tab='clients';App.loadModule('partners')"><i class="fas fa-arrow-left"></i> ${isAR?'رجوع':'Retour'}</button>
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#0c4a6e,#0284c7);border-radius:16px;padding:24px;color:#fff;margin-bottom:20px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:rgba(255,255,255,.06);border-radius:50%"></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="width:60px;height:60px;border-radius:16px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900">${(c.name||'?')[0].toUpperCase()}</div>
+        <div style="flex:1"><div style="font-size:22px;font-weight:900">${Utils.escHTML(c.name)}</div><div style="font-size:12px;opacity:.7;margin-top:4px">${[c.phone,c.email,c.wilaya,c.address].filter(Boolean).map(v=>Utils.escHTML(v)).join(' · ')}</div></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:none" onclick="ClientsModule.showEdit(${c.id})"><i class="fas fa-edit"></i> ${isAR?'تعديل':'Modifier'}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact Info Card -->
+    ${c.nif||c.nis||c.rc||c.ai ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px"><i class="fas fa-id-card" style="color:var(--primary)"></i> ${isAR?'المعلومات القانونية':'Informations légales'}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
+        ${c.nif?`<div style="background:var(--bg3);border-radius:8px;padding:8px 12px"><div style="font-size:10px;color:var(--text4);font-weight:700">NIF</div><div style="font-size:13px;font-weight:600;font-family:monospace">${Utils.escHTML(c.nif)}</div></div>`:''}
+        ${c.nis?`<div style="background:var(--bg3);border-radius:8px;padding:8px 12px"><div style="font-size:10px;color:var(--text4);font-weight:700">NIS</div><div style="font-size:13px;font-weight:600;font-family:monospace">${Utils.escHTML(c.nis)}</div></div>`:''}
+        ${c.rc?`<div style="background:var(--bg3);border-radius:8px;padding:8px 12px"><div style="font-size:10px;color:var(--text4);font-weight:700">RC</div><div style="font-size:13px;font-weight:600">${Utils.escHTML(c.rc)}</div></div>`:''}
+        ${c.ai?`<div style="background:var(--bg3);border-radius:8px;padding:8px 12px"><div style="font-size:10px;color:var(--text4);font-weight:700">AI</div><div style="font-size:13px;font-weight:600;font-family:monospace">${Utils.escHTML(c.ai)}</div></div>`:''}
+      </div>
+    </div>` : ''}
+
+    <!-- KPI Stats -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">
+      <div class="stat-card-v2"><div class="stat-icon-v2 blue"><i class="fas fa-file-export"></i></div><div class="stat-body-v2"><div class="stat-value-v2">${delivered.length}</div><div class="stat-label-v2">BL livrés</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 green"><i class="fas fa-coins"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(totalRevenue)}</div><div class="stat-label-v2">CA total</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 purple"><i class="fas fa-chart-line"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(avgBL)}</div><div class="stat-label-v2">Moy. / BL</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 orange"><i class="fas fa-hourglass-half"></i></div><div class="stat-body-v2"><div class="stat-value-v2">${pending.length}</div><div class="stat-label-v2">En attente</div></div></div>
+    </div>
+
+    <!-- Monthly Revenue Chart -->
+    ${months.length>0 ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:14px"><i class="fas fa-chart-bar" style="color:var(--primary)"></i> CA mensuel</div>
+      <div style="display:flex;align-items:flex-end;gap:8px;height:100px">
+        ${months.map(m => { const h = (byMonth[m]/maxMonth)*100; return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:10px;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(byMonth[m])}</div><div style="width:100%;background:linear-gradient(180deg,#0ea5e9,#0284c7);border-radius:6px 6px 0 0;height:${Math.max(h,8)}%;transition:height .5s"></div><div style="font-size:9px;color:var(--text4);font-weight:600">${m.substring(5)}</div></div>`; }).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Delivery Addresses -->
+    ${(c.deliveryAddresses||[]).length>0 ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px"><i class="fas fa-map-marker-alt" style="color:#ef4444"></i> ${isAR?'عناوين التسليم':'Adresses de livraison'}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
+        ${c.deliveryAddresses.map((a,i) => `<div style="background:var(--bg3);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px"><i class="fas fa-map-pin" style="color:#ef4444;font-size:14px"></i><span style="font-size:12px">${Utils.escHTML(typeof a==='string'?a:a.label||a.address||'')}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- BL History -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">
+        <span><i class="fas fa-file-export" style="color:#0ea5e9"></i> ${isAR?'سجل الفواتير':'Historique des livraisons'}</span>
+        <div style="display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:var(--text4)">${bls.length} BL</span><button class="btn btn-sm btn-outline" onclick="CSVExport.exportBLs(${clientId})" title="Export CSV"><i class="fas fa-download"></i></button></div>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="border-bottom:2px solid var(--border)"><th style="padding:10px 14px;text-align:left">Réf</th><th style="padding:10px;text-align:left">Date</th><th style="padding:10px;text-align:left">Statut</th><th style="padding:10px;text-align:left">Articles</th><th style="padding:10px;text-align:right">HT</th><th style="padding:10px;text-align:right">TTC</th></tr></thead>
+        <tbody>${bls.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(bl => {
+          const items = (bl.items||[]).length;
+          return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
+            <td style="padding:10px 14px;font-weight:600">${Utils.escHTML(bl.ref||'')}</td>
+            <td style="padding:10px;color:var(--text2)">${bl.date||''}</td>
+            <td style="padding:10px"><span class="badge ${bl.status==='delivered'?'badge-success':'badge-warning'}" style="font-size:10px">${bl.status==='delivered'?'✅ Livré':'⏳ En cours'}</span></td>
+            <td style="padding:10px;color:var(--text4)">${items} article${items>1?'s':''}</td>
+            <td style="padding:10px;text-align:right;font-weight:600">${Utils.fmtCurrency(bl.totalHT||0)}</td>
+            <td style="padding:10px;text-align:right;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(bl.totalTTC||0)}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text4);padding:30px">Aucun BL</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+    </div>`;
+  },
+
+  _supplierDetail(supplierId) {
+    const s = DB.getById('suppliers', supplierId);
+    if (!s) { this._detailId=null; return this._renderList(); }
+    const isAR = T.isRTL();
+    const isAdmin = Auth.isAdmin();
+    const brs      = DB.getAll('brs').filter(b=>b.supplierId===supplierId);
+    const payments = DB.getAll('supplier_payments').filter(p=>p.supplierId===supplierId);
+    const banks    = DB.getSettings().banks || [];
+    const bankMap  = {}; banks.forEach(b=>bankMap[b.id]=b);
+
+    const totalBR   = brs.reduce((s,b)=>s+(b.totalTTC||0),0);
+    const totalPaid = payments.reduce((s,p)=>s+(p.amount||0),0);
+    const remaining = Math.max(0, totalBR - totalPaid);
+    const pct       = totalBR>0?Math.min(100,(totalPaid/totalBR)*100):0;
+
+    // Build per-BR payment info
+    const brsPaid = {}; // brId -> amount paid (rough allocation by date)
+    payments.forEach(p=>{ (p.brIds||[]).forEach(bid=>{ brsPaid[bid]=(brsPaid[bid]||0)+(p.amount||0); }); });
+
+    return `<div style="padding:20px;max-width:1100px;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <button class="btn btn-outline" onclick="PartnersModule._detailId=null;PartnersModule._tab='suppliers';App.loadModule('partners')"><i class="fas fa-arrow-left"></i> ${isAR?'رجوع':'Retour'}</button>
+    </div>
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#4c1d95,#7c3aed);border-radius:16px;padding:24px;color:#fff;margin-bottom:20px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:rgba(255,255,255,.06);border-radius:50%"></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="width:60px;height:60px;border-radius:16px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900">${(s.name||'?')[0].toUpperCase()}</div>
+        <div style="flex:1">
+          <div style="font-size:22px;font-weight:900">${Utils.escHTML(s.name)}</div>
+          <div style="font-size:12px;opacity:.7;margin-top:4px">${[s.phone,s.email,s.address].filter(Boolean).map(v=>Utils.escHTML(v)).join(' · ')}</div>
+          ${s.nif?`<div style="font-size:11px;opacity:.6;margin-top:2px">NIF: ${Utils.escHTML(s.nif)}</div>`:''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:none" onclick="SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i> Modifier</button>
+          ${isAdmin?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none;font-weight:700" onclick="BankModule.paySupplierModal(null,${s.id})"><i class="fas fa-hand-holding-usd"></i> Payer ce fournisseur</button>`:''}
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px">
+      ${[
+        {label:'Total Achats (BR)', val:Utils.fmtCurrency(totalBR), color:'#8b5cf6', icon:'fa-file-import'},
+        {label:'Total Payé',        val:Utils.fmtCurrency(totalPaid), color:'#10b981', icon:'fa-check-circle'},
+        {label:'Reste à Payer',     val:Utils.fmtCurrency(remaining), color:remaining>0?'#ef4444':'#10b981', icon:'fa-exclamation-circle'},
+        {label:'Paiements',         val:payments.length, color:'#3b82f6', icon:'fa-credit-card'},
+        {label:'BRs',               val:brs.length, color:'#f59e0b', icon:'fa-file'},
+      ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:6px">${k.label}</div>
+        <div style="font-size:18px;font-weight:900;color:${k.color}">${k.val}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Progress bar -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:8px">
+        <span style="color:var(--text4)">Progression des paiements</span>
+        <span style="color:${pct>=100?'#10b981':'#f59e0b'}">${Math.round(pct)}%</span>
+      </div>
+      <div style="background:var(--bg3);border-radius:8px;height:10px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${pct>=100?'#10b981':'#8b5cf6'},${pct>=100?'#059669':'#a78bfa'});border-radius:8px;transition:width .5s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text4);margin-top:6px">
+        <span>Payé: ${Utils.fmtCurrency(totalPaid)}</span>
+        <span>Total: ${Utils.fmtCurrency(totalBR)}</span>
+      </div>
+    </div>
+
+    <!-- BR History with payment status -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">
+        <span><i class="fas fa-file-import" style="color:#8b5cf6"></i> Bons de Réception (${brs.length})</span>
+        <button class="btn btn-sm btn-outline" onclick="CSVExport.exportBRs(${supplierId})"><i class="fas fa-download"></i> Export</button>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--bg3)">
+          <th style="padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Réf</th>
+          <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Date</th>
+          <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Statut</th>
+          <th style="padding:10px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">Total TTC</th>
+          <th style="padding:10px;width:80px"></th>
+        </tr></thead>
+        <tbody>${brs.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(br=>{
+          const statusColor = br.status==='delivered'?'#10b981':'#f59e0b';
+          const statusLabel = br.status==='delivered'?'✅ Reçu':'📋 Ouvert';
+          return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
+            <td style="padding:10px 14px;font-weight:700;color:var(--text)">${Utils.escHTML(br.ref||'')}</td>
+            <td style="padding:10px;color:var(--text2)">${br.date||''}</td>
+            <td style="padding:10px"><span style="padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;background:${br.status==='delivered'?'rgba(16,185,129,.12)':'rgba(245,158,11,.12)'};color:${statusColor}">${statusLabel}</span></td>
+            <td style="padding:10px;text-align:right;font-weight:800;color:#8b5cf6">${Utils.fmtCurrency(br.totalTTC||0)}</td>
+            <td style="padding:10px;text-align:right">
+              <button title="PDF" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PDFGen.exportBR(${br.id})"><i class="fas fa-file-pdf"></i></button>
+            </td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text4);padding:24px">Aucun BR</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- Payment History -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span style="font-weight:700;font-size:14px"><i class="fas fa-credit-card" style="color:#10b981"></i> Historique Paiements (${payments.length})</span>
+        <div style="display:flex;gap:8px">
+          ${isAdmin?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none" onclick="BankModule.paySupplierModal(null,${s.id})"><i class="fas fa-plus"></i> Payer</button>`:''}
+          <button class="btn btn-sm btn-outline" onclick="CSVExport.exportPayments(${supplierId})"><i class="fas fa-download"></i> Export</button>
+        </div>
+      </div>
+      ${payments.length===0
+        ? `<div style="padding:40px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>Aucun paiement enregistré</div>`
+        : `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--bg3)">
+            <th style="padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Réf</th>
+            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Date</th>
+            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Source</th>
+            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Note</th>
+            <th style="padding:10px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">Montant</th>
+            <th style="padding:10px;width:80px"></th>
+          </tr></thead>
+          <tbody>${payments.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(p=>{
+            const bank = p.bankId ? bankMap[p.bankId] : null;
+            const srcLabel = p.source==='caisse' ? '💵 Caisse' : (bank?`🏦 ${Utils.escHTML(bank.name)}`:'🏦 Banque');
+            return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
+              <td style="padding:10px 14px;font-family:monospace;font-size:11px;color:var(--text4)">${Utils.escHTML(p.ref||'—')}</td>
+              <td style="padding:10px;color:var(--text2)">${p.date||'—'}</td>
+              <td style="padding:10px"><span style="font-size:11px;font-weight:600;color:${p.source==='caisse'?'#f59e0b':'#3b82f6'}">${srcLabel}</span></td>
+              <td style="padding:10px;color:var(--text3);font-size:12px">${Utils.escHTML(p.note||'—')}</td>
+              <td style="padding:10px;text-align:right;font-weight:900;color:#10b981;font-size:15px">−${Utils.fmtCurrency(p.amount||0)}</td>
+              <td style="padding:10px;text-align:right;display:flex;gap:4px;justify-content:flex-end">
+                <button title="Décharge PDF" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PDFGen.exportSupplierPayDecharge(${p.id})"><i class="fas fa-file-pdf"></i></button>
+                ${isAdmin?`<button title="Corriger" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PartnersModule._correctPay(${p.id})"><i class="fas fa-edit"></i></button>`:''}
+              </td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table></div>`}
+    </div>
+  </div>`;
+  },
+
+
+  async _correctPay(payId) {
+    if(!Auth.isAdmin())return;const pay=DB.getById('supplier_payments',payId);if(!pay)return;
+    const r=await Dialog.show({title:'Corriger paiement',message:`<div class="form-group" style="margin-bottom:10px"><label>Nouveau montant</label><input type="number" id="dlg_cp_a" value="${pay.amount}" style="width:100%"></div><div class="form-group"><label>Note</label><input type="text" id="dlg_cp_n" placeholder="Motif" style="width:100%"></div>`,type:'warning',confirmText:'Corriger',cancelText:'Annuler'});
+    if(!r)return;const newAmt=parseFloat(document.getElementById('dlg_cp_a')?.value||pay.amount);const cn=document.getElementById('dlg_cp_n')?.value||'';const u=Auth.getCurrentUser();
+    DB.update('supplier_payments',payId,{amount:newAmt,note:(pay.note||'')+` [Corrigé par ${u?.name}: ${cn}]`,correctedBy:u?.id,correctedAt:new Date().toISOString()});
+    Utils.notify('Paiement corrigé','success');
+    this._detailType='supplier';this._detailId=pay.supplierId;App.loadModule('partners');
+  }
+};
+Modules.partners = PartnersModule;
+
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN CAISSE CORRECTIONS — Edit any entry
+// ═══════════════════════════════════════════════════════════════
+AdminCaisseModule._correctEntry = async function(entryId) {
+  if (!Auth.isAdmin()) return;
+  const entry = DB.getById('caisse_admin', entryId);
+  if (!entry) return;
+  const r = await Dialog.show({
+    title: 'Corriger cette entrée',
+    message: `<div style="margin-bottom:12px;padding:12px;background:var(--bg3);border-radius:10px"><div style="font-size:12px;color:var(--text4)">Type: ${entry.type==='deposit'?'Dépôt':'Retrait'}</div><div style="font-weight:700;font-size:16px;color:${entry.type==='deposit'?'#10b981':'#ef4444'}">${entry.type==='deposit'?'+':'−'}${Utils.fmtCurrency(entry.amount)}</div><div style="font-size:11px;color:var(--text4)">${Utils.escHTML(entry.note||'')}</div></div><div class="form-group" style="margin-bottom:10px"><label>Nouveau montant</label><input type="number" id="dlg_ce_a" value="${entry.amount}" style="width:100%"></div><div class="form-group" style="margin-bottom:10px"><label>Nouvelle note</label><input type="text" id="dlg_ce_n" value="${Utils.escHTML(entry.note||'')}" style="width:100%"></div><div class="form-group"><label>Motif de correction</label><input type="text" id="dlg_ce_m" placeholder="Pourquoi cette correction..." style="width:100%"></div>`,
+    type: 'warning', confirmText: 'Corriger', cancelText: 'Annuler'
+  });
+  if (!r) return;
+  const newAmt = parseFloat(document.getElementById('dlg_ce_a')?.value || entry.amount);
+  const newNote = document.getElementById('dlg_ce_n')?.value || entry.note;
+  const motif = document.getElementById('dlg_ce_m')?.value || '';
+  const u = Auth.getCurrentUser();
+  DB.update('caisse_admin', entryId, {
+    amount: newAmt, note: newNote + (motif ? ` [Corrigé par ${u?.name}: ${motif}]` : ''),
+    correctedBy: u?.id, correctedAt: new Date().toISOString(), oldAmount: entry.amount
+  });
+  if (entry.source === 'bl_delivery' && entry.userId) {
+    const session = DB.getAll('sessions').find(s => s.userId === entry.userId && s.date === entry.sessionDate);
+    if (session && session.status === 'closed') {
+      const deliveryTotal = DB.getAll('caisse_admin').filter(e => e.source === 'bl_delivery' && e.userId === entry.userId && e.sessionDate === entry.sessionDate).reduce((s,e) => s + (Number(e.amount)||0), 0);
+      DB.update('sessions', session.id, { ecart: (session.closedEspeces||0) - deliveryTotal });
+    }
+  }
+  Utils.notify('✅ Entrée corrigée','success');App.loadModule('admin_caisse');
+};
+
+
+
+// CSV EXPORT UTILITY
+const CSVExport = {
+  download(filename, headers, rows) {
+    const bom = '\uFEFF';
+    const csv = bom + [headers.join(';'), ...rows.map(r => r.map(c => '"' + String(c||'').replace(/"/g,'""') + '"').join(';'))].join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename + '.csv'; a.click();
+    URL.revokeObjectURL(url);
+    Utils.notify('Export CSV OK', 'success');
+  },
+  exportBLs(clientId) {
+    const bls = DB.getAll('bls').filter(b => String(b.clientId)===String(clientId));
+    const c = DB.getById('clients', clientId);
+    this.download('BL_' + (c?.name||'client'), ['Ref','Date','Statut','HT','TTC','Articles'], bls.map(b => [b.ref, b.date, b.status==='delivered'?'Livre':'En cours', b.totalHT||0, b.totalTTC||0, (b.items||[]).length]));
+  },
+  exportBRs(supplierId) {
+    const brs = DB.getAll('brs').filter(b => b.supplierId===supplierId);
+    const s = DB.getById('suppliers', supplierId);
+    this.download('BR_' + (s?.name||'fournisseur'), ['Ref','Date','Statut','HT','TTC','Articles'], brs.map(b => [b.ref, b.date, b.status==='delivered'?'Recu':'Ouvert', b.totalHT||0, b.totalTTC||0, (b.items||[]).length]));
+  },
+  exportPayments(supplierId) {
+    const pays = DB.getAll('supplier_payments').filter(p => p.supplierId===supplierId);
+    const s = DB.getById('suppliers', supplierId);
+    const banks = DB.getSettings().banks || [];
+    this.download('Paiements_' + (s?.name||'fournisseur'), ['Date','Montant','Banque','Note'], pays.map(p => [p.date, p.amount, (banks.find(b=>b.id===p.bankId)?.name||''), p.note||'']));
+  },
+  exportBankTx(bankId) {
+    const txs = DB.getAll('bank_transactions').filter(t => !bankId || t.bankId===bankId);
+    const banks = DB.getSettings().banks || [];
+    this.download('Banque_transactions', ['Date','Compte','Type','Montant','Note'], txs.map(t => [t.date, (banks.find(b=>b.id===t.bankId)?.name||''), t.type==='deposit'?'Virement':'Paiement', t.amount, t.note||'']));
+  }
+};
+window.CSVExport = CSVExport;
