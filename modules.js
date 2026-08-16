@@ -833,9 +833,9 @@ const BRModule = {
     const lines = this._getLines();
     if (!lines.length) { Utils.notify('Ajoutez au moins un article', 'error'); return; }
 
-    const totalHT  = lines.reduce((s,l)=>s+l.total,0) + extraFees;
-    const tvaAmount = totalHT * tvaRate / 100;
-    const totalTTC = totalHT + tvaAmount + timbre;
+    const totalHT  = Math.round((lines.reduce((s,l)=>s+l.total,0) + extraFees) * 100) / 100;
+    const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
+    const totalTTC = Math.round((totalHT + tvaAmount + timbre) * 100) / 100;
     const suppAbbrev = DB.getById('suppliers', supplierId)?.abbrev || '';
     const ref      = DB.buildBRRef(brNum, year, suppAbbrev);
 
@@ -1599,12 +1599,12 @@ const BLModule = {
     });
 
     /* Totals */
-    const totalHT  = deliveredLines.reduce((s,l) => s+l.total, 0);
+    const totalHT  = Math.round(deliveredLines.reduce((s,l) => s+l.total, 0) * 100) / 100;
     const tvaRate  = parseFloat(document.getElementById('bl-tva-rate')?.value) ?? DB.getSettings().tvaRate ?? 19;
-    const tvaAmount = totalHT * tvaRate / 100;
+    const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('bl-no-timbre')?.checked || false;
     const timbre   = noTimbre ? 0 : (parseFloat(document.getElementById('bl-tot-timbre')?.value) || DB.calcTimbre(totalHT));
-    const totalTTC = totalHT + tvaAmount + timbre;
+    const totalTTC = Math.round((totalHT + tvaAmount + timbre) * 100) / 100;
 
     /* Build reference */
     let ref, partNum = null;

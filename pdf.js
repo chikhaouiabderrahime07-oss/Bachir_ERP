@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    PDF.JS — PROFESSIONAL DOCUMENT GENERATOR v15.0
    Exact match: BC_DG_BC_006_2026-7.pdf reference
    + Arabic font support (Amiri TTF auto-loaded from CDN)
@@ -45,10 +45,16 @@
       else alert(msg);
     },
 
-    /* ── Pass text raw ──────────────────────────────────────── */
+    /* ── Pass text raw — with emoji & unprintable symbol stripping ── */
     _t(v) {
       if (v === null || v === undefined) return '';
-      return String(v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+      let s = String(v);
+      // Strip control chars
+      s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+      // Strip emojis & high surrogate symbols that cause PDF character corruption (e.g. Ø=ÝÑÞ)
+      s = s.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2B50}\u{200D}]/gu, '');
+      // Clean multiple spaces and trim
+      return s.replace(/\s+/g, ' ').trim();
     },
 
     /* ── Arabic detection ──────────────────────────────────── */
@@ -772,7 +778,17 @@
         doc.setFont('helvetica',bold?'bold':'normal');
         doc.setFontSize(bold?11:8.5);
         this._tc(doc,bold?C.PRIMARY:C.BLACK);
-        this._text(doc, this._t(String(val||'/')), ML+62, cy);
+        const cleanVal = this._t(String(val||'/'));
+        const maxValW = CW - 66; // 194 - 66 = 128mm available width
+        const lines = doc.splitTextToSize(cleanVal, maxValW);
+        if (lines && lines.length > 1) {
+          lines.forEach((line, li) => {
+            this._text(doc, line, ML+62, cy + (li * 4.2));
+          });
+          cy += (lines.length - 1) * 4.2;
+        } else {
+          this._text(doc, cleanVal, ML+62, cy);
+        }
         cy+=6.5;
       };
       rowF('Opérateur :',    userName);
@@ -782,7 +798,8 @@
       rowF('Motif :',        this._t(tx.note||tx.description||'/'));
       cy+=2;
       rowF('MONTANT :',      this._fmtMoney(montant), true);
-      y+=cardH+6;
+      const actualCardH = Math.max(cardH, (cy - y) + 4);
+      y+=actualCardH+6;
 
       /* Amount in words */
       const wd=this._amountWords(montant);
@@ -847,7 +864,17 @@
         doc.setFont('helvetica',bold?'bold':'normal');
         doc.setFontSize(bold?11:8.5);
         this._tc(doc,bold?C.PRIMARY:C.BLACK);
-        this._text(doc, this._t(String(val||'/')), ML+62, cy);
+        const cleanVal = this._t(String(val||'/'));
+        const maxValW = CW - 66; // 194 - 66 = 128mm available width
+        const lines = doc.splitTextToSize(cleanVal, maxValW);
+        if (lines && lines.length > 1) {
+          lines.forEach((line, li) => {
+            this._text(doc, line, ML+62, cy + (li * 4.2));
+          });
+          cy += (lines.length - 1) * 4.2;
+        } else {
+          this._text(doc, cleanVal, ML+62, cy);
+        }
         cy+=6.5;
       };
       rowF('Type opération :',  title);
@@ -857,7 +884,8 @@
       rowF('Note :',             this._t(tx.note||'/'));
       cy+=2;
       rowF('MONTANT :',          (isD?'+ ':'− ')+this._fmtMoney(montant), true);
-      y+=cardH+6;
+      const actualCardH = Math.max(cardH, (cy - y) + 4);
+      y+=actualCardH+6;
 
       const wd=this._amountWords(montant);
       if(wd){ doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK); const wl=doc.splitTextToSize('Arrêtée à la somme de : '+wd+' dinars algériens',CW); doc.text(wl,ML,y); y+=wl.length*4.5+4; }
