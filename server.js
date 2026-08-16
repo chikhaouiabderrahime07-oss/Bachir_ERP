@@ -130,9 +130,11 @@ app.get('/api/health', (req, res) => {
 app.use(express.static(path.join(__dirname, '.'), {
   index: 'index.html',
   setHeaders(res, filePath) {
-    // Cache static assets aggressively
-    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'public, max-age=3600');
+    // No cache for JS/CSS — always check for updates
+    if (filePath.endsWith('.js') || filePath.endsWith('.css') || filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     }
   }
 }));
