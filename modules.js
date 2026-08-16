@@ -1124,7 +1124,7 @@ const BLModule = {
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
               return `<tr>
-                <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}</td>
+                <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.restoredFrom?` <span style="display:inline-block;margin-left:4px;padding:1px 5px;background:rgba(245,158,11,.15);color:#d97706;border-radius:5px;font-size:9px;font-weight:600;vertical-align:middle" title="Restauré depuis la corbeille le ${bl.restoredAt?new Date(bl.restoredAt).toLocaleDateString('fr-FR'):''}"><i class="fas fa-recycle" style="margin-right:2px"></i>Restauré</span>`:''}${bl.status==='returned'?`<div style="font-size:9px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> Retourné${bl.returnedByName?' par '+Utils.escHTML(bl.returnedByName):''}</div>`:''}</td>
                 <td>${br?`<span class="badge badge-primary">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
                 <td>${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td>
                 <td>${Utils.escHTML(cli?.name||'-')}</td>
@@ -1156,7 +1156,7 @@ const BLModule = {
   async showNewBL() {
     // Admin picks a user who has canCreateBL permission
     if (Auth.isAdmin()) {
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== falselse);
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== false);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
@@ -1732,6 +1732,9 @@ const BLModule = {
       });
     }
 
+    // Brain recalibrates immediately after delivery
+    DB.MasterBrain.recalibrateAll();
+
     Utils.notify((T.isRTL()?'تم تأكيد التسليم! الوثائق مقفلة.':'Livraison confirmée ! Documents verrouillés.'), 'success');
 
     // ── صرف (Sarf) Popup — always ask after delivery ──
@@ -1974,7 +1977,8 @@ const BLModule = {
         returnedByName: u?.name || 'Admin'
       }, 'Retour marchandise');
 
-      // 2. ONLY create withdrawal if BL was delivered and had a caisse deposit
+      // 2. Create withdrawal ONLY if BL was delivered and had a caisse deposit
+      //    (The BL stays alive with status='returned', so Brain won't delete these entries)
       if (isValidated && hasNetCaisseDeposit && amount > 0) {
         DB.insert('caisse_admin', {
           type: 'withdrawal',
@@ -1982,7 +1986,7 @@ const BLModule = {
           blId: id,
           blRef: ref,
           amount,
-          note: `🔄 Retour marchandise — ${ref} (${Utils.fmtCurrency(amount)})`,
+          note: `Retour marchandise — ${ref} (${Utils.fmtCurrency(amount)})`,
           userId: bl.createdBy || u?.id,
           userName: bl.createdByName || u?.name,
           returnedBy: u?.id,
@@ -2001,32 +2005,22 @@ const BLModule = {
         }
       }
 
+      // 4. Brain recalibrates immediately
+      DB.MasterBrain.recalibrateAll();
+
       Utils.notify(`🔄 BL ${ref} marqué comme retourné${isValidated && hasNetCaisseDeposit ? ` — caisse ajustée de ${Utils.fmtCurrency(amount)}` : ''}`, 'success', 6000);
       App.loadModule('bls');
 
     } else if (action === 'error') {
-      // ═══ PATH B: WRONG BL — DELETE + CORRECTION ═════════════
-      // 1. ONLY create correction withdrawal if BL was delivered and had a caisse deposit
-      if (isValidated && hasNetCaisseDeposit && amount > 0) {
-        DB.insert('caisse_admin', {
-          type: 'withdrawal',
-          source: 'bl_error_delete',
-          blId: id,
-          blRef: ref,
-          amount,
-          note: `🗑️ Correction — suppression BL erroné ${ref} (${Utils.fmtCurrency(amount)})`,
-          userId: bl.createdBy || u?.id,
-          userName: bl.createdByName || u?.name,
-          deletedBy: u?.id,
-          deletedByName: u?.name,
-          date: Utils.today()
-        });
-      }
+      // ═══ PATH B: WRONG BL — DELETE (Brain handles caisse correction) ════
+      // NO manual withdrawal creation — the Brain will automatically remove the
+      // bl_delivery deposit once the BL no longer exists. This prevents the
+      // oscillation bug where withdrawal + deposit cleanup created negative balances.
 
-      // 2. Delete BL (goes to recycle bin via DB.delete)
+      // 1. Delete BL (goes to recycle bin via DB.delete)
       DB.delete('bls', id);
 
-      // 3. Reopen linked BR (liberate merchandise)
+      // 2. Reopen linked BR (liberate merchandise)
       if (br) {
         const otherDelivered = DB.getAll('bls').filter(b =>
           Number(b.brId) === Number(bl.brId) && Number(b.id) !== Number(id) && b.status === 'delivered'
@@ -2036,7 +2030,10 @@ const BLModule = {
         }
       }
 
-      Utils.notify(`🗑️ BL ${ref} supprimé${isValidated && hasNetCaisseDeposit ? ` — correction caisse de ${Utils.fmtCurrency(amount)} créée` : ''}`, 'success', 6000);
+      // 3. Brain recalibrates immediately — removes the deposit for this deleted BL
+      DB.MasterBrain.recalibrateAll();
+
+      Utils.notify(`🗑️ BL ${ref} supprimé${isValidated ? ` — caisse corrigée automatiquement` : ''}`, 'success', 6000);
       App.loadModule('bls');
     }
   },
@@ -6605,6 +6602,8 @@ const RecycleBinModule = {
 
     Utils.notify(T.get('rb_restored'), 'success');
     this._selected.delete(binId);
+    // Brain recalibrates immediately after restore
+    DB.MasterBrain.recalibrateAll();
     App.loadModule('recycle_bin');
   },
 
