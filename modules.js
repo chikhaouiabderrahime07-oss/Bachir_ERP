@@ -1888,9 +1888,11 @@ const BLModule = {
   async deleteBL(id) {
     const bl = DB.getById('bls', id);
     if (!bl) return;
+    console.log('[DEBUG deleteBL]', { id, status: bl.status, ref: bl.ref, totalTTC: bl.totalTTC, isAdmin: Auth.isAdmin(), canDeleteBL: Auth.can('canDeleteBL') });
     if (!Auth.isAdmin() && !Auth.can('canDeleteBL')) { Utils.notify('⛔ Permission refusée — suppression BL','error'); return; }
 
     const isValidated = bl.status === 'delivered' || bl.status === 'locked';
+    console.log('[DEBUG deleteBL] isValidated:', isValidated, 'status:', JSON.stringify(bl.status));
     const u = Auth.getCurrentUser();
     const amount = Number(bl.totalTTC || 0);
 
