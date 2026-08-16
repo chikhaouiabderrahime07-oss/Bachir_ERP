@@ -696,9 +696,13 @@ const DB = {
     finalItem.restoredAt = new Date().toISOString();
     const restored = this.insert(collection, finalItem);
 
-    // Mark as restored in bin
-    const updatedBin = bin.map(e => e.id === binId ? { ...e, restored: true, restoredAt: new Date().toISOString() } : e);
+    // Remove from bin entirely (don't just mark — actually remove)
+    const updatedBin = bin.filter(e => e.id !== binId);
     localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+    // Cloud sync: remove the bin entry
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      window.API.remove('recycle_bin', binId).catch(() => {});
+    }
 
     return { ok: true, item: restored, refWarning };
   },
