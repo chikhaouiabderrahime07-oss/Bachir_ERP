@@ -959,7 +959,7 @@ const BRModule = {
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       toRemove.forEach(e => window.API.remove('caisse_admin', e.id).catch(() => {}));
     }
-    console.log(`[CaisseClean] Removed ${toRemove.length} caisse entries for BL id=${blId}`);
+    // console.log(`[CaisseClean] Removed ${toRemove.length} caisse entries for BL id=${blId}`);
   },
 
   _applyFilters() {
@@ -1250,7 +1250,8 @@ const BLModule = {
       ${adminOverride
         ? `<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff" onclick="BLModule._saveBL(${bl.brId},${blId},false,true)"><i class="fas fa-shield-alt"></i> Sauver (Admin)</button>`
         : `<button class="btn btn-warning" onclick="BLModule._saveBL(${bl.brId},${blId},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`
-      }`, 'xl');
+      }
+      ${(bl.status !== 'delivered' && bl.status !== 'locked') ? `<button class="btn btn-success" onclick="BLModule._saveBL(${bl.brId},${blId},false);setTimeout(()=>BLModule.confirmDelivery(${blId}),500)"><i class="fas fa-check-circle"></i> Sauver & Valider</button>` : ''}`, 'xl');
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
@@ -1284,6 +1285,17 @@ const BLModule = {
   _blModalBody(br, bl=null) {
     const lines = br?.lines || [];
     const sup = DB.getById('suppliers', br.supplierId) || {};
+    
+    // Calculate already-delivered quantities for this BR (from existing active BLs)
+    const existingBLs = bl ? [] : DB.getAll('bls').filter(b => Number(b.brId) === Number(br.id) && b.status !== 'returned');
+    const deliveredQtyByLine = {};
+    existingBLs.forEach(existingBL => {
+      (existingBL.lines || []).forEach(line => {
+        const key = line.designation || line.articleId || '';
+        deliveredQtyByLine[key] = (deliveredQtyByLine[key] || 0) + (Number(line.qtyDelivered || line.qty) || 0);
+      });
+    });
+
     return `
     <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <!-- LEFT: Our Company / Fournisseur -->
@@ -1373,7 +1385,14 @@ const BLModule = {
         <tbody>
           ${lines.map((l,i) => {
             const existingLine = bl?.lines?.find(x=>x.designation===l.designation);
-            const qtyDel = existingLine ? (existingLine.qtyDelivered ?? existingLine.qty ?? l.qty) : l.qty;
+            let qtyDel, maxQty;
+            if (existingLine) {
+              qtyDel = existingLine.qtyDelivered ?? existingLine.qty ?? l.qty;
+              maxQty = l.qty || 9999;
+            } else {
+              qtyDel = Math.max(0, (Number(l.qty)||0) - (deliveredQtyByLine[l.designation || l.articleId || ''] || 0));
+              maxQty = qtyDel;
+            }
             const tot = (Number(qtyDel)||0) * (Number(l.price)||0) * (1-(Number(l.disc)||0)/100);
             return `<tr>
               <td>${i+1}</td>
@@ -1381,7 +1400,7 @@ const BLModule = {
               <td style="text-align:center">${Utils.escHTML(l.unit||'U')}</td>
               <td style="text-align:center;color:var(--text4)">${l.qty||0}</td>
               <td><input type="number" id="bl-qty-${i}" value="${qtyDel||0}" min="0"
-                max="${l.qty||9999}" step="any" style="width:80px;text-align:center"
+                max="${maxQty}" step="any" style="width:80px;text-align:center"
                 data-brqty="${l.qty||0}" data-price="${l.price||0}" data-disc="${l.disc||0}"
                 oninput="BLModule._recalcBLLine(${i})"></td>
               <td style="text-align:right">${Utils.fmtCurrency(l.price||0)}</td>
@@ -1679,22 +1698,39 @@ const BLModule = {
     const br = DB.getById('brs', bl.brId);
     const u = Auth.getCurrentUser();
 
-    // ── If BL was returned, open edit modal first so user can modify before re-validating ──
+    // ── If BL was returned, show 3-choice dialog ──
     if (bl.status === 'returned') {
-      const editFirst = await Dialog.confirm(
-        '🔄 BL Retourné — Modifier avant validation ?',
-        `Ce BL (${Utils.escHTML(bl.ref)}) a été retourné.` +
-        `\n\nVoulez-vous le modifier avant de le re-valider comme livré ?`,
-        'info',
-        ['Modifier d\'abord', 'Valider directement']
-      );
-      if (!editFirst && editFirst !== false) return; // cancelled
-      if (editFirst === true) {
-        // Open edit modal, user will confirm delivery after saving
+      const choice = await Dialog.show({
+        title: '🔄 BL Retourné',
+        message: `<div style="margin-bottom:14px;padding:12px 16px;background:#1e293b;border-radius:10px;border-left:4px solid #f59e0b">
+          <div style="color:#fbbf24;font-weight:700;margin-bottom:4px;font-size:15px">${Utils.escHTML(bl.ref)} — ${Utils.fmtCurrency(Number(bl.totalTTC||0))}</div>
+          <div style="font-size:12px;color:#94a3b8">Ce BL a été retourné${bl.returnedByName ? ' par ' + Utils.escHTML(bl.returnedByName) : ''}. Que souhaitez-vous faire ?</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button onclick="document.getElementById('dlg_ret_choice').value='edit';document.querySelector('.dlg-btn-primary').click()"
+            style="display:flex;align-items:center;gap:14px;padding:14px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;width:100%">
+            <span style="font-size:24px;flex-shrink:0">✏️</span>
+            <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">Modifier d'abord</div>
+            <div style="font-size:11px;opacity:.85">Ouvrir le formulaire pour modifier les quantités, client, etc. avant de re-valider.</div></div>
+          </button>
+          <button onclick="document.getElementById('dlg_ret_choice').value='validate';document.querySelector('.dlg-btn-primary').click()"
+            style="display:flex;align-items:center;gap:14px;padding:14px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;width:100%">
+            <span style="font-size:24px;flex-shrink:0">✅</span>
+            <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">Re-valider directement</div>
+            <div style="font-size:11px;opacity:.85">Confirmer la livraison tel quel sans modification.</div></div>
+          </button>
+        </div>
+        <input type="hidden" id="dlg_ret_choice" value="">
+        <style>.dlg-btn-primary{display:none!important}</style>`,
+        type: 'warning', confirmText: 'OK', cancelText: 'Annuler'
+      });
+      const action = document.getElementById('dlg_ret_choice')?.value;
+      if (!choice || !action) return;
+      if (action === 'edit') {
         this.showEdit(blId, Auth.isAdmin());
         return;
       }
-      // editFirst === false → user chose "Valider directement", continue below
+      // action === 'validate' → continue below
     }
 
     // Use BL's own totalTTC (may differ from BR if partial delivery)
@@ -1923,7 +1959,7 @@ const BLModule = {
   async deleteBL(id) {
     const bl = DB.getById('bls', id);
     if (!bl) return;
-    console.log('[DEBUG deleteBL]', { id, status: bl.status, ref: bl.ref, totalTTC: bl.totalTTC, isAdmin: Auth.isAdmin(), canDeleteBL: Auth.can('canDeleteBL') });
+    // console.log('[DEBUG deleteBL]', { id, status: bl.status, ref: bl.ref, totalTTC: bl.totalTTC, isAdmin: Auth.isAdmin(), canDeleteBL: Auth.can('canDeleteBL') });
     if (!Auth.isAdmin() && !Auth.can('canDeleteBL')) { Utils.notify('⛔ Permission refusée — suppression BL','error'); return; }
 
     const isValidated = bl.status === 'delivered' || bl.status === 'locked';
@@ -5389,7 +5425,7 @@ const UsersModule = {
       data.permissions = perms;
     }
     if (password) data.password = password;
-    console.log('[DEBUG UserSave]', { id, data: JSON.parse(JSON.stringify(data)) });
+    // console.log('[DEBUG UserSave]', { id, data: JSON.parse(JSON.stringify(data)) });
     if (id) { DB.update('users',id,data); Utils.notify((T.isRTL()?'تم تعديل المستخدم':'Utilisateur modifié'),'success'); }
     else { DB.insert('users',{...data,active:true}); Utils.notify((T.isRTL()?'تم إنشاء المستخدم':'Utilisateur créé'),'success'); }
     UI.closeModal(); SettingsModule._tab='users'; App.loadModule('settings');
@@ -5909,7 +5945,7 @@ const SettingsModule = {
     localStorage.setItem('timbre_slabs_data', JSON.stringify(slabs));
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.saveTimbreSlabs(slabs).then(r => {
-        console.log('[timbreSlabs] saved to DB:', r?.count, 'slabs');
+        // console.log('[timbreSlabs] saved to DB:', r?.count, 'slabs');
         Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع ✓' : 'Tranches timbre sauvegardées ✓'), 'success');
       }).catch(e => {
         console.error('[timbreSlabs] cloud save FAILED:', e.message);
@@ -6334,10 +6370,10 @@ const SettingsModule = {
 
     try {
       Utils.notify(T.isRTL() ? 'جارٍ إعادة الضبط…' : 'Réinitialisation en cours…', 'info');
-      console.log('[RESET] Sending reset request...');
+      // console.log('[RESET] Sending reset request...');
 
       const result = await window.API._req('POST', '/admin/reset-all', { confirm: 'RESET_TOUT', password });
-      console.log('[RESET] Server response:', result);
+      // console.log('[RESET] Server response:', result);
 
       // Handle null (401/token expired)
       if (!result) {
@@ -6346,7 +6382,7 @@ const SettingsModule = {
       }
 
       if (result.success) {
-        console.log('[RESET] Success — clearing all localStorage...');
+        // console.log('[RESET] Success — clearing all localStorage...');
         // Nuclear option: clear EVERYTHING in localStorage
         localStorage.clear();
         

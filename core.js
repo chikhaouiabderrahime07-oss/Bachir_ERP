@@ -545,7 +545,7 @@ const DB = {
         const clientRes = this.ClientBrain.recalibrate();
 
         const totalTresorerie = Math.round((caisseRes.balance + bankRes.totalBank) * 100) / 100;
-        console.log(`[Master Brain] Recalibration complete across 4 brains. Solde Caisse: ${Utils.fmtCurrency(caisseRes.balance)} | Solde Banque: ${Utils.fmtCurrency(bankRes.totalBank)} | Trésorerie Totale: ${Utils.fmtCurrency(totalTresorerie)}`);
+        if (window._ERP_DEBUG) console.log(`[Master Brain] Recalibration complete across 4 brains. Solde Caisse: ${Utils.fmtCurrency(caisseRes.balance)} | Solde Banque: ${Utils.fmtCurrency(bankRes.totalBank)} | Trésorerie Totale: ${Utils.fmtCurrency(totalTresorerie)}`);
 
         return {
           ok: true,
@@ -571,7 +571,7 @@ const DB = {
     if (s.timbreSlabs[0].ratePerTranche !== undefined) return;
     const lf2025 = this._defaultSettings().timbreSlabs;
     this.saveSettings({ timbreSlabs: lf2025, timbreMin: 5 });
-    console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
+    if (window._ERP_DEBUG) console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
   },
 
   // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
@@ -874,15 +874,19 @@ const DB = {
         }
         return { ok: false, error: 'Impossible de restaurer : le BR d\'origine a été supprimé.' };
       }
-      const activeBLs = this.getAll('bls').filter(b => Number(b.brId) === Number(finalItem.brId) && b.status !== 'returned');
-      if (activeBLs.length > 0) {
-        // Auto-purge the conflicting recycle bin entry
-        const updatedBin = bin.filter(e => e.id !== binId);
-        localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
-        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-          window.API.remove('recycle_bin', binId).catch(() => {});
+      // For non-partial BLs, block if BR already has an active BL
+      // For partial BLs, always allow restore (multiple partials per BR is expected)
+      if (!finalItem.isPartial) {
+        const activeBLs = this.getAll('bls').filter(b => Number(b.brId) === Number(finalItem.brId) && b.status !== 'returned');
+        if (activeBLs.length > 0) {
+          // Auto-purge the conflicting recycle bin entry
+          const updatedBin = bin.filter(e => e.id !== binId);
+          localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            window.API.remove('recycle_bin', binId).catch(() => {});
+          }
+          return { ok: false, error: `Ce BL ne peut plus être restauré car le BR ${br.ref} est déjà rattaché à un autre BL actif (${activeBLs[0].ref}). L'élément a été définitivement purgé de la corbeille.` };
         }
-        return { ok: false, error: `Ce BL ne peut plus être restauré car le BR ${br.ref} est déjà rattaché à un autre BL actif (${activeBLs[0].ref}). L'élément a été définitivement purgé de la corbeille.` };
       }
     }
 
