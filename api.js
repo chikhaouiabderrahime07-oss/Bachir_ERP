@@ -74,7 +74,7 @@ const API = (() => {
       'users', 'brs', 'bls', 'suppliers', 'clients',
       'caisse_admin', 'sessions', 'history', 'audit_log',
       'articles', 'drivers',
-      'work_log', 'recycle_bin'
+      'work_log', 'recycle_bin', 'bank_transactions', 'supplier_payments'
     ];
     const MERGE_COLS = new Set(['history', 'audit_log']);
 

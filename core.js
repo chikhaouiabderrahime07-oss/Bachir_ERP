@@ -267,139 +267,292 @@ const DB = {
     }
   },
 
-  // ─── Data Migrations (run on every boot, fully idempotent) ──────
-  // Each migration checks before acting — safe to run multiple times.
+  // ─── Data Migrations & Master Brain Recalibration ───────────────
   runMigrations() {
     try {
-      this._migrateBLDeliveryCaisseEntries();   // M001: backfill missing caisse entries
-      this._migrateCleanOrphanCaisse();          // M002: remove caisse entries for deleted BLs
-      this._migrateTimbreSlabsToLF2025();        // M003: update old timbre slabs to LF2025 format
-      this._migrateDedupCaisseEntries();         // M004: remove duplicate bl_delivery entries
-      // Add future migrations here as _migrateXxx()
+      this._migrateTimbreSlabsToLF2025(); // M003: update old timbre slabs to LF2025 format
+      this.MasterBrain.recalibrateAll();  // The Master Brain: 360° financial integrity engine
     } catch(e) {
-      console.warn('[Migration] Error:', e);
+      console.warn('[MasterBrain] Error:', e);
     }
   },
 
-
-  // Migration M001: Backfill caisse_admin entries for ALL delivered BLs
-  // that were confirmed before the new caisse-on-delivery flow was added.
-  // Rule: cash goes to BL creator (bl.createdBy), amount from BR (br.totalTTC).
-  _migrateBLDeliveryCaisseEntries() {
-    const deliveredBLs = this.getAll('bls').filter(bl => bl.status === 'delivered');
-    const existingEntries = this.getAll('caisse_admin');
-
-    // ── CRITICAL: skip BLs in the recycle bin ──────────────────────────────────────
-    // Live-sync can restore a deleted BL from the server before the cloud DELETE
-    // propagates. Without this guard, M001 would create caisse entries for deleted BLs.
-    const recycleBinBLIds = new Set(
-      this.getAll('recycle_bin')
-        .filter(e => e.collection === 'bls')
-        .map(e => Number(e.item?.id))
-    );
-
-    let added = 0;
-
-    for (const bl of deliveredBLs) {
-      const blIdNum = Number(bl.id);
-
-      // Skip if this BL was deleted (it's in the recycle bin)
-      if (recycleBinBLIds.has(blIdNum)) continue;
-
-      // Skip if already has a caisse entry — use Number() for type-safe comparison
-      const alreadyExists = existingEntries.some(e =>
-        Number(e.blId) === blIdNum && e.source === 'bl_delivery'
-      );
-      if (alreadyExists) continue;
-
-      const br = this.getById('brs', bl.brId);
-      const amount = Number(br?.totalTTC || bl.totalTTC || 0);
-      if (!amount) continue;
-
-      const blCreatorId = bl.createdBy;
-      if (!blCreatorId) continue;
-      const blCreator = this.getById('users', blCreatorId);
-
-      const sessionDate = (bl.deliveredAt || bl.date || '').slice(0, 10) || Utils.today();
-
-      this.insert('caisse_admin', {
-        type: 'deposit',
-        source: 'bl_delivery',
-        blId: blIdNum,
-        blRef: bl.ref,
-        brRef: br?.ref,
-        brCreatedBy: br?.createdBy,
-        brCreatedByName: br?.createdByName,
-        userId: blCreatorId,
-        userName: blCreator?.name || blCreator?.username || 'Utilisateur',
-        deliveredBy: bl.deliveredBy || blCreatorId,
-        deliveredByName: bl.deliveredByName || blCreator?.name || '—',
-        sessionDate,
-        amount,
-        note: `[MIGRATION] BL ${bl.ref} (BR ${br?.ref || '?'}) — créé par ${blCreator?.name || '?'}, livré le ${sessionDate}`,
-        createdAt: bl.deliveredAt || new Date().toISOString()
-      });
-      added++;
-    }
-
-    if (added > 0) {
-      console.log(`[Migration M001] Backfilled ${added} caisse_admin entries for delivered BLs.`);
-    }
+  recalibrateCaisse() {
+    return this.MasterBrain.CaisseBrain.recalibrate();
   },
 
-  // Migration M002: Remove caisse_admin bl_delivery entries for BLs that no longer exist
-  // Uses Number() for type-safe comparison (server may return strings, localStorage stores numbers)
-  _migrateCleanOrphanCaisse() {
-    const activeBLIds = new Set(this.getAll('bls').map(bl => Number(bl.id)));
-    const caisse = this.getAll('caisse_admin');
-    const orphans = caisse.filter(e =>
-      e.source === 'bl_delivery' && e.blId != null && !activeBLIds.has(Number(e.blId))
-    );
-    if (!orphans.length) return;
-    const cleanedCaisse = caisse.filter(e =>
-      !(e.source === 'bl_delivery' && e.blId != null && !activeBLIds.has(Number(e.blId)))
-    );
-    this.rawSet('caisse_admin', cleanedCaisse);
-    // Also remove from cloud
-    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      orphans.forEach(e => window.API.remove('caisse_admin', e.id).catch(() => {}));
-    }
-    console.log(`[Migration M002] Removed ${orphans.length} orphan caisse entries for deleted BLs.`);
-  },
+  // ═════════════════════════════════════════════════════════════════
+  // THE MASTER BRAIN SUITE — Multi-Domain Financial Integrity Cortex
+  // ═════════════════════════════════════════════════════════════════
+  MasterBrain: {
+    _running: false,
 
-  // Migration M004: Remove duplicate bl_delivery entries — keep only ONE per blId
-  _migrateDedupCaisseEntries() {
-    const caisse = this.getAll('caisse_admin');
-    const seen = new Map(); // blId → first entry id
-    const toRemove = [];
-    for (const e of caisse) {
-      if (e.source !== 'bl_delivery' || e.blId == null) continue;
-      const key = Number(e.blId);
-      if (!seen.has(key)) { seen.set(key, e.id); }
-      else { toRemove.push(e.id); } // duplicate — remove
+    // ── 1. Caisse Brain (Solde = Dépôts − Retraits) ────────────
+    CaisseBrain: {
+      recalibrate() {
+        const bls = DB.getAll('bls');
+        const caisse = DB.getAll('caisse_admin');
+        let modified = false;
+        let cleaned = [...caisse];
+
+        // Heal orphan withdrawals
+        const depositsByBlId = new Set();
+        cleaned.forEach(e => {
+          if (e.type === 'deposit' && e.blId != null) {
+            depositsByBlId.add(Number(e.blId));
+          }
+        });
+
+        const orphanWithdrawals = [];
+        cleaned = cleaned.filter(e => {
+          if (e.type === 'withdrawal' && (e.source === 'bl_error_delete' || e.source === 'bl_return') && e.blId != null) {
+            if (!depositsByBlId.has(Number(e.blId))) {
+              orphanWithdrawals.push(e.id);
+              modified = true;
+              return false;
+            }
+          }
+          return true;
+        });
+
+        // Deduplicate deposits
+        const seenDeposits = new Map();
+        const duplicateIds = [];
+        cleaned = cleaned.filter(e => {
+          if (e.type === 'deposit' && e.source === 'bl_delivery' && e.blId != null) {
+            const k = Number(e.blId);
+            if (seenDeposits.has(k)) {
+              duplicateIds.push(e.id);
+              modified = true;
+              return false;
+            }
+            seenDeposits.set(k, e.id);
+          }
+          return true;
+        });
+
+        // Ensure active delivered BLs have exact deposit
+        const deliveredBLs = bls.filter(b => b.status === 'delivered' || b.status === 'locked');
+        deliveredBLs.forEach(bl => {
+          const blId = Number(bl.id);
+          if (!seenDeposits.has(blId)) {
+            const amt = Number(bl.totalTTC || 0);
+            if (amt > 0) {
+              const u = DB.getById('users', bl.createdBy);
+              const newEntry = {
+                id: (cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0) + 1),
+                type: 'deposit',
+                source: 'bl_delivery',
+                blId: bl.id,
+                blRef: bl.ref,
+                amount: amt,
+                userId: bl.createdBy || 1,
+                userName: bl.createdByName || u?.name || 'Système',
+                deliveredBy: bl.deliveredBy || bl.createdBy || 1,
+                deliveredByName: bl.deliveredByName || bl.createdByName || 'Système',
+                sessionDate: (bl.deliveredAt || bl.date || new Date().toISOString()).slice(0, 10),
+                createdAt: bl.deliveredAt || bl.createdAt || new Date().toISOString(),
+                note: `BL ${bl.ref} — livraison validée (recalibré)`
+              };
+              cleaned.push(newEntry);
+              if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+                window.API.insert('caisse_admin', newEntry).catch(() => {});
+              }
+              modified = true;
+            }
+          }
+        });
+
+        if (modified) {
+          DB.rawSet('caisse_admin', cleaned);
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            orphanWithdrawals.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
+            duplicateIds.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
+          }
+        }
+
+        const totalIn = cleaned.filter(e => e.type === 'deposit').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        const totalOut = cleaned.filter(e => e.type === 'withdrawal').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        return { ok: true, balance: Math.round((totalIn - totalOut) * 100) / 100, totalIn, totalOut };
+      }
+    },
+
+    // ── 2. Bank Brain (Solde = Initial + Entrées − Sorties) ─────
+    BankBrain: {
+      recalibrate() {
+        const banks = DB.getSettings().banks || [];
+        const bankTxs = DB.getAll('bank_transactions');
+        const caisse = DB.getAll('caisse_admin');
+        const supPays = DB.getAll('supplier_payments');
+
+        // Cross-reconciliation: ensure every caisse bank_transfer has a corresponding bank deposit
+        const caisseTransfers = caisse.filter(e => e.type === 'withdrawal' && e.source === 'bank_transfer');
+        let modified = false;
+        let cleanedBankTxs = [...bankTxs];
+
+        caisseTransfers.forEach(ct => {
+          const amt = Number(ct.amount) || 0;
+          const matching = cleanedBankTxs.find(bt =>
+            bt.type === 'deposit' &&
+            bt.subtype === 'transfer_from_caisse' &&
+            Math.abs(Number(bt.amount) - amt) < 0.01 &&
+            (ct.date ? (bt.date || bt.createdAt || '').slice(0, 10) === ct.date.slice(0, 10) : true)
+          );
+          if (!matching && banks.length > 0) {
+            const targetBankId = ct.bankId || banks[0].id;
+            const newTx = {
+              id: (cleanedBankTxs.reduce((m, e) => Math.max(m, e.id || 0), 0) + 1),
+              bankId: targetBankId,
+              type: 'deposit',
+              subtype: 'transfer_from_caisse',
+              amount: amt,
+              ref: ct.ref || `BTX-${Date.now().toString().slice(-4)}`,
+              date: ct.date || ct.createdAt || new Date().toISOString().slice(0, 10),
+              createdAt: ct.createdAt || new Date().toISOString(),
+              note: `Virement automatique depuis Caisse (${Utils.fmtCurrency(amt)})`
+            };
+            cleanedBankTxs.push(newTx);
+            if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+              window.API.insert('bank_transactions', newTx).catch(() => {});
+            }
+            modified = true;
+          }
+        });
+
+        if (modified) {
+          DB.rawSet('bank_transactions', cleanedBankTxs);
+        }
+
+        const bankBalances = {};
+        banks.forEach(b => {
+          const init = Number(b.initialBalance) || 0;
+          const deps = cleanedBankTxs.filter(t => t.bankId === b.id && t.type === 'deposit').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+          const wits = cleanedBankTxs.filter(t => t.bankId === b.id && t.type === 'withdrawal').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+          const sup = supPays.filter(p => p.bankId === b.id).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          bankBalances[b.id] = Math.round((init + deps - wits - sup) * 100) / 100;
+        });
+
+        const totalBank = Object.values(bankBalances).reduce((s, v) => s + v, 0);
+        return { ok: true, totalBank: Math.round(totalBank * 100) / 100, bankBalances };
+      }
+    },
+
+    // ── 3. Supplier Brain (Dette = Achats BR − Payé) ───────────
+    SupplierBrain: {
+      recalibrate() {
+        const suppliers = DB.getAll('suppliers');
+        const brs = DB.getAll('brs');
+        const pays = DB.getAll('supplier_payments');
+
+        let totalPurchases = 0;
+        let totalPaid = 0;
+        const supplierStats = {};
+
+        suppliers.forEach(s => {
+          const supBRs = brs.filter(b => Number(b.supplierId) === Number(s.id));
+          const supPays = pays.filter(p => Number(p.supplierId) === Number(s.id));
+          const pur = supBRs.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
+          const pd = supPays.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+          const remaining = Math.max(0, pur - pd);
+
+          totalPurchases += pur;
+          totalPaid += pd;
+          supplierStats[s.id] = {
+            name: s.name,
+            purchases: Math.round(pur * 100) / 100,
+            paid: Math.round(pd * 100) / 100,
+            remaining: Math.round(remaining * 100) / 100
+          };
+        });
+
+        const totalDebt = Math.max(0, totalPurchases - totalPaid);
+        return {
+          ok: true,
+          totalPurchases: Math.round(totalPurchases * 100) / 100,
+          totalPaid: Math.round(totalPaid * 100) / 100,
+          totalDebt: Math.round(totalDebt * 100) / 100,
+          supplierStats
+        };
+      }
+    },
+
+    // ── 4. Client Brain (CA = BLs Livrés, Encours = BLs Ouverts)
+    ClientBrain: {
+      recalibrate() {
+        const clients = DB.getAll('clients');
+        const bls = DB.getAll('bls');
+
+        let totalRevenue = 0;
+        let totalPending = 0;
+        const clientStats = {};
+
+        clients.forEach(c => {
+          const clientBLs = bls.filter(b => String(b.clientId) === String(c.id));
+          const delivered = clientBLs.filter(b => b.status === 'delivered' || b.status === 'locked');
+          const pending = clientBLs.filter(b => b.status === 'open');
+
+          const rev = delivered.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
+          const pend = pending.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
+
+          totalRevenue += rev;
+          totalPending += pend;
+          clientStats[c.id] = {
+            name: c.name,
+            deliveredCount: delivered.length,
+            revenue: Math.round(rev * 100) / 100,
+            pendingCount: pending.length,
+            pending: Math.round(pend * 100) / 100
+          };
+        });
+
+        return {
+          ok: true,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+          totalPending: Math.round(totalPending * 100) / 100,
+          clientStats
+        };
+      }
+    },
+
+    // ── 5. Master Cortex (0 = 0 Total Balance Overseer) ────────
+    recalibrateAll() {
+      if (this._running) return;
+      this._running = true;
+      try {
+        const caisseRes = this.CaisseBrain.recalibrate();
+        const bankRes = this.BankBrain.recalibrate();
+        const supRes = this.SupplierBrain.recalibrate();
+        const clientRes = this.ClientBrain.recalibrate();
+
+        const totalTresorerie = Math.round((caisseRes.balance + bankRes.totalBank) * 100) / 100;
+        console.log(`[Master Brain] Recalibration complete across 4 brains. Solde Caisse: ${Utils.fmtCurrency(caisseRes.balance)} | Solde Banque: ${Utils.fmtCurrency(bankRes.totalBank)} | Trésorerie Totale: ${Utils.fmtCurrency(totalTresorerie)}`);
+
+        return {
+          ok: true,
+          caisse: caisseRes,
+          bank: bankRes,
+          suppliers: supRes,
+          clients: clientRes,
+          totalTresorerie,
+          timestamp: new Date().toISOString()
+        };
+      } catch (e) {
+        console.error('[Master Brain] Recalibrate error:', e);
+      } finally {
+        this._running = false;
+      }
     }
-    if (!toRemove.length) return;
-    const deduped = caisse.filter(e => !toRemove.includes(e.id));
-    this.rawSet('caisse_admin', deduped);
-    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      toRemove.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
-    }
-    console.log(`[Migration M004] Removed ${toRemove.length} duplicate bl_delivery caisse entries.`);
   },
 
   // Migration M003: Upgrade old-format timbre slabs (rate%) to LF2025 (ratePerTranche)
-  // Runs once if settings still have old `rate` field without `ratePerTranche`.
   _migrateTimbreSlabsToLF2025() {
     const s = this.getSettings();
     if (!s.timbreSlabs?.length) return;
-    // Check if already migrated (new format has ratePerTranche)
     if (s.timbreSlabs[0].ratePerTranche !== undefined) return;
-    // Replace with correct LF2025 slabs
     const lf2025 = this._defaultSettings().timbreSlabs;
     this.saveSettings({ timbreSlabs: lf2025, timbreMin: 5 });
     console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
   },
-
 
   // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
   startLiveSync() {
@@ -409,7 +562,7 @@ const DB = {
       // Reference data (shared across users — must stay synced)
       'users','articles','drivers',
       // Extra
-      'work_log','recycle_bin'
+      'work_log','recycle_bin','bank_transactions','supplier_payments'
     ];
     const MERGE_COLS = new Set(['history']);
     let indicator = null;
