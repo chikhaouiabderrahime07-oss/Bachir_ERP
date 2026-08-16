@@ -374,9 +374,8 @@ const BRModule = {
     });
 
     const blMap = {};
-    // Include active BLs AND recycled BLs — so a BR with a deleted BL still shows as "has BL"
-    DB.getAll('bls').forEach(bl => blMap[bl.brId] = bl);
-    DB.getAll('recycle_bin').filter(e => e.collection === 'bls').forEach(e => { if (!blMap[e.item?.brId]) blMap[e.item?.brId] = e.item; });
+    // ONLY include active BLs — NOT recycled ones. A deleted BL must free its BR.
+    DB.getAll('bls').filter(bl => bl.status !== 'returned').forEach(bl => blMap[bl.brId] = bl);
 
     const isAdmin = Auth.isAdmin();
     const perms   = Auth.getCurrentUser()?.permissions || {};
@@ -776,7 +775,7 @@ const BRModule = {
     // Admin must pick a user to assign this BR to (caisse attribution)
     if (Auth.isAdmin()) {
       // Only show users who have canCreateBR permission
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBR === true && u.active !== falselse);
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBR === true && u.active !== false);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({

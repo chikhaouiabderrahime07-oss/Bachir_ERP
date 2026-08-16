@@ -294,20 +294,17 @@ const DB = {
         const caisse = DB.getAll('caisse_admin');
         let modified = false;
         let cleaned = [...caisse];
+        const toRemoveCloud = [];
 
-        // Heal orphan withdrawals
-        const depositsByBlId = new Set();
-        cleaned.forEach(e => {
-          if (e.type === 'deposit' && e.blId != null) {
-            depositsByBlId.add(Number(e.blId));
-          }
-        });
+        // ── Active BL IDs (real truth source) ──
+        const activeBLIds = new Set(bls.map(bl => Number(bl.id)));
 
-        const orphanWithdrawals = [];
+        // ── Step 0: Remove ALL caisse entries (deposit+withdrawal) for BLs that no longer exist ──
+        // This is the root fix: if a BL was deleted, ALL its caisse traces must go.
         cleaned = cleaned.filter(e => {
-          if (e.type === 'withdrawal' && (e.source === 'bl_error_delete' || e.source === 'bl_return') && e.blId != null) {
-            if (!depositsByBlId.has(Number(e.blId))) {
-              orphanWithdrawals.push(e.id);
+          if (e.blId != null && (e.source === 'bl_delivery' || e.source === 'bl_error_delete' || e.source === 'bl_return')) {
+            if (!activeBLIds.has(Number(e.blId))) {
+              toRemoveCloud.push(e.id);
               modified = true;
               return false;
             }
@@ -315,14 +312,32 @@ const DB = {
           return true;
         });
 
-        // Deduplicate deposits
+        // ── Step 1: Heal orphan withdrawals (withdrawal exists but no deposit for same blId) ──
+        const depositsByBlId = new Set();
+        cleaned.forEach(e => {
+          if (e.type === 'deposit' && e.blId != null) {
+            depositsByBlId.add(Number(e.blId));
+          }
+        });
+
+        cleaned = cleaned.filter(e => {
+          if (e.type === 'withdrawal' && (e.source === 'bl_error_delete' || e.source === 'bl_return') && e.blId != null) {
+            if (!depositsByBlId.has(Number(e.blId))) {
+              toRemoveCloud.push(e.id);
+              modified = true;
+              return false;
+            }
+          }
+          return true;
+        });
+
+        // ── Step 2: Deduplicate bl_delivery deposits (only one per blId) ──
         const seenDeposits = new Map();
-        const duplicateIds = [];
         cleaned = cleaned.filter(e => {
           if (e.type === 'deposit' && e.source === 'bl_delivery' && e.blId != null) {
             const k = Number(e.blId);
             if (seenDeposits.has(k)) {
-              duplicateIds.push(e.id);
+              toRemoveCloud.push(e.id);
               modified = true;
               return false;
             }
@@ -331,7 +346,7 @@ const DB = {
           return true;
         });
 
-        // Ensure active delivered BLs have exact deposit
+        // ── Step 3: Ensure active delivered BLs have exactly one deposit ──
         const deliveredBLs = bls.filter(b => b.status === 'delivered' || b.status === 'locked');
         deliveredBLs.forEach(bl => {
           const blId = Number(bl.id);
@@ -363,11 +378,11 @@ const DB = {
           }
         });
 
+        // ── Step 4: Commit ──
         if (modified) {
           DB.rawSet('caisse_admin', cleaned);
           if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-            orphanWithdrawals.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
-            duplicateIds.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
+            toRemoveCloud.forEach(id => window.API.remove('caisse_admin', id).catch(() => {}));
           }
         }
 
@@ -881,7 +896,7 @@ const DB = {
       window.API.remove('recycle_bin', binId).catch(() => {});
     }
 
-    return { ok: true, item: restored, refWarning, wasDeliveredBL };
+    return { ok: true, item: restored, refWarning };
   },
 
   // ─── BR Numbering ─────────────────────────────────────────
