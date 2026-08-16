@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Cairo:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=12.0">
+<link rel="stylesheet" href="style.css?v=13.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -306,10 +306,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=12.0"></script>
-<script src="core.js?v=12.0"></script>
-<script src="modules.js?v=12.0"></script>
-<script src="pdf.js?v=12.0"></script>
+<script src="api.js?v=13.0"></script>
+<script src="core.js?v=13.0"></script>
+<script src="modules.js?v=13.0"></script>
+<script src="pdf.js?v=13.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -612,18 +612,18 @@ const App = {
     const menu = [
       { section: T.get('sec_documents'), items: [
         { mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') },
-        ...(isAdmin || perms.canViewBRs!==false ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
-        ...(isAdmin || perms.canViewBLs!==false ? [{ mod:'bls', icon:'fa-file-export', label:T.get('nav_bls') }] : []),
+        ...(isAdmin || Auth.can('canViewBRs') ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'bls', icon:'fa-file-export', label:T.get('nav_bls') }] : []),
       ]},
       { section: T.get('sec_cash'), items: [
         ...(isAdmin
           ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }]
-          : (perms.canViewCaisse!==false ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }] : [])),
-        ...(isAdmin || perms.canViewBank ? [{ mod:'bank', icon:'fa-university', label:'Banque' }] : []),
+          : (Auth.can('canViewCaisse') ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }] : [])),
+        ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:'Banque' }] : []),
       ]},
       { section: T.get('sec_refs'), items: [
-        ...(isAdmin || perms.canViewSuppliers!==false || perms.canViewClients!==false ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
-        ...(isAdmin ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue' }] : []),
+        ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
+        ...(isAdmin || Auth.can('canViewCatalogue') ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue' }] : []),
       ]},
       ...(isAdmin ? [{ section: T.get('sec_analysis'), items: [
         { mod:'stats',   icon:'fa-chart-bar',  label:T.get('nav_stats') },

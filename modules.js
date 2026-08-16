@@ -1461,7 +1461,7 @@ const BLModule = {
       destInput.dispatchEvent(new Event('change'));
     }
     // Notify FormGuide that fields changed
-    if (typeof FormGuide !== 'undefined') setTimeout(() => FormGuide._update(false), 100);
+    if (typeof FormGuide !== 'undefined' && typeof FormGuide._update === 'function') setTimeout(() => FormGuide._update(false), 100);
   },
 
   _onDestSelect(val) {
@@ -1920,15 +1920,15 @@ const BLModule = {
         <div style="font-size:12px;color:#94a3b8">Ce BL est livré et a généré un dépôt en caisse. Que voulez-vous faire ?</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
-        <button class="btn" id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-actions .btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
+        <button class="btn" id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
           <div style="font-size:20px;margin-bottom:4px">🔄</div>
           <div style="font-weight:700;font-size:13px">Retour Marchandise</div>
-          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL reste visible avec statut "Retourné". Un retrait forcé est créé en caisse.</div>
+          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL reste visible avec statut "Retourné".<br>Un retrait forcé est créé en caisse.</div>
         </button>
-        <button class="btn" id="dlg_bl_error" onclick="document.getElementById('dlg_bl_choice').value='error';document.querySelector('.dlg-actions .btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
+        <button class="btn" id="dlg_bl_error" onclick="document.getElementById('dlg_bl_choice').value='error';document.querySelector('.dlg-btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
           <div style="font-size:20px;margin-bottom:4px">🗑️</div>
           <div style="font-weight:700;font-size:13px">BL Erroné</div>
-          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL va à la corbeille. Le montant est corrigé en caisse avec un historique.</div>
+          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL va à la corbeille.<br>Le montant est corrigé en caisse.</div>
         </button>
       </div>
       <input type="hidden" id="dlg_bl_choice" value="">`,
