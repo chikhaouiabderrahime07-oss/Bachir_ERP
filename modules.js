@@ -1222,10 +1222,26 @@ const BLModule = {
     this._saveBL(brId, null, andPrint||false);
   },
 
-  showGenerate(brId) {
+  async showGenerate(brId) {
     if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify('⛔ Permission refusée — création BL', 'error'); return; }
     const br = DB.getById('brs', brId);
     if (!br) return;
+
+    // Admin picks which user this BL belongs to (same as showNewBL)
+    if (Auth.isAdmin()) {
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== false);
+      if (users.length > 0) {
+        const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
+        const picked = await Dialog.show({
+          title: '👤 Créer en tant que...',
+          message: `<div style="margin-bottom:10px;font-size:13px">Ce BL sera attribué à la caisse de :</div><select id="dlg_bl_as_user">${opts}</select><div style="margin-top:10px;font-size:11px">Vous restez affiché comme "Modifié par" pour transparence</div>`,
+          type: 'info', confirmText: 'Continuer', cancelText: 'Annuler'
+        });
+        if (!picked) return;
+        BLModule._adminActAsUserId = parseInt(document.getElementById('dlg_bl_as_user')?.value);
+      }
+    }
+
     UI.showModal(`<i class="fas fa-truck"></i> ${T.get('bl_from_br')} — ${br.ref}`, this._blModalBody(br, null), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-outline" onclick="BLModule._saveBL(${brId},null,true)"><i class="fas fa-print"></i> Sauver & PDF</button>
