@@ -157,7 +157,15 @@ router.post('/:col', async (req, res) => {
     const existingIds  = existingDocs.map(d => Number(d.data?.id) || 0);
     const currentMaxId = existingIds.length ? Math.max(...existingIds) : 0;
     await Counter.initFromMax(`id_${col}`, currentMaxId, 1);
-    const newId = await Counter.nextSeq(`id_${col}`);
+    const nextCounterId = await Counter.nextSeq(`id_${col}`);
+
+    const finalId = (data.id !== undefined && data.id !== null && !isNaN(Number(data.id)))
+      ? Number(data.id)
+      : nextCounterId;
+
+    if (finalId >= nextCounterId) {
+      await Counter.initFromMax(`id_${col}`, finalId, 1);
+    }
 
     // ── 2. Atomic BR number — reject duplicates ───────────────────
     let brNum = data.brNum;
@@ -190,7 +198,7 @@ router.post('/:col', async (req, res) => {
     // ── 3. Build final document ────────────────────────────────────
     const newData = {
       ...data,
-      id:        newId,
+      id:        finalId,
       ...(col === 'brs' ? { brNum: Number(brNum) } : {}),
       createdAt:    data.createdAt || now,
       updatedAt:    now,
@@ -290,11 +298,15 @@ router.patch('/:col/:id', async (req, res) => {
 // ─── DELETE /api/data/:col/:id ────────────────────────────────────
 router.delete('/:col/:id', async (req, res) => {
   try {
-    const col    = req.params.col;
-    const id     = Number(req.params.id);
-    const result = await Document.deleteOne({ col, 'data.id': id });
+    const col   = req.params.col;
+    const rawId = req.params.id;
+    const numId = Number(rawId);
+    const query = isNaN(numId)
+      ? { col, 'data.id': rawId }
+      : { col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
+    const result = await Document.deleteOne(query);
     if (!result.deletedCount) return res.status(404).json({ error: 'Non trouvé' });
-    res.json({ success: true, id });
+    res.json({ success: true, id: rawId });
   } catch (e) {
     console.error('[DATA/DELETE]', e);
     res.status(500).json({ error: 'Erreur serveur' });

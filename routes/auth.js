@@ -38,13 +38,20 @@ router.post('/login', async (req, res) => {
 
     if (!passwordOk) return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect' });
 
+    // Generate unique session identifier for single-session enforcement
+    const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    await Document.updateOne(
+      { _id: doc._id },
+      { $set: { 'data.currentSessionId': sessionId, 'data.lastLoginAt': new Date().toISOString(), updatedAt: new Date() } }
+    );
+
     const token = jwt.sign(
-      { id: user.id, username: user.username, name: user.name, role: user.role },
+      { id: user.id, username: user.username, name: user.name, role: user.role, sessionId },
       process.env.JWT_SECRET,
       { expiresIn: JWT_EXPIRY }
     );
 
-    res.json({ token, user: { id: user.id, name: user.name, username: user.username, role: user.role } });
+    res.json({ token, user: { id: user.id, name: user.name, username: user.username, role: user.role, sessionId } });
   } catch (e) {
     console.error('[AUTH/login]', e);
     res.status(500).json({ error: 'Erreur serveur' });

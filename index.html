@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=19.0">
+<link rel="stylesheet" href="style.css?v=20.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -306,10 +306,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=19.0"></script>
-<script src="core.js?v=19.0"></script>
-<script src="modules.js?v=19.0"></script>
-<script src="pdf.js?v=19.0"></script>
+<script src="api.js?v=20.0"></script>
+<script src="core.js?v=20.0"></script>
+<script src="modules.js?v=20.0"></script>
+<script src="pdf.js?v=20.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -497,6 +497,19 @@ const App = {
       document.getElementById('loginScreen').style.display = 'flex';
       if (typeof Utils !== 'undefined') {
         Utils.notify('⏰ Session expirée — veuillez vous reconnecter', 'warning');
+      }
+    }, { once: false });
+
+    // ── Handle concurrent login from another device / force logout ──
+    window.addEventListener('erp:session-terminated', (e) => {
+      Auth.logout();
+      document.getElementById('appContainer').style.display = 'none';
+      document.getElementById('loginScreen').style.display = 'flex';
+      const msg = e.detail || (T.isRTL() ? 'تم تسجيل الدخول إلى هذا الحساب من جهاز آخر. تم إنهاء هذه الجلسة.' : 'Ce compte a été ouvert sur un autre appareil. Votre session a été fermée.');
+      if (typeof Dialog !== 'undefined' && Dialog.alert) {
+        Dialog.alert('⚠️ Session Déconnectée', msg, 'danger');
+      } else if (typeof Utils !== 'undefined') {
+        Utils.notify('⚠️ ' + msg, 'error', 8000);
       }
     }, { once: false });
   },

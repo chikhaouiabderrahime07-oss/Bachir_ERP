@@ -1656,6 +1656,16 @@ const BLModule = {
       Utils.notify((T.isRTL()?'تم تعديل وصل التسليم': adminOverride ? '✅ BL modifié (Admin Override)' : 'BL modifié'), 'success');
     } else {
       savedBL = DB.insert('bls', data);
+      // Auto-purge any old recycle bin entries for this BR since merchandise is now assigned to a new BL
+      const bin = DB.getAll('recycle_bin');
+      const conflicting = bin.filter(e => e.collection === 'bls' && Number(e.item?.brId) === Number(brId));
+      if (conflicting.length) {
+        const remainingBin = bin.filter(e => !(e.collection === 'bls' && Number(e.item?.brId) === Number(brId)));
+        localStorage.setItem('recycle_bin', JSON.stringify(remainingBin));
+        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+          conflicting.forEach(ce => window.API.remove('recycle_bin', ce.id).catch(() => {}));
+        }
+      }
       if (!isPartial) DB.update('brs', brId, { status:'delivered', deliveredAt:new Date().toISOString() }, 'Livraison complète via BL');
       Utils.notify(isPartial ? `BL partiel créé : ${ref}` : `BL créé : ${ref}`, 'success');
     }
@@ -1950,6 +1960,11 @@ const BLModule = {
     const ref = bl.ref || `BL-${id}`;
     const now = new Date().toISOString();
 
+    // Check if this BL actually deposited money into caisse that hasn't been refunded yet
+    const caisseDeposits = DB.getAll('caisse_admin').filter(e => Number(e.blId) === Number(id) && e.type === 'deposit');
+    const caisseWithdrawals = DB.getAll('caisse_admin').filter(e => Number(e.blId) === Number(id) && e.type === 'withdrawal');
+    const hasNetCaisseDeposit = (caisseDeposits.length > caisseWithdrawals.length);
+
     if (action === 'return') {
       // ═══ PATH A: RETURNED MERCHANDISE ═══════════════════════
       // 1. Mark BL as 'returned' (keep it visible)
@@ -1960,8 +1975,8 @@ const BLModule = {
         returnedByName: u?.name || 'Admin'
       }, 'Retour marchandise');
 
-      // 2. Create FORCED withdrawal in caisse (original deposit stays!)
-      if (amount > 0) {
+      // 2. ONLY create withdrawal if BL was delivered and had a caisse deposit
+      if (isValidated && hasNetCaisseDeposit && amount > 0) {
         DB.insert('caisse_admin', {
           type: 'withdrawal',
           source: 'bl_return',
@@ -1977,23 +1992,23 @@ const BLModule = {
         });
       }
 
-      // 3. Reopen linked BR if needed
-      if (br && (br.status === 'delivered' || br.status === 'billed')) {
+      // 3. Reopen linked BR (liberate merchandise)
+      if (br) {
         const otherDelivered = DB.getAll('bls').filter(b =>
           Number(b.brId) === Number(bl.brId) && Number(b.id) !== Number(id) && b.status === 'delivered'
         );
         if (!otherDelivered.length) {
-          DB.update('brs', br.id, { status: 'open' }, 'Retour BL — BR réouvert');
+          DB.update('brs', br.id, { status: 'open' }, 'Retour BL — BR libéré');
         }
       }
 
-      Utils.notify(`🔄 BL ${ref} marqué comme retourné — caisse ajustée de ${Utils.fmtCurrency(amount)}`, 'success', 6000);
+      Utils.notify(`🔄 BL ${ref} marqué comme retourné${isValidated && hasNetCaisseDeposit ? ` — caisse ajustée de ${Utils.fmtCurrency(amount)}` : ''}`, 'success', 6000);
       App.loadModule('bls');
 
     } else if (action === 'error') {
       // ═══ PATH B: WRONG BL — DELETE + CORRECTION ═════════════
-      // 1. Create correction withdrawal in caisse (original deposit stays!)
-      if (amount > 0) {
+      // 1. ONLY create correction withdrawal if BL was delivered and had a caisse deposit
+      if (isValidated && hasNetCaisseDeposit && amount > 0) {
         DB.insert('caisse_admin', {
           type: 'withdrawal',
           source: 'bl_error_delete',
@@ -2012,17 +2027,17 @@ const BLModule = {
       // 2. Delete BL (goes to recycle bin via DB.delete)
       DB.delete('bls', id);
 
-      // 3. Reopen linked BR if needed
-      if (br && (br.status === 'delivered' || br.status === 'billed')) {
+      // 3. Reopen linked BR (liberate merchandise)
+      if (br) {
         const otherDelivered = DB.getAll('bls').filter(b =>
           Number(b.brId) === Number(bl.brId) && Number(b.id) !== Number(id) && b.status === 'delivered'
         );
         if (!otherDelivered.length) {
-          DB.update('brs', br.id, { status: 'open' }, 'BL erroné supprimé — BR réouvert');
+          DB.update('brs', br.id, { status: 'open' }, 'BL erroné supprimé — BR libéré');
         }
       }
 
-      Utils.notify(`🗑️ BL ${ref} supprimé — correction caisse de ${Utils.fmtCurrency(amount)} créée`, 'success', 6000);
+      Utils.notify(`🗑️ BL ${ref} supprimé${isValidated && hasNetCaisseDeposit ? ` — correction caisse de ${Utils.fmtCurrency(amount)} créée` : ''}`, 'success', 6000);
       App.loadModule('bls');
     }
   },

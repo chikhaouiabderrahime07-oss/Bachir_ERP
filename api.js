@@ -50,8 +50,16 @@ const API = (() => {
         window.dispatchEvent(new CustomEvent('erp:session-expired'));
         return null;
       }
-      
-      const data = await res.json();
+
+      const data = await res.json().catch(() => ({}));
+
+      // Concurrent session detected — forced logout
+      if (res.status === 403 && (data.code === 'SESSION_TERMINATED' || data.error === 'SESSION_TERMINATED')) {
+        clearToken();
+        window.dispatchEvent(new CustomEvent('erp:session-terminated', { detail: data.message }));
+        return null;
+      }
+
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       return data;
     } catch (e) {

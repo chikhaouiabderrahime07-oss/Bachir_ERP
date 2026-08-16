@@ -689,39 +689,36 @@ const DB = {
       }
     }
 
-    // Track if BL was delivered before deletion (for caisse correction)
-    const wasDeliveredBL = collection === 'bls' && (finalItem.status === 'delivered' || finalItem.status === 'locked');
+    // ── BR conflict check when restoring a BL ──────────────────
+    if (collection === 'bls' && finalItem.brId) {
+      const br = this.getById('brs', finalItem.brId);
+      if (!br) {
+        // Auto-purge dead bin entry
+        const updatedBin = bin.filter(e => e.id !== binId);
+        localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+          window.API.remove('recycle_bin', binId).catch(() => {});
+        }
+        return { ok: false, error: 'Impossible de restaurer : le BR d\'origine a été supprimé.' };
+      }
+      const activeBLs = this.getAll('bls').filter(b => Number(b.brId) === Number(finalItem.brId) && b.status !== 'returned');
+      if (activeBLs.length > 0) {
+        // Auto-purge the conflicting recycle bin entry
+        const updatedBin = bin.filter(e => e.id !== binId);
+        localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+          window.API.remove('recycle_bin', binId).catch(() => {});
+        }
+        return { ok: false, error: `Ce BL ne peut plus être restauré car le BR ${br.ref} est déjà rattaché à un autre BL actif (${activeBLs[0].ref}). L'élément a été définitivement purgé de la corbeille.` };
+      }
+    }
 
-    // Re-insert with new id — delivered BLs come back as 'open'
+    // Re-insert with new id — all restored BLs come back as draft 'open'
     delete finalItem.id;
-    finalItem.status = finalItem.status === 'delivered' ? 'open' : (finalItem.status || 'open');
+    finalItem.status = 'open';
     finalItem.restoredFrom = 'recycle_bin';
     finalItem.restoredAt = new Date().toISOString();
     const restored = this.insert(collection, finalItem);
-
-    // ── Caisse correction for restored delivered BLs ─────────
-    // When a delivered BL was deleted via "BL Erroné", a correction withdrawal was created.
-    // Now that the BL is restored (as 'open'), we need to reverse that withdrawal
-    // by creating a new deposit, so the caisse stays balanced.
-    if (wasDeliveredBL) {
-      const blAmount = Number(finalItem.totalTTC || 0);
-      if (blAmount > 0) {
-        const u = typeof Auth !== 'undefined' ? Auth.getCurrentUser() : null;
-        this.insert('caisse_admin', {
-          type: 'deposit',
-          source: 'bl_restore',
-          blId: restored.id,
-          blRef: finalItem.ref,
-          amount: blAmount,
-          userId: finalItem.createdBy || u?.id,
-          userName: finalItem.createdByName || u?.name,
-          restoredBy: u?.id,
-          restoredByName: u?.name,
-          date: new Date().toISOString().slice(0, 10),
-          note: `♻️ Restauration — le BL ${finalItem.ref} (${blAmount.toLocaleString('fr-DZ')} DA) a été restauré depuis la corbeille. Correction caisse appliquée.`
-        });
-      }
-    }
 
     // Remove from bin entirely (don't just mark — actually remove)
     const updatedBin = bin.filter(e => e.id !== binId);
