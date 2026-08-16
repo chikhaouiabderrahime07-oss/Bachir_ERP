@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    MODULES.JS — All Application Modules
    ERP v2.0 — Bilingual FR/AR | RTL/LTR
    Dashboard · BR · BL · Caisse · Admin Caisse · Suppliers
@@ -472,7 +472,7 @@ const BRModule = {
                 </td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BRModule.showDetail(${br.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
-                  ${!hasBL && !isLocked?`<button class="btn-quick" onclick="BLModule.showGenerate(${br.id})" title="${T.get('br_gen_bl')}"><i class="fas fa-truck"></i> ${T.get('br_gen_bl_short')}</button>`:''}
+                  ${!hasBL && !isLocked && (Auth.isAdmin()||Auth.can('canCreateBL'))?`<button class="btn-quick" onclick="BLModule.showGenerate(${br.id})" title="${T.get('br_gen_bl')}"><i class="fas fa-truck"></i> ${T.get('br_gen_bl_short')}</button>`:''}
                   ${canEdit?`<button class="btn btn-xs btn-outline" onclick="BRModule.showEdit(${br.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
                   <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBR(${br.id})" title="${T.get('pdf')}"><i class="fas fa-file-pdf"></i></button>
                   ${canDel?`<button class="btn btn-xs btn-danger" onclick="BRModule.deleteBR(${br.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
@@ -776,7 +776,7 @@ const BRModule = {
     // Admin must pick a user to assign this BR to (caisse attribution)
     if (Auth.isAdmin()) {
       // Only show users who have canCreateBR permission
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBR === true && u.active !== false);
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBR === true && u.active !== falselse);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
@@ -915,7 +915,7 @@ const BRModule = {
 
     const footer = `
     ${canEdit&&!isLocked?`<button class="btn btn-outline" onclick="UI.closeModal();BRModule.showEdit(${id})"><i class="fas fa-edit"></i> ${T.get('edit')}</button>`:''}
-    ${!bl&&!isLocked?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.showGenerate(${id})"><i class="fas fa-truck"></i> ${T.get('br_gen_bl')}</button>`:''}
+    ${!bl&&!isLocked&&(Auth.isAdmin()||Auth.can('canCreateBL'))?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.showGenerate(${id})"><i class="fas fa-truck"></i> ${T.get('br_gen_bl')}</button>`:''}
     <button class="btn btn-outline" onclick="PDFGen.exportBR(${id})"><i class="fas fa-file-pdf"></i> PDF</button>
     <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')}</button>`;
     UI.showModal(`<i class="fas fa-file-import"></i> ${br.ref}`, body, footer, 'lg');
@@ -1157,7 +1157,7 @@ const BLModule = {
   async showNewBL() {
     // Admin picks a user who has canCreateBL permission
     if (Auth.isAdmin()) {
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true &&  u.active !== false);
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== falselse);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
@@ -1224,6 +1224,7 @@ const BLModule = {
   },
 
   showGenerate(brId) {
+    if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify('⛔ Permission refusée — création BL', 'error'); return; }
     const br = DB.getById('brs', brId);
     if (!br) return;
     UI.showModal(`<i class="fas fa-truck"></i> ${T.get('bl_from_br')} — ${br.ref}`, this._blModalBody(br, null), `
@@ -1912,26 +1913,34 @@ const BLModule = {
       return;
     }
 
+    const returnBtn = `<button id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-btn-primary').click()"
+      style="display:flex;align-items:center;gap:14px;padding:16px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;width:100%">
+      <span style="font-size:28px;flex-shrink:0">🔄</span>
+      <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">Retour Marchandise</div>
+      <div style="font-size:11px;opacity:.85">Le BL reste visible avec statut "Retourné". Un retrait est créé en caisse pour corriger le solde.</div></div>
+    </button>`;
+
+    const errorBtn = `<button id="dlg_bl_error" onclick="document.getElementById('dlg_bl_choice').value='error';document.querySelector('.dlg-btn-primary').click()"
+      style="display:flex;align-items:center;gap:14px;padding:16px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;width:100%">
+      <span style="font-size:28px;flex-shrink:0">🗑️</span>
+      <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">BL Erroné — Supprimer</div>
+      <div style="font-size:11px;opacity:.85">Le BL va à la corbeille.${isValidated ? ' Le montant est corrigé en caisse.' : ''}</div></div>
+    </button>`;
+
     const choice = await Dialog.show({
       title: '⚠️ Suppression BL',
-      message: `<div style="margin-bottom:14px;padding:12px;background:#1e293b;border-radius:10px;border-left:4px solid #f59e0b">
-        <div style="color:#fbbf24;font-weight:700;margin-bottom:6px">BL ${Utils.escHTML(bl.ref||'')} — ${Utils.fmtCurrency(amount)} ${isValidated ? '(Livré ✓)' : '(Brouillon)'}</div>
-        <div style="font-size:12px;color:#94a3b8">${isValidated ? 'Ce BL est livré et a généré un dépôt en caisse.' : 'Ce BL est un brouillon.'} Que voulez-vous faire ?</div>
+      message: `<div style="margin-bottom:16px;padding:14px 16px;background:#1e293b;border-radius:10px;border-left:4px solid #f59e0b">
+        <div style="color:#fbbf24;font-weight:700;margin-bottom:4px;font-size:15px">BL ${Utils.escHTML(bl.ref||'')} — ${Utils.fmtCurrency(amount)}</div>
+        <div style="font-size:12px;color:#94a3b8">${isValidated ? '✅ Livré — un dépôt de ' + Utils.fmtCurrency(amount) + ' a été généré en caisse.' : '📝 Brouillon — aucun mouvement de caisse.'}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
-        <button class="btn" id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
-          <div style="font-size:20px;margin-bottom:4px">🔄</div>
-          <div style="font-weight:700;font-size:13px">Retour Marchandise</div>
-          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL reste visible avec statut "Retourné".<br>Un retrait forcé est créé en caisse.</div>
-        </button>
-        <button class="btn" id="dlg_bl_error" onclick="document.getElementById('dlg_bl_choice').value='error';document.querySelector('.dlg-btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
-          <div style="font-size:20px;margin-bottom:4px">🗑️</div>
-          <div style="font-weight:700;font-size:13px">BL Erroné</div>
-          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL va à la corbeille.<br>Le montant est corrigé en caisse.</div>
-        </button>
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">${isValidated ? 'Choisissez une action :' : 'Confirmer la suppression :'}</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${isValidated ? returnBtn : ''}
+        ${errorBtn}
       </div>
-      <input type="hidden" id="dlg_bl_choice" value="">`,
-      type: 'warning', confirmText: ' ', cancelText: 'Annuler'
+      <input type="hidden" id="dlg_bl_choice" value="">
+      <style>.dlg-btn-primary{display:none!important}</style>`,
+      type: 'warning', confirmText: 'OK', cancelText: 'Annuler'
     });
 
     const action = document.getElementById('dlg_bl_choice')?.value;

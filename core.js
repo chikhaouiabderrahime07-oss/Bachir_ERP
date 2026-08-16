@@ -689,12 +689,39 @@ const DB = {
       }
     }
 
-    // Re-insert with new id
+    // Track if BL was delivered before deletion (for caisse correction)
+    const wasDeliveredBL = collection === 'bls' && (finalItem.status === 'delivered' || finalItem.status === 'locked');
+
+    // Re-insert with new id — delivered BLs come back as 'open'
     delete finalItem.id;
     finalItem.status = finalItem.status === 'delivered' ? 'open' : (finalItem.status || 'open');
     finalItem.restoredFrom = 'recycle_bin';
     finalItem.restoredAt = new Date().toISOString();
     const restored = this.insert(collection, finalItem);
+
+    // ── Caisse correction for restored delivered BLs ─────────
+    // When a delivered BL was deleted via "BL Erroné", a correction withdrawal was created.
+    // Now that the BL is restored (as 'open'), we need to reverse that withdrawal
+    // by creating a new deposit, so the caisse stays balanced.
+    if (wasDeliveredBL) {
+      const blAmount = Number(finalItem.totalTTC || 0);
+      if (blAmount > 0) {
+        const u = typeof Auth !== 'undefined' ? Auth.getCurrentUser() : null;
+        this.insert('caisse_admin', {
+          type: 'deposit',
+          source: 'bl_restore',
+          blId: restored.id,
+          blRef: finalItem.ref,
+          amount: blAmount,
+          userId: finalItem.createdBy || u?.id,
+          userName: finalItem.createdByName || u?.name,
+          restoredBy: u?.id,
+          restoredByName: u?.name,
+          date: new Date().toISOString().slice(0, 10),
+          note: `♻️ Restauration — le BL ${finalItem.ref} (${blAmount.toLocaleString('fr-DZ')} DA) a été restauré depuis la corbeille. Correction caisse appliquée.`
+        });
+      }
+    }
 
     // Remove from bin entirely (don't just mark — actually remove)
     const updatedBin = bin.filter(e => e.id !== binId);
@@ -704,7 +731,7 @@ const DB = {
       window.API.remove('recycle_bin', binId).catch(() => {});
     }
 
-    return { ok: true, item: restored, refWarning };
+    return { ok: true, item: restored, refWarning, wasDeliveredBL };
   },
 
   // ─── BR Numbering ─────────────────────────────────────────
@@ -954,6 +981,12 @@ const Auth = {
     if (!u) return false;
     if (u.role === 'admin') return true;
     if (doc?.status === 'delivered' || doc?.status === 'locked') return false;
+    if (doc?.supplierId !== undefined || (doc?.ref && doc.ref.startsWith('BR'))) {
+      if (!this.can('canDeleteBR')) return false;
+    }
+    if (doc?.clientId !== undefined || (doc?.ref && doc.ref.startsWith('BL'))) {
+      if (!this.can('canDeleteBL')) return false;
+    }
     return doc?.createdBy === u.id;
   },
 
