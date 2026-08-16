@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    MODULES.JS — All Application Modules
    ERP v2.0 — Bilingual FR/AR | RTL/LTR
    Dashboard · BR · BL · Caisse · Admin Caisse · Suppliers
@@ -380,7 +380,7 @@ const BRModule = {
 
     const isAdmin = Auth.isAdmin();
     const perms   = Auth.getCurrentUser()?.permissions || {};
-    const canCreate = isAdmin || perms.canCreateBR !== false;
+    const canCreate = isAdmin || Auth.can('canCreateBR');
 
     return `<div style="padding:24px">
     <div class="card">
@@ -776,7 +776,7 @@ const BRModule = {
     // Admin must pick a user to assign this BR to (caisse attribution)
     if (Auth.isAdmin()) {
       // Only show users who have canCreateBR permission
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && u.permissions?.canCreateBR !== false);
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBR === true && u.active !== false);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
@@ -809,7 +809,7 @@ const BRModule = {
   _saveBR(editId, andPrint) {
     // Permission guard: non-admin users must have canCreateBR permission
     const curUser = Auth.getCurrentUser();
-    if (!Auth.isAdmin() && curUser?.permissions?.canCreateBR === false) {
+    if (!Auth.isAdmin() && !Auth.can('canCreateBR')) {
       Utils.notify('⛔ Permission refusée : création BR', 'error');
       UI.closeModal(); return;
     }
@@ -1047,7 +1047,7 @@ const BLModule = {
           <span class="badge badge-secondary">${items.length}</span>
           <button class="btn btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter CSV" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px"><i class="fas fa-file-csv"></i> CSV</button>
           <button class="btn btn-outline" onclick="BLModule.showHistory()"><i class="fas fa-history"></i> Historique</button>
-          ${(Auth.isAdmin()||(Auth.getCurrentUser()?.permissions?.canCreateBL!==false))?`<button class="btn btn-success" onclick="BLModule.showNewBL()"><i class="fas fa-plus"></i> ${T.get('bl_new')}</button>`:''}
+          ${(Auth.isAdmin()||(Auth.can('canCreateBL')))?`<button class="btn btn-success" onclick="BLModule.showNewBL()"><i class="fas fa-plus"></i> ${T.get('bl_new')}</button>`:''}
         </div>
       </div>
       <div class="filters-bar">
@@ -1157,7 +1157,7 @@ const BLModule = {
   async showNewBL() {
     // Admin picks a user who has canCreateBL permission
     if (Auth.isAdmin()) {
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && u.permissions?.canCreateBL !== false);
+      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true &&  u.active !== false);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
@@ -1555,8 +1555,7 @@ const BLModule = {
 
   _saveBL(brId, editBlId, andPrint, adminOverride = false) {
     // Permission guard: non-admin users must have canCreateBL permission
-    const curUser = Auth.getCurrentUser();
-    if (!Auth.isAdmin() && !adminOverride && curUser?.permissions?.canCreateBL === false) {
+    if (!Auth.isAdmin() && !Auth.can('canCreateBL')) {
       Utils.notify('⛔ Vous n’avez pas la permission de créer des BL', 'error');
       UI.closeModal(); return;
     }
@@ -1892,16 +1891,20 @@ const BLModule = {
     if (!Auth.isAdmin() && !Auth.can('canDeleteBL')) { Utils.notify('⛔ Permission refusée — suppression BL','error'); return; }
 
     const isValidated = bl.status === 'delivered' || bl.status === 'locked';
-    console.log('[DEBUG deleteBL] isValidated:', isValidated, 'status:', JSON.stringify(bl.status));
     const u = Auth.getCurrentUser();
     const amount = Number(bl.totalTTC || 0);
 
-    // ── Non-delivered BL: simple delete ─────────────────────────
-    if (!isValidated) {
-      if (!Auth.isAdmin() && bl.createdBy !== u?.id) {
-        Utils.notify('⛔ Vous ne pouvez supprimer que vos propres BL','error'); return;
-      }
-      const ok = await Dialog.confirm('Supprimer BL', `Supprimer le BL ${bl.ref||''} (brouillon) ?`, 'danger');
+    // Non-admin can only delete their own non-delivered BLs
+    if (!Auth.isAdmin() && isValidated) {
+      Utils.notify('⛔ BL livré — suppression admin uniquement', 'error'); return;
+    }
+    if (!Auth.isAdmin() && bl.createdBy !== u?.id) {
+      Utils.notify('⛔ Vous ne pouvez supprimer que vos propres BL','error'); return;
+    }
+
+    // ── Admin always gets two-path dialog, non-admin gets simple confirm ──
+    if (!Auth.isAdmin()) {
+      const ok = await Dialog.confirm('Supprimer BL', `Supprimer le BL ${bl.ref||''} ?`, 'danger');
       if (!ok) return;
       DB.delete('bls', id);
       Utils.notify('BL supprimé', 'success');
@@ -1909,17 +1912,11 @@ const BLModule = {
       return;
     }
 
-    // ── Delivered BL: admin only, two-path ──────────────────────
-    if (!Auth.isAdmin()) {
-      Utils.notify('BL livré — suppression admin uniquement', 'error');
-      return;
-    }
-
     const choice = await Dialog.show({
-      title: '⚠️ Suppression BL livré',
+      title: '⚠️ Suppression BL',
       message: `<div style="margin-bottom:14px;padding:12px;background:#1e293b;border-radius:10px;border-left:4px solid #f59e0b">
-        <div style="color:#fbbf24;font-weight:700;margin-bottom:6px">BL ${Utils.escHTML(bl.ref||'')} — ${Utils.fmtCurrency(amount)}</div>
-        <div style="font-size:12px;color:#94a3b8">Ce BL est livré et a généré un dépôt en caisse. Que voulez-vous faire ?</div>
+        <div style="color:#fbbf24;font-weight:700;margin-bottom:6px">BL ${Utils.escHTML(bl.ref||'')} — ${Utils.fmtCurrency(amount)} ${isValidated ? '(Livré ✓)' : '(Brouillon)'}</div>
+        <div style="font-size:12px;color:#94a3b8">${isValidated ? 'Ce BL est livré et a généré un dépôt en caisse.' : 'Ce BL est un brouillon.'} Que voulez-vous faire ?</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
         <button class="btn" id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
