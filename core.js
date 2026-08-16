@@ -966,6 +966,10 @@ const Auth = {
       canViewStats: false,
       canViewCatalogue: false,
       canViewBank: false,
+      canEditSuppliers: false,
+      canEditClients: false,
+      canDeleteBR: false,
+      canDeleteBL: false,
       requireDailyLiquid: true,
     };
   },
@@ -982,7 +986,8 @@ const Auth = {
     if (!u) return false;
     if (u.role === 'admin') return true;
     const perms = this.getUserPermissions(u);
-    return perms[permission] !== false;
+    // STRICT: only explicitly granted permissions are allowed
+    return perms[permission] === true;
   },
   myPermissions() {
     return this.getUserPermissions(this.getCurrentUser());
@@ -1105,6 +1110,7 @@ const Utils = {
       reception: ['badge-warning', 'fa-clock',      T.get('st_pending')],
       delivered: ['badge-success', 'fa-check-circle',T.get('st_delivered')],
       locked:    ['badge-danger',  'fa-lock',        T.get('st_locked')],
+      returned:  ['badge-warning', 'fa-rotate-left', '🔄 Retourné'],
     };
     const [cls, icon, label] = m[status] || ['badge-secondary', 'fa-circle', status||''];
     return `<span class="badge ${cls}"><i class="fas ${icon}"></i> ${label}</span>`;

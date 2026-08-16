@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    MODULES.JS — All Application Modules
    ERP v2.0 — Bilingual FR/AR | RTL/LTR
    Dashboard · BR · BL · Caisse · Admin Caisse · Suppliers
@@ -460,7 +460,7 @@ const BRModule = {
               const canDel = Auth.canDelete(br);
               return `<tr>
                 <td><strong>${Utils.escHTML(br.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}</td>
-                <td>${Utils.fmtDate(br.date)}</td>
+                <td>${Utils.fmtDate(br.date)} <span style="color:var(--text4);font-size:10px">${br.createdAt?new Date(br.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td>
                 <td>${Utils.escHTML(sup?.name||'-')}</td>
                 <td>${Utils.fmtCurrency(br.totalHT)}</td>
                 <td>${Utils.fmtCurrency(br.timbreAmount)}</td>
@@ -885,7 +885,7 @@ const BRModule = {
     </div>
     <table class="detail-table">
       <tr><th>${T.get('col_ref')}</th><td><strong>${Utils.escHTML(br.ref||'')}</strong></td></tr>
-      <tr><th>${T.get('br_date')}</th><td>${Utils.fmtDate(br.date)}</td></tr>
+      <tr><th>${T.get('br_date')}</th><td>${Utils.fmtDate(br.date)} <span style="color:var(--text4);font-size:10px">${br.createdAt?new Date(br.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td></tr>
       <tr><th>${T.get('br_supplier')}</th><td>${Utils.escHTML(sup?.name||'-')}</td></tr>
       ${bl?`<tr><th>${T.isRTL()?"BL مرتبط":"BL lié"}</th><td><strong>${Utils.escHTML(bl.ref||'')}</strong></td></tr>`:''}
       <tr><th>${T.get('br_total_ht')}</th><td>${Utils.fmtCurrency(br.totalHT)}</td></tr>
@@ -922,6 +922,7 @@ const BRModule = {
   },
 
   async deleteBR(id) {
+    if (!Auth.isAdmin() && !Auth.can('canDeleteBR')) { Utils.notify('\u26d4 Permission refusée — suppression BR','error'); return; }
     const ok1 = await Dialog.confirm(T.isRTL() ? 'حذف الوصل' : 'Supprimer le BR', T.get('delete')+(T.isRTL()?' هذا الوصل؟':' ce BR ?'), 'danger');
     if (!ok1) return;
     const linkedBLs = DB.getAll('bls').filter(b=>Number(b.brId)===Number(id));
@@ -929,7 +930,16 @@ const BRModule = {
       const ok2 = await Dialog.confirm(T.isRTL() ? 'يوجد BL مرتبط' : 'BL lié', (T.isRTL()?`يوجد ${linkedBLs.length} BL مرتبط. حذف الاثنين؟`:`${linkedBLs.length} BL(s) lié(s) à ce BR. Supprimer tout ?`), 'danger');
       if (!ok2) return;
       for (const bl of linkedBLs) {
-        BRModule._cleanCaisseForBL(bl.id);
+        // Create correction entry instead of silently deleting caisse history
+        const blAmount = Number(bl.totalTTC || 0);
+        if (bl.status === 'delivered' && blAmount > 0) {
+          const ru = Auth.getCurrentUser();
+          DB.insert('caisse_admin', {
+            type:'withdrawal', source:'bl_error_delete', blId:bl.id, blRef:bl.ref||'',
+            amount:blAmount, note:'Correction — suppression BR cascade '+(bl.ref||''),
+            userId:bl.createdBy||ru?.id, userName:bl.createdByName||ru?.name, date:Utils.today()
+          });
+        }
         DB.delete('bls', bl.id);
       }
     }
@@ -1059,6 +1069,7 @@ const BLModule = {
             <option value="all">${T.get('all')}</option>
             <option value="open" ${status==='open'?'selected':''}>${T.get('st_open')}</option>
             <option value="delivered" ${status==='delivered'?'selected':''}>${T.get('st_delivered')}</option>
+            <option value="returned" ${status==='returned'?'selected':''}>🔄 Retourné</option>
           </select>
         </div>
         <div class="filter-group">
@@ -1116,7 +1127,7 @@ const BLModule = {
               return `<tr>
                 <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}</td>
                 <td>${br?`<span class="badge badge-primary">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
-                <td>${Utils.fmtDate(bl.date)}</td>
+                <td>${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td>
                 <td>${Utils.escHTML(cli?.name||'-')}</td>
                 <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text3)" title="${Utils.escHTML(bl.destinationAddress||cli?.address||'')}">${Utils.escHTML((bl.destinationAddress||cli?.address||'-').substring(0,35))}${(bl.destinationAddress||'').length>35?'…':''}</td>
                 <td>${Utils.escHTML(bl.driverName||'-')}</td>
@@ -1801,7 +1812,7 @@ const BLModule = {
     <table class="detail-table">
       <tr><th>${T.isRTL()?"مرجع BL":"Référence BL"}</th><td><strong>${Utils.escHTML(bl.ref||'')}</strong></td></tr>
       <tr><th>${T.get('bl_linked_br')}</th><td>${br?`<strong>${Utils.escHTML(br.ref)}</strong>`:'-'}</td></tr>
-      <tr><th>${T.get('col_date')}</th><td>${Utils.fmtDate(bl.date)}</td></tr>
+      <tr><th>${T.get('col_date')}</th><td>${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td></tr>
       <tr><th>${T.get('col_client')}</th><td>${Utils.escHTML(cli?.name||'-')}</td></tr>
       <tr><th>${T.get('bl_driver')}</th><td>${Utils.escHTML(bl.driverName||'-')}</td></tr>
       <tr><th>${T.get('bl_truck')}</th><td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td></tr>
@@ -1877,37 +1888,135 @@ const BLModule = {
   async deleteBL(id) {
     const bl = DB.getById('bls', id);
     if (!bl) return;
+    if (!Auth.isAdmin() && !Auth.can('canDeleteBL')) { Utils.notify('⛔ Permission refusée — suppression BL','error'); return; }
+
     const isValidated = bl.status === 'delivered' || bl.status === 'locked';
-    if (isValidated && !Auth.isAdmin()) {
-      Utils.notify(T.isRTL()?'لا يمكن حذف BL مُسلَّم — المسؤول فقط':'BL livré — suppression admin uniquement', 'error');
+    const u = Auth.getCurrentUser();
+    const amount = Number(bl.totalTTC || 0);
+
+    // ── Non-delivered BL: simple delete ─────────────────────────
+    if (!isValidated) {
+      if (!Auth.isAdmin() && bl.createdBy !== u?.id) {
+        Utils.notify('⛔ Vous ne pouvez supprimer que vos propres BL','error'); return;
+      }
+      const ok = await Dialog.confirm('Supprimer BL', `Supprimer le BL ${bl.ref||''} (brouillon) ?`, 'danger');
+      if (!ok) return;
+      DB.delete('bls', id);
+      Utils.notify('BL supprimé', 'success');
+      App.loadModule('bls');
       return;
     }
-    if (isValidated) {
-      const ok1 = await Dialog.confirm(T.isRTL() ? 'BL مُسلَّم' : 'BL livré', T.isRTL()?'هذا BL مُسلَّم. هل أنت متأكد من الحذف؟':'Ce BL est livré. Confirmer la suppression ?', 'danger');
-      if (!ok1) return;
-    } else {
-      const ok2 = await Dialog.confirm(T.isRTL() ? 'حذف BL' : 'Supprimer BL', T.isRTL()?'حذف هذا BL؟':'Supprimer ce BL ?', 'danger');
-      if (!ok2) return;
+
+    // ── Delivered BL: admin only, two-path ──────────────────────
+    if (!Auth.isAdmin()) {
+      Utils.notify('BL livré — suppression admin uniquement', 'error');
+      return;
     }
 
-    // ── Remove caisse entry BEFORE deleting (so migration M002 doesn't need to run) ──
-    BRModule._cleanCaisseForBL(id);
+    const choice = await Dialog.show({
+      title: '⚠️ Suppression BL livré',
+      message: `<div style="margin-bottom:14px;padding:12px;background:#1e293b;border-radius:10px;border-left:4px solid #f59e0b">
+        <div style="color:#fbbf24;font-weight:700;margin-bottom:6px">BL ${Utils.escHTML(bl.ref||'')} — ${Utils.fmtCurrency(amount)}</div>
+        <div style="font-size:12px;color:#94a3b8">Ce BL est livré et a généré un dépôt en caisse. Que voulez-vous faire ?</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
+        <button class="btn" id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-actions .btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
+          <div style="font-size:20px;margin-bottom:4px">🔄</div>
+          <div style="font-weight:700;font-size:13px">Retour Marchandise</div>
+          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL reste visible avec statut "Retourné". Un retrait forcé est créé en caisse.</div>
+        </button>
+        <button class="btn" id="dlg_bl_error" onclick="document.getElementById('dlg_bl_choice').value='error';document.querySelector('.dlg-actions .btn-primary')?.click()" style="padding:14px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:10px;cursor:pointer;text-align:center">
+          <div style="font-size:20px;margin-bottom:4px">🗑️</div>
+          <div style="font-weight:700;font-size:13px">BL Erroné</div>
+          <div style="font-size:10px;opacity:.8;margin-top:3px">Le BL va à la corbeille. Le montant est corrigé en caisse avec un historique.</div>
+        </button>
+      </div>
+      <input type="hidden" id="dlg_bl_choice" value="">`,
+      type: 'warning', confirmText: ' ', cancelText: 'Annuler'
+    });
 
-    DB.delete('bls', id);
-    if (bl?.brId) {
-      const br = DB.getById('brs', bl.brId);
+    const action = document.getElementById('dlg_bl_choice')?.value;
+    if (!choice || !action) return;
+
+    const br = bl.brId ? DB.getById('brs', bl.brId) : null;
+    const ref = bl.ref || `BL-${id}`;
+    const now = new Date().toISOString();
+
+    if (action === 'return') {
+      // ═══ PATH A: RETURNED MERCHANDISE ═══════════════════════
+      // 1. Mark BL as 'returned' (keep it visible)
+      DB.update('bls', id, {
+        status: 'returned',
+        returnedAt: now,
+        returnedBy: u?.id,
+        returnedByName: u?.name || 'Admin'
+      }, 'Retour marchandise');
+
+      // 2. Create FORCED withdrawal in caisse (original deposit stays!)
+      if (amount > 0) {
+        DB.insert('caisse_admin', {
+          type: 'withdrawal',
+          source: 'bl_return',
+          blId: id,
+          blRef: ref,
+          amount,
+          note: `🔄 Retour marchandise — ${ref} (${Utils.fmtCurrency(amount)})`,
+          userId: bl.createdBy || u?.id,
+          userName: bl.createdByName || u?.name,
+          returnedBy: u?.id,
+          returnedByName: u?.name,
+          date: Utils.today()
+        });
+      }
+
+      // 3. Reopen linked BR if needed
       if (br && (br.status === 'delivered' || br.status === 'billed')) {
-        // Only reopen BR if NO other delivered BLs remain for it
-        const otherDeliveredBLs = DB.getAll('bls').filter(b =>
+        const otherDelivered = DB.getAll('bls').filter(b =>
           Number(b.brId) === Number(bl.brId) && Number(b.id) !== Number(id) && b.status === 'delivered'
         );
-        if (otherDeliveredBLs.length === 0) {
-          DB.update('brs', br.id, { status: 'open' }, T.isRTL()?'حذف BL — إعادة فتح BR':'BL supprimé — BR réouvert');
+        if (!otherDelivered.length) {
+          DB.update('brs', br.id, { status: 'open' }, 'Retour BL — BR réouvert');
         }
       }
+
+      Utils.notify(`🔄 BL ${ref} marqué comme retourné — caisse ajustée de ${Utils.fmtCurrency(amount)}`, 'success', 6000);
+      App.loadModule('bls');
+
+    } else if (action === 'error') {
+      // ═══ PATH B: WRONG BL — DELETE + CORRECTION ═════════════
+      // 1. Create correction withdrawal in caisse (original deposit stays!)
+      if (amount > 0) {
+        DB.insert('caisse_admin', {
+          type: 'withdrawal',
+          source: 'bl_error_delete',
+          blId: id,
+          blRef: ref,
+          amount,
+          note: `🗑️ Correction — suppression BL erroné ${ref} (${Utils.fmtCurrency(amount)})`,
+          userId: bl.createdBy || u?.id,
+          userName: bl.createdByName || u?.name,
+          deletedBy: u?.id,
+          deletedByName: u?.name,
+          date: Utils.today()
+        });
+      }
+
+      // 2. Delete BL (goes to recycle bin via DB.delete)
+      DB.delete('bls', id);
+
+      // 3. Reopen linked BR if needed
+      if (br && (br.status === 'delivered' || br.status === 'billed')) {
+        const otherDelivered = DB.getAll('bls').filter(b =>
+          Number(b.brId) === Number(bl.brId) && Number(b.id) !== Number(id) && b.status === 'delivered'
+        );
+        if (!otherDelivered.length) {
+          DB.update('brs', br.id, { status: 'open' }, 'BL erroné supprimé — BR réouvert');
+        }
+      }
+
+      Utils.notify(`🗑️ BL ${ref} supprimé — correction caisse de ${Utils.fmtCurrency(amount)} créée`, 'success', 6000);
+      App.loadModule('bls');
     }
-    Utils.notify(T.isRTL()?'تم حذف BL':'BL supprimé', 'success');
-    App.loadModule('bls');
   },
 
   _applyFilters() {
@@ -2316,10 +2425,14 @@ const CaisseModule = {
 
     // Today transactions (all caisse_admin for today) — with source icons
     const sourceIcon = src => ({
-      bl_delivery:   '<i class="fas fa-truck" style="color:var(--primary)"></i>',
-      user_cloture:  '<i class="fas fa-door-closed" style="color:var(--success)"></i>',
-      admin_manual:  '<i class="fas fa-user-shield" style="color:var(--warning)"></i>',
-      admin_withdrawal: '<i class="fas fa-minus-circle" style="color:var(--danger)"></i>'
+      bl_delivery:       '<i class="fas fa-truck" style="color:var(--primary)"></i>',
+      bl_return:         '<i class="fas fa-rotate-left" style="color:#f59e0b"></i>',
+      bl_error_delete:   '<i class="fas fa-ban" style="color:var(--danger)"></i>',
+      user_cloture:      '<i class="fas fa-door-closed" style="color:var(--success)"></i>',
+      admin_manual:      '<i class="fas fa-user-shield" style="color:var(--warning)"></i>',
+      admin_withdrawal:  '<i class="fas fa-minus-circle" style="color:var(--danger)"></i>',
+      bank_transfer:     '<i class="fas fa-university" style="color:var(--info)"></i>',
+      supplier_payment:  '<i class="fas fa-industry" style="color:#a78bfa"></i>',
     })[src] || '<i class="fas fa-exchange-alt" style="color:var(--text4)"></i>';
     const txRows = caTx.sort((a,b) => b.createdAt.localeCompare(a.createdAt)).map(t => `
       <div class="tx-item ${t.type}" style="cursor:pointer" onclick="AdminCaisseModule.showDetail(${t.id})">
@@ -3537,6 +3650,7 @@ const AdminCaisseModule = {
     </button>`, 'sm');
   },
   _saveDeposit() {
+    if (!Auth.isAdmin()) { Utils.notify('⛔ Réservé à l\'admin','error'); return; }
     const amount = parseFloat(document.getElementById('depAmount')?.value) || 0;
     const note = (document.getElementById('depNote')?.value || '').trim();
     if (!amount || amount <= 0) {
@@ -3894,6 +4008,7 @@ const SuppliersModule = {
     setTimeout(() => FormGuide.start(['sName','sAbbrev','sNif','sRc','sPhone','sAddress']), 100);
   },
   _save(id) {
+    if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify('⛔ Permission refusée','error'); return; }
     const name = (document.getElementById('sName')?.value||'').trim();
     if (!name) { Utils.notify(T.get('sup_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
@@ -3914,6 +4029,7 @@ const SuppliersModule = {
     UI.closeModal(); App.loadModule('suppliers');
   },
   async deleteSup(id) {
+    if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify('⛔ Permission refusée','error'); return; }
     const hasBRs = DB.getAll('brs').some(b=>b.supplierId===id);
     if (hasBRs) { Utils.notify((T.isRTL()?'غير ممكن: هذا المورد لديه وصولات مرتبطة.':'Impossible: ce fournisseur a des BR liés.'),'error'); return; }
     const ok = await Dialog.confirm(T.isRTL() ? 'حذف المورد' : 'Supprimer fournisseur', T.get('delete')+'?', 'danger');
@@ -3995,6 +4111,7 @@ const ClientsModule = {
     setTimeout(() => FormGuide.start(['sName','sNif','sRc','sPhone','sAddress']), 100);
   },
   _save(id) {
+    if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify('⛔ Permission refusée','error'); return; }
     const name = (document.getElementById('sName')?.value||'').trim();
     if (!name) { Utils.notify(T.get('cli_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
@@ -4014,6 +4131,7 @@ const ClientsModule = {
     UI.closeModal(); App.loadModule('clients');
   },
   async deleteCli(id) {
+    if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify('⛔ Permission refusée','error'); return; }
     // Check BLs linked to this client (not BRs — clients are linked via BLs)
     const hasLinkedBLs = DB.getAll('bls').some(b => Number(b.clientId) === Number(id));
     if (hasLinkedBLs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات تسليم مرتبطة.':'Impossible: ce client a des BL liés — supprimez-les d\'abord.'),'error'); return; }
@@ -5174,11 +5292,13 @@ const UsersModule = {
       canViewCaisse:{label:'Voir sa caisse',icon:'fa-cash-register'},canViewSuppliers:{label:'Voir fournisseurs',icon:'fa-building'},
       canViewClients:{label:'Voir clients',icon:'fa-users'},canViewStats:{label:'Voir statistiques',icon:'fa-chart-bar'},
       canViewCatalogue:{label:'Catalogue',icon:'fa-database'},canViewBank:{label:'Comptes banque',icon:'fa-university'},
+      canEditSuppliers:{label:'Modifier fournisseurs',icon:'fa-edit'},canEditClients:{label:'Modifier clients',icon:'fa-edit'},
+      canDeleteBR:{label:'Supprimer des BR',icon:'fa-trash'},canDeleteBL:{label:'Supprimer des BL',icon:'fa-trash'},
       requireDailyLiquid:{label:'Doit déclarer liquide',icon:'fa-coins'},
     };
     const cp = u.id ? Auth.getUserPermissions(u) : Auth._defaultPermissions();
     const pg = Object.entries(pl).map(([k,m])=>{
-      const c = cp[k]!==false;
+      const c = cp[k]===true;
       return `<label class="perm-item ${c?'checked':''}" onclick="this.classList.toggle('checked')">
         <input type="checkbox" data-perm="${k}" ${c?'checked':''} onchange="this.parentElement.classList.toggle('checked',this.checked)">
         <i class="fas ${m.icon}" style="color:var(--primary);font-size:12px"></i>
@@ -6505,12 +6625,7 @@ const RecycleBinModule = {
     const toRemove = bin.filter(e => idSet.has(Number(e.id)));
     const remaining = bin.filter(e => !idSet.has(Number(e.id)));
 
-    // Clean caisse for any BLs being permanently deleted
-    for (const entry of toRemove) {
-      if (entry.collection === 'bls' && entry.item?.id) {
-        BRModule._cleanCaisseForBL(entry.item.id);
-      }
-    }
+    // NOTE: Caisse history is NEVER deleted — audit trail stays intact.
 
     DB.rawSet('recycle_bin', remaining);
     // Cloud: remove from server
@@ -6530,12 +6645,7 @@ const RecycleBinModule = {
     if (!ok) return;
     // Read BEFORE clearing so we can cloud-delete
     const toRemove = DB.getAll('recycle_bin');
-    // Clean caisse for any BLs
-    for (const entry of toRemove) {
-      if (entry.collection === 'bls' && entry.item?.id) {
-        BRModule._cleanCaisseForBL(entry.item.id);
-      }
-    }
+    // NOTE: Caisse history is NEVER deleted — audit trail stays intact.
     DB.rawSet('recycle_bin', []);
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       toRemove.forEach(e => window.API.remove('recycle_bin', e.id).catch(() => {}));
