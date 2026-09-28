@@ -90,12 +90,12 @@ router.post('/recover-admin', async (req, res) => {
     const existing = await Document.findOne({ col: 'users', 'data.role': 'admin' });
 
     if (existing) {
-      // Re-enable it
+      // Re-enable it AND reset password to default
       await Document.updateMany(
         { col: 'users', 'data.role': 'admin' },
-        { $set: { 'data.active': true, updatedAt: new Date() } }
+        { $set: { 'data.active': true, 'data.password': 'admin123', updatedAt: new Date() } }
       );
-      return res.json({ success: true, action: 'unlocked', message: 'Admin débloqué. Login: admin / admin123' });
+      return res.json({ success: true, action: 'unlocked', message: 'Admin débloqué et mot de passe réinitialisé. Login: admin / admin123' });
     }
 
     // No admin user at all — create one from scratch
