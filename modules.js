@@ -5504,6 +5504,7 @@ const SettingsModule = {
       {id:'timbre',  icon:'fa-stamp',       label:T.get('set_timbre'),   color:'#f59e0b'},
       {id:'appear',  icon:'fa-palette',     label:T.get('set_theme'),    color:'#8b5cf6'},
       {id:'banks',   icon:'fa-university',  label:'Banques',             color:'#10b981'},
+      {id:'etatvente',icon:'fa-file-invoice-dollar',label:T.get('nav_etat_vente'), color:'#0d9488'},
       {id:'users',   icon:'fa-users-cog',   label:T.get('nav_users'),    color:'#ef4444'},
       {id:'data',    icon:'fa-database',    label:T.get('set_data'),     color:'#6366f1'},
     ];
@@ -5543,6 +5544,7 @@ const SettingsModule = {
       ${this._tab==='appear'?this._tabAppear(s):''}
       ${this._tab==='banks'?this._tabBanks(s):''}
       ${this._tab==='users'?this._tabUsers():''}
+      ${this._tab==='etatvente'?this._tabEtatVente(s):''}
       ${this._tab==='data'?this._tabData():''}
     </div>
     </div>`;
@@ -5747,6 +5749,109 @@ const SettingsModule = {
     if (typeof App!=='undefined') App._applyBranding?.();
     Utils.notify((T.isRTL()?'تم حفظ إعدادات الشركة':'Paramètres société enregistrés'), 'success');
   },
+
+  _tabEtatVente(s) {
+    const isAR = T.isRTL();
+    const sectionBox = (icon, color, bg, title, content) => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.03)">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg3,var(--bg))">
+        <div style="width:32px;height:32px;border-radius:8px;background:${bg};color:${color};display:flex;align-items:center;justify-content:center"><i class="fas fa-${icon}"></i></div>
+        <div style="font-weight:800;font-size:14px;color:var(--text)">${title}</div>
+      </div>
+      <div style="padding:18px">${content}</div>
+    </div>`;
+
+    const field = (id, label, val, attrs='', icon='') => `
+      <div class="form-group"><label style="font-size:11px;font-weight:700;color:var(--text3)">${icon?`<i class="fas ${icon}" style="margin-right:6px"></i>`:''}${label}</label><input id="${id}" value="${Utils.escHTML(val||'')}" ${attrs}></div>`;
+
+    const logoBox = (key, label, current) => `
+    <div style="background:var(--bg);border:2px dashed var(--border);border-radius:12px;padding:16px;text-align:center;transition:.2s"
+      onmouseover="this.style.borderColor='var(--primary)';this.style.background='rgba(var(--primary-rgb),.04)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--bg)'">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--text4);margin-bottom:10px;text-transform:uppercase">${label}</div>
+      ${current
+        ? `<img src="${current}" style="max-height:56px;max-width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:10px;display:block;margin-left:auto;margin-right:auto">`
+        : `<div style="height:56px;display:flex;align-items:center;justify-content:center;margin-bottom:10px">
+             <i class="fas fa-image" style="font-size:28px;color:var(--border)"></i>
+           </div>`}
+      <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;color:var(--text3);transition:.15s"
+        onmouseover="this.style.background='var(--primary)';this.style.color='#fff';this.style.borderColor='var(--primary)'" onmouseout="this.style.background='var(--bg2)';this.style.color='var(--text3)';this.style.borderColor='var(--border)'">
+        <i class="fas fa-upload" style="font-size:11px"></i>${isAR?'تحميل':'Choisir'}
+        <input type="file" accept="image/*" style="display:none" onchange="SettingsModule._handleLogo('${key}',this)">
+      </label>
+      ${current ? `<button onclick="SettingsModule._clearLogo('${key}')" class="btn btn-xs" style="margin-top:6px;display:block;margin-left:auto;margin-right:auto;color:var(--danger);background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 10px;font-size:11px">
+        <i class="fas fa-trash-alt"></i> ${isAR?'حذف':'Supprimer'}
+      </button>` : ''}
+    </div>`;
+
+    return `
+    <div style="background:linear-gradient(135deg,rgba(13,148,136,.1),rgba(20,184,166,.05));border-radius:12px;padding:16px;margin-bottom:20px;border:1px solid rgba(13,148,136,.2)">
+      <div style="font-weight:800;color:#0f766e;margin-bottom:4px"><i class="fas fa-info-circle"></i> Entête de l'État de Vente</div>
+      <div style="font-size:12px;color:var(--text3)">Ces informations seront utilisées exclusivement pour générer l'entête du document d'État de Vente.</div>
+    </div>
+
+    ${sectionBox('building','#0d9488','rgba(13,148,136,.1)',isAR?'هوية الشركة':'Identité de la société (État de Vente)',`
+      <div style="display:grid;grid-template-columns:1fr;gap:0">
+        ${field('evCompName', isAR?'اسم الشركة':'Raison sociale', s.evCompanyName, 'style="font-size:16px;font-weight:800" placeholder="SPA ..."', 'fa-building')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          ${field('evPhone', isAR?'الهاتف':'Téléphone', s.evPhone, 'type="tel"', 'fa-phone')}
+          ${field('evFax', isAR?'الفاكس':'Fax', s.evFax, 'type="tel"', 'fa-fax')}
+        </div>
+        ${field('evEmail', isAR?'البريد الإلكتروني':'Email', s.evEmail, 'type="email"', 'fa-envelope')}
+        ${field('evAddr', isAR?'العنوان':'Adresse', s.evAddress, 'placeholder="Wilaya, Commune..."', 'fa-map-marker-alt')}
+      </div>
+    `)}
+
+    ${sectionBox('id-card','#0ea5e9','rgba(14,165,233,.1)',isAR?'المعرفات الجبائية':'Identifiants fiscaux',`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">NIF</div>
+          <input id="evNif" value="${Utils.escHTML(s.evNif||'')}" placeholder="000000000000000" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">NIS</div>
+          <input id="evNis" value="${Utils.escHTML(s.evNis||'')}" placeholder="000000000000000" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">RC</div>
+          <input id="evRc" value="${Utils.escHTML(s.evRc||'')}" placeholder="00/00-XXXXXXX" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">AI (Art. Imposition)</div>
+          <input id="evAi" value="${Utils.escHTML(s.evAi||'')}" placeholder="00000000000000" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <div style="grid-column:1/-1">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">Capital social</div>
+          <input id="evCapital" value="${Utils.escHTML(s.evCapital||'')}" placeholder="Ex: 1 000 000 DA" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+      </div>
+    `)}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+      ${logoBox('evLogoLeft', isAR?'شعار يساري (Etat Vente)':'Logo gauche (EV)', s.evLogoLeft)}
+      ${logoBox('evLogoRight', isAR?'شعار يميني (Etat Vente)':'Logo droit (EV)', s.evLogoRight)}
+    </div>
+
+    <button class="btn btn-primary" onclick="SettingsModule._saveEtatVente()" style="width:100%;padding:12px;font-size:14px;font-weight:800;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6)">
+      <i class="fas fa-save"></i> Enregistrer les paramètres de l'État de Vente
+    </button>`;
+  },
+
+  _saveEtatVente() {
+    DB.saveSettings({
+      evCompanyName: document.getElementById('evCompName')?.value||'',
+      evAddress: document.getElementById('evAddr')?.value||'',
+      evPhone: document.getElementById('evPhone')?.value||'',
+      evFax: document.getElementById('evFax')?.value||'',
+      evEmail: document.getElementById('evEmail')?.value||'',
+      evNif: document.getElementById('evNif')?.value||'',
+      evRc: document.getElementById('evRc')?.value||'',
+      evNis: document.getElementById('evNis')?.value||'',
+      evAi: document.getElementById('evAi')?.value||'',
+      evCapital: document.getElementById('evCapital')?.value||'',
+    });
+    Utils.notify('Paramètres de l\'État de Vente enregistrés', 'success');
+  },
+
 
   _tabTimbre(s) {
     const slabs = s.timbreSlabs && s.timbreSlabs.length ? s.timbreSlabs : [];
@@ -8082,6 +8187,228 @@ const PartnersModule = {
 };
 Modules.partners = PartnersModule;
 
+
+// ═══════════════════════════════════════════════════════════════
+// ETAT DE VENTE MODULE
+// ═══════════════════════════════════════════════════════════════
+const EtatVenteModule = {
+  _dateStart: null,
+  _dateEnd: null,
+  _getDateStart() { return this._dateStart || (typeof Utils !== 'undefined' ? Utils.today() : new Date().toISOString().split('T')[0]); },
+  _getDateEnd() { return this._dateEnd || (typeof Utils !== 'undefined' ? Utils.today() : new Date().toISOString().split('T')[0]); },
+  
+  render() {
+    const isAR = T.isRTL();
+    return `
+    <div style="padding:24px 28px;max-width:1200px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;box-shadow:0 4px 12px rgba(13,148,136,.3)">
+            <i class="fas fa-file-invoice-dollar"></i>
+          </div>
+          <div>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_etat_vente')}</h2>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">Bilan global des livraisons</div>
+          </div>
+        </div>
+        
+        <div style="display:flex;gap:12px;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px;background:var(--bg2);padding:6px 12px;border-radius:8px;border:1px solid var(--border)">
+            <input type="date" id="evDateStart" value="${this._getDateStart()}" style="border:none;background:transparent;outline:none;font-weight:600;color:var(--text);font-family:inherit" onchange="EtatVenteModule._updateDates()">
+            <i class="fas fa-arrow-right" style="color:var(--text4);font-size:10px"></i>
+            <input type="date" id="evDateEnd" value="${this._getDateEnd()}" style="border:none;background:transparent;outline:none;font-weight:600;color:var(--text);font-family:inherit" onchange="EtatVenteModule._updateDates()">
+          </div>
+          <button class="btn btn-outline" onclick="EtatVenteModule._setToday()" style="font-size:12px;padding:6px 14px;font-weight:700;border-radius:8px;white-space:nowrap">
+            <i class="fas fa-calendar-day"></i> Aujourd'hui
+          </button>
+          <button class="btn btn-primary" onclick="EtatVenteModule._generatePDF()" style="background:linear-gradient(135deg,#0d9488,#14b8a6);border:none;box-shadow:0 4px 12px rgba(13,148,136,.3)">
+            <i class="fas fa-file-pdf"></i> Générer PDF
+          </button>
+        </div>
+      </div>
+      
+      <div id="evContainer">
+        ${this._renderTable()}
+      </div>
+    </div>
+    `;
+  },
+  
+  _updateDates() {
+    this._dateStart = document.getElementById('evDateStart').value;
+    this._dateEnd = document.getElementById('evDateEnd').value;
+    const container = document.getElementById('evContainer');
+    if (container) container.innerHTML = this._renderTable();
+  },
+  
+  _setToday() {
+    const today = typeof Utils !== 'undefined' ? Utils.today() : new Date().toISOString().split('T')[0];
+    this._dateStart = today;
+    this._dateEnd = today;
+    App.loadModule('etat_vente');
+  },
+  
+  _getAggregatedData() {
+    const bls = DB.getAll('bls').filter(b => b.date >= this._getDateStart() && b.date <= this._getDateEnd());
+    const aggregated = {};
+    
+    bls.forEach(bl => {
+      const lines = bl.lines || [];
+      lines.forEach(line => {
+        const key = (line.designation || '').trim();
+        if (!key) return;
+        const qty = Number(line.qtyDelivered || line.qty) || 0;
+        const price = Number(line.price) || 0;
+        const disc = Number(line.disc) || 0;
+        const effectivePrice = price * (1 - disc / 100);
+        if (!aggregated[key]) {
+          aggregated[key] = {
+            designation: key,
+            unit: line.unit || 'U',
+            qty: 0,
+            unitPrice: effectivePrice
+          };
+        }
+        aggregated[key].qty += qty;
+        // Keep the most common price (highest occurrence wins, fallback to highest)
+        if (effectivePrice > aggregated[key].unitPrice) {
+          aggregated[key].unitPrice = effectivePrice;
+        }
+      });
+    });
+    
+    return Object.values(aggregated).sort((a, b) => a.designation.localeCompare(b.designation));
+  },
+  
+  _renderTable() {
+    const items = this._getAggregatedData();
+    const settings = DB.getSettings();
+    const tvaRate = Number(settings.tvaRate) || 19;
+    const blCount = DB.getAll('bls').filter(b => b.date >= this._getDateStart() && b.date <= this._getDateEnd()).length;
+    
+    let totalHT = 0;
+    items.forEach(item => { totalHT += item.qty * item.unitPrice; });
+    
+    const tvaAmt = totalHT * (tvaRate / 100);
+    const timbreAmt = totalHT * 0.01;
+    const totalTTC = totalHT + tvaAmt + timbreAmt;
+    
+    let html = `
+    <!-- Summary Stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div style="background:linear-gradient(135deg,rgba(14,165,233,.08),rgba(14,165,233,.02));border:1px solid rgba(14,165,233,.15);border-radius:12px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0ea5e9;margin-bottom:4px">BL dans la période</div>
+        <div style="font-size:22px;font-weight:900;color:#0ea5e9">${blCount}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(139,92,246,.08),rgba(139,92,246,.02));border:1px solid rgba(139,92,246,.15);border-radius:12px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8b5cf6;margin-bottom:4px">Désignations</div>
+        <div style="font-size:22px;font-weight:900;color:#8b5cf6">${items.length}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(245,158,11,.02));border:1px solid rgba(245,158,11,.15);border-radius:12px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#f59e0b;margin-bottom:4px">Total HT</div>
+        <div style="font-size:18px;font-weight:900;color:#f59e0b">${Utils.fmtCurrency(totalHT)}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(16,185,129,.02));border:1px solid rgba(16,185,129,.15);border-radius:12px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#10b981;margin-bottom:4px">Total TTC</div>
+        <div style="font-size:18px;font-weight:900;color:#10b981">${Utils.fmtCurrency(totalTTC)}</div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
+              <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:50px">N°</th>
+              <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Désignation</th>
+              <th style="padding:12px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:100px">Unité</th>
+              <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:120px">Qté</th>
+              <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:150px">P.U HT</th>
+              <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:150px">Total HT</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    if (items.length === 0) {
+      html += `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text4)"><i class="fas fa-folder-open" style="font-size:32px;display:block;margin-bottom:12px;opacity:0.5"></i>Aucune donnée pour cette période</td></tr>`;
+    } else {
+      items.forEach((item, idx) => {
+        const rowTotal = item.qty * item.unitPrice;
+        html += `
+        <tr style="border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+          <td style="padding:12px 16px;color:var(--text4);font-weight:600">${idx+1}</td>
+          <td style="padding:12px 16px;font-weight:700;color:var(--text)">${Utils.escHTML(item.designation)}</td>
+          <td style="padding:12px 16px;text-align:center;color:var(--text3)">${Utils.escHTML(item.unit)}</td>
+          <td style="padding:12px 16px;text-align:right;font-weight:700;color:#0ea5e9">${Number(item.qty).toLocaleString('fr-FR')}</td>
+          <td style="padding:12px 16px;text-align:right;color:var(--text2)">${Utils.fmtCurrency(item.unitPrice)}</td>
+          <td style="padding:12px 16px;text-align:right;font-weight:800;color:var(--text)">${Utils.fmtCurrency(rowTotal)}</td>
+        </tr>`;
+      });
+    }
+    
+    html += `
+          </tbody>
+        </table>
+      </div>
+      
+      ${items.length > 0 ? `
+      <div style="background:var(--bg3);padding:24px;border-top:2px solid var(--border);display:flex;justify-content:flex-end">
+        <div style="width:350px">
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(0,0,0,0.05)">
+            <span style="color:var(--text3);font-weight:600">Total HT</span>
+            <span style="font-weight:800">${Utils.fmtCurrency(totalHT)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(0,0,0,0.05)">
+            <span style="color:var(--text3);font-weight:600">TVA (${tvaRate}%)</span>
+            <span style="font-weight:800;color:#f59e0b">${Utils.fmtCurrency(tvaAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(0,0,0,0.05)">
+            <span style="color:var(--text3);font-weight:600">Timbre (1%)</span>
+            <span style="font-weight:800;color:#ec4899">${Utils.fmtCurrency(timbreAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px">
+            <span style="color:var(--text);font-weight:900;font-size:16px">TOTAL TTC</span>
+            <span style="font-weight:900;font-size:18px;color:#10b981">${Utils.fmtCurrency(totalTTC)}</span>
+          </div>
+        </div>
+      </div>` : ''}
+    </div>`;
+    
+    return html;
+  },
+  
+  _generatePDF() {
+    const items = this._getAggregatedData();
+    if (!items.length) {
+      Utils.notify('Aucune donnée à exporter', 'warning');
+      return;
+    }
+    
+    const settings = DB.getSettings();
+    const tvaRate = Number(settings.tvaRate) || 19;
+    let totalHT = 0;
+    items.forEach(item => { totalHT += item.qty * item.unitPrice; });
+    const tvaAmt = totalHT * (tvaRate / 100);
+    const timbreAmt = totalHT * 0.01;
+    const totalTTC = totalHT + tvaAmt + timbreAmt;
+    
+    const period = this._getDateStart() === this._getDateEnd() ? this._getDateStart() : `Du ${this._getDateStart()} au ${this._getDateEnd()}`;
+    
+    const data = {
+      items,
+      totalHT,
+      tvaAmt,
+      tvaRate,
+      timbreAmt,
+      totalTTC,
+      period,
+      settings
+    };
+    
+    PDFGen.exportEtatVente(data);
+  }
+};
+window.EtatVenteModule = EtatVenteModule;
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN CAISSE CORRECTIONS — Edit any entry

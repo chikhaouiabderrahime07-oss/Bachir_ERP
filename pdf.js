@@ -607,6 +607,87 @@
       this._save(doc,`BR_${this._t(br.ref||'BROUILLON').replace(/\//g,'_')}.pdf`);
     },
 
+    exportEtatVente(data) {
+      this._ensureArabicFont().then(() => this._exportEtatVente(data)).catch(e => {
+        console.error(e);
+        this._notify('Erreur: ' + e.message, 'error');
+      });
+    },
+
+    _exportEtatVente(data) {
+      const { items, totalHT, tvaAmt, tvaRate, timbreAmt, totalTTC, period, settings } = data;
+      const s = {
+        companyName: settings.evCompanyName,
+        address: settings.evAddress,
+        phone: settings.evPhone,
+        fax: settings.evFax,
+        email: settings.evEmail,
+        nif: settings.evNif,
+        rc: settings.evRc,
+        nis: settings.evNis,
+        ai: settings.evAi,
+        capital: settings.evCapital,
+        logoLeft: settings.evLogoLeft,
+        logoRight: settings.evLogoRight
+      };
+      
+      const doc = this._newDoc();
+      
+      let y = this._drawCompanyHeader(doc, s, MT);
+      y = this._drawBanner(doc, 'ÉTAT DE VENTE', y);
+      y = this._drawInfoStrip(doc, [
+        { label: 'Période', value: this._t(period) },
+        { label: 'Date d\'édition', value: this._fmtDate(new Date()) },
+      ], y);
+      
+      y += 8;
+      
+      const COLS = [
+        {label:'N°', width:12, halign:'center'},
+        {label:'DÉSIGNATION', width:75, halign:'left'},
+        {label:'UNITÉ', width:15, halign:'center'},
+        {label:'QTÉ', width:18, halign:'center'},
+        {label:'P.U HT', width:34, halign:'center'},
+        {label:'TOTAL HT', width:40, halign:'center'},
+      ];
+      
+      const bodyRows = items.map((l, i) => {
+        return [
+          String(i+1).padStart(2,'0'),
+          this._t(l.designation||''),
+          this._t(l.unit||'U'),
+          this._fmtNum(l.qty),
+          this._fmtMoney(l.unitPrice),
+          this._fmtMoney(l.qty * l.unitPrice),
+        ];
+      });
+      if(!bodyRows.length) bodyRows.push(['01','-','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
+      
+      const tEndY = this._buildTable(doc, y, COLS, bodyRows, {
+        totalHT: totalHT,
+        tvaAmount: tvaAmt,
+        tvaRate: tvaRate,
+        timbre: timbreAmt,
+        totalTTC: totalTTC
+      });
+      
+      y = tEndY + 4;
+      
+      const wd = this._amountWords(totalTTC);
+      if(wd){
+        doc.setFont('helvetica','italic'); doc.setFontSize(8); this._tc(doc,C.GRAY_TXT);
+        const wl=doc.splitTextToSize(`Arretee a : ${wd} dinars algeriens`,CW);
+        doc.text(wl,ML,y); y+=wl.length*4+3;
+      }
+      
+      this._drawSigBlock(doc,[
+        {label:'Direction Générale', sub:this._t(s.companyName||''), value:'', sub2:'Cachet & Signature'}
+      ], Math.max(y+4, PH-62), 44);
+      
+      this._drawFooter(doc,1,1);
+      this._save(doc, `Etat_de_Vente_${period.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
+    },
+
     /* ══════════════════════════════════════════════════════════
        BL — BON DE LIVRAISON
     ══════════════════════════════════════════════════════════ */

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr" dir="ltr" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -628,6 +628,7 @@ const App = {
         { mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') },
         ...(isAdmin || Auth.can('canViewBRs') ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
         ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'bls', icon:'fa-file-export', label:T.get('nav_bls') }] : []),
+        ...(isAdmin ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
       ]},
       { section: T.get('sec_cash'), items: [
         ...(isAdmin
@@ -701,7 +702,7 @@ const App = {
       dashboard:'nav_dashboard', brs:'nav_brs', bls:'nav_bls', caisse:'nav_caisse',
       admin_caisse:'nav_admin_caisse', suppliers:'nav_suppliers', clients:'nav_clients', stats:'nav_stats',
       eval:'nav_eval', users:'nav_users', audit:'nav_audit', settings:'nav_settings',
-      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque'
+      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque', etat_vente:'nav_etat_vente'
     };
     if (bc) bc.textContent = labels[mod]?.startsWith?.('nav_') ? T.get(labels[mod]) : (labels[mod]||mod);
     this._setActiveSidebarItem(mod);
@@ -730,6 +731,7 @@ const App = {
         case 'eval':         html = EvalModule.render(); break;
         case 'catalogue':    html = CatalogueModule.render(); break;
         case 'bank':         html = typeof BankModule !== 'undefined' ? BankModule.render() : ''; break;
+        case 'etat_vente':   html = EtatVenteModule.render(); break;
         case 'users':        SettingsModule._tab='users'; html = SettingsModule.render(); break;
         case 'audit':        html = AuditModule.render(); break;
         case 'recycle_bin':  html = RecycleBinModule.render(); break;
