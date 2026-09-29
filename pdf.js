@@ -615,7 +615,7 @@
     },
 
     _exportEtatVente(data) {
-      const { items, totalHT, tvaAmt, tvaRate, timbreAmt, totalTTC, period, settings } = data;
+      const { ref, createdByName, createdAt, items, totalHT, tvaAmt, tvaRate, timbreAmt, totalTTC, period, settings } = data;
       const s = {
         companyName: settings.evCompanyName,
         address: settings.evAddress,
@@ -635,10 +635,14 @@
       
       let y = this._drawCompanyHeader(doc, s, MT);
       y = this._drawBanner(doc, 'ÉTAT DE VENTE', y);
-      y = this._drawInfoStrip(doc, [
-        { label: 'Période', value: this._t(period) },
-        { label: 'Date d\'édition', value: this._fmtDate(new Date()) },
-      ], y);
+      
+      const infoItems = [];
+      if (ref) infoItems.push({ label: 'Réf', value: this._t(ref) });
+      infoItems.push({ label: 'Période', value: this._t(period) });
+      infoItems.push({ label: 'Édité le', value: this._fmtDate(createdAt ? new Date(createdAt) : new Date()) });
+      if (createdByName) infoItems.push({ label: 'Généré par', value: this._t(createdByName) });
+
+      y = this._drawInfoStrip(doc, infoItems, y);
       
       y += 8;
       
@@ -686,6 +690,91 @@
       
       this._drawFooter(doc,1,1);
       this._save(doc, `Etat_de_Vente_${period.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
+    },
+
+    exportBonRetour(doc) {
+      this._ensureArabicFont().then(() => this._exportBonRetour(doc)).catch(e => {
+        console.error(e); this._notify('Erreur: ' + e.message, 'error');
+      });
+    },
+
+    _exportBonRetour(doc) {
+      const s = this._settings();
+      const cli = doc.clientId ? DB.getById('clients', doc.clientId) || {} : {};
+      const d = this._newDoc();
+      
+      let y = this._drawCompanyHeader(d, s, MT);
+      y = this._drawBanner(d, 'BON DE RETOUR', y);
+      y = this._drawInfoStrip(d, [
+        {label:'Date', value:this._fmtDate(doc.date)},
+        {label:'Réf Retour', value:this._t(doc.ref||'/')},
+        {label:'BL Retourné', value:this._t(doc.blRef||'/')},
+      ], y);
+      
+      // Client box
+      const cliLines = [
+        cli.name || doc.clientName || '/',
+        cli.address || '',
+        cli.nif ? `NIF: ${cli.nif}` : '',
+        cli.rc ? `RC: ${cli.rc}` : '',
+      ].filter(Boolean);
+      
+      const cw = (PW - ML - MR);
+      this._drawEntityBox(d, 'Client / Destinataire', cliLines, ML, y + 2, cw, 28);
+      y += 34;
+      
+      // Table
+      const COLS = [
+        {label:'N°', width:12, halign:'center'},
+        {label:'DÉSIGNATION', width:75, halign:'left'},
+        {label:'UNITÉ', width:15, halign:'center'},
+        {label:'QTÉ', width:18, halign:'center'},
+        {label:'P.U HT', width:34, halign:'center'},
+        {label:'TOTAL HT', width:40, halign:'center'},
+      ];
+      
+      const lines = doc.items || [];
+      const bodyRows = lines.map((l, i) => [
+        String(i+1).padStart(2,'0'),
+        this._t(l.designation||''),
+        this._t(l.unit||'U'),
+        this._fmtNum(l.qtyDelivered || l.qty || 0),
+        this._fmtMoney(l.price||0),
+        this._fmtMoney((l.qtyDelivered||l.qty||0) * (l.price||0)),
+      ]);
+      if(!bodyRows.length) bodyRows.push(['01','-','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
+      
+      const tEndY = this._buildTable(d, y, COLS, bodyRows, {
+        totalHT: doc.totalHT||0,
+        tvaAmount: doc.tvaAmount||0,
+        tvaRate: doc.tvaRate||0,
+        timbre: doc.timbreAmount||0,
+        totalTTC: doc.totalTTC||0
+      });
+      y = tEndY + 4;
+      
+      // Reason
+      if (doc.reason) {
+        d.setFont('helvetica','italic'); d.setFontSize(8); this._tc(d, C.GRAY_TXT);
+        d.text(`Motif du retour : ${this._t(doc.reason)}`, ML, y);
+        y += 6;
+      }
+      
+      // Amount in words
+      const wd = this._amountWords(doc.totalTTC||0);
+      if(wd){
+        d.setFont('helvetica','italic'); d.setFontSize(8); this._tc(d,C.GRAY_TXT);
+        const wl=d.splitTextToSize(`Arretee a : ${wd} dinars algeriens`,CW);
+        d.text(wl,ML,y); y+=wl.length*4+3;
+      }
+      
+      this._drawSigBlock(d,[
+        {label:'Direction Générale', sub:this._t(s.companyName||''), sub2:'Cachet & Signature'},
+        {label:'Le Client', value:this._t(doc.clientName||''), sub:'Cachet & Signature'},
+      ], Math.max(y+4, PH-62), 44);
+      
+      this._drawFooter(d,1,1);
+      this._save(d, `Bon_Retour_${this._t(doc.ref||'').replace(/\//g,'_')}.pdf`);
     },
 
     /* ══════════════════════════════════════════════════════════

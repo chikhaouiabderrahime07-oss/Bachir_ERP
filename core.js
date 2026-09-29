@@ -125,6 +125,9 @@ const T = {
     rb_ref_taken:'Référence prise — nouveau numéro:', rb_restored:'Elément restauré !',
     rb_already:'Déjà restauré', rb_confirm_restore:'Confirmer la restauration de cet élément ?',
     nav_etat_vente: 'État de Vente',
+    nav_bon_retour: 'Bons de Retour',
+    nav_pointage: 'Pointage',
+    nav_charges: 'Charges',
   },
   ar: {
     app_name:'نظام إدارة الموردين', app_by:'تطوير CHIKHAOUI ABDERRAHIME',
@@ -230,6 +233,9 @@ const T = {
     rb_ref_taken:'المرجع مستخدم — رقم جديد:', rb_restored:'تمت استعادة العنصر!',
     rb_already:'تمت الاستعادة مسبقاً', rb_confirm_restore:'تأكيد استعادة هذا العنصر؟',
     nav_etat_vente: 'حالة المبيعات',
+    nav_bon_retour: 'وصولات الإرجاع',
+    nav_pointage: 'الحضور',
+    nav_charges: 'المصاريف',
   },
 
   get(k) { return this[this._l]?.[k] || this.fr[k] || k; },
@@ -246,7 +252,7 @@ const T = {
 
 // ─── DATABASE ──────────────────────────────────────────────────
 const DB = {
-  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments', 'etat_vente_docs'],
+  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments', 'etat_vente_docs', 'bon_retours', 'bank_charges'],
 
   init() {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
@@ -1463,6 +1469,9 @@ const SessionMgr = {
       ecart: ecart,
       closedAt: new Date().toISOString()
     }, 'Clôture de journée');
+    
+    WorkLog.logOut(userId);
+    
     // Only create a deposit entry if no bl_delivery entries exist for today
     // (to avoid double-counting when deliveries were already recorded)
     const user = DB.getById('users', userId);

@@ -485,6 +485,68 @@ const App = {
       }
     }, 2500);
     
+    // ── Monthly Pack Fee Auto-Deduction ──
+    setTimeout(() => {
+      if (Auth.isAdmin() && typeof DB !== 'undefined') {
+        const settings = DB.getSettings();
+        const banks = settings.banks || [];
+        const fees = settings.bankFees || {};
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        const currentMonthPrefix = `${y}-${String(m + 1).padStart(2, '0')}`;
+        
+        banks.forEach(b => {
+          const f = fees[b.id];
+          if (f && f.packFee > 0) {
+            const packDay = parseInt(f.packFeeDay) || 1;
+            if (now.getDate() >= packDay) {
+              const existingCharge = DB.getAll('bank_charges').find(c => 
+                c.bankId === b.id && 
+                c.subtype === 'pack_bancaire' && 
+                c.type === 'auto' &&
+                (c.date || '').startsWith(currentMonthPrefix)
+              );
+              
+              if (!existingCharge) {
+                const amount = Number(f.packFee);
+                const chargeDate = `${currentMonthPrefix}-${String(packDay).padStart(2, '0')}`;
+                
+                const txFee = {
+                  id: 'tx_' + Date.now() + Math.random().toString(36).substr(2,5),
+                  bankId: b.id,
+                  type: 'payment',
+                  amount: amount,
+                  date: chargeDate,
+                  note: `PACK BANCAIRE ${currentMonthPrefix}`,
+                  userId: Auth.getCurrentUser()?.id,
+                  createdAt: now.toISOString()
+                };
+                DB.insert('bank_transactions', txFee);
+                
+                const charge = {
+                  id: 'chg_' + Date.now() + Math.random().toString(36).substr(2,5),
+                  type: 'auto',
+                  subtype: 'pack_bancaire',
+                  bankId: b.id,
+                  amount: amount,
+                  label: `Frais Pack Bancaire Mensuel`,
+                  date: chargeDate,
+                  linkedTxId: txFee.id,
+                  recurring: true,
+                  createdBy: Auth.getCurrentUser()?.id,
+                  createdByName: 'Système',
+                  createdAt: now.toISOString()
+                };
+                DB.insert('bank_charges', charge);
+                Utils.notify(`Pack bancaire de ${Utils.fmtCurrency(amount)} déduit pour ${b.name}`, 'info');
+              }
+            }
+          }
+        });
+      }
+    }, 3000);
+    
     // ── Security: remove credentials from URL immediately after login ──
     if (location.search) {
       window.history.replaceState({}, document.title, location.pathname);
@@ -635,6 +697,7 @@ const App = {
           ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }]
           : (Auth.can('canViewCaisse') ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }] : [])),
         ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:'Banque' }] : []),
+        ...(isAdmin ? [{ mod:'charges', icon:'fa-receipt', label:T.get('nav_charges') }] : []),
       ]},
       { section: T.get('sec_refs'), items: [
         ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
@@ -643,6 +706,7 @@ const App = {
       ...(isAdmin ? [{ section: T.get('sec_analysis'), items: [
         { mod:'stats',   icon:'fa-chart-bar',  label:T.get('nav_stats') },
         { mod:'eval',    icon:'fa-user-clock', label:T.get('nav_eval') },
+        { mod:'pointage', icon:'fa-user-clock', label:T.get('nav_pointage') },
       ]}] : []),
       ...(isAdmin ? [{ section: T.get('sec_admin'), items: [
         { mod:'audit',        icon:'fa-shield-alt',    label:T.get('nav_audit') },
@@ -701,8 +765,8 @@ const App = {
     const labels = {
       dashboard:'nav_dashboard', brs:'nav_brs', bls:'nav_bls', caisse:'nav_caisse',
       admin_caisse:'nav_admin_caisse', suppliers:'nav_suppliers', clients:'nav_clients', stats:'nav_stats',
-      eval:'nav_eval', users:'nav_users', audit:'nav_audit', settings:'nav_settings',
-      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque', etat_vente:'nav_etat_vente'
+      eval:'nav_eval', pointage:'nav_pointage', users:'nav_users', audit:'nav_audit', settings:'nav_settings',
+      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque', etat_vente:'nav_etat_vente', charges:'nav_charges'
     };
     if (bc) bc.textContent = labels[mod]?.startsWith?.('nav_') ? T.get(labels[mod]) : (labels[mod]||mod);
     this._setActiveSidebarItem(mod);
@@ -729,8 +793,10 @@ const App = {
         case 'partners':     html = PartnersModule.render(); break;
         case 'stats':        html = StatsModule.render(); break;
         case 'eval':         html = EvalModule.render(); break;
+        case 'pointage':     html = PointageModule.render(); break;
         case 'catalogue':    html = CatalogueModule.render(); break;
         case 'bank':         html = typeof BankModule !== 'undefined' ? BankModule.render() : ''; break;
+        case 'charges':      html = ChargesModule.render(); break;
         case 'etat_vente':   html = EtatVenteModule.render(); break;
         case 'users':        SettingsModule._tab='users'; html = SettingsModule.render(); break;
         case 'audit':        html = AuditModule.render(); break;

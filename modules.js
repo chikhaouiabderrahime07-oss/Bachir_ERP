@@ -2044,6 +2044,48 @@ const BLModule = {
 
     if (action === 'return') {
       // ═══ PATH A: RETURNED MERCHANDISE ═══════════════════════
+      // NEW: Ask for reason
+      const reasonResult = await Dialog.show({
+        title: 'Motif du retour',
+        message: '<div class="form-group"><label>Raison du retour</label><input type="text" id="dlg_ret_reason" placeholder="Ex: Marchandise défectueuse..." style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;margin-top:8px"></div>',
+        type: 'warning',
+        confirmText: 'Confirmer le retour',
+        cancelText: 'Annuler'
+      });
+      if (!reasonResult) return;
+      const reason = document.getElementById('dlg_ret_reason')?.value || 'Retour marchandise';
+      
+      // NEW: Generate Bon de Retour
+      const nowDt = new Date();
+      const year = nowDt.getFullYear();
+      const month = String(nowDt.getMonth() + 1).padStart(2, '0');
+      const retNum = DB.getAll('bon_retours').filter(r => (r.ref||'').includes('/' + year)).length + 1;
+      const retRef = `RET/${String(retNum).padStart(3, '0')}/${month}/${year}`;
+      const cli = bl.clientId ? DB.getById('clients', bl.clientId) || {} : {};
+      
+      const retourDoc = {
+        ref: retRef,
+        blId: bl.id,
+        blRef: bl.ref,
+        clientId: bl.clientId,
+        clientName: cli.name || '',
+        date: Utils.today(),
+        items: bl.lines || [],
+        totalHT: bl.totalHT || 0,
+        tvaRate: bl.tvaRate || 0,
+        tvaAmount: bl.tvaAmount || 0,
+        timbreAmount: bl.timbreAmount || 0,
+        totalTTC: bl.totalTTC || 0,
+        reason: reason,
+        createdBy: u?.id,
+        createdByName: u?.name || 'Admin',
+        createdAt: now,
+        status: 'completed'
+      };
+      
+      DB.insert('bon_retours', retourDoc);
+      if(window.PDFGen) PDFGen.exportBonRetour(retourDoc);
+
       // 1. Mark BL as 'returned' (keep it visible)
       DB.update('bls', id, {
         status: 'returned',
@@ -5504,6 +5546,7 @@ const SettingsModule = {
       {id:'timbre',  icon:'fa-stamp',       label:T.get('set_timbre'),   color:'#f59e0b'},
       {id:'appear',  icon:'fa-palette',     label:T.get('set_theme'),    color:'#8b5cf6'},
       {id:'banks',   icon:'fa-university',  label:'Banques',             color:'#10b981'},
+      {id:'bank_fees', icon:'fa-money-check-alt', label:'Frais Bancaires', color:'#dc2626'},
       {id:'etatvente',icon:'fa-file-invoice-dollar',label:T.get('nav_etat_vente'), color:'#0d9488'},
       {id:'users',   icon:'fa-users-cog',   label:T.get('nav_users'),    color:'#ef4444'},
       {id:'data',    icon:'fa-database',    label:T.get('set_data'),     color:'#6366f1'},
@@ -5546,8 +5589,114 @@ const SettingsModule = {
       ${this._tab==='users'?this._tabUsers():''}
       ${this._tab==='etatvente'?this._tabEtatVente(s):''}
       ${this._tab==='data'?this._tabData():''}
+      ${this._tab==='bank_fees'?this._tabBankFees(s):''}
     </div>
     </div>`;
+  },
+
+  _tabBankFees(s) {
+    const isAR = T.isRTL();
+    const banks = s.banks || [];
+    const fees = s.bankFees || {};
+
+    const ALGERIAN_BANKS = [
+      { name: 'BNA', depositFee: 0, withdrawalFee: 50, packFee: 1500, transferFee: 200 },
+      { name: 'CPA', depositFee: 0, withdrawalFee: 75, packFee: 2000, transferFee: 250 },
+      { name: 'BADR', depositFee: 0, withdrawalFee: 50, packFee: 1500, transferFee: 200 },
+      { name: 'BEA', depositFee: 0, withdrawalFee: 100, packFee: 2500, transferFee: 300 },
+      { name: 'BDL', depositFee: 0, withdrawalFee: 50, packFee: 1200, transferFee: 150 },
+      { name: 'CNEP', depositFee: 0, withdrawalFee: 30, packFee: 1000, transferFee: 100 },
+      { name: 'Gulf Bank', depositFee: 0, withdrawalFee: 150, packFee: 3000, transferFee: 350 },
+      { name: 'SGA', depositFee: 50, withdrawalFee: 100, packFee: 3500, transferFee: 400 },
+      { name: 'AGB', depositFee: 0, withdrawalFee: 100, packFee: 2800, transferFee: 300 },
+      { name: 'Trust Bank', depositFee: 0, withdrawalFee: 75, packFee: 2000, transferFee: 200 },
+      { name: 'Autre', depositFee: 0, withdrawalFee: 0, packFee: 0, transferFee: 0 },
+    ];
+
+    if (!banks.length) {
+      return `<div class="alert alert-info">Veuillez d'abord configurer des comptes bancaires dans l'onglet Banques.</div>`;
+    }
+
+    window._saveBankFees = () => {
+      const bFees = {};
+      banks.forEach(b => {
+        bFees[b.id] = {
+          depositFee: parseFloat(document.getElementById(`bf_dep_${b.id}`).value) || 0,
+          depositFeePercent: parseFloat(document.getElementById(`bf_deppct_${b.id}`).value) || 0,
+          withdrawalFee: parseFloat(document.getElementById(`bf_with_${b.id}`).value) || 0,
+          transferFee: parseFloat(document.getElementById(`bf_trans_${b.id}`).value) || 0,
+          checkFee: parseFloat(document.getElementById(`bf_check_${b.id}`).value) || 0,
+          packFee: parseFloat(document.getElementById(`bf_pack_${b.id}`).value) || 0,
+          packFeeDay: parseInt(document.getElementById(`bf_packday_${b.id}`).value) || 1
+        };
+      });
+      DB.saveSettings({ bankFees: bFees });
+      Utils.notify(isAR ? 'تم الحفظ' : 'Enregistré', 'success');
+    };
+
+    window._applyBankTemplate = (bankId, sel) => {
+      const tmpl = ALGERIAN_BANKS.find(x => x.name === sel.value);
+      if (tmpl) {
+        document.getElementById(`bf_dep_${bankId}`).value = tmpl.depositFee;
+        document.getElementById(`bf_with_${bankId}`).value = tmpl.withdrawalFee;
+        document.getElementById(`bf_pack_${bankId}`).value = tmpl.packFee;
+        document.getElementById(`bf_trans_${bankId}`).value = tmpl.transferFee;
+      }
+    };
+
+    let html = `<div style="max-width:800px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div><div style="font-weight:800;font-size:16px">Frais Bancaires Automatiques</div></div>
+        <button class="btn btn-primary" onclick="_saveBankFees()"><i class="fas fa-save"></i> ${T.get('save')}</button>
+      </div>`;
+
+    banks.forEach(b => {
+      const f = fees[b.id] || {};
+      html += `<div style="background:var(--bg2);padding:16px;border-radius:12px;margin-bottom:16px;border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px">
+          <div style="font-weight:700;color:var(--primary)"><i class="fas fa-university"></i> ${Utils.escHTML(b.name)}</div>
+          <select class="input" style="width:200px;padding:4px" onchange="_applyBankTemplate('${b.id}', this)">
+            <option value="">-- Modèle de frais --</option>
+            ${ALGERIAN_BANKS.map(x => `<option value="${x.name}">${x.name}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label class="label">Frais de versement fixe (DA)</label>
+            <input type="number" id="bf_dep_${b.id}" class="input" value="${f.depositFee||0}">
+          </div>
+          <div>
+            <label class="label">Frais de versement (%)</label>
+            <input type="number" step="0.01" id="bf_deppct_${b.id}" class="input" value="${f.depositFeePercent||0}">
+          </div>
+          <div>
+            <label class="label">Frais de retrait (DA)</label>
+            <input type="number" id="bf_with_${b.id}" class="input" value="${f.withdrawalFee||0}">
+          </div>
+          <div>
+            <label class="label">Frais de virement (DA)</label>
+            <input type="number" id="bf_trans_${b.id}" class="input" value="${f.transferFee||0}">
+          </div>
+          <div>
+            <label class="label">Frais de remise chèque (DA)</label>
+            <input type="number" id="bf_check_${b.id}" class="input" value="${f.checkFee||0}">
+          </div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:2">
+              <label class="label">Pack Mensuel (DA)</label>
+              <input type="number" id="bf_pack_${b.id}" class="input" value="${f.packFee||0}">
+            </div>
+            <div style="flex:1">
+              <label class="label">Jour</label>
+              <input type="number" id="bf_packday_${b.id}" class="input" value="${f.packFeeDay||1}" min="1" max="28">
+            </div>
+          </div>
+        </div>
+      </div>`;
+    });
+
+    html += `</div>`;
+    return html;
   },
 
   _tabUsers() {
@@ -7471,6 +7620,41 @@ const BankModule = {
         bankId, type:'payment', subtype:'supplier_payment',
         supplierId, amount, note, date, ref, by:u?.id, byName:u?.name
       });
+
+      // Auto-fee for bank withdrawal
+      const settings = DB.getSettings();
+      const bFees = settings.bankFees?.[bankId];
+      if (bFees && bFees.withdrawalFee > 0) {
+        const feeAmt = Number(bFees.withdrawalFee);
+        const txFee = {
+          id: 'tx_' + Date.now() + Math.random().toString(36).substr(2,5),
+          bankId: bankId,
+          type: 'payment',
+          amount: feeAmt,
+          date: date,
+          note: `FRAIS RETRAIT: ${ref}`,
+          userId: u?.id,
+          createdAt: new Date().toISOString()
+        };
+        DB.insert('bank_transactions', txFee);
+        
+        const charge = {
+          id: 'chg_' + Date.now() + Math.random().toString(36).substr(2,5),
+          type: 'auto',
+          subtype: 'withdrawal_fee',
+          bankId: bankId,
+          amount: feeAmt,
+          label: `Frais de retrait - ${ref}`,
+          date: date,
+          linkedTxId: txFee.id,
+          linkedRef: ref,
+          recurring: false,
+          createdBy: u?.id,
+          createdByName: u?.name,
+          createdAt: new Date().toISOString()
+        };
+        DB.insert('bank_charges', charge);
+      }
     } else {
       DB.insert('caisse_admin', {
         type:'withdrawal', source:'supplier_payment',
@@ -8192,6 +8376,7 @@ Modules.partners = PartnersModule;
 // ETAT DE VENTE MODULE
 // ═══════════════════════════════════════════════════════════════
 const EtatVenteModule = {
+  _view: 'generate', // 'generate' or 'history'
   _dateStart: null,
   _dateEnd: null,
   _getDateStart() { return this._dateStart || (typeof Utils !== 'undefined' ? Utils.today() : new Date().toISOString().split('T')[0]); },
@@ -8207,38 +8392,40 @@ const EtatVenteModule = {
             <i class="fas fa-file-invoice-dollar"></i>
           </div>
           <div>
-            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_etat_vente')}</h2>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_etat_vente') || 'État de Vente'}</h2>
             <div style="font-size:13px;color:var(--text4);margin-top:2px">Bilan global des livraisons</div>
           </div>
         </div>
         
-        <div style="display:flex;gap:12px;align-items:center">
-          <div style="display:flex;align-items:center;gap:8px;background:var(--bg2);padding:6px 12px;border-radius:8px;border:1px solid var(--border)">
-            <input type="date" id="evDateStart" value="${this._getDateStart()}" style="border:none;background:transparent;outline:none;font-weight:600;color:var(--text);font-family:inherit" onchange="EtatVenteModule._updateDates()">
-            <i class="fas fa-arrow-right" style="color:var(--text4);font-size:10px"></i>
-            <input type="date" id="evDateEnd" value="${this._getDateEnd()}" style="border:none;background:transparent;outline:none;font-weight:600;color:var(--text);font-family:inherit" onchange="EtatVenteModule._updateDates()">
-          </div>
-          <button class="btn btn-outline" onclick="EtatVenteModule._setToday()" style="font-size:12px;padding:6px 14px;font-weight:700;border-radius:8px;white-space:nowrap">
-            <i class="fas fa-calendar-day"></i> Aujourd'hui
+        <div style="display:flex;background:var(--bg2);padding:4px;border-radius:10px;border:1px solid var(--border)">
+          <button class="btn" style="border:none;background:${this._view==='generate'?'var(--primary)':'transparent'};color:${this._view==='generate'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('generate')">
+            <i class="fas fa-plus-circle" style="margin-right:6px"></i> Générer
           </button>
-          <button class="btn btn-primary" onclick="EtatVenteModule._generatePDF()" style="background:linear-gradient(135deg,#0d9488,#14b8a6);border:none;box-shadow:0 4px 12px rgba(13,148,136,.3)">
-            <i class="fas fa-file-pdf"></i> Générer PDF
+          <button class="btn" style="border:none;background:${this._view==='history'?'var(--primary)':'transparent'};color:${this._view==='history'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('history')">
+            <i class="fas fa-history" style="margin-right:6px"></i> Historique
           </button>
         </div>
       </div>
       
       <div id="evContainer">
-        ${this._renderTable()}
+        ${this._view === 'generate' ? this._renderGenerateView() : this._renderHistoryView()}
       </div>
     </div>
     `;
+  },
+
+  _setView(v) {
+    this._view = v;
+    App.loadModule('etat_vente');
   },
   
   _updateDates() {
     this._dateStart = document.getElementById('evDateStart').value;
     this._dateEnd = document.getElementById('evDateEnd').value;
     const container = document.getElementById('evContainer');
-    if (container) container.innerHTML = this._renderTable();
+    if (container) {
+       container.innerHTML = this._view === 'generate' ? this._renderGenerateView() : this._renderHistoryView();
+    }
   },
   
   _setToday() {
@@ -8270,7 +8457,6 @@ const EtatVenteModule = {
           };
         }
         aggregated[key].qty += qty;
-        // Keep the most common price (highest occurrence wins, fallback to highest)
         if (effectivePrice > aggregated[key].unitPrice) {
           aggregated[key].unitPrice = effectivePrice;
         }
@@ -8280,20 +8466,57 @@ const EtatVenteModule = {
     return Object.values(aggregated).sort((a, b) => a.designation.localeCompare(b.designation));
   },
   
-  _renderTable() {
+  _renderGenerateView() {
     const items = this._getAggregatedData();
     const settings = DB.getSettings();
     const tvaRate = Number(settings.tvaRate) || 19;
-    const blCount = DB.getAll('bls').filter(b => b.date >= this._getDateStart() && b.date <= this._getDateEnd()).length;
+    const bls = DB.getAll('bls').filter(b => b.date >= this._getDateStart() && b.date <= this._getDateEnd());
+    const blCount = bls.length;
     
     let totalHT = 0;
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
     
     const tvaAmt = totalHT * (tvaRate / 100);
-    const timbreAmt = totalHT * 0.01;
+    const timbreAmt = totalHT * 0.015;
     const totalTTC = totalHT + tvaAmt + timbreAmt;
     
+    // Calculate difference (Caisse vs Banque)
+    let caisseTotalTTC = 0;
+    bls.forEach(bl => {
+      let bHT = 0;
+      (bl.lines||[]).forEach(l => {
+        const q = Number(l.qtyDelivered || l.qty) || 0;
+        const p = Number(l.price) || 0;
+        const d = Number(l.disc) || 0;
+        bHT += q * (p * (1 - d/100));
+      });
+      const bTVA = bHT * ((Number(bl.tvaRate)||19)/100);
+      let bTimbre = 0;
+      if (bl.hasTimbre) {
+         const slabs = (DB.getAll('timbre_slabs') || []);
+         const val = bHT + bTVA;
+         const slab = slabs.find(s => val >= s.min && val <= s.max);
+         bTimbre = slab ? slab.amount : 0;
+      }
+      caisseTotalTTC += (bHT + bTVA + bTimbre);
+    });
+    const difference = caisseTotalTTC - totalTTC;
+    
     let html = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px;gap:12px;align-items:center">
+      <div style="display:flex;align-items:center;gap:8px;background:var(--bg2);padding:6px 12px;border-radius:8px;border:1px solid var(--border)">
+        <input type="date" id="evDateStart" value="${this._getDateStart()}" style="border:none;background:transparent;outline:none;font-weight:600;color:var(--text);font-family:inherit" onchange="EtatVenteModule._updateDates()">
+        <i class="fas fa-arrow-right" style="color:var(--text4);font-size:10px"></i>
+        <input type="date" id="evDateEnd" value="${this._getDateEnd()}" style="border:none;background:transparent;outline:none;font-weight:600;color:var(--text);font-family:inherit" onchange="EtatVenteModule._updateDates()">
+      </div>
+      <button class="btn btn-outline" onclick="EtatVenteModule._setToday()" style="font-size:12px;padding:6px 14px;font-weight:700;border-radius:8px;white-space:nowrap">
+        <i class="fas fa-calendar-day"></i> Aujourd'hui
+      </button>
+      <button class="btn btn-primary" onclick="EtatVenteModule._saveAndGenerate()" style="background:linear-gradient(135deg,#0d9488,#14b8a6);border:none;box-shadow:0 4px 12px rgba(13,148,136,.3)">
+        <i class="fas fa-file-pdf"></i> Générer PDF & Dépôt
+      </button>
+    </div>
+
     <!-- Summary Stats -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
       <div style="background:linear-gradient(135deg,rgba(14,165,233,.08),rgba(14,165,233,.02));border:1px solid rgba(14,165,233,.15);border-radius:12px;padding:14px 16px">
@@ -8313,7 +8536,8 @@ const EtatVenteModule = {
         <div style="font-size:18px;font-weight:900;color:#10b981">${Utils.fmtCurrency(totalTTC)}</div>
       </div>
     </div>
-    <div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
+    
+    <div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03);margin-bottom:20px">
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
@@ -8363,21 +8587,88 @@ const EtatVenteModule = {
             <span style="font-weight:800;color:#f59e0b">${Utils.fmtCurrency(tvaAmt)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(0,0,0,0.05)">
-            <span style="color:var(--text3);font-weight:600">Timbre (1%)</span>
+            <span style="color:var(--text3);font-weight:600">Timbre (1,5%)</span>
             <span style="font-weight:800;color:#ec4899">${Utils.fmtCurrency(timbreAmt)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px">
-            <span style="color:var(--text);font-weight:900;font-size:16px">TOTAL TTC</span>
+            <span style="color:var(--text);font-weight:900;font-size:16px">TOTAL TTC (Banque)</span>
             <span style="font-weight:900;font-size:18px;color:#10b981">${Utils.fmtCurrency(totalTTC)}</span>
           </div>
         </div>
       </div>` : ''}
-    </div>`;
+    </div>
+    
+    <!-- Récapitulatif Caisse vs Banque -->
+    ${items.length > 0 ? `
+    <div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);padding:20px;box-shadow:0 4px 15px rgba(0,0,0,.03)">
+      <h3 style="margin:0 0 16px 0;font-size:16px;color:var(--text)">Récapitulatif Caisse vs Banque</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+        <div>
+          <div style="font-size:12px;color:var(--text4);margin-bottom:4px">Total Caisse (BL réels)</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text)">${Utils.fmtCurrency(caisseTotalTTC)}</div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--text4);margin-bottom:4px">Total Banque (État de vente)</div>
+          <div style="font-size:20px;font-weight:800;color:#10b981">${Utils.fmtCurrency(totalTTC)}</div>
+        </div>
+        <div style="border-left:2px solid var(--border);padding-left:20px">
+          <div style="font-size:12px;color:var(--text4);margin-bottom:4px">Différence</div>
+          <div style="font-size:20px;font-weight:800;color:${difference > 0 ? '#10b981' : (difference < 0 ? '#ef4444' : 'var(--text)')}">${difference > 0 ? '+' : ''}${Utils.fmtCurrency(difference)}</div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+    `;
     
     return html;
   },
   
-  _generatePDF() {
+  _renderHistoryView() {
+    let docs = DB.getAll('etat_vente_docs').sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    let html = `
+    <div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
+            <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Réf</th>
+            <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Période</th>
+            <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Généré par</th>
+            <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Total TTC</th>
+            <th style="padding:12px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Statut</th>
+            <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    if (docs.length === 0) {
+      html += `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text4)">Aucun historique</td></tr>`;
+    } else {
+      docs.forEach(doc => {
+        const periodStr = doc.dateStart === doc.dateEnd ? doc.dateStart : `Du ${doc.dateStart} au ${doc.dateEnd}`;
+        const stBadge = doc.status === 'deposited' ? `<span style="background:rgba(16,185,129,0.1);color:#10b981;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700">Déposé</span>` : `<span style="background:rgba(245,158,11,0.1);color:#f59e0b;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700">Généré</span>`;
+        html += `
+        <tr style="border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+          <td style="padding:12px 16px;font-weight:700;color:var(--text)">${Utils.escHTML(doc.ref)}</td>
+          <td style="padding:12px 16px;color:var(--text2)">${periodStr}</td>
+          <td style="padding:12px 16px;color:var(--text2)">${Utils.escHTML(doc.createdByName || '')}</td>
+          <td style="padding:12px 16px;text-align:right;font-weight:800;color:#10b981">${Utils.fmtCurrency(doc.totalTTC)}</td>
+          <td style="padding:12px 16px;text-align:center">${stBadge}</td>
+          <td style="padding:12px 16px;text-align:right">
+            <button class="btn" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px" onclick="EtatVenteModule._reprint(${doc.id})">
+              <i class="fas fa-print"></i>
+            </button>
+          </td>
+        </tr>`;
+      });
+    }
+    
+    html += `</tbody></table></div>`;
+    return html;
+  },
+
+  async _saveAndGenerate() {
     const items = this._getAggregatedData();
     if (!items.length) {
       Utils.notify('Aucune donnée à exporter', 'warning');
@@ -8385,30 +8676,615 @@ const EtatVenteModule = {
     }
     
     const settings = DB.getSettings();
+    const banks = settings.banks || [];
+    let selectedBankId = null;
+    
+    if (banks.length > 1) {
+      let optionsHtml = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)}</option>`).join('');
+      const r = await Dialog.show({
+        title: 'Sélectionner la banque pour le dépôt',
+        message: `<div class="form-group"><label>Banque</label><select id="ev_bank_select" style="width:100%">${optionsHtml}</select></div>`,
+        type: 'info',
+        confirmText: 'Valider',
+        cancelText: 'Ignorer'
+      });
+      if (r) selectedBankId = document.getElementById('ev_bank_select').value;
+    } else if (banks.length === 1) {
+      selectedBankId = banks[0].id;
+    }
+    
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    let seqNum = DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1;
+    
+    try {
+      if (typeof API !== 'undefined') {
+        const res = await API.get('/data/next-num/etat_vente?year=' + year);
+        if (res && res.num) seqNum = res.num;
+      }
+    } catch(e) {
+      console.error('Failed to get seqNum from API', e);
+    }
+    
+    const ref = `ET/${String(seqNum).padStart(3, '0')}/${month}/${year}`;
+    
     const tvaRate = Number(settings.tvaRate) || 19;
     let totalHT = 0;
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
     const tvaAmt = totalHT * (tvaRate / 100);
-    const timbreAmt = totalHT * 0.01;
+    const timbreAmt = totalHT * 0.015;
     const totalTTC = totalHT + tvaAmt + timbreAmt;
     
-    const period = this._getDateStart() === this._getDateEnd() ? this._getDateStart() : `Du ${this._getDateStart()} au ${this._getDateEnd()}`;
+    const u = Auth.getCurrentUser();
     
-    const data = {
-      items,
-      totalHT,
-      tvaAmt,
-      tvaRate,
-      timbreAmt,
-      totalTTC,
-      period,
-      settings
+    const etatData = {
+      ref: ref,
+      year: year,
+      date: this._getDateEnd(),
+      dateStart: this._getDateStart(),
+      dateEnd: this._getDateEnd(),
+      items: items,
+      totalHT: totalHT,
+      tvaRate: tvaRate,
+      tvaAmount: tvaAmt,
+      timbreRate: 0.015,
+      timbreAmount: timbreAmt,
+      totalTTC: totalTTC,
+      createdBy: u.id,
+      createdByName: u.name,
+      createdAt: now.toISOString(),
+      bankDepositId: null,
+      status: 'generated'
     };
     
+    let savedDoc;
+    try {
+      savedDoc = await DB.insert('etat_vente_docs', etatData);
+    } catch(e) {
+      console.error(e);
+      Utils.notify('Erreur lors de la sauvegarde', 'error');
+      return;
+    }
+    
+    if (selectedBankId) {
+       const bank = banks.find(b => String(b.id) === String(selectedBankId));
+       const depositData = {
+         type: 'deposit',
+         subtype: 'etat_vente',
+         bankId: selectedBankId,
+         amount: totalTTC,
+         date: now.toISOString().split('T')[0],
+         ref: 'EV-DEP-' + ref.replace(/\//g, '-'),
+         note: 'Dépôt État de Vente ' + ref,
+         etatVenteId: savedDoc.id,
+         etatVenteRef: ref,
+         createdBy: u.id,
+         createdByName: u.name,
+         createdAt: now.toISOString()
+       };
+       const savedDeposit = await DB.insert('bank_transactions', depositData);
+       
+       await DB.update('etat_vente_docs', savedDoc.id, {
+         bankDepositId: savedDeposit.id,
+         status: 'deposited'
+       });
+       savedDoc.bankDepositId = savedDeposit.id;
+       savedDoc.status = 'deposited';
+       
+       Utils.notify(`Dépôt de ${Utils.fmtCurrency(totalTTC)} vers ${bank?bank.name:selectedBankId} effectué`, 'success');
+
+       // Auto-fee deduction
+       const bFees = settings.bankFees?.[selectedBankId];
+       if (bFees) {
+         let feeAmt = 0;
+         if (bFees.depositFee) feeAmt += Number(bFees.depositFee);
+         if (bFees.depositFeePercent) feeAmt += (totalTTC * Number(bFees.depositFeePercent) / 100);
+         
+         if (feeAmt > 0) {
+           const txFee = {
+             id: 'tx_' + Date.now() + Math.random().toString(36).substr(2,5),
+             bankId: selectedBankId,
+             type: 'payment',
+             amount: feeAmt,
+             date: depositData.date,
+             note: `FRAIS DEPOT: ${depositData.ref}`,
+             userId: u.id,
+             createdAt: depositData.createdAt
+           };
+           DB.insert('bank_transactions', txFee);
+           
+           const charge = {
+             id: 'chg_' + Date.now() + Math.random().toString(36).substr(2,5),
+             type: 'auto',
+             subtype: 'deposit_fee',
+             bankId: selectedBankId,
+             amount: feeAmt,
+             label: `Frais de dépôt - ${depositData.ref}`,
+             date: depositData.date,
+             linkedTxId: txFee.id,
+             linkedRef: depositData.ref,
+             recurring: false,
+             createdBy: u.id,
+             createdByName: u.name,
+             createdAt: depositData.createdAt
+           };
+           DB.insert('bank_charges', charge);
+         }
+       }
+    }
+    
+    this._doPDF(savedDoc, settings);
+    this._view = 'history';
+    App.loadModule('etat_vente');
+  },
+  
+  _reprint(id) {
+    const doc = DB.getById('etat_vente_docs', id);
+    if (!doc) return;
+    const settings = DB.getSettings();
+    this._doPDF(doc, settings);
+  },
+
+  _doPDF(doc, settings) {
+    const period = doc.dateStart === doc.dateEnd ? doc.dateStart : `Du ${doc.dateStart} au ${doc.dateEnd}`;
+    const data = {
+      ref: doc.ref,
+      createdByName: doc.createdByName,
+      createdAt: doc.createdAt,
+      items: doc.items,
+      totalHT: doc.totalHT,
+      tvaAmt: doc.tvaAmount,
+      tvaRate: doc.tvaRate,
+      timbreAmt: doc.timbreAmount,
+      totalTTC: doc.totalTTC,
+      period: period,
+      settings: settings
+    };
     PDFGen.exportEtatVente(data);
   }
 };
 window.EtatVenteModule = EtatVenteModule;
+
+// ═══════════════════════════════════════════════════════════════
+// POINTAGE MODULE (Time Tracking / Attendance)
+// ═══════════════════════════════════════════════════════════════
+const PointageModule = {
+  _month: new Date().getMonth(),
+  _year: new Date().getFullYear(),
+  
+  render() {
+    const users = DB.getAll('users').filter(u => u.role !== 'admin' || true);
+    const logs = DB.getAll('work_log');
+    const daysInMonth = new Date(this._year, this._month + 1, 0).getDate();
+    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    
+    // Build attendance data
+    const userData = users.map(u => {
+      const userLogs = logs.filter(l => {
+        if (l.userId !== u.id) return false;
+        const d = new Date(l.loginTime || l.date);
+        return d.getMonth() === this._month && d.getFullYear() === this._year;
+      });
+      
+      const days = {};
+      let totalHours = 0;
+      let totalDays = 0;
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${this._year}-${String(this._month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const dayLogs = userLogs.filter(l => (l.date || '').startsWith(dateStr) || (l.loginTime || '').startsWith(dateStr));
+        
+        if (dayLogs.length > 0) {
+          let hours = 0;
+          dayLogs.forEach(log => {
+            if (log.loginTime && log.logoutTime) {
+              hours += (new Date(log.logoutTime) - new Date(log.loginTime)) / 3600000;
+            } else if (log.loginTime) {
+              hours += (new Date() - new Date(log.loginTime)) / 3600000;
+            }
+          });
+          hours = Math.min(hours, 24);
+          days[day] = Math.round(hours * 10) / 10;
+          totalHours += days[day];
+          totalDays++;
+        } else {
+          days[day] = null;
+        }
+      }
+      
+      return { user: u, days, totalHours: Math.round(totalHours * 10) / 10, totalDays };
+    });
+    
+    // Summary KPIs
+    const totalUsers = users.length;
+    const avgHours = userData.length ? Math.round(userData.reduce((s,d) => s + d.totalHours, 0) / Math.max(userData.length, 1) * 10) / 10 : 0;
+    const mostActive = userData.sort((a,b) => b.totalHours - a.totalHours)[0];
+    
+    let html = `
+    <div style="padding:24px 28px;max-width:1400px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#818cf8);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;box-shadow:0 4px 12px rgba(99,102,241,.3)">
+            <i class="fas fa-user-clock"></i>
+          </div>
+          <div>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_pointage')}</h2>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">Suivi de présence et heures de travail</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn" onclick="PointageModule._prevMonth()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px"><i class="fas fa-chevron-left"></i></button>
+          <span style="font-weight:800;font-size:16px;min-width:180px;text-align:center">${monthNames[this._month]} ${this._year}</span>
+          <button class="btn" onclick="PointageModule._nextMonth()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px"><i class="fas fa-chevron-right"></i></button>
+          <button class="btn btn-primary" onclick="PointageModule._exportExcel()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;margin-left:8px">
+            <i class="fas fa-file-excel"></i> Export Excel
+          </button>
+        </div>
+      </div>
+      
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+        <div style="background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(99,102,241,.02));border:1px solid rgba(99,102,241,.15);border-radius:12px;padding:14px 16px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6366f1;margin-bottom:4px">Utilisateurs</div>
+          <div style="font-size:22px;font-weight:900;color:#6366f1">${totalUsers}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(16,185,129,.02));border:1px solid rgba(16,185,129,.15);border-radius:12px;padding:14px 16px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#10b981;margin-bottom:4px">Moy. Heures/Utilisateur</div>
+          <div style="font-size:22px;font-weight:900;color:#10b981">${avgHours}h</div>
+        </div>
+        <div style="background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(245,158,11,.02));border:1px solid rgba(245,158,11,.15);border-radius:12px;padding:14px 16px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#f59e0b;margin-bottom:4px">Plus actif</div>
+          <div style="font-size:18px;font-weight:900;color:#f59e0b">${mostActive ? Utils.escHTML(mostActive.user.name) + ' (' + mostActive.totalHours + 'h)' : '-'}</div>
+        </div>
+      </div>
+      
+      <!-- Attendance Grid -->
+      <div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px">
+            <thead>
+              <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
+                <th style="padding:10px 12px;text-align:left;color:var(--text3);font-weight:700;position:sticky;left:0;background:var(--bg3);z-index:2;min-width:140px">Utilisateur</th>
+                ${Array.from({length: daysInMonth}, (_, i) => {
+                  const dayDate = new Date(this._year, this._month, i + 1);
+                  const isWeekend = dayDate.getDay() === 5 || dayDate.getDay() === 6; // Friday/Saturday for Algeria
+                  return `<th style="padding:8px 4px;text-align:center;color:${isWeekend ? 'var(--text4)' : 'var(--text3)'};font-weight:700;font-size:10px;min-width:36px;${isWeekend ? 'background:rgba(0,0,0,.03);' : ''}">${i+1}</th>`;
+                }).join('')}
+                <th style="padding:10px 8px;text-align:center;color:var(--text);font-weight:800;background:var(--bg3)">Total</th>
+                <th style="padding:10px 8px;text-align:center;color:var(--text);font-weight:800;background:var(--bg3)">Jours</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    userData.forEach(d => {
+      html += `<tr style="border-bottom:1px solid var(--border)">`;
+      html += `<td style="padding:10px 12px;font-weight:700;color:var(--text);position:sticky;left:0;background:var(--bg2);z-index:1">${Utils.escHTML(d.user.name)}</td>`;
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const h = d.days[day];
+        const dayDate = new Date(this._year, this._month, day);
+        const isWeekend = dayDate.getDay() === 5 || dayDate.getDay() === 6;
+        let bg = 'transparent';
+        let color = 'var(--text4)';
+        let text = '-';
+        
+        if (h !== null && h !== undefined) {
+          text = h + 'h';
+          if (h >= 8) { bg = 'rgba(16,185,129,.12)'; color = '#059669'; }
+          else if (h >= 4) { bg = 'rgba(245,158,11,.12)'; color = '#d97706'; }
+          else { bg = 'rgba(239,68,68,.1)'; color = '#dc2626'; }
+        } else if (isWeekend) {
+          bg = 'rgba(0,0,0,.02)';
+        }
+        
+        html += `<td style="padding:6px 2px;text-align:center;font-size:10px;font-weight:600;background:${bg};color:${color};${isWeekend && h === null ? 'opacity:0.4;' : ''}">${text}</td>`;
+      }
+      
+      html += `<td style="padding:10px 8px;text-align:center;font-weight:900;color:var(--text);background:var(--bg3)">${d.totalHours}h</td>`;
+      html += `<td style="padding:10px 8px;text-align:center;font-weight:700;color:var(--text2);background:var(--bg3)">${d.totalDays}</td>`;
+      html += `</tr>`;
+    });
+    
+    html += `
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+    
+    return html;
+  },
+  
+  _prevMonth() {
+    this._month--;
+    if (this._month < 0) { this._month = 11; this._year--; }
+    App.loadModule('pointage');
+  },
+  
+  _nextMonth() {
+    this._month++;
+    if (this._month > 11) { this._month = 0; this._year++; }
+    App.loadModule('pointage');
+  },
+  
+  _exportExcel() {
+    const users = DB.getAll('users');
+    const logs = DB.getAll('work_log');
+    const daysInMonth = new Date(this._year, this._month + 1, 0).getDate();
+    const monthNames = ['Janvier','Fevrier','Mars','Avril','Mai','Juin','Juillet','Aout','Septembre','Octobre','Novembre','Decembre'];
+    
+    const headers = ['Utilisateur'];
+    for (let d = 1; d <= daysInMonth; d++) headers.push(String(d));
+    headers.push('Total H', 'Jours');
+    
+    const rows = users.map(u => {
+      const row = [u.name];
+      let totalH = 0, totalD = 0;
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${this._year}-${String(this._month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const dayLogs = logs.filter(l => l.userId === u.id && ((l.date||'').startsWith(dateStr) || (l.loginTime||'').startsWith(dateStr)));
+        let hours = 0;
+        dayLogs.forEach(log => {
+          if (log.loginTime && log.logoutTime) hours += (new Date(log.logoutTime) - new Date(log.loginTime)) / 3600000;
+        });
+        hours = Math.round(Math.min(hours, 24) * 10) / 10;
+        row.push(hours || '');
+        if (hours > 0) { totalH += hours; totalD++; }
+      }
+      row.push(Math.round(totalH*10)/10, totalD);
+      return row;
+    });
+    
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, ws, `${monthNames[this._month]} ${this._year}`);
+    XLSX.writeFile(wb, `Pointage_${monthNames[this._month]}_${this._year}.xlsx`);
+    Utils.notify('Export Excel OK', 'success');
+  }
+};
+window.PointageModule = PointageModule;
+
+
+// ═══════════════════════════════════════════════════════════════
+// CHARGES MODULE
+// ═══════════════════════════════════════════════════════════════
+const ChargesModule = {
+  _filter: 'all',
+  _dateStart: null,
+  _dateEnd: null,
+  
+  render() {
+    if (!Auth.isAdmin()) return `<div style="padding:40px;text-align:center;color:var(--text3)"><i class="fas fa-lock" style="font-size:48px;opacity:.2;display:block;margin-bottom:12px"></i>Accès administrateur uniquement</div>`;
+    
+    let charges = DB.getAll('bank_charges').sort((a, b) => new Date(b.date) - new Date(a.date) || b.createdAt.localeCompare(a.createdAt));
+    
+    const ds = this._dateStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const de = this._dateEnd || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+    
+    charges = charges.filter(c => c.date >= ds && c.date <= de);
+    
+    if (this._filter !== 'all') {
+      charges = charges.filter(c => c.type === this._filter);
+    }
+    
+    const total = charges.reduce((sum, c) => sum + (c.amount || 0), 0);
+    const totalAuto = charges.filter(c => c.type === 'auto').reduce((sum, c) => sum + (c.amount || 0), 0);
+    const totalManual = charges.filter(c => c.type === 'manual').reduce((sum, c) => sum + (c.amount || 0), 0);
+    
+    const banks = DB.getSettings().banks || [];
+    
+    let html = `
+    <div style="padding:24px;max-width:1200px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <div>
+          <h2 style="font-size:24px;font-weight:900;margin:0">Frais & Charges Bancaires</h2>
+          <p style="color:var(--text4);font-size:13px;margin:4px 0 0">Gérez les frais automatiques et saisissez vos charges manuelles</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline" onclick="ChargesModule._exportExcel()"><i class="fas fa-file-excel" style="color:#10b981"></i> Exporter</button>
+          <button class="btn btn-primary" onclick="ChargesModule._addCharge()"><i class="fas fa-plus"></i> Ajouter une charge</button>
+        </div>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px;margin-bottom:24px">
+        <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
+          <div style="font-size:12px;color:var(--text4);font-weight:700;margin-bottom:4px">Total Période</div>
+          <div style="font-size:24px;font-weight:900;color:var(--danger)">${Utils.fmtCurrency(total)}</div>
+        </div>
+        <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
+          <div style="font-size:12px;color:var(--text4);font-weight:700;margin-bottom:4px">Frais Automatiques</div>
+          <div style="font-size:24px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(totalAuto)}</div>
+        </div>
+        <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
+          <div style="font-size:12px;color:var(--text4);font-weight:700;margin-bottom:4px">Charges Manuelles</div>
+          <div style="font-size:24px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(totalManual)}</div>
+        </div>
+      </div>
+      
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:12px 16px;border-radius:12px;border:1px solid var(--border);margin-bottom:16px">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm ${this._filter==='all'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='all';App.loadModule('charges')">Toutes</button>
+          <button class="btn btn-sm ${this._filter==='auto'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='auto';App.loadModule('charges')">Automatiques</button>
+          <button class="btn btn-sm ${this._filter==='manual'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='manual';App.loadModule('charges')">Manuelles</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${ds}" onchange="ChargesModule._dateStart=this.value;App.loadModule('charges')">
+          <span style="color:var(--text4)">à</span>
+          <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${de}" onchange="ChargesModule._dateEnd=this.value;App.loadModule('charges')">
+        </div>
+      </div>
+      
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--bg3);text-align:left;font-size:11px;color:var(--text3);text-transform:uppercase">
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Date</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Banque</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Type/Label</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Montant</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Par</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${charges.length ? charges.map(c => {
+              const b = banks.find(x => x.id === c.bankId) || {name: 'Inconnu'};
+              return `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:12px 16px;font-size:13px">${Utils.fmtDate(c.date)}</td>
+                <td style="padding:12px 16px;font-weight:700;color:var(--primary)"><i class="fas fa-university"></i> ${Utils.escHTML(b.name)}</td>
+                <td style="padding:12px 16px">
+                  <div style="font-weight:700;font-size:13px">${Utils.escHTML(c.label || c.subtype)}</div>
+                  <div style="font-size:11px;margin-top:4px">
+                    ${c.type === 'auto' ? `<span style="background:rgba(16,185,129,.1);color:#059669;padding:2px 6px;border-radius:4px"><i class="fas fa-robot"></i> Auto</span>` : `<span style="background:rgba(139,92,246,.1);color:#7c3aed;padding:2px 6px;border-radius:4px"><i class="fas fa-user-edit"></i> Manuel</span>`}
+                    ${c.recurring ? `<span style="background:rgba(245,158,11,.1);color:#d97706;padding:2px 6px;border-radius:4px;margin-left:4px"><i class="fas fa-redo"></i> Récurrent</span>` : ''}
+                  </div>
+                </td>
+                <td style="padding:12px 16px;font-weight:900;color:var(--danger)">${Utils.fmtCurrency(c.amount)}</td>
+                <td style="padding:12px 16px;font-size:12px;color:var(--text4)">${Utils.escHTML(c.createdByName || '')}</td>
+                <td style="padding:12px 16px">
+                  <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="ChargesModule._deleteCharge('${c.id}')"><i class="fas fa-trash"></i></button>
+                </td>
+              </tr>
+              `;
+            }).join('') : `<tr><td colspan="6" style="padding:32px;text-align:center;color:var(--text4)">Aucune charge trouvée pour cette période.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    `;
+    return html;
+  },
+  
+  async _addCharge() {
+    const banks = DB.getSettings().banks || [];
+    if (!banks.length) return Utils.notify("Veuillez d'abord configurer une banque", "error");
+    
+    const types = [
+      {id: 'internet', name: 'Internet / Téléphone'},
+      {id: 'loyer', name: 'Loyer'},
+      {id: 'salaires', name: 'Salaires'},
+      {id: 'pack_bancaire', name: 'Pack Bancaire'},
+      {id: 'frais_divers', name: 'Frais Divers'},
+      {id: 'autre', name: 'Autre'}
+    ];
+    
+    const res = await Dialog.show({
+      title: 'Ajouter une charge manuelle',
+      message: `
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Compte Bancaire</label>
+          <select id="ac_bank" class="input" style="width:100%">${banks.map(b => `<option value="${b.id}">${b.name}</option>`).join('')}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Type de charge</label>
+          <select id="ac_type" class="input" style="width:100%">${types.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Description / Libellé</label>
+          <input type="text" id="ac_label" class="input" style="width:100%" placeholder="Ex: Frais Internet Mois Mars">
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Montant (DA)</label>
+          <input type="number" id="ac_amount" class="input" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Date</label>
+          <input type="date" id="ac_date" class="input" style="width:100%" value="${new Date().toISOString().split('T')[0]}">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:16px">
+          <input type="checkbox" id="ac_recurring">
+          <label for="ac_recurring" style="font-size:13px;font-weight:700">Charge mensuelle récurrente</label>
+        </div>
+      `,
+      confirmText: 'Ajouter',
+      cancelText: 'Annuler'
+    });
+    
+    if (!res) return;
+    
+    const bankId = document.getElementById('ac_bank').value;
+    const subtype = document.getElementById('ac_type').value;
+    const label = document.getElementById('ac_label').value || types.find(t=>t.id===subtype)?.name;
+    const amount = parseFloat(document.getElementById('ac_amount').value);
+    const date = document.getElementById('ac_date').value;
+    const recurring = document.getElementById('ac_recurring').checked;
+    
+    if (!amount || amount <= 0) return Utils.notify('Montant invalide', 'error');
+    
+    const tx = {
+      id: 'tx_' + Date.now() + Math.random().toString(36).substr(2,5),
+      bankId,
+      type: 'payment',
+      amount,
+      date,
+      note: `CHARGE: ${label}`,
+      userId: Auth.getCurrentUser()?.id,
+      createdAt: new Date().toISOString()
+    };
+    DB.insert('bank_transactions', tx);
+    
+    const charge = {
+      id: 'chg_' + Date.now(),
+      type: 'manual',
+      subtype,
+      bankId,
+      amount,
+      label,
+      date,
+      linkedTxId: tx.id,
+      recurring,
+      createdBy: Auth.getCurrentUser()?.id,
+      createdByName: Auth.getCurrentUser()?.name,
+      createdAt: new Date().toISOString()
+    };
+    DB.insert('bank_charges', charge);
+    
+    Utils.notify('Charge ajoutée avec succès', 'success');
+    App.loadModule('charges');
+  },
+  
+  async _deleteCharge(id) {
+    const charge = DB.getById('bank_charges', id);
+    if (!charge) return;
+    
+    const ok = await Dialog.confirm('Supprimer la charge', 'Cette action supprimera la charge. Si une transaction bancaire est liée, elle sera également supprimée. Continuer ?', 'danger');
+    if (!ok) return;
+    
+    if (charge.linkedTxId) {
+      DB.delete('bank_transactions', charge.linkedTxId);
+    }
+    
+    DB.delete('bank_charges', id);
+    Utils.notify('Charge supprimée', 'success');
+    App.loadModule('charges');
+  },
+  
+  _exportExcel() {
+    let charges = DB.getAll('bank_charges').sort((a, b) => new Date(b.date) - new Date(a.date));
+    const ds = this._dateStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const de = this._dateEnd || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+    charges = charges.filter(c => c.date >= ds && c.date <= de);
+    if (this._filter !== 'all') charges = charges.filter(c => c.type === this._filter);
+    
+    const banks = DB.getSettings().banks || [];
+    
+    const rows = charges.map(c => [
+      c.date,
+      (banks.find(b => b.id === c.bankId) || {}).name || '',
+      c.type === 'auto' ? 'Automatique' : 'Manuel',
+      c.subtype,
+      c.label,
+      c.amount,
+      c.createdByName || ''
+    ]);
+    
+    CSVExport.download('Charges_Bancaires', ['Date', 'Banque', 'Catégorie', 'Type', 'Libellé', 'Montant', 'Par'], rows);
+  }
+};
+window.ChargesModule = ChargesModule;
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN CAISSE CORRECTIONS — Edit any entry

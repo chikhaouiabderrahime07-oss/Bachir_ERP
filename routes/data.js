@@ -14,8 +14,8 @@ router.get('/next-num/:type', async (req, res) => {
   try {
     const type = req.params.type; // 'brs' or 'bls'
     const year = parseInt(req.query.year) || new Date().getFullYear();
-    if (!['brs', 'bls'].includes(type)) {
-      return res.status(400).json({ error: 'Type invalide (brs ou bls)' });
+    if (!['brs', 'bls', 'etat_vente'].includes(type)) {
+      return res.status(400).json({ error: 'Type invalide (brs, bls ou etat_vente)' });
     }
 
     const counterId = `${type}_${year}`;
@@ -23,9 +23,20 @@ router.get('/next-num/:type', async (req, res) => {
     // Check if counter exists; if not, initialize from current max in DB
     const existing = await Counter.findOne({ _id: counterId });
     if (!existing) {
-      const docs = await Document.find({ col: type, 'data.year': year }).lean();
-      const nums = docs.map(d => parseInt(d.data?.brNum || d.data?.blNum) || 0);
-      const currentMax = nums.length ? Math.max(...nums) : 99; // Start at 100
+      let docs;
+      if (type === 'etat_vente') {
+         docs = await Document.find({ col: 'etat_vente_docs', 'data.year': year }).lean();
+      } else {
+         docs = await Document.find({ col: type, 'data.year': year }).lean();
+      }
+      const nums = docs.map(d => {
+        if (type === 'etat_vente' && d.data?.ref) {
+          const match = d.data.ref.match(/ET\/(\d+)\//);
+          if (match) return parseInt(match[1]);
+        }
+        return parseInt(d.data?.brNum || d.data?.blNum) || 0;
+      });
+      const currentMax = nums.length ? Math.max(...nums) : (type === 'etat_vente' ? 0 : 99); // Start at 100 for br/bl, 1 for etat_vente
       await Counter.create({ _id: counterId, seq: currentMax });
     }
 
