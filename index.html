@@ -95,13 +95,16 @@
   try {
     var s = JSON.parse(localStorage.getItem('settings') || '{}');
     var logo = s.logoRight || s.rightLogo || s.logoLeft || s.leftLogo || '';
-    var theme = s.themeMode || 'light';
+    var theme = localStorage.getItem('themeMode') || s.themeMode || 'light';
     var splash = document.getElementById('splashScreen');
 
     // Apply theme immediately (no flash)
     if (theme === 'dark') {
       document.documentElement.setAttribute('data-theme','dark');
       splash.style.background = '#0f172a';
+    } else if (theme === 'comfort') {
+      document.documentElement.setAttribute('data-theme','comfort');
+      splash.style.background = '#1c1912';
     }
 
     // Show company logo if available
@@ -203,11 +206,44 @@
       <span class="breadcrumb-text" id="breadcrumb">Tableau de Bord</span>
     </div>
     <div class="topbar-right">
+      <!-- Session indicator (non-admin users with open session) -->
+      <div id="sessionIndicator" style="display:none;align-items:center;gap:8px">
+        <div id="sessionDot" style="width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 1.5s infinite"></div>
+        <span id="sessionActiveText" style="font-size:11px;color:var(--success);font-weight:600">Session active</span>
+        <button class="btn btn-sm" id="closeSessionBtn" style="background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.3);padding:5px 12px;font-size:11px;font-weight:700"
+          onclick="App.handleSessionBtnClick()">
+          <i class="fas fa-door-closed" id="closeSessionIcon"></i> <span>Cl&#244;turer journ&#233;e</span>
+        </button>
+      </div>
+
+      <!-- Company Badge -->
+      <div class="topbar-company" id="topCompanyBadge" style="display:flex;align-items:center;gap:8px;padding:4px 12px;background:rgba(var(--primary-rgb),.06);border:1px solid var(--border);border-radius:8px">
+        <img id="topCompanyLogo" style="display:none;height:24px;width:auto;border-radius:4px" alt="Logo">
+        <span id="topCompanyName" style="font-size:12px;font-weight:600;color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      </div>
+
+      <!-- Clock Widget -->
+      <div class="clock-widget" id="topClock">
+        <span class="clock-time" id="clockTime">--:--:--</span>
+        <span class="clock-date" id="clockDate">--/--/----</span>
+      </div>
+
+      <!-- Autocorrect & Data Integrity Monitor -->
+      <div class="integrity-widget" id="topIntegrityWidget" onclick="if(window.AutocorrectBrain) AutocorrectBrain.showDetailsModal()" title="Moniteur d'intégrité et auto-correction (Toutes les 15 min)">
+        <div class="integrity-pulse" id="integrityPulse"></div>
+        <i class="fas fa-shield-alt" id="integrityIcon" style="color:var(--success);font-size:12px"></i>
+        <span id="integrityLabel" style="font-size:11px;font-weight:700;color:var(--text)">Intégrité: 100%</span>
+        <span id="integrityTimer" style="font-size:10px;color:var(--text4);font-family:var(--font-mono)">15:00</span>
+      </div>
+
       <!-- Language -->
       <div class="lang-toggle">
         <button class="lang-btn active" id="topLangFR" onclick="App.setLang('fr')">FR</button>
         <button class="lang-btn" id="topLangAR" onclick="App.setLang('ar')">عر</button>
       </div>
+
+      <div class="topbar-divider"></div>
+
       <!-- Theme -->
       <button class="btn-icon" onclick="UI.toggleTheme()" id="themeToggleBtn" title="Thème">
         <i class="fas fa-moon" id="themeIcon"></i>
@@ -234,33 +270,7 @@
           </div>
         </div>
       </div>
-      <!-- Autocorrect & Data Integrity Monitor (Runs every 15 min + live topbar indicator) -->
-      <div class="integrity-widget" id="topIntegrityWidget" onclick="if(window.AutocorrectBrain) AutocorrectBrain.showDetailsModal()" title="Moniteur d'intégrité et auto-correction (Toutes les 15 min)">
-        <div class="integrity-pulse" id="integrityPulse"></div>
-        <i class="fas fa-shield-alt" id="integrityIcon" style="color:var(--success);font-size:12px"></i>
-        <span id="integrityLabel" style="font-size:11px;font-weight:700;color:var(--text)">Intégrité: 100%</span>
-        <span id="integrityTimer" style="font-size:10px;color:var(--text4);font-family:var(--font-mono)">15:00</span>
-      </div>
 
-      <!-- Clock Widget -->
-      <div class="clock-widget" id="topClock">
-        <span class="clock-time" id="clockTime">--:--:--</span>
-        <span class="clock-date" id="clockDate">--/--/----</span>
-      </div>
-      <!-- Session indicator (non-admin users with open session) -->
-      <div id="sessionIndicator" style="display:none;align-items:center;gap:8px">
-        <div id="sessionDot" style="width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 1.5s infinite"></div>
-        <span id="sessionActiveText" style="font-size:11px;color:var(--success);font-weight:600">Session active</span>
-        <button class="btn btn-sm" id="closeSessionBtn" style="background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.3);padding:5px 12px;font-size:11px;font-weight:700"
-          onclick="App.handleSessionBtnClick()">
-          <i class="fas fa-door-closed" id="closeSessionIcon"></i> <span>Cl&#244;turer journ&#233;e</span>
-        </button>
-      </div>
-      <!-- Company Badge (next to user) -->
-      <div class="topbar-company" id="topCompanyBadge" style="display:flex;align-items:center;gap:8px;padding:4px 12px;background:rgba(var(--primary-rgb),.06);border:1px solid var(--border);border-radius:8px;margin-right:8px">
-        <img id="topCompanyLogo" style="display:none;height:24px;width:auto;border-radius:4px" alt="Logo">
-        <span id="topCompanyName" style="font-size:12px;font-weight:600;color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-      </div>
       <!-- User -->
       <div class="user-menu" id="userMenuWrap">
         <button class="user-btn" onclick="UI.toggleUserMenu()">
@@ -301,6 +311,9 @@
           <div class="sb-app-name" style="font-size:20px;background:linear-gradient(135deg,#e2e8f0,#0d9488);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:900;letter-spacing:2px;font-family:'Courier New',monospace">A.I</div>
           <div style="font-size:7px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:1.5px;text-transform:uppercase">INTELLIGENT SYS</div>
         </div>
+        <button class="pin-btn" onclick="UI.togglePin()" title="Epingler le menu">
+          <i class="fas fa-thumbtack"></i>
+        </button>
       </div>
 <nav class="sidebar-nav" id="sidebarNav"></nav>
       <div class="sb-footer">
@@ -764,13 +777,42 @@ const App = {
     menu.forEach(group => {
       html += `<div class="nav-section">${group.section}</div>`;
       group.items.forEach(item => {
-        html += `<div class="nav-item" data-mod="${item.mod}">
+        html += `<div class="nav-item" data-mod="${item.mod}" data-tooltip="${item.label}">
           <div class="nav-icon"><i class="fas ${item.icon}"></i></div>
           <span class="nav-label">${item.label}</span>
         </div>`;
       });
     });
     nav.innerHTML = html;
+
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && !sidebar.dataset.initHover) {
+      sidebar.dataset.initHover = '1';
+      
+      const isPinned = localStorage.getItem('sidebarPinned') === 'true';
+      if (isPinned) sidebar.classList.add('pinned');
+
+      sidebar.addEventListener('mouseenter', () => {
+        if (!sidebar.classList.contains('pinned')) sidebar.classList.add('expanded');
+      });
+      sidebar.addEventListener('mouseleave', () => {
+        sidebar.classList.remove('expanded');
+      });
+
+      UI.togglePin = function() {
+        const pin = sidebar.classList.toggle('pinned');
+        localStorage.setItem('sidebarPinned', pin);
+        if (pin) sidebar.classList.remove('expanded');
+      };
+      
+      UI.toggleSidebar = function() {
+        if (window.innerWidth <= 768) {
+          document.body.classList.toggle('sidebar-open');
+        } else {
+          UI.togglePin();
+        }
+      };
+    }
 
     nav.querySelectorAll('.nav-item').forEach(el => {
       el.addEventListener('click', () => {

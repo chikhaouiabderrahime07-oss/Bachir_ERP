@@ -26,14 +26,15 @@ const UI = {
   closeModal() { if (typeof FormGuide !== 'undefined') FormGuide.stop(); document.getElementById('modalOverlay')?.classList.remove('active'); },
   toggleTheme() {
     const s = DB.getSettings();
-    const cur = s.themeMode || 'light';
+    const cur = localStorage.getItem('themeMode') || s.themeMode || 'light';
     const next = cur === 'light' ? 'dark' : (cur === 'dark' ? 'comfort' : 'light');
     DB.saveSettings({ themeMode: next });
+    localStorage.setItem('themeMode', next);
     this.applyTheme();
   },
   applyTheme() {
     const s = DB.getSettings();
-    const mode = s.themeMode || 'light';
+    const mode = localStorage.getItem('themeMode') || s.themeMode || 'light';
     document.body.setAttribute('data-theme', mode);
     document.documentElement.setAttribute('data-theme', mode);
     if (s.themeColor) {
@@ -451,7 +452,7 @@ const BRModule = {
           <thead><tr>
             <th>${T.get('col_ref')}</th><th>${T.get('col_date')}</th><th>${T.get('col_supplier')}</th>
             <th>${T.get('col_total_ht')}</th><th>${T.get('col_timbre')}</th><th>${T.get('col_total_ttc')}</th>
-            <th>${T.get('col_status')}</th><th>Traçabilité</th><th>${T.get('col_actions')}</th>
+            <th>${T.get('col_status')}</th><th>Traçabilité</th><th class="td-actions">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.map(br=>{
@@ -1129,7 +1130,7 @@ const BLModule = {
           <thead><tr>
             <th>${T.get('col_ref')}</th><th>${T.get('bl_linked_br')}</th><th>${T.get('col_date')}</th>
             <th>${T.get('col_client')}</th><th>${T.isRTL()?'السائق':'Chauffeur'}</th>
-            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th>${T.get('col_actions')}</th>
+            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th class="td-actions">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.map(bl=>{
