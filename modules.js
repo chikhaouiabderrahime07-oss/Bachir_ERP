@@ -1151,8 +1151,8 @@ const BLModule = {
                   <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
                   ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
                   ${bl.status==='returned'?`<span class="badge badge-danger" style="font-size:10px;padding:3px 6px" title="Retourné définitivement"><i class="fas fa-ban"></i></span>`:(Auth.canReturn(bl)?`<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${bl.id})" title="Retour Marchandise"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:''))}
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="PDF"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs" style="background:rgba(139,92,246,.1);color:#7c3aed;border:1px solid rgba(139,92,246,.25)" onclick="PDFGen.exportTempoBL(${bl.id})" title="Générer BL"><i class="fas fa-route"></i></button>
+                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH (2 Volets)"><i class="fas fa-file-pdf"></i></button>
+                  <button class="btn btn-xs" style="background:rgba(139,92,246,.1);color:#7c3aed;border:1px solid rgba(139,92,246,.25)" onclick="PDFGen.exportBL(${bl.id})" title="BL pour la route"><i class="fas fa-route"></i></button>
                   ${Auth.canDelete(bl)?`<button class="btn btn-xs btn-danger" onclick="BLModule.deleteBL(${bl.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
                 </td>
               </tr>`;
@@ -6424,6 +6424,7 @@ const SettingsModule = {
       {id:'appear',  icon:'fa-palette',     label:T.get('set_theme'),    color:'#8b5cf6'},
       {id:'banks',   icon:'fa-university',  label:'Banques',             color:'#10b981'},
       {id:'bank_fees', icon:'fa-money-check-alt', label:'Frais Bancaires', color:'#dc2626'},
+      {id:'rh',      icon:'fa-user-clock',  label:'RH / Paie',           color:'#6366f1'},
       {id:'etatvente',icon:'fa-file-invoice-dollar',label:T.get('nav_etat_vente'), color:'#0d9488'},
       {id:'users',   icon:'fa-users-cog',   label:T.get('nav_users'),    color:'#ef4444'},
       {id:'data',    icon:'fa-database',    label:T.get('set_data'),     color:'#6366f1'},
@@ -6467,8 +6468,104 @@ const SettingsModule = {
       ${this._tab==='etatvente'?this._tabEtatVente(s):''}
       ${this._tab==='data'?this._tabData():''}
       ${this._tab==='bank_fees'?this._tabBankFees(s):''}
+      ${this._tab==='rh'?this._tabRH(s):''}
     </div>
     </div>`;
+  },
+
+  _tabRH(s) {
+    const rh = s.rh || {};
+    const users = DB.getAll('users').filter(u => u.active !== false);
+    return `
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#818cf8);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="fas fa-user-clock" style="color:#fff;font-size:16px"></i>
+        </div>
+        <div>
+          <h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text)">Configuration RH / Paie</h3>
+          <p style="margin:2px 0 0;font-size:12px;color:var(--text4)">Taux CNAS, IRG, salaire par defaut et configuration des employes</p>
+        </div>
+      </div>
+
+      <!-- Global RH Config -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
+        <h4 style="margin:0 0 14px;font-size:14px;font-weight:800;color:var(--text)"><i class="fas fa-cog" style="color:#6366f1;margin-right:6px"></i>Parametres Globaux de Paie</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+          <div class="form-group">
+            <label style="font-size:11px;font-weight:700">Taux CNAS Salarie (%)</label>
+            <input type="number" id="rh_taux_cnas" class="input" style="width:100%" value="${rh.tauxCNAS || 9}" step="0.5" min="0" max="50">
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px;font-weight:700">Taux CNAS Employeur (%)</label>
+            <input type="number" id="rh_taux_cnas_emp" class="input" style="width:100%" value="${rh.tauxCNASEmployeur || 26}" step="0.5" min="0" max="50">
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px;font-weight:700">Salaire de Base par Defaut (DA)</label>
+            <input type="number" id="rh_salaire_defaut" class="input" style="width:100%" value="${rh.salaireDefaut || 45000}" step="1000">
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px;font-weight:700">Jours Reference / Mois</label>
+            <input type="number" id="rh_jours_ref" class="input" style="width:100%" value="${rh.joursRef || 30}" min="20" max="31">
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px;font-weight:700">Taux Horaire HS par Defaut (DA/h)</label>
+            <input type="number" id="rh_taux_hs_defaut" class="input" style="width:100%" value="${rh.tauxHSDefaut || 260}" step="10">
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px;font-weight:700">Activer IRG (Impot)</label>
+            <select id="rh_irg_active" class="input" style="width:100%">
+              <option value="1" ${rh.irgActive !== false ? 'selected' : ''}>Oui - Calculer IRG</option>
+              <option value="0" ${rh.irgActive === false ? 'selected' : ''}>Non - Sans IRG</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="SettingsModule._saveRH()" style="margin-top:16px;width:100%;padding:12px;font-weight:700">
+          <i class="fas fa-save"></i> Sauvegarder les Parametres RH
+        </button>
+      </div>
+
+      <!-- Per-User Salary Overview -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px">
+        <h4 style="margin:0 0 14px;font-size:14px;font-weight:800;color:var(--text)"><i class="fas fa-users" style="color:#10b981;margin-right:6px"></i>Salaires par Employe (${users.length})</h4>
+        <div class="table-shell" style="overflow-x:auto">
+        <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
+            <th style="padding:8px;text-align:left">Employe</th>
+            <th style="padding:8px;text-align:left">Poste</th>
+            <th style="padding:8px;text-align:right">Salaire Base (DA)</th>
+            <th style="padding:8px;text-align:right">Taux Horaire (DA/h)</th>
+            <th style="padding:8px;text-align:center">Conge (solde)</th>
+          </tr></thead>
+          <tbody>
+            ${users.map(u => `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:6px 8px;font-weight:600">${Utils.escHTML(u.name)}</td>
+              <td style="padding:6px 8px;color:var(--text3)">${Utils.escHTML(u.jobTitle||'-')}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(u.baseSalary || rh.salaireDefaut || 45000)}</td>
+              <td style="padding:6px 8px;text-align:right">${Utils.fmtCurrency(u.tauxHoraire || rh.tauxHSDefaut || 260)}</td>
+              <td style="padding:6px 8px;text-align:center">${u.congeBalance || 30} j</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>
+        <p style="font-size:11px;color:var(--text4);margin:10px 0 0"><i class="fas fa-info-circle"></i> Modifiez le salaire et taux horaire de chaque employe dans l'onglet <strong>Utilisateurs</strong>.</p>
+      </div>
+    </div>`;
+  },
+
+  _saveRH() {
+    const s = DB.getSettings();
+    const rh = {
+      tauxCNAS: parseFloat(document.getElementById('rh_taux_cnas')?.value || 9),
+      tauxCNASEmployeur: parseFloat(document.getElementById('rh_taux_cnas_emp')?.value || 26),
+      salaireDefaut: parseFloat(document.getElementById('rh_salaire_defaut')?.value || 45000),
+      joursRef: parseInt(document.getElementById('rh_jours_ref')?.value || 30),
+      tauxHSDefaut: parseFloat(document.getElementById('rh_taux_hs_defaut')?.value || 260),
+      irgActive: document.getElementById('rh_irg_active')?.value === '1',
+    };
+    DB.saveSettings({...s, rh});
+    Utils.notify('Parametres RH sauvegardes avec succes !', 'success');
+    App.loadModule('settings');
   },
 
   _tabBankFees(s) {
@@ -10667,7 +10764,7 @@ const PointageModule = {
   },
 
   _reprintFiche(ficheId) {
-    const f = DB.getAll('fiches_paie').find(x => x.id === ficheId);
+    const f = DB.getAll('fiches_paie').find(x => String(x.id) === String(ficheId));
     if (!f) return;
     if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
       PDFGen.exportFicheDePayeSimple({
@@ -10691,15 +10788,28 @@ const PointageModule = {
     const users = DB.getAll('users').filter(u => u.active !== false);
     if (!users.length) return Utils.notify("Aucun utilisateur actif.", "error");
 
+    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
     const optsHtml = users.map(u => `<option value="${u.id}">${Utils.escHTML(u.name)} (${Utils.escHTML(u.jobTitle || 'Employé')})</option>`).join('');
+    const monthOpts = monthNames.map((m, i) => `<option value="${i}" ${i === this._month ? 'selected' : ''}>${m}</option>`).join('');
+    const curYear = new Date().getFullYear();
+    const yearOpts = [curYear-1, curYear, curYear+1].map(y => `<option value="${y}" ${y === this._year ? 'selected' : ''}>${y}</option>`).join('');
     
-    let selectedId = users[0].id;
     const r = await Dialog.show({
-      title: `📄 Générer Fiche de Paie`,
+      title: '📄 Générer Fiche de Paie',
       message: `
         <div class="form-group mb-2">
           <label style="font-weight:700">Sélectionner l'employé</label>
-          <select id="fiche_user_id" class="input" style="width:100%" onchange="window._selectedFicheUserId=this.value">${optsHtml}</select>
+          <select id="fiche_user_id" class="input" style="width:100%">${optsHtml}</select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+          <div class="form-group">
+            <label style="font-weight:700">Mois</label>
+            <select id="fiche_month" class="input" style="width:100%">${monthOpts}</select>
+          </div>
+          <div class="form-group">
+            <label style="font-weight:700">Année</label>
+            <select id="fiche_year" class="input" style="width:100%">${yearOpts}</select>
+          </div>
         </div>`,
       type: 'info',
       confirmText: 'Suivant',
@@ -10707,8 +10817,11 @@ const PointageModule = {
     });
 
     if (r) {
-      const el = document.getElementById('fiche_user_id');
-      const userId = el?.value || window._selectedFicheUserId || selectedId;
+      const userId = document.getElementById('fiche_user_id')?.value || users[0].id;
+      const selMonth = parseInt(document.getElementById('fiche_month')?.value ?? this._month);
+      const selYear = parseInt(document.getElementById('fiche_year')?.value ?? this._year);
+      this._ficheMonth = selMonth;
+      this._ficheYear = selYear;
       this._generateFicheDePayeModal(userId);
     }
   },
@@ -10722,6 +10835,8 @@ const PointageModule = {
     const primes = parseFloat(document.getElementById('fiche_primes')?.value || 0);
     const retenues = parseFloat(document.getElementById('fiche_retenues')?.value || 0);
     const tauxCNAS = parseFloat(document.getElementById('fiche_taux_cnas')?.value || 9) / 100;
+    const rhSettings = DB.getSettings().rh || {};
+    const irgActive = rhSettings.irgActive !== false;
     
     const prorata = Math.round(sb * (tt > 0 ? jt / tt : 0) * 100) / 100;
     const montantHS = Math.round(tauxHS * nbHS * 100) / 100;
@@ -10730,11 +10845,12 @@ const PointageModule = {
     const baseImposable = Math.round((brut - cnas) * 100) / 100;
     
     let irg = 0;
-    if (baseImposable <= 10000) irg = 0;
-    else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
-    else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
-    else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
-    
+    if (irgActive) {
+      if (baseImposable <= 10000) irg = 0;
+      else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
+      else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
+      else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+    }
     const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
     
     const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = Utils.fmtCurrency(v); };
@@ -10767,12 +10883,15 @@ const PointageModule = {
     const brut = Math.round((prorata + montantHS + primes) * 100) / 100;
     const cnas = Math.round(brut * tauxCNAS * 100) / 100;
     const baseImposable = Math.round((brut - cnas) * 100) / 100;
+    const rhS = DB.getSettings().rh || {};
     
     let irg = 0;
-    if (baseImposable <= 10000) irg = 0;
-    else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
-    else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
-    else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+    if (rhS.irgActive !== false) {
+      if (baseImposable <= 10000) irg = 0;
+      else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
+      else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
+      else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+    }
     
     const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
 
@@ -10781,8 +10900,8 @@ const PointageModule = {
       userName: u.name,
       jobTitle: u.jobTitle || 'Employé',
       department: u.department || 'Général',
-      month: this._month + 1,
-      year: this._year,
+      month: (this._currentFicheMonth !== undefined ? this._currentFicheMonth : this._month) + 1,
+      year: this._currentFicheYear || this._year,
       salaireBase: sb,
       joursTotal: tt,
       joursTravailles: jt,
@@ -10845,17 +10964,26 @@ const PointageModule = {
     }
     this._currentFicheUser = u;
 
+    // Use selected period from fiche selection dialog
+    const ficheMonth = this._ficheMonth !== undefined ? this._ficheMonth : this._month;
+    const ficheYear = this._ficheYear !== undefined ? this._ficheYear : this._year;
+    this._currentFicheMonth = ficheMonth;
+    this._currentFicheYear = ficheYear;
+
+    // Load RH settings
+    const rhSettings = DB.getSettings().rh || {};
+
     // Get attendance data for selected month/year
     const logs = DB.getAll('work_log').filter(l => String(l.userId) === String(u.id));
     const rects = DB.getAll('rh_rectifications').filter(r => String(r.userId) === String(u.id)) || [];
-    const daysInMonth = new Date(this._year, this._month + 1, 0).getDate();
+    const daysInMonth = new Date(ficheYear, ficheMonth + 1, 0).getDate();
     
     let joursTravailles = 0;
     let joursAbsence = 0;
     
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${this._year}-${String(this._month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-      const dayDate = new Date(this._year, this._month, day);
+      const dateStr = `${ficheYear}-${String(ficheMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const dayDate = new Date(ficheYear, ficheMonth, day);
       const isWeekend = dayDate.getDay() === 5 || dayDate.getDay() === 6;
       
       const rect = rects.find(r => r.date === dateStr);
@@ -10869,9 +10997,13 @@ const PointageModule = {
       }
     }
 
-    const salaireBase = u.baseSalary || u.salary || 45000;
-    const tauxHoraireDefault = u.tauxHoraire || Math.round((salaireBase / 173.33) * 100) / 100;
-    const congeDays = rects.filter(r => r.status === 'conge' && r.date && r.date.startsWith(`${this._year}-${String(this._month+1).padStart(2,'0')}`)).length;
+    const salaireBase = u.baseSalary || u.salary || rhSettings.salaireDefaut || 45000;
+    const tauxHoraireDefault = u.tauxHoraire || rhSettings.tauxHSDefaut || Math.round((salaireBase / 173.33) * 100) / 100;
+    const defaultCNAS = rhSettings.tauxCNAS || 9;
+    const defaultJoursRef = rhSettings.joursRef || 30;
+    const irgActive = rhSettings.irgActive !== false;
+    const congeDays = rects.filter(r => r.status === 'conge' && r.date && r.date.startsWith(`${ficheYear}-${String(ficheMonth+1).padStart(2,'0')}`)).length;
+    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
     const modalHTML = `
       <div style="padding:4px 0">
@@ -10887,7 +11019,7 @@ const PointageModule = {
           </div>
           <div style="display:flex;justify-content:space-between">
             <span style="color:var(--text4)">Période :</span>
-            <strong style="color:var(--primary)">${String(this._month+1).padStart(2,'0')}/${this._year}</strong>
+            <strong style="color:var(--primary)">${monthNames[ficheMonth]} ${ficheYear}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;margin-top:4px">
             <span style="color:var(--text4)">Congé ce mois / Solde annuel :</span>
@@ -10906,7 +11038,7 @@ const PointageModule = {
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Jours Référence (mois)</label>
-            <input type="number" id="fiche_jours_total" class="input" style="width:100%" value="30" oninput="PointageModule._updateFicheCalc()">
+            <input type="number" id="fiche_jours_total" class="input" style="width:100%" value="${defaultJoursRef}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Jours Travaillés</label>
@@ -10944,7 +11076,7 @@ const PointageModule = {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Taux CNAS Salarié (%)</label>
-            <input type="number" id="fiche_taux_cnas" class="input" style="width:100%" value="9" step="0.5" oninput="PointageModule._updateFicheCalc()">
+            <input type="number" id="fiche_taux_cnas" class="input" style="width:100%" value="${defaultCNAS}" step="0.5" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Autres Retenues (DA)</label>
