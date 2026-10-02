@@ -1179,7 +1179,11 @@ const DB = {
     localStorage.setItem(col, JSON.stringify(data));
   },
   
-  getById(col, id) { return this.getAll(col).find(i => i.id === id) || null; },
+  getById(col, id) {
+    if (id === null || id === undefined) return null;
+    const strId = String(id);
+    return this.getAll(col).find(i => String(i.id) === strId) || null;
+  },
   where(col, fn) { return this.getAll(col).filter(fn); },
 
   insert(col, data) {
@@ -1977,14 +1981,14 @@ const Utils = {
   fmtCurrency(v) {
     const n = Number(v) || 0;
     const [int, dec] = n.toFixed(2).split('.');
-    const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f') + ',' + dec + '\u00a0DA';
+    const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + dec + ' DA';
     return formatted; // Always LTR-safe — caller wraps in <bdi> or dir=ltr span as needed
   },
   fmtCurrencyHTML(v) {
     // Use this in HTML contexts to guarantee LTR display even in RTL mode
     const n = Number(v) || 0;
     const [int, dec] = n.toFixed(2).split('.');
-    const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f') + ',' + dec + '\u00a0DA';
+    const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + dec + ' DA';
     return `<span dir="ltr" style="unicode-bidi:embed;display:inline-block">${formatted}</span>`;
   },
   fmtNum(v, decimals = null) {
@@ -1992,7 +1996,7 @@ const Utils = {
     const n = Number(v) || 0;
     const fixed = decimals !== null ? n.toFixed(decimals) : (Number.isInteger(n) ? n.toFixed(0) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, ''));
     const [int, dec] = fixed.split('.');
-    const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+    const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
     return dec !== undefined ? formatted + ',' + dec : formatted;
   },
   /* Use LOCAL timezone — toISOString() is UTC which gives wrong date in GMT+1 */

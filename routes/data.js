@@ -135,10 +135,12 @@ router.get('/:col', async (req, res) => {
 // ─── GET /api/data/:col/:id  (get single doc) ────────────────────
 router.get('/:col/:id', async (req, res) => {
   try {
-    const doc = await Document.findOne({
-      col: req.params.col,
-      'data.id': Number(req.params.id)
-    }).lean();
+    const rawId = req.params.id;
+    const numId = Number(rawId);
+    const query = isNaN(numId)
+      ? { col: req.params.col, 'data.id': rawId }
+      : { col: req.params.col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
+    const doc = await Document.findOne(query).lean();
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
     res.json(doc.data);
   } catch (e) {
@@ -281,8 +283,12 @@ router.put('/:col/:id', async (req, res) => {
 router.patch('/:col/:id', async (req, res) => {
   try {
     const col = req.params.col;
-    const id  = Number(req.params.id);
-    const doc = await Document.findOne({ col, 'data.id': id });
+    const rawId = req.params.id;
+    const numId = Number(rawId);
+    const query = isNaN(numId)
+      ? { col, 'data.id': rawId }
+      : { col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
+    const doc = await Document.findOne(query);
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
 
     const patch = req.body;

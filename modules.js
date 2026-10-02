@@ -10295,7 +10295,7 @@ const PointageModule = {
     const totalAbsences = userData.reduce((s,d) => s + d.countAbsentUnjust + d.countAbsentJust, 0);
     
     let html = `
-    <div style="padding:24px 28px;max-width:1440px;margin:0 auto">
+    <div style="padding:clamp(12px, 2vw, 24px);max-width:100%;width:100%;box-sizing:border-box;margin:0 auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
         <div style="display:flex;align-items:center;gap:14px">
           <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#818cf8);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;box-shadow:0 4px 12px rgba(99,102,241,.3)">
@@ -10365,12 +10365,12 @@ const PointageModule = {
       </div>
       
       <!-- Attendance Grid -->
-      <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:900px">
+      <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03);width:100%;max-width:100%;box-sizing:border-box">
+        <div class="table-shell" style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;max-width:100%">
+          <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:850px">
             <thead>
               <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-                <th style="padding:10px 12px;text-align:left;color:var(--text3);font-weight:700;position:sticky;left:0;background:var(--bg3);z-index:2;min-width:130px">Collaborateur</th>
+                <th class="pointage-sticky-col" style="padding:10px 12px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;min-width:130px">${isAR ? 'الموظف' : 'Collaborateur'}</th>
                 ${Array.from({length: daysInMonth}, (_, i) => {
                   const dayDate = new Date(this._year, this._month, i + 1);
                   const isWeekend = dayDate.getDay() === 5 || dayDate.getDay() === 6;
@@ -10391,7 +10391,7 @@ const PointageModule = {
         : `<div class="avatar" style="width:24px;height:24px;font-size:10px;border-radius:6px">${(u.name||'?').charAt(0).toUpperCase()}</div>`;
 
       html += `<tr style="border-bottom:1px solid var(--border)">`;
-      html += `<td style="padding:8px 12px;font-weight:700;color:var(--text);position:sticky;left:0;background:var(--bg2);z-index:1">
+      html += `<td class="pointage-sticky-col" style="padding:8px 12px;font-weight:700;color:var(--text);text-align:${isAR?'right':'left'}">
         <div style="display:flex;align-items:center;gap:8px">
           ${avatarHTML}
           <div>
@@ -10493,12 +10493,18 @@ const PointageModule = {
 
   // ── Admin Attendance Rectification Modal ──────────────────────
   async showRectifyModal(userId, dateStr) {
-    if (!Auth.isAdmin()) return;
-    const u = DB.getById('users', userId);
-    if (!u) return;
+    if (!Auth.isAdmin()) {
+      Utils.notify("Seul l'administrateur peut modifier le pointage RH.", "warning");
+      return;
+    }
+    const u = DB.getById('users', userId) || DB.getAll('users').find(x => String(x.id) === String(userId));
+    if (!u) {
+      Utils.notify("Collaborateur introuvable (ID: " + userId + ")", "error");
+      return;
+    }
 
     const allRects = DB.getAll('rh_rectifications') || [];
-    const currentRect = allRects.find(r => String(r.userId) === String(userId) && r.date === dateStr);
+    const currentRect = allRects.find(r => String(r.userId) === String(u.id) && r.date === dateStr);
 
     const statuses = [
       { id: 'present', label: '✅ Présent (Journée normale - 8h)', hours: 8 },
@@ -10510,7 +10516,7 @@ const PointageModule = {
     ];
 
     const curStatus = currentRect ? currentRect.status : 'present';
-    const curHours = currentRect ? currentRect.hours : 8;
+    const curHours = currentRect ? (currentRect.hours !== undefined ? currentRect.hours : 8) : 8;
     const curMotif = currentRect ? currentRect.motif : '';
 
     const optsHtml = statuses.map(s => `<option value="${s.id}" data-hours="${s.hours}" ${s.id === curStatus ? 'selected' : ''}>${s.label}</option>`).join('');
@@ -10543,8 +10549,8 @@ const PointageModule = {
         </div>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700">Motif & Justification RH (Obligatoire)</label>
-          <input type="text" id="rect_rh_motif" class="input" style="width:100%" placeholder="Ex: Certificat médical déposé, Mission Alger, Panne de réveil..." value="${Utils.escHTML(curMotif)}">
+          <label style="font-weight:700">Motif & Justification RH</label>
+          <input type="text" id="rect_rh_motif" class="input" style="width:100%" placeholder="Ex: Présent, Certificat médical, Mission..." value="${Utils.escHTML(curMotif)}">
         </div>
       </div>`;
 
@@ -10560,12 +10566,8 @@ const PointageModule = {
 
     const st = document.getElementById('rect_rh_status')?.value || 'present';
     const hrs = parseFloat(document.getElementById('rect_rh_hours')?.value || 0);
-    const motif = document.getElementById('rect_rh_motif')?.value?.trim();
-
-    if (!motif) {
-      Utils.notify('Veuillez indiquer un motif de rectification pour le dossier RH.', 'warning');
-      return;
-    }
+    const motifInput = document.getElementById('rect_rh_motif')?.value?.trim();
+    const finalMotif = motifInput || 'Rectification manuelle administrateur';
 
     const admin = Auth.getCurrentUser();
 
@@ -10573,7 +10575,7 @@ const PointageModule = {
       DB.update('rh_rectifications', currentRect.id, {
         status: st,
         hours: hrs,
-        motif,
+        motif: finalMotif,
         rectifiedBy: admin?.id,
         rectifiedByName: admin?.name,
         rectifiedAt: new Date().toISOString()
@@ -10584,16 +10586,17 @@ const PointageModule = {
         date: dateStr,
         status: st,
         hours: hrs,
-        motif,
+        motif: finalMotif,
         rectifiedBy: admin?.id,
         rectifiedByName: admin?.name,
         rectifiedAt: new Date().toISOString()
       });
     }
 
-    Utils.notify(`✅ Pointage de ${u.name} pour le ${Utils.fmtDate(dateStr)} rectifié avec succès.`, 'success');
+    Utils.notify(`✅ Pointage de ${u.name} pour le ${Utils.fmtDate(dateStr)} mis à jour.`, 'success');
     App.loadModule('pointage');
   },
+  _openRectifModal(userId, dateStr) { return this.showRectifyModal(userId, dateStr); },
 
   _exportExcel() {
     Utils.notify("Génération de l'export Excel des présences...", "info");
@@ -10690,12 +10693,13 @@ const PointageModule = {
 
     const optsHtml = users.map(u => `<option value="${u.id}">${Utils.escHTML(u.name)} (${Utils.escHTML(u.jobTitle || 'Employé')})</option>`).join('');
     
+    let selectedId = users[0].id;
     const r = await Dialog.show({
       title: `📄 Générer Fiche de Paie`,
       message: `
         <div class="form-group mb-2">
           <label style="font-weight:700">Sélectionner l'employé</label>
-          <select id="fiche_user_id" class="input" style="width:100%">${optsHtml}</select>
+          <select id="fiche_user_id" class="input" style="width:100%" onchange="window._selectedFicheUserId=this.value">${optsHtml}</select>
         </div>`,
       type: 'info',
       confirmText: 'Suivant',
@@ -10703,14 +10707,144 @@ const PointageModule = {
     });
 
     if (r) {
-      const userId = document.getElementById('fiche_user_id').value;
+      const el = document.getElementById('fiche_user_id');
+      const userId = el?.value || window._selectedFicheUserId || selectedId;
       this._generateFicheDePayeModal(userId);
     }
   },
 
+  _updateFicheCalc() {
+    const sb = parseFloat(document.getElementById('fiche_salaire_base')?.value || 0);
+    const jt = parseFloat(document.getElementById('fiche_jours_trav')?.value || 0);
+    const tt = parseFloat(document.getElementById('fiche_jours_total')?.value || 30);
+    const tauxHS = parseFloat(document.getElementById('fiche_taux_hs')?.value || 0);
+    const nbHS = parseFloat(document.getElementById('fiche_nb_hs')?.value || 0);
+    const primes = parseFloat(document.getElementById('fiche_primes')?.value || 0);
+    const retenues = parseFloat(document.getElementById('fiche_retenues')?.value || 0);
+    const tauxCNAS = parseFloat(document.getElementById('fiche_taux_cnas')?.value || 9) / 100;
+    
+    const prorata = Math.round(sb * (tt > 0 ? jt / tt : 0) * 100) / 100;
+    const montantHS = Math.round(tauxHS * nbHS * 100) / 100;
+    const brut = Math.round((prorata + montantHS + primes) * 100) / 100;
+    const cnas = Math.round(brut * tauxCNAS * 100) / 100;
+    const baseImposable = Math.round((brut - cnas) * 100) / 100;
+    
+    let irg = 0;
+    if (baseImposable <= 10000) irg = 0;
+    else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
+    else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
+    else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+    
+    const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
+    
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = Utils.fmtCurrency(v); };
+    setVal('fiche_d_prorata', prorata);
+    setVal('fiche_d_hs', montantHS);
+    setVal('fiche_d_brut', brut);
+    setVal('fiche_d_cnas', cnas);
+    setVal('fiche_d_irg', irg);
+    
+    const netDisplay = document.getElementById('fiche_net_display');
+    if (netDisplay) netDisplay.innerText = Utils.fmtCurrency(net);
+  },
+
+  async _submitFiche(action) {
+    const u = this._currentFicheUser;
+    if (!u) return Utils.notify("Données employé manquantes.", "error");
+
+    const sb = parseFloat(document.getElementById('fiche_salaire_base')?.value || 0);
+    const jt = parseFloat(document.getElementById('fiche_jours_trav')?.value || 0);
+    const tt = parseFloat(document.getElementById('fiche_jours_total')?.value || 30);
+    const tauxHS = parseFloat(document.getElementById('fiche_taux_hs')?.value || 0);
+    const nbHS = parseFloat(document.getElementById('fiche_nb_hs')?.value || 0);
+    const primes = parseFloat(document.getElementById('fiche_primes')?.value || 0);
+    const retenues = parseFloat(document.getElementById('fiche_retenues')?.value || 0);
+    const tauxCNASRate = parseFloat(document.getElementById('fiche_taux_cnas')?.value || 9);
+    const tauxCNAS = tauxCNASRate / 100;
+    
+    const prorata = Math.round(sb * (tt > 0 ? jt / tt : 0) * 100) / 100;
+    const montantHS = Math.round(tauxHS * nbHS * 100) / 100;
+    const brut = Math.round((prorata + montantHS + primes) * 100) / 100;
+    const cnas = Math.round(brut * tauxCNAS * 100) / 100;
+    const baseImposable = Math.round((brut - cnas) * 100) / 100;
+    
+    let irg = 0;
+    if (baseImposable <= 10000) irg = 0;
+    else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
+    else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
+    else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+    
+    const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
+
+    const data = {
+      id: Utils.genId(),
+      userId: u.id,
+      userName: u.name,
+      jobTitle: u.jobTitle || 'Employé',
+      department: u.department || 'Général',
+      month: this._month + 1,
+      year: this._year,
+      salaireBase: sb,
+      joursTotal: tt,
+      joursTravailles: jt,
+      joursAbsence: parseFloat(document.getElementById('fiche_jours_abs')?.value || 0),
+      tauxHS,
+      nbHS,
+      montantHS,
+      primes,
+      retenues,
+      tauxCNAS: tauxCNASRate,
+      salaireBrut: brut,
+      prorata,
+      cotisationCNAS: cnas,
+      irg,
+      netPayer: net,
+      createdAt: new Date().toISOString()
+    };
+
+    DB.insert('fiches_paie', data);
+
+    if (action === 'pdf') {
+      if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
+        const pdfData = {
+          employeeName: data.userName,
+          department: data.department || '—',
+          jobTitle: data.jobTitle || '—',
+          monthLabel: `${String(data.month).padStart(2,'0')} / ${data.year}`,
+          totalDays: String(data.joursTotal),
+          workedDays: String(data.joursTravailles),
+          baseSalary: data.salaireBase,
+          prorata: data.prorata,
+          overtime: data.montantHS,
+          bonuses: data.primes,
+          grossTotal: data.salaireBrut,
+          deductions: [
+            ...(data.cotisationCNAS > 0 ? [{ label: `CNAS Salarié (${data.tauxCNAS}%)`, amount: data.cotisationCNAS }] : []),
+            ...(data.irg > 0 ? [{ label: 'IRG (Impôt sur revenu)', amount: data.irg }] : []),
+            ...(data.retenues > 0 ? [{ label: 'Autres retenues', amount: data.retenues }] : []),
+          ],
+          totalDeductions: Math.round((data.cotisationCNAS + data.irg + data.retenues) * 100) / 100,
+          netPay: data.netPayer,
+        };
+        PDFGen.exportFicheDePayeSimple(pdfData);
+        Utils.notify("✅ Fiche de paie générée et exportée en PDF !", "success");
+      } else {
+        Utils.notify("Fiche enregistrée (générateur PDF en cours de chargement).", "info");
+      }
+    } else {
+      Utils.notify("✅ Fiche de paie enregistrée avec succès !", "success");
+    }
+
+    if (Dialog._resolve) Dialog._resolve(true);
+  },
+
   async _generateFicheDePayeModal(userId) {
-    const u = DB.getById('users', userId);
-    if (!u) return;
+    const u = DB.getById('users', userId) || DB.getAll('users').find(x => String(x.id) === String(userId));
+    if (!u) {
+      Utils.notify("Collaborateur introuvable.", "error");
+      return;
+    }
+    this._currentFicheUser = u;
 
     // Get attendance data for selected month/year
     const logs = DB.getAll('work_log').filter(l => String(l.userId) === String(u.id));
@@ -10736,60 +10870,12 @@ const PointageModule = {
       }
     }
 
-    const salaireBase = u.baseSalary || u.salary || 0;
-    const tauxHoraireDefault = u.tauxHoraire || 0;
-    // Count congé days this month
+    const salaireBase = u.baseSalary || u.salary || 45000;
+    const tauxHoraireDefault = u.tauxHoraire || Math.round((salaireBase / 173.33) * 100) / 100;
     const congeDays = rects.filter(r => r.status === 'conge' && r.date && r.date.startsWith(`${this._year}-${String(this._month+1).padStart(2,'0')}`)).length;
-    
-    const updateCalculations = () => {
-      const sb = parseFloat(document.getElementById('fiche_salaire_base').value || 0);
-      const jt = parseFloat(document.getElementById('fiche_jours_trav').value || 0);
-      const tt = parseFloat(document.getElementById('fiche_jours_total').value || 30);
-      const tauxHS = parseFloat(document.getElementById('fiche_taux_hs').value || 0);
-      const nbHS = parseFloat(document.getElementById('fiche_nb_hs').value || 0);
-      const primes = parseFloat(document.getElementById('fiche_primes').value || 0);
-      const retenues = parseFloat(document.getElementById('fiche_retenues').value || 0);
-      const tauxCNAS = parseFloat(document.getElementById('fiche_taux_cnas').value || 9) / 100;
-      
-      // Prorata based on worked days
-      const prorata = Math.round(sb * (tt > 0 ? jt / tt : 0) * 100) / 100;
-      // Heures supplémentaires
-      const montantHS = Math.round(tauxHS * nbHS * 100) / 100;
-      // Salaire brut
-      const brut = Math.round((prorata + montantHS + primes) * 100) / 100;
-      // CNAS employee (9% standard in Algeria)
-      const cnas = Math.round(brut * tauxCNAS * 100) / 100;
-      // Base imposable (brut - CNAS - abattement forfaitaire 10%)
-      const baseImposable = Math.round((brut - cnas) * 100) / 100;
-      // IRG (Algerian progressive tax - simplified)
-      let irg = 0;
-      if (baseImposable <= 10000) irg = 0;
-      else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
-      else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
-      else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
-      // Net à Payer
-      const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
-      
-      // Update display
-      const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = Utils.fmtCurrency(v); };
-      setVal('fiche_d_prorata', prorata);
-      setVal('fiche_d_hs', montantHS);
-      setVal('fiche_d_brut', brut);
-      setVal('fiche_d_cnas', cnas);
-      setVal('fiche_d_irg', irg);
-      setVal('fiche_d_net', net);
-      document.getElementById('fiche_net_display').innerText = Utils.fmtCurrency(net);
-      document.getElementById('fiche_net_display').setAttribute('data-val', net);
-      // Store intermediate values
-      document.getElementById('fiche_net_display').setAttribute('data-brut', brut);
-      document.getElementById('fiche_net_display').setAttribute('data-cnas', cnas);
-      document.getElementById('fiche_net_display').setAttribute('data-irg', irg);
-      document.getElementById('fiche_net_display').setAttribute('data-prorata', prorata);
-      document.getElementById('fiche_net_display').setAttribute('data-hs', montantHS);
-    };
 
     const modalHTML = `
-      <div style="padding:6px 0">
+      <div style="padding:4px 0">
         <!-- Employee Info Header -->
         <div style="background:var(--bg3);border-radius:10px;padding:12px 16px;margin-bottom:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -10817,15 +10903,15 @@ const PointageModule = {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Salaire de Base (DA)</label>
-            <input type="number" id="fiche_salaire_base" class="input" style="width:100%" value="${salaireBase}" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_salaire_base" class="input" style="width:100%" value="${salaireBase}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Jours Référence (mois)</label>
-            <input type="number" id="fiche_jours_total" class="input" style="width:100%" value="30" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_jours_total" class="input" style="width:100%" value="30" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Jours Travaillés</label>
-            <input type="number" id="fiche_jours_trav" class="input" style="width:100%" value="${joursTravailles}" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_jours_trav" class="input" style="width:100%" value="${joursTravailles}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Jours Absence</label>
@@ -10840,15 +10926,15 @@ const PointageModule = {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Taux Horaire HS (DA/h)</label>
-            <input type="number" id="fiche_taux_hs" class="input" style="width:100%" value="${tauxHoraireDefault}" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_taux_hs" class="input" style="width:100%" value="${tauxHoraireDefault}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Nb Heures Sup</label>
-            <input type="number" id="fiche_nb_hs" class="input" style="width:100%" value="0" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_nb_hs" class="input" style="width:100%" value="0" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Primes (DA)</label>
-            <input type="number" id="fiche_primes" class="input" style="width:100%" value="0" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_primes" class="input" style="width:100%" value="0" oninput="PointageModule._updateFicheCalc()">
           </div>
         </div>
 
@@ -10859,15 +10945,13 @@ const PointageModule = {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Taux CNAS Salarié (%)</label>
-            <input type="number" id="fiche_taux_cnas" class="input" style="width:100%" value="9" step="0.5" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_taux_cnas" class="input" style="width:100%" value="9" step="0.5" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
             <label style="font-size:11px;font-weight:700">Autres Retenues (DA)</label>
-            <input type="number" id="fiche_retenues" class="input" style="width:100%" value="0" oninput="document.getElementById('fiche_update_btn').click()">
+            <input type="number" id="fiche_retenues" class="input" style="width:100%" value="0" oninput="PointageModule._updateFicheCalc()">
           </div>
         </div>
-
-        <button id="fiche_update_btn" style="display:none"></button>
 
         <!-- Breakdown Table -->
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px">
@@ -10896,102 +10980,30 @@ const PointageModule = {
         </div>
 
         <!-- NET à Payer -->
-        <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(52,211,153,0.1));border:2px solid #10b981;border-radius:12px;padding:18px;text-align:center">
+        <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(52,211,153,0.1));border:2px solid #10b981;border-radius:12px;padding:14px;text-align:center">
           <div style="font-size:12px;font-weight:800;color:#059669;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Net à Payer</div>
-          <div id="fiche_net_display" style="font-size:32px;font-weight:900;color:#10b981">--</div>
+          <div id="fiche_net_display" style="font-size:28px;font-weight:900;color:#10b981">--</div>
+        </div>
+
+        <!-- Custom Action Buttons -->
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-outline" type="button" onclick="if(Dialog._resolve) Dialog._resolve(false)">Annuler</button>
+          <button class="btn" type="button" style="background:#6366f1;color:white;border:none;font-weight:700" onclick="PointageModule._submitFiche('pdf')">
+            <i class="fas fa-file-pdf"></i> Générer PDF
+          </button>
+          <button class="btn btn-primary" type="button" style="font-weight:700" onclick="PointageModule._submitFiche('save')">
+            <i class="fas fa-save"></i> Sauvegarder
+          </button>
         </div>
       </div>`;
 
-    const btnWrapperId = 'fiche_dialog_btns_' + Date.now();
-    
-    // We override Dialog slightly to support custom buttons or we can just use Dialog.show
-    // Actually, Dialog.show has 2 buttons. The prompt requires 'Générer PDF' and 'Sauvegarder'.
-    // We'll create custom HTML buttons at the bottom of message if needed, or adapt Dialog.
-    const fullHTML = modalHTML + `
-      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
-        <button class="btn btn-outline" onclick="Dialog._resolve(false)">Annuler</button>
-        <button class="btn" style="background:#6366f1;color:white;border:none" onclick="document.getElementById('fiche_action').value='pdf';Dialog._resolve(true)">
-          <i class="fas fa-file-pdf"></i> Générer PDF
-        </button>
-        <button class="btn btn-primary" onclick="document.getElementById('fiche_action').value='save';Dialog._resolve(true)">
-          <i class="fas fa-save"></i> Sauvegarder
-        </button>
-        <input type="hidden" id="fiche_action" value="">
-      </div>
-    `;
+    setTimeout(() => { this._updateFicheCalc(); }, 60);
 
-    setTimeout(updateCalculations, 100);
-
-    // Using Dialog UI but hiding default buttons via CSS or just empty labels
-    const r = await Dialog.show({
+    await Dialog.show({
       title: `📄 Fiche de Paie — ${u.name}`,
-      message: fullHTML,
-      hideButtons: true // Assuming we can use this, otherwise the custom buttons close it via Dialog._resolve
+      message: modalHTML,
+      hideButtons: true
     });
-
-    if (!r) return;
-
-    const action = document.getElementById('fiche_action').value;
-    
-    const netEl = document.getElementById('fiche_net_display');
-    const data = {
-      id: Utils.genId(),
-      userId: u.id,
-      userName: u.name,
-      jobTitle: u.jobTitle,
-      department: u.department,
-      month: this._month + 1,
-      year: this._year,
-      salaireBase: parseFloat(document.getElementById('fiche_salaire_base').value || 0),
-      joursTotal: parseFloat(document.getElementById('fiche_jours_total').value || 30),
-      joursTravailles: parseFloat(document.getElementById('fiche_jours_trav').value || 0),
-      joursAbsence: parseFloat(document.getElementById('fiche_jours_abs').value || 0),
-      tauxHS: parseFloat(document.getElementById('fiche_taux_hs').value || 0),
-      nbHS: parseFloat(document.getElementById('fiche_nb_hs').value || 0),
-      montantHS: parseFloat(netEl?.getAttribute('data-hs') || 0),
-      primes: parseFloat(document.getElementById('fiche_primes').value || 0),
-      retenues: parseFloat(document.getElementById('fiche_retenues').value || 0),
-      tauxCNAS: parseFloat(document.getElementById('fiche_taux_cnas').value || 9),
-      salaireBrut: parseFloat(netEl?.getAttribute('data-brut') || 0),
-      prorata: parseFloat(netEl?.getAttribute('data-prorata') || 0),
-      cotisationCNAS: parseFloat(netEl?.getAttribute('data-cnas') || 0),
-      irg: parseFloat(netEl?.getAttribute('data-irg') || 0),
-      netPayer: parseFloat(netEl?.getAttribute('data-val') || 0),
-      createdAt: new Date().toISOString()
-    };
-
-    if (action === 'save' || action === 'pdf') {
-      DB.insert('fiches_paie', data);
-      Utils.notify("Fiche de paie sauvegardée.", "success");
-    }
-
-    if (action === 'pdf') {
-      if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
-        const pdfData = {
-          employeeName: data.userName,
-          department: data.department || '—',
-          jobTitle: data.jobTitle || '—',
-          monthLabel: `${String(data.month).padStart(2,'0')} / ${data.year}`,
-          totalDays: String(data.joursTotal),
-          workedDays: String(data.joursTravailles),
-          baseSalary: data.salaireBase,
-          prorata: data.prorata,
-          overtime: data.montantHS,
-          bonuses: data.primes,
-          grossTotal: data.salaireBrut,
-          deductions: [
-            ...(data.cotisationCNAS > 0 ? [{ label: `CNAS Salarié (${data.tauxCNAS}%)`, amount: data.cotisationCNAS }] : []),
-            ...(data.irg > 0 ? [{ label: 'IRG (Impôt sur revenu)', amount: data.irg }] : []),
-            ...(data.retenues > 0 ? [{ label: 'Autres retenues', amount: data.retenues }] : []),
-          ],
-          totalDeductions: Math.round((data.cotisationCNAS + data.irg + data.retenues) * 100) / 100,
-          netPay: data.netPayer,
-        };
-        PDFGen.exportFicheDePayeSimple(pdfData);
-      } else {
-        Utils.notify("La génération PDF n'est pas encore disponible.", "warning");
-      }
-    }
   }
 };
 
