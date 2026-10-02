@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=26.1">
+<link rel="stylesheet" href="style.css?v=27.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -258,14 +258,14 @@
         <div class="notif-dropdown" id="notifDropdown" style="display:none">
           <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg2)">
             <div style="font-weight:800;font-size:13px;color:var(--text);display:flex;align-items:center;gap:6px">
-              <i class="fas fa-bell" style="color:var(--primary)"></i> Centre de Notifications
+              <i class="fas fa-bell" style="color:var(--primary)"></i> <span id="lblNotifCenter">Centre de Notifications</span>
             </div>
-            <button class="btn btn-xs btn-outline" onclick="NotifMgr.markAllAsRead()" style="font-size:10px">Tout marquer lu</button>
+            <button class="btn btn-xs btn-outline" onclick="NotifMgr.markAllAsRead()" style="font-size:10px" id="lblNotifMarkAll">Tout marquer lu</button>
           </div>
           <div id="notifDropdownList" style="max-height:360px;overflow-y:auto"></div>
           <div style="padding:8px 12px;border-top:1px solid var(--border);text-align:center;background:var(--bg2)">
             <button class="btn btn-xs btn-outline" style="width:100%;font-size:11px" onclick="NotifMgr.closeDropdown();App.loadModule('bc_supervision')">
-              <i class="fas fa-stream"></i> Ouvrir le Suivi des Chargements
+              <i class="fas fa-stream"></i> <span id="lblNotifTracker">Ouvrir le Suivi des Chargements</span>
             </button>
           </div>
         </div>
@@ -302,7 +302,7 @@
     <aside class="sidebar" id="sidebar">
       <!-- App name + company brand -->
       <div class="sb-brand">
-        <div class="ai-widget ai-widget-sm" onclick="triggerAiAction(this)">
+        <div class="ai-widget ai-widget-sm" onclick="App.loadModule('dashboard')">
           <div class="ai-orbit"></div>
           <div class="ai-orbit ai-orbit-2"></div>
           <div class="ai-core"></div>
@@ -349,10 +349,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=26.1"></script>
-<script src="core.js?v=26.1"></script>
-<script src="modules.js?v=26.1"></script>
-<script src="pdf.js?v=26.1"></script>
+<script src="api.js?v=27.0"></script>
+<script src="core.js?v=27.0"></script>
+<script src="modules.js?v=27.0"></script>
+<script src="pdf.js?v=27.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -726,6 +726,9 @@ const App = {
     });
     const themeBtn = document.getElementById('themeToggleBtn');
     if (themeBtn) themeBtn.title = lang === 'ar' ? 'السمة' : 'Thème';
+    const nc = document.getElementById('lblNotifCenter'); if (nc) nc.textContent = T.get('notif_center');
+    const nma = document.getElementById('lblNotifMarkAll'); if (nma) nma.textContent = T.get('notif_mark_all');
+    const not = document.getElementById('lblNotifTracker'); if (not) not.textContent = T.get('notif_open_tracker');
   },
 
   buildSidebar() {
@@ -854,7 +857,12 @@ const App = {
     }
 
     this._currentModule = mod;
+    // Quick visual feedback - instant module switch
     const main = document.getElementById('mainContent');
+    if (main && main.children.length > 0) {
+      main.style.opacity = '0.5';
+      main.style.transition = 'opacity 0.08s';
+    }
     const bc = document.getElementById('breadcrumb');
 
     const labels = {
@@ -902,6 +910,7 @@ const App = {
         default: html = `<div style="padding:40px;text-align:center;color:var(--text3)">${T.isRTL() ? 'الوحدة' : 'Module'} "${mod}" ${T.isRTL() ? 'غير موجودة' : 'introuvable'}</div>`;
       }
       main.innerHTML = html;
+      main.style.opacity = '1';
       main.scrollTop = 0;
 
       // ── Restore focus after re-render so search inputs keep focus ──

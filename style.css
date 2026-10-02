@@ -708,7 +708,8 @@ hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
 .topbar-left  { display:flex; align-items:center; gap:12px; min-width:0; flex-shrink:1; }
 .topbar-right { display:flex; align-items:center; gap:12px; min-width:0; flex-shrink:1; flex-wrap:wrap; justify-content:flex-end; }
 .topbar-divider { width:1px; height:24px; background:var(--border); margin:0 4px; }
-.breadcrumb-text { font-weight:700; font-size:15px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.breadcrumb-text { font-weight:700; font-size:15px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction: inherit; unicode-bidi: plaintext; }
+#mainContent { transition: opacity 0.08s ease; }
 .btn-icon {
   background:none; border:none; font-size:17px;
   cursor:pointer; color:var(--text-light); padding:7px;
@@ -1247,9 +1248,9 @@ tbody tr:hover { background:rgba(var(--primary-rgb),.05) }
 [dir="rtl"] .topbar {
   direction:rtl;
 }
-[dir="rtl"] .topbar-left { flex-direction:row-reverse; }
+[dir="rtl"] .topbar-left { flex-direction:row-reverse; direction: rtl; }
 [dir="rtl"] .topbar-right { flex-direction:row-reverse; }
-[dir="rtl"] .breadcrumb-text { direction:rtl; }
+[dir="rtl"] .breadcrumb-text { direction:rtl; text-align: right; }
 [dir="rtl"] .sidebar-nav { direction:rtl; text-align:right; }
 [dir="rtl"] .nav-item { flex-direction:row-reverse; }
 [dir="rtl"] .nav-icon { margin-right:0; margin-left:12px; }
@@ -1474,8 +1475,20 @@ th.pointage-sticky-col {
 .data-table th,
 .data-table td {
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
   white-space: nowrap;
+}
+.data-table td strong {
+  font-weight: 700;
+  color: var(--text);
+}
+.data-table td code {
+  font-size: 11px;
+  background: var(--bg3);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 .data-table th {
   font-size: 11px;
@@ -1522,7 +1535,23 @@ th.pointage-sticky-col {
 .locked-icon { color:var(--text-muted); font-size:10px; margin-left:4px; }
 
 /* ── Action cell ── */
-.td-actions { display:flex; gap:3px; align-items:center; flex-wrap:nowrap; white-space:nowrap; }
+.td-actions {
+  white-space: nowrap;
+}
+.td-actions .btn-xs {
+  padding: 4px 7px;
+  font-size: 12px;
+  border-radius: 6px;
+  margin: 1px;
+}
+/* Action buttons group - cleaner layout */
+.td-actions {
+  display: flex;
+  gap: 3px;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+}
 
 /* ── fw-bold / text-primary helpers ── */
 .fw-bold { font-weight:700; }

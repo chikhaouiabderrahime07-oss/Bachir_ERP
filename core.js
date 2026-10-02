@@ -157,6 +157,9 @@ const T = {
     nav_charges: 'Charges & Frais',
     nav_bank: 'Banque & Extrait',
     nav_bank_extrait: 'Extrait Bancaire',
+    notif_center: 'Centre de Notifications',
+    notif_mark_all: 'Tout marquer lu',
+    notif_open_tracker: 'Ouvrir le Suivi des Chargements',
   },
   ar: {
     app_name:'نظام إدارة الموردين', app_by:'تطوير CHIKHAOUI ABDERRAHIME',
@@ -291,6 +294,9 @@ const T = {
     nav_charges: 'المصاريف والتكاليف',
     nav_bank: 'البنك وكشف الحساب',
     nav_bank_extrait: 'كشف الحساب البنكي',
+    notif_center: 'مركز الإشعارات',
+    notif_mark_all: 'تعليم الكل كمقروء',
+    notif_open_tracker: 'فتح متابعة الشحنات',
   },
 
   get(k) { return this[this._l]?.[k] || this.fr[k] || k; },
@@ -307,7 +313,7 @@ const T = {
 
 // ─── DATABASE ──────────────────────────────────────────────────
 const DB = {
-  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments','etat_vente_docs','bon_retours','bank_charges','notifications','fiches_paie','rh_rectifications','recurring_charges','bank_accounts'],
+  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments','etat_vente_docs','bon_retours','bank_charges','notifications','fiches_paie','rh_rectifications','recurring_charges','bank_accounts','paie_validations'],
 
   init() {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
@@ -1541,8 +1547,8 @@ const DB = {
       if (typeof NotifMgr !== 'undefined') {
         NotifMgr.add({
           type: 'bc_validated',
-          title: 'Chargement Usine Validé',
-          message: `L'usine a validé le chargement ${bc.ref}. Le BR ${existingBR.ref} est confirmé.`,
+          title: T.isRTL() ? 'تم تأكيد شحن المصنع' : 'Chargement Usine Validé',
+          message: T.isRTL() ? `أكد المصنع شحن ${bc.ref}. تم تأكيد وصل الاستلام ${existingBR.ref}.` : `L'usine a validé le chargement ${bc.ref}. Le BR ${existingBR.ref} est confirmé.`,
           link: { mod: 'bls', id: bc.id },
           data: { bcId: bc.id, brId: existingBR.id }
         });
@@ -1616,8 +1622,8 @@ const DB = {
     if (typeof NotifMgr !== 'undefined') {
       NotifMgr.add({
         type: 'bc_validated',
-        title: 'Chargement Usine Validé & BR Généré',
-        message: `L'usine ${supplier.name || 'Usine'} a validé le chargement ${bc.ref}. Le BR ${savedBR.ref} a été généré automatiquement.`,
+        title: T.isRTL() ? 'تم تأكيد الشحن وإنشاء وصل استلام' : 'Chargement Usine Validé & BR Généré',
+        message: T.isRTL() ? `أكد المصنع ${supplier.name || 'المصنع'} شحن ${bc.ref}. تم إنشاء وصل الاستلام ${savedBR.ref} تلقائياً.` : `L'usine ${supplier.name || 'Usine'} a validé le chargement ${bc.ref}. Le BR ${savedBR.ref} a été généré automatiquement.`,
         link: { mod: 'bls', id: bc.id },
         data: { bcId: bc.id, brId: savedBR.id }
       });
@@ -2012,6 +2018,9 @@ const Utils = {
   },
 
   notify(msg, type='info', dur=4000) {
+    if (type === 'success' || type === 'warning') {
+      if (typeof NotifMgr !== 'undefined' && NotifMgr._playNotifSound) NotifMgr._playNotifSound();
+    }
     const c = document.getElementById('notifContainer'); if (!c) return;
     const icons = { success:'fa-check-circle', error:'fa-times-circle', warning:'fa-exclamation-triangle', info:'fa-info-circle' };
     const el = document.createElement('div');
@@ -2116,6 +2125,34 @@ const WorkLog = {
 
 // ─── NOTIFICATION MANAGER ──────────────────────────────────────
 const NotifMgr = {
+  _playNotifSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880; // A5 note
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+      // Second tone (pleasant ding-dong)
+      setTimeout(() => {
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.frequency.value = 1320; // E6
+        osc2.type = 'sine';
+        gain2.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+        osc2.start(ctx.currentTime);
+        osc2.stop(ctx.currentTime + 0.4);
+      }, 150);
+    } catch(e) { /* Audio not supported */ }
+  },
   getAll() {
     return (DB.getAll('notifications') || []).sort((a,b) => String(b.date||b.createdAt||'').localeCompare(String(a.date||a.createdAt||'')));
   },
@@ -2124,6 +2161,7 @@ const NotifMgr = {
     return this.getAll().filter(n => !n.read && (!n.targetUserId || String(n.targetUserId) === String(u?.id))).length;
   },
   add({ type='info', title='', message='', link=null, targetUserId=null, data=null }) {
+    this._playNotifSound();
     const notif = {
       type,
       title: title || 'Notification ERP',

@@ -1595,8 +1595,8 @@ const BLModule = {
     if (typeof NotifMgr !== 'undefined') {
       NotifMgr.add({
         type: 'bc_created',
-        title: 'BCH envoye vers l\'usine',
-        message: `Le BCH ${ref} a ete envoye vers ${sup?.name||'l\'usine'} pour chargement. Chauffeur: ${driver||'-'} (${imm||'-'}).`,
+        title: T.isRTL() ? 'تم إرسال BCH إلى المصنع' : 'BCH envoye vers l\'usine',
+        message: T.isRTL() ? `تم إرسال BCH ${ref} إلى ${sup?.name||'المصنع'} للشحن. السائق: ${driver||'-'} (${imm||'-'}).` : `Le BCH ${ref} a ete envoye vers ${sup?.name||'l\'usine'} pour chargement. Chauffeur: ${driver||'-'} (${imm||'-'}).`,
         link: { mod: 'bls', id: savedBCH.id },
         data: { bcId: savedBCH.id }
       });
@@ -2234,8 +2234,8 @@ const BLModule = {
     if (typeof NotifMgr !== 'undefined') {
       NotifMgr.add({
         type: 'bc_validated',
-        title: 'Livraison confirmee - Marchandise arrivee',
-        message: `Le BCH ${bl.ref} a ete livre. Montant: ${Utils.fmtCurrency(Number(bl.totalTTC||0))}. Documents verrouilles.`,
+        title: T.isRTL() ? 'تأكيد التسليم - وصلت البضاعة' : 'Livraison confirmee - Marchandise arrivee',
+        message: T.isRTL() ? `تم تسليم BCH ${bl.ref}. المبلغ: ${Utils.fmtCurrency(Number(bl.totalTTC||0))}. الوثائق مقفلة.` : `Le BCH ${bl.ref} a ete livre. Montant: ${Utils.fmtCurrency(Number(bl.totalTTC||0))}. Documents verrouilles.`,
         link: { mod: 'bls', id: blId },
         data: { bcId: blId }
       });
@@ -2441,8 +2441,8 @@ const BLModule = {
     if (typeof NotifMgr !== 'undefined') {
       NotifMgr.add({
         type: 'bc_returned',
-        title: 'Retour Marchandise vers l\'usine',
-        message: `Le BCH ${bl.ref} a ete retourne. Bon de Retour: ${brRef}. Montant: ${Utils.fmtCurrency(amount)}.`,
+        title: T.isRTL() ? 'إرجاع البضاعة إلى المصنع' : 'Retour Marchandise vers l\'usine',
+        message: T.isRTL() ? `تم إرجاع BCH ${bl.ref}. وصل الإرجاع: ${brRef}. المبلغ: ${Utils.fmtCurrency(amount)}.` : `Le BCH ${bl.ref} a ete retourne. Bon de Retour: ${brRef}. Montant: ${Utils.fmtCurrency(amount)}.`,
         link: { mod: 'bls', id: bl.id },
         data: { bcId: bl.id, brRef }
       });
@@ -10454,6 +10454,9 @@ const PointageModule = {
           <button class="btn" onclick="PointageModule._closePaieMonth()" style="background:linear-gradient(135deg,#dc2626,#ef4444);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
             <i class="fas fa-cash-register"></i> Cloturer Paie du Mois
           </button>
+          <button class="btn btn-primary" onclick="PointageModule.showPayrollValidation()" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none">
+            <i class="fas fa-money-check-alt"></i> Valider les Paies
+          </button>
         </div>
       </div>
       
@@ -11294,6 +11297,153 @@ const PointageModule = {
       message: modalHTML,
       hideButtons: true
     });
+  },
+
+  async showPayrollValidation() {
+    if (!Auth.isAdmin()) {
+      Utils.notify("Seul l'administrateur peut valider les paies.", "error");
+      return;
+    }
+    const monthKey = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
+    const validations = DB.getAll('paie_validations') || [];
+    if (validations.find(v => v.month === monthKey)) {
+      Utils.notify("Les paies de ce mois ont déjà été validées.", "warning");
+      return;
+    }
+    
+    // Check if charges were already created for this month to be extra safe
+    const charges = DB.getAll('bank_charges');
+    if (charges.find(c => c.paieValidation === true && c.month === monthKey)) {
+      Utils.notify("Les charges de paie de ce mois existent déjà.", "warning");
+      return;
+    }
+
+    const users = DB.getAll('users').filter(u => u.active !== false);
+    const logs = DB.getAll('work_log');
+    const rects = DB.getAll('rh_rectifications') || [];
+    const daysInMonth = new Date(this._year, this._month + 1, 0).getDate();
+    
+    let totalWorkingDays = 0;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(this._year, this._month, day);
+      if (d.getDay() !== 5 && d.getDay() !== 6) totalWorkingDays++;
+    }
+
+    const banks = (DB.getSettings().banks || []);
+    const bankOpts = banks.map(b => `<option value="${b.id}">Banque : ${Utils.escHTML(b.name)}</option>`).join('');
+
+    let html = `<div style="padding:10px 0;">
+      <p style="margin-top:0;">Validation et intégration des salaires pour <strong>${String(this._month+1).padStart(2,'0')}/${this._year}</strong> (Jours ouvrables théoriques: ${totalWorkingDays})</p>
+      <div class="form-group mb-2">
+        <label style="font-weight:bold;">Imputer les charges à :</label>
+        <select id="paie_bank_source" class="input" style="width:100%;padding:8px;">
+          <option value="caisse">Caisse Principale (Espèces)</option>
+          ${bankOpts}
+        </select>
+      </div>
+      <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead style="position:sticky;top:0;background:var(--bg3);z-index:1;">
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="padding:8px;text-align:left">Employé</th>
+            <th style="padding:8px;text-align:center">Base (DA)</th>
+            <th style="padding:8px;text-align:center">Présences</th>
+            <th style="padding:8px;text-align:center">Absences</th>
+            <th style="padding:8px;text-align:right">Net à Payer</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    const payrollData = [];
+
+    users.forEach(u => {
+      let daysPresent = 0;
+      let absences = 0;
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${this._year}-${String(this._month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const dayDate = new Date(this._year, this._month, day);
+        const isWeekend = dayDate.getDay() === 5 || dayDate.getDay() === 6;
+        
+        const rect = rects.find(r => String(r.userId) === String(u.id) && r.date === dateStr);
+        if (rect) {
+          if (rect.status === 'present' || rect.status === 'mission') daysPresent++;
+          else if (rect.status === 'absent_unjustified') absences++;
+        } else if (!isWeekend) {
+          const hasLog = logs.some(l => String(l.userId) === String(u.id) && ((l.date || '').startsWith(dateStr) || (l.loginTime || '').startsWith(dateStr)));
+          if (hasLog) daysPresent++;
+          else if (dateStr <= Utils.today()) absences++; 
+        }
+      }
+      
+      const baseSalary = parseFloat(u.baseSalary || u.salary || 0);
+      let netPay = 0;
+      if (baseSalary > 0) {
+        netPay = Math.round(baseSalary * (daysPresent / Math.max(1, totalWorkingDays)));
+      }
+      
+      payrollData.push({ employee: u, daysPresent, absences, baseSalary, netPay });
+      
+      html += `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px"><strong>${Utils.escHTML(u.name)}</strong></td>
+        <td style="padding:8px;text-align:center">${Utils.fmtCurrency(baseSalary)}</td>
+        <td style="padding:8px;text-align:center;color:var(--success)">${daysPresent}</td>
+        <td style="padding:8px;text-align:center;color:var(--danger)">${absences}</td>
+        <td style="padding:8px;text-align:right;font-weight:bold;color:var(--primary)">${Utils.fmtCurrency(netPay)}</td>
+      </tr>`;
+    });
+    
+    html += `</tbody></table></div></div>`;
+
+    const r = await Dialog.show({
+      title: 'Valider les Paies',
+      message: html,
+      confirmText: 'Valider & Créer les Charges',
+      cancelText: 'Annuler',
+      type: 'warning'
+    });
+
+    if (r) {
+      const bankId = document.getElementById('paie_bank_source').value;
+      const admin = Auth.getCurrentUser();
+      const payDate = Utils.today();
+      
+      payrollData.forEach(d => {
+        if (d.netPay > 0) {
+          const chg = {
+            type: 'manual',
+            subtype: 'Salaires & Primes RH',
+            label: `Salaire ${String(this._month+1).padStart(2,'0')}/${this._year} — ${d.employee.name}`,
+            category: 'Salaires & Primes RH',
+            bankId: bankId,
+            amount: d.netPay,
+            date: payDate,
+            recurring: false,
+            paieValidation: true,
+            employeeId: d.employee.id,
+            month: monthKey,
+            createdBy: admin.id,
+            createdByName: admin.name,
+            createdAt: new Date().toISOString()
+          };
+          DB.insert('bank_charges', chg);
+          
+          if (bankId !== 'caisse') {
+            DB.insert('bank_transactions', {
+              bankId: bankId,
+              date: payDate,
+              type: 'withdrawal',
+              amount: d.netPay,
+              note: chg.label,
+              docRef: 'PAIE'
+            });
+          }
+        }
+      });
+      
+      DB.insert('paie_validations', { month: monthKey, validatedAt: new Date().toISOString(), validatedBy: admin.id });
+      Utils.notify("Paies validées et charges générées avec succès.", "success");
+      App.loadModule('charges');
+    }
   }
 };
 
