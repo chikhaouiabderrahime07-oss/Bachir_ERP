@@ -297,7 +297,7 @@ router.patch('/:col/:id', async (req, res) => {
     if (col === 'brs' && patch.brNum !== undefined) {
       const brYear = patch.year || doc.data.year || new Date().getFullYear();
       const dup = await Document.findOne({
-        col: 'brs', 'data.brNum': Number(patch.brNum), 'data.year': brYear, 'data.id': { $ne: id }
+        col: 'brs', 'data.brNum': Number(patch.brNum), 'data.year': brYear, 'data.id': { $ne: doc.data.id }
       });
       if (dup) {
         return res.status(409).json({ error: `Le numéro BR ${patch.brNum} est déjà utilisé pour l'année ${brYear}` });

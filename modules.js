@@ -26,7 +26,8 @@ const UI = {
   closeModal() { if (typeof FormGuide !== 'undefined') FormGuide.stop(); document.getElementById('modalOverlay')?.classList.remove('active'); },
   toggleTheme() {
     const s = DB.getSettings();
-    const next = s.themeMode === 'dark' ? 'light' : 'dark';
+    const cur = s.themeMode || 'light';
+    const next = cur === 'light' ? 'dark' : (cur === 'dark' ? 'comfort' : 'light');
     DB.saveSettings({ themeMode: next });
     this.applyTheme();
   },
@@ -44,7 +45,9 @@ const UI = {
       document.documentElement.style.setProperty('--primary-rgb', `${r},${g},${b}`);
     }
     const icon = document.getElementById('themeIcon');
-    if (icon) icon.className = mode === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    const btn = document.getElementById('themeToggleBtn');
+    if (icon) icon.className = mode === 'dark' ? 'fas fa-sun' : (mode === 'comfort' ? 'fas fa-lightbulb' : 'fas fa-moon');
+    if (btn) btn.title = mode === 'light' ? 'Mode Sombre' : (mode === 'dark' ? 'Mode Confort' : 'Mode Clair');
   },
   toggleSidebar() {
     const sb = document.getElementById('sidebar');
@@ -1125,38 +1128,33 @@ const BLModule = {
         <table class="data-table">
           <thead><tr>
             <th>${T.get('col_ref')}</th><th>${T.get('bl_linked_br')}</th><th>${T.get('col_date')}</th>
-            <th>${T.get('col_client')}</th><th>${T.isRTL()?'عنوان التسليم':'Destination'}</th><th>${T.get('col_driver')}</th><th>${T.get('col_truck')}</th>
-            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th>Traçabilité</th><th>${T.get('col_actions')}</th>
+            <th>${T.get('col_client')}</th><th>${T.isRTL()?'السائق':'Chauffeur'}</th>
+            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th>${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.map(bl=>{
               const br = brMap[bl.brId];
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
+              const dest = bl.destinationAddress||cli?.address||'';
               return `<tr>
-                <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.restoredFrom?` <span style="display:inline-block;margin-left:4px;padding:1px 5px;background:rgba(245,158,11,.15);color:#d97706;border-radius:5px;font-size:9px;font-weight:600;vertical-align:middle" title="Restauré depuis la corbeille le ${bl.restoredAt?new Date(bl.restoredAt).toLocaleDateString('fr-FR'):''}"><i class="fas fa-recycle" style="margin-right:2px"></i>Restauré</span>`:''}${bl.status==='returned'?`<div style="font-size:9px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> Retourné${bl.returnedByName?' par '+Utils.escHTML(bl.returnedByName):''}</div>`:''}</td>
+                <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:9px;color:#ef4444;margin-top:1px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:9px;color:var(--text4);margin-top:1px"><i class="fas fa-user" style="width:10px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
                 <td>${br?`<span class="badge badge-primary">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
-                <td>${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td>
-                <td>${Utils.escHTML(cli?.name||'-')}</td>
-                <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text3)" title="${Utils.escHTML(bl.destinationAddress||cli?.address||'')}">${Utils.escHTML((bl.destinationAddress||cli?.address||'-').substring(0,35))}${(bl.destinationAddress||'').length>35?'…':''}</td>
-                <td>${Utils.escHTML(bl.driverName||'-')}</td>
-                <td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td>
-                <td class="fw-bold text-primary">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
-                <td>${Utils.statusBadge(bl.status||'open')}${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px 6px;background:rgba(16,185,129,.12);color:#059669;border-radius:6px;font-size:9px;font-weight:700" title="Validé par l'usine${bl.validatedBy ? ' — ' + bl.validatedBy : ''}"><i class="fas fa-industry" style="font-size:8px"></i>✓</span>` : (bl.status === 'pending_usine' || (!bl.brId && !bl.linkedBrId && bl.supplierId) ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px 6px;background:rgba(245,158,11,.12);color:#d97706;border-radius:6px;font-size:9px;font-weight:700" title="En attente validation usine"><i class="fas fa-industry" style="font-size:8px"></i>⏳</span>` : '')}</td>
-                <td style="font-size:11px;color:var(--text4);line-height:1.6">
-                  <div title="CR par"><i class="fas fa-user" style="color:var(--primary);width:12px"></i> <strong>${Utils.escHTML(bl.createdByName||'-')}</strong></div>
-                  ${bl.updatedByName && bl.updatedByName !== bl.createdByName ? `<div title="Modifi\u00e9 par"><i class="fas fa-pen" style="color:var(--warning);width:12px"></i> ${Utils.escHTML(bl.updatedByName)}</div>` : ''}
-                </td>
+                <td style="white-space:nowrap">${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td>
+                <td>${Utils.escHTML(cli?.name||'-')}${dest?`<div style="font-size:10px;color:var(--text4);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(dest)}">${Utils.escHTML(dest.substring(0,28))}</div>`:''}</td>
+                <td>${Utils.escHTML(bl.driverName||'-')}<div style="font-size:10px;color:var(--text4)"><code>${Utils.escHTML(bl.truckIMM||'-')}</code></div></td>
+                <td class="fw-bold text-primary" style="white-space:nowrap">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
+                <td>${Utils.statusBadge(bl.status||'open')}${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px 6px;background:rgba(16,185,129,.12);color:#059669;border-radius:6px;font-size:9px;font-weight:700" title="Usine OK"><i class="fas fa-industry" style="font-size:8px"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px 6px;background:rgba(245,158,11,.12);color:#d97706;border-radius:6px;font-size:9px;font-weight:700"><i class="fas fa-hourglass-half" style="font-size:8px"></i></span>` : '')}</td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
                   ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
-                  ${bl.status==='returned'?`<span class="badge badge-danger" style="font-size:10px;padding:3px 6px" title="Retourné définitivement"><i class="fas fa-ban"></i></span>`:(Auth.canReturn(bl)?`<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${bl.id})" title="Retour Marchandise"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:''))}
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH (2 Volets)"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs" style="background:rgba(139,92,246,.1);color:#7c3aed;border:1px solid rgba(139,92,246,.25)" onclick="PDFGen.exportBL(${bl.id})" title="BL pour la route"><i class="fas fa-route"></i></button>
+                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${bl.id})" title="Retour"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:''))}
+                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH"><i class="fas fa-file-pdf"></i></button>
+                  <button class="btn btn-xs" style="background:rgba(139,92,246,.1);color:#7c3aed;border:1px solid rgba(139,92,246,.25)" onclick="PDFGen.exportBL(${bl.id})" title="BL Route"><i class="fas fa-route"></i></button>
                   ${Auth.canDelete(bl)?`<button class="btn btn-xs btn-danger" onclick="BLModule.deleteBL(${bl.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="10"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
