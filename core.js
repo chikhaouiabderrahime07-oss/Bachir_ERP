@@ -1057,7 +1057,7 @@ const DB = {
     if (typeof window.API === 'undefined') return;
     
     try {
-      const isLarge = ['bls', 'brs', 'work_log'].includes(col);
+      const isLarge = ['bls', 'brs', 'work_log', 'bank_transactions', 'supplier_payments', 'bank_charges'].includes(col);
       const isHistory = ['history', 'audit_log'].includes(col);
       let data = [];
       
@@ -1074,7 +1074,7 @@ const DB = {
           safeSet('timbre_slabs_data', JSON.stringify(data));
         }
       } else {
-        const qs = isLarge ? '?limit=1000' : '';
+        let qs = isLarge ? '?limit=500' : '';
         data = await window.API.getAll(col, qs);
         if (!data || !Array.isArray(data)) return;
         
@@ -1127,7 +1127,7 @@ const DB = {
     };
     // Fire immediately on startup, then every 60 seconds
     setTimeout(() => doSync(), 500);
-    setInterval(doSync, 60000);
+    setInterval(doSync, 120000); // 2min — easy on Render free tier
   },
 
   _seed() {

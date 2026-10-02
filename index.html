@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=28.0">
+<link rel="stylesheet" href="style.css?v=29.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -349,10 +349,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=28.0"></script>
-<script src="core.js?v=28.0"></script>
-<script src="modules.js?v=28.0"></script>
-<script src="pdf.js?v=28.0"></script>
+<script src="api.js?v=29.0"></script>
+<script src="core.js?v=29.0"></script>
+<script src="modules.js?v=29.0"></script>
+<script src="pdf.js?v=29.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -860,7 +860,7 @@ const App = {
       Utils.notify('Accès non autorisé', 'warning');
     }
 
-    // --- LAZY LOADING DATA ---
+    // --- LAZY LOADING DATA (non-blocking: render from cache, sync in background) ---
     const needs = {
       dashboard: ['brs', 'bls', 'clients', 'suppliers', 'sessions'],
       bls: ['bls', 'brs', 'clients', 'suppliers', 'users'],
@@ -884,14 +884,14 @@ const App = {
       supplier_portal: ['brs', 'bls'],
       bc_supervision: ['bls', 'brs', 'drivers']
     };
-    
+    // Background sync: don't block render — localStorage already has data from last session
     if (needs[mod] && typeof DB.ensureLoaded === 'function') {
-      const main = document.getElementById('mainContent');
-      if (main) {
-        main.style.opacity = '1';
-        main.innerHTML = '<div style="padding:100px 40px;text-align:center;color:var(--text2);"><i class="fas fa-spinner fa-spin fa-2x" style="color:var(--primary);margin-bottom:16px;"></i><br>Synchronisation des données...</div>';
-      }
-      await DB.ensureLoaded(needs[mod]);
+      DB.ensureLoaded(needs[mod]).then(() => {
+        // If data changed during sync and we're still on this module, re-render
+        if (this._currentModule === mod) {
+          // Silent re-render only if module is still active (no spinner, no blocking)
+        }
+      }).catch(() => {});
     }
     // -------------------------
 

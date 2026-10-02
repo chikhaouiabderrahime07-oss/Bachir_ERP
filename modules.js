@@ -1138,26 +1138,21 @@ const BLModule = {
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
               const dest = bl.destinationAddress||cli?.address||'';
-              return `<tr>
-                <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:9px;color:#ef4444;margin-top:1px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:9px;color:var(--text4);margin-top:1px"><i class="fas fa-user" style="width:10px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
-                <td>${br?`<span class="badge badge-primary" style="font-size:9px;padding:2px 4px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
-                <td style="white-space:nowrap;font-size:11px">${Utils.fmtDate(bl.date).substring(0,5)} <div style="color:var(--text4);font-size:9px;margin-top:1px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>
-                <td><div style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(cli?.name||'-')}">${Utils.escHTML(cli?.name||'-')}</div>${dest?`<div style="font-size:9px;color:var(--text4);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(dest)}">${Utils.escHTML(dest)}</div>`:''}</td>
-                <td><div style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(bl.driverName||'-')}">${Utils.escHTML(bl.driverName||'-')}</div><div style="font-size:9px;color:var(--text4);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><code>${Utils.escHTML(bl.truckIMM||'-')}</code></div></td>
-                <td class="fw-bold text-primary" style="white-space:nowrap;font-size:11px">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
-                <td title="${Utils.escHTML(T.get('st_'+(bl.status||'open')))}"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px;background:rgba(16,185,129,.12);color:#059669;border-radius:4px;font-size:9px" title="Usine OK"><i class="fas fa-industry"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px;background:rgba(245,158,11,.12);color:#d97706;border-radius:4px;font-size:9px"><i class="fas fa-hourglass-half"></i></span>` : '')}</td>
-                <td class="td-actions">
-                  <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
-                  <div class="action-dropdown" style="position:relative;display:inline-block">
-                    <button class="btn btn-xs btn-outline" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='block'?'none':'block';event.stopPropagation()" title="Plus"><i class="fas fa-ellipsis-v"></i></button>
-                    <div class="dropdown-menu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;min-width:140px;padding:4px">
-                      ${Auth.canEdit(bl)?`<a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.showEdit(${bl.id},${Auth.isAdmin()})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:var(--text);font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"><i class="fas fa-edit" style="width:14px"></i> Modifier</a>`:''}
-                      ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.processReturn(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#ef4444;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(239,68,68,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-undo" style="width:14px"></i> Retour</a>`:((!isLocked)?`<a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.confirmDelivery(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#10b981;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(16,185,129,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-check-circle" style="width:14px"></i> Livrer</a>`:''))}
-                      <a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';PDFGen.exportBonChargement(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:var(--text);font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"><i class="fas fa-file-pdf" style="width:14px"></i> BCH</a>
-                      <a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';PDFGen.exportBL(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#7c3aed;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(139,92,246,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-route" style="width:14px"></i> BL Route</a>
-                      ${Auth.canDelete(bl)?`<div style="height:1px;background:var(--border);margin:4px 0"></div><a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.deleteBL(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#ef4444;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(239,68,68,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-trash" style="width:14px"></i> Supprimer</a>`:''}
-                    </div>
-                  </div>
+               return `<tr>
+                <td style="font-size:11px"><strong style="font-size:11px">${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:8px;color:#ef4444;margin-top:1px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:8px;color:var(--text4);margin-top:1px"><i class="fas fa-user" style="width:8px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
+                <td>${br?`<span class="badge badge-primary" style="font-size:8px;padding:1px 3px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
+                <td style="white-space:nowrap;font-size:10px">${Utils.fmtDate(bl.date).substring(0,5)}<div style="color:var(--text4);font-size:8px;margin-top:1px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>
+                <td style="font-size:10px"><div style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(cli?.name||'-')}">${Utils.escHTML(cli?.name||'-')}</div></td>
+                <td style="font-size:10px"><div style="max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(bl.driverName||'-')}">${Utils.escHTML(bl.driverName||'-')}</div><div style="font-size:8px;color:var(--text4)"><code style="font-size:8px">${Utils.escHTML(bl.truckIMM||'')}</code></div></td>
+                <td class="fw-bold text-primary" style="white-space:nowrap;font-size:10px">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
+                <td title="${Utils.escHTML(T.get('st_'+(bl.status||'open')))}"><div style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:5px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:10px"></i></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:2px;padding:1px;background:rgba(16,185,129,.12);color:#059669;border-radius:3px;font-size:8px" title="Usine OK"><i class="fas fa-industry"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:2px;padding:1px;background:rgba(245,158,11,.12);color:#d97706;border-radius:3px;font-size:8px"><i class="fas fa-hourglass-half"></i></span>` : '')}</td>
+                <td class="td-actions" style="white-space:nowrap">
+                  <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}" style="padding:3px 5px;font-size:10px"><i class="fas fa-eye"></i></button>
+                  ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier" style="padding:3px 5px;font-size:10px"><i class="fas fa-edit"></i></button>`:''}
+                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs" onclick="BLModule.processReturn(${bl.id})" title="Retour" style="padding:3px 5px;font-size:10px;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer" style="padding:3px 5px;font-size:10px;color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)"><i class="fas fa-check"></i></button>`:''))}
+                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="padding:3px 5px;font-size:10px"><i class="fas fa-file-pdf"></i></button>
+                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="BL Route" style="padding:3px 5px;font-size:10px;color:#7c3aed"><i class="fas fa-route"></i></button>
+                  ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="padding:3px 5px;font-size:10px;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>`:''}
                 </td>
               </tr>`;
             }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
@@ -11463,7 +11458,19 @@ const PointageModule = {
       </tr>`;
     });
     
-    html += `</tbody></table></div></div>`;
+    const grandTotal = payrollData.reduce((s, d) => s + d.netPay, 0);
+    const totalEmployees = payrollData.filter(d => d.netPay > 0).length;
+    
+    html += `</tbody>
+      <tfoot>
+        <tr style="background:var(--bg3);border-top:2px solid var(--primary)">
+          <td style="padding:10px 8px;font-weight:900;font-size:13px" colspan="2">TOTAL (${totalEmployees} employés)</td>
+          <td style="padding:10px 8px;text-align:center;font-weight:700;color:var(--success)">${payrollData.reduce((s,d)=>s+d.daysPresent,0)}</td>
+          <td style="padding:10px 8px;text-align:center;font-weight:700;color:var(--danger)">${payrollData.reduce((s,d)=>s+d.absences,0)}</td>
+          <td style="padding:10px 8px;text-align:right;font-weight:900;font-size:14px;color:var(--primary)">${Utils.fmtCurrency(grandTotal)}</td>
+        </tr>
+      </tfoot>
+    </table></div></div>`;
 
     const r = await Dialog.show({
       title: 'Clôturer les Paies',
@@ -11491,7 +11498,18 @@ const PointageModule = {
             recurring: false,
             paieValidation: true,
             employeeId: d.employee.id,
+            employeeName: d.employee.name,
             month: monthKey,
+            // Store full payroll details for charge detail view
+            paieDetails: {
+              baseSalary: d.baseSalary,
+              daysPresent: d.daysPresent,
+              absences: d.absences,
+              totalWorkingDays: totalWorkingDays,
+              netPay: d.netPay,
+              role: d.employee.role || '',
+              poste: d.employee.poste || d.employee.position || ''
+            },
             createdBy: admin.id,
             createdByName: admin.name,
             createdAt: new Date().toISOString()
@@ -11632,18 +11650,21 @@ const ChargesModule = {
                 </td>
                 <td style="padding:12px 16px">
                   <div style="font-weight:700;font-size:13px;color:var(--text)">${Utils.escHTML(c.label || c.subtype)}</div>
-                  <div style="font-size:11px;margin-top:3px;display:flex;gap:6px;align-items:center">
+                  <div style="font-size:11px;margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                     ${c.type === 'auto'
                       ? `<span style="background:rgba(16,185,129,.12);color:#059669;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-robot"></i> Auto</span>`
                       : `<span style="background:rgba(139,92,246,.12);color:#7c3aed;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-user-edit"></i> Manuel</span>`
                     }
                     ${c.recurring ? `<span style="background:rgba(245,158,11,.12);color:#d97706;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-redo"></i> Récurrent</span>` : ''}
+                    ${c.paieValidation ? `<span style="background:rgba(99,102,241,.12);color:#6366f1;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-id-badge"></i> Paie RH</span>` : ''}
                     ${c.category ? `<span style="color:var(--text4)">· ${Utils.escHTML(c.category)}</span>` : ''}
+                    ${c.paieDetails ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.daysPresent}j/${c.paieDetails.totalWorkingDays}j</span>` : ''}
                   </div>
                 </td>
                 <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:right">-${Utils.fmtCurrency(c.amount)}</td>
                 <td style="padding:12px 16px;font-size:12px;color:var(--text4)">${Utils.escHTML(c.createdByName || '—')}</td>
                 <td style="padding:12px 16px;text-align:right;white-space:nowrap">
+                  ${c.paieValidation ? `<button class="btn btn-xs btn-outline" onclick="ChargesModule._showPayrollDetail('${c.id}')" title="Détails Paie" style="color:#6366f1;border-color:#6366f1"><i class="fas fa-info-circle"></i></button>` : ''}
                   <button class="btn btn-xs btn-outline" onclick="ChargesModule._editCharge('${c.id}')" title="Modifier"><i class="fas fa-edit"></i></button>
                   <button class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="ChargesModule._deleteCharge('${c.id}')" title="Supprimer"><i class="fas fa-trash"></i></button>
                 </td>
@@ -12052,6 +12073,85 @@ const ChargesModule = {
     DB.delete('recurring_charges', rcId);
     Utils.notify('Charge récurrente supprimée', 'info');
     App.loadModule('charges');
+  },
+
+  _showPayrollDetail(id) {
+    const charges = DB.getAll('bank_charges');
+    const c = charges.find(x => String(x.id) === String(id));
+    if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
+    
+    const d = c.paieDetails || {};
+    const banks = DB.getSettings().banks || [];
+    const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
+    const presenceRate = d.totalWorkingDays > 0 ? Math.round((d.daysPresent / d.totalWorkingDays) * 100) : 0;
+    
+    const html = `
+    <div style="padding:0">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:14px;background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border-radius:10px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:900">${(c.employeeName||'?')[0]}</div>
+        <div>
+          <div style="font-weight:800;font-size:16px;color:var(--text)">${Utils.escHTML(c.employeeName || '-')}</div>
+          <div style="font-size:12px;color:var(--text4)">${Utils.escHTML(d.poste || d.role || 'Employé')} · ${Utils.escHTML(c.month || '')}</div>
+        </div>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        <div style="background:var(--bg3);padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;color:var(--text4);margin-bottom:4px">Salaire de Base</div>
+          <div style="font-weight:800;font-size:15px;color:var(--text)">${Utils.fmtCurrency(d.baseSalary || 0)}</div>
+        </div>
+        <div style="background:var(--bg3);padding:12px;border-radius:8px;text-align:center">
+          <div style="font-size:11px;color:var(--text4);margin-bottom:4px">Net à Payer</div>
+          <div style="font-weight:800;font-size:15px;color:var(--primary)">${Utils.fmtCurrency(d.netPay || c.amount)}</div>
+        </div>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+        <div style="background:rgba(16,185,129,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(16,185,129,.15)">
+          <div style="font-size:11px;color:#059669;margin-bottom:3px">Jours Présent</div>
+          <div style="font-weight:800;font-size:18px;color:#10b981">${d.daysPresent || 0}</div>
+        </div>
+        <div style="background:rgba(239,68,68,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(239,68,68,.15)">
+          <div style="font-size:11px;color:#dc2626;margin-bottom:3px">Absences</div>
+          <div style="font-weight:800;font-size:18px;color:#ef4444">${d.absences || 0}</div>
+        </div>
+        <div style="background:rgba(14,165,233,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(14,165,233,.15)">
+          <div style="font-size:11px;color:#0284c7;margin-bottom:3px">Taux Présence</div>
+          <div style="font-weight:800;font-size:18px;color:#0ea5e9">${presenceRate}%</div>
+        </div>
+      </div>
+      
+      <table style="width:100%;font-size:12px;border-collapse:collapse;background:var(--bg2);border-radius:8px;overflow:hidden;border:1px solid var(--border)">
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px 12px;color:var(--text4)">Jours ouvrables du mois</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:700">${d.totalWorkingDays || '-'} jours</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px 12px;color:var(--text4)">Calcul</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:600;font-size:11px">${Utils.fmtCurrency(d.baseSalary||0)} × ${d.daysPresent||0}/${d.totalWorkingDays||1}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px 12px;color:var(--text4)">Source paiement</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:700"><i class="fas ${c.bankId==='caisse'?'fa-cash-register':'fa-university'}"></i> ${Utils.escHTML(bank.name)}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px 12px;color:var(--text4)">Date</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:600">${Utils.fmtDate(c.date)}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;color:var(--text4)">Créé par</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:600">${Utils.escHTML(c.createdByName || '-')}</td>
+        </tr>
+      </table>
+    </div>`;
+    
+    Dialog.show({
+      title: `<i class="fas fa-id-badge" style="color:#6366f1"></i> Fiche de Paie — ${Utils.escHTML(c.employeeName || '-')}`,
+      message: html,
+      confirmText: 'Fermer',
+      cancelText: null,
+      type: 'info'
+    });
   },
 
   async _editCharge(id) {
