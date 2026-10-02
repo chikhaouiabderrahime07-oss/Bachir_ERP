@@ -1107,7 +1107,10 @@ const DB = {
 
       try {
         const colsToSync = [...new Set([...ESSENTIAL, ...Object.keys(this._loaded)])];
-        await Promise.all(colsToSync.map(c => this._syncCollection(c)));
+        // Serialize syncs — don't fire 15+ requests in parallel (kills Render free tier)
+        for (const c of colsToSync) {
+          await this._syncCollection(c);
+        }
 
         // Update sync indicator dot only — NO page reload (that destroys open modals/forms)
         if (!indicator) {
@@ -1125,8 +1128,8 @@ const DB = {
         if (indicator) { indicator.style.background = '#ef4444'; indicator.title = 'Sync échoué'; }
       }
     };
-    // Fire immediately on startup, then every 60 seconds
-    setTimeout(() => doSync(), 500);
+    // Delay first sync so UI renders from cache first (instant), then background sync
+    setTimeout(() => doSync(), 2000);
     setInterval(doSync, 120000); // 2min — easy on Render free tier
   },
 

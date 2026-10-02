@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=29.0">
+<link rel="stylesheet" href="style.css?v=31.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -349,10 +349,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=29.0"></script>
-<script src="core.js?v=29.0"></script>
-<script src="modules.js?v=29.0"></script>
-<script src="pdf.js?v=29.0"></script>
+<script src="api.js?v=31.0"></script>
+<script src="core.js?v=31.0"></script>
+<script src="modules.js?v=31.0"></script>
+<script src="pdf.js?v=31.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -923,34 +923,37 @@ const App = {
     const savedSelEnd     = focused?.selectionEnd   ?? null;
 
     try {
-      let html = '';
-      switch(mod) {
-        case 'dashboard':    html = DashboardModule.render(); break;
-        case 'brs':          html = BRModule.render(); break;
-        case 'bls':          html = BLModule.render(); break;
-        case 'supplier_portal': html = typeof SupplierPortalModule !== 'undefined' ? SupplierPortalModule.render() : ''; break;
-        case 'bc_supervision':  html = typeof BCSupervisionModule !== 'undefined' ? BCSupervisionModule.render() : ''; break;
-        case 'caisse':       html = CaisseModule.render(); break;
-        case 'admin_caisse': html = AdminCaisseModule.render(); break;
-        case 'suppliers':    html = SuppliersModule.render(); break;
-        case 'clients':      html = ClientsModule.render(); break;
-        case 'partners':     html = PartnersModule.render(); break;
-        case 'stats':        html = StatsModule.render(); break;
-        case 'eval':         html = EvalModule.render(); break;
-        case 'pointage':     html = PointageModule.render(); break;
-        case 'catalogue':    html = CatalogueModule.render(); break;
-        case 'bank':         html = typeof BankModule !== 'undefined' ? BankModule.render() : ''; break;
-        case 'charges':      html = ChargesModule.render(); break;
-        case 'etat_vente':   html = EtatVenteModule.render(); break;
-        case 'users':        html = typeof UsersModule !== 'undefined' ? UsersModule.render() : ''; break;
-        case 'audit':        html = AuditModule.render(); break;
-        case 'recycle_bin':  html = RecycleBinModule.render(); break;
-        case 'settings':     html = SettingsModule.render(); break;
-        default: html = `<div style="padding:40px;text-align:center;color:var(--text3)">${T.isRTL() ? 'الوحدة' : 'Module'} "${mod}" ${T.isRTL() ? 'غير موجودة' : 'introuvable'}</div>`;
-      }
-      main.innerHTML = html;
-      main.style.opacity = '1';
-      main.scrollTop = 0;
+      // Use rAF so the opacity fade paints BEFORE heavy render work
+      const self = this;
+      const doRender = () => {
+        let html = '';
+        switch(mod) {
+          case 'dashboard':    html = DashboardModule.render(); break;
+          case 'brs':          html = BRModule.render(); break;
+          case 'bls':          html = BLModule.render(); break;
+          case 'supplier_portal': html = typeof SupplierPortalModule !== 'undefined' ? SupplierPortalModule.render() : ''; break;
+          case 'bc_supervision':  html = typeof BCSupervisionModule !== 'undefined' ? BCSupervisionModule.render() : ''; break;
+          case 'caisse':       html = CaisseModule.render(); break;
+          case 'admin_caisse': html = AdminCaisseModule.render(); break;
+          case 'suppliers':    html = SuppliersModule.render(); break;
+          case 'clients':      html = ClientsModule.render(); break;
+          case 'partners':     html = PartnersModule.render(); break;
+          case 'stats':        html = StatsModule.render(); break;
+          case 'eval':         html = EvalModule.render(); break;
+          case 'pointage':     html = PointageModule.render(); break;
+          case 'catalogue':    html = CatalogueModule.render(); break;
+          case 'bank':         html = typeof BankModule !== 'undefined' ? BankModule.render() : ''; break;
+          case 'charges':      html = ChargesModule.render(); break;
+          case 'etat_vente':   html = EtatVenteModule.render(); break;
+          case 'users':        html = typeof UsersModule !== 'undefined' ? UsersModule.render() : ''; break;
+          case 'audit':        html = AuditModule.render(); break;
+          case 'recycle_bin':  html = RecycleBinModule.render(); break;
+          case 'settings':     html = SettingsModule.render(); break;
+          default: html = `<div style="padding:40px;text-align:center;color:var(--text3)">${T.isRTL() ? 'الوحدة' : 'Module'} "${mod}" ${T.isRTL() ? 'غير موجودة' : 'introuvable'}</div>`;
+        }
+        main.innerHTML = html;
+        main.style.opacity = '1';
+        main.scrollTop = 0;
 
       // ── Restore focus after re-render so search inputs keep focus ──
       if (savedFocusId) {
@@ -979,7 +982,11 @@ const App = {
         setTimeout(() => SettingsModule._loadBackups(), 200);
       }
       // Update session indicator
-      this._updateSessionIndicator();
+      self._updateSessionIndicator();
+      }; // end doRender
+      
+      // Schedule render on next frame so opacity fade paints first
+      requestAnimationFrame(doRender);
     } catch(e) {
       console.error('[App.loadModule]', mod, e);
       main.innerHTML = `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> ${T.isRTL() ? 'خطأ في الوحدة' : 'Erreur module'} <code>${mod}</code>: ${e.message}<br><pre style="font-size:10px;margin-top:8px;white-space:pre-wrap">${e.stack||''}</pre></div></div>`;

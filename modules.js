@@ -1139,20 +1139,20 @@ const BLModule = {
               const isLocked = bl.status==='delivered'||bl.status==='locked';
               const dest = bl.destinationAddress||cli?.address||'';
                return `<tr>
-                <td style="font-size:11px"><strong style="font-size:11px">${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:8px;color:#ef4444;margin-top:1px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:8px;color:var(--text4);margin-top:1px"><i class="fas fa-user" style="width:8px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
-                <td>${br?`<span class="badge badge-primary" style="font-size:8px;padding:1px 3px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
-                <td style="white-space:nowrap;font-size:10px">${Utils.fmtDate(bl.date).substring(0,5)}<div style="color:var(--text4);font-size:8px;margin-top:1px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>
-                <td style="font-size:10px"><div style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(cli?.name||'-')}">${Utils.escHTML(cli?.name||'-')}</div></td>
-                <td style="font-size:10px"><div style="max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(bl.driverName||'-')}">${Utils.escHTML(bl.driverName||'-')}</div><div style="font-size:8px;color:var(--text4)"><code style="font-size:8px">${Utils.escHTML(bl.truckIMM||'')}</code></div></td>
-                <td class="fw-bold text-primary" style="white-space:nowrap;font-size:10px">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
-                <td title="${Utils.escHTML(T.get('st_'+(bl.status||'open')))}"><div style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:5px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:10px"></i></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:2px;padding:1px;background:rgba(16,185,129,.12);color:#059669;border-radius:3px;font-size:8px" title="Usine OK"><i class="fas fa-industry"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:2px;padding:1px;background:rgba(245,158,11,.12);color:#d97706;border-radius:3px;font-size:8px"><i class="fas fa-hourglass-half"></i></span>` : '')}</td>
+                <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:10px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-user" style="width:10px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
+                <td>${br?`<span class="badge badge-primary" style="font-size:10px;padding:2px 5px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
+                <td style="white-space:nowrap">${Utils.fmtDate(bl.date).substring(0,5)}<div style="color:var(--text4);font-size:10px;margin-top:2px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>
+                <td>${Utils.escHTML(cli?.name||'-')}</td>
+                <td>${Utils.escHTML(bl.driverName||'-')}<div style="font-size:10px;color:var(--text4)"><code>${Utils.escHTML(bl.truckIMM||'')}</code></div></td>
+                <td class="fw-bold text-primary" style="white-space:nowrap">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
+                <td title="${Utils.escHTML(T.get('st_'+(bl.status||'open')))}"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:3px;padding:2px;background:rgba(16,185,129,.12);color:#059669;border-radius:4px;font-size:9px" title="Usine OK"><i class="fas fa-industry"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:3px;padding:2px;background:rgba(245,158,11,.12);color:#d97706;border-radius:4px;font-size:9px"><i class="fas fa-hourglass-half"></i></span>` : '')}</td>
                 <td class="td-actions" style="white-space:nowrap">
-                  <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}" style="padding:3px 5px;font-size:10px"><i class="fas fa-eye"></i></button>
-                  ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier" style="padding:3px 5px;font-size:10px"><i class="fas fa-edit"></i></button>`:''}
-                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs" onclick="BLModule.processReturn(${bl.id})" title="Retour" style="padding:3px 5px;font-size:10px;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer" style="padding:3px 5px;font-size:10px;color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)"><i class="fas fa-check"></i></button>`:''))}
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="padding:3px 5px;font-size:10px"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="BL Route" style="padding:3px 5px;font-size:10px;color:#7c3aed"><i class="fas fa-route"></i></button>
-                  ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="padding:3px 5px;font-size:10px;color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>`:''}
+                  <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
+                  ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier"><i class="fas fa-edit"></i></button>`:''}
+                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.processReturn(${bl.id})" title="Retour"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs btn-outline" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer"><i class="fas fa-check"></i></button>`:''))}
+                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF"><i class="fas fa-file-pdf"></i></button>
+                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="BL Route"><i class="fas fa-route"></i></button>
+                  ${Auth.canDelete(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer"><i class="fas fa-trash"></i></button>`:''}
                 </td>
               </tr>`;
             }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
@@ -10454,8 +10454,8 @@ const PointageModule = {
           <button class="btn btn-primary" onclick="PointageModule._exportExcel()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none">
             <i class="fas fa-file-excel"></i> Export Excel
           </button>
-          <button class="btn" onclick="PointageModule.validatePointage()" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
-            <i class="fas fa-check-circle"></i> Valider le Pointage
+          <button class="btn" onclick="PointageModule.validatePointage()" style="background:linear-gradient(135deg,${isPointageValidated ? '#f59e0b,#d97706' : '#10b981,#059669'});color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
+            <i class="fas ${isPointageValidated ? 'fa-lock-open' : 'fa-check-circle'}"></i> ${isPointageValidated ? 'Validé ✓ (cliquer pour modifier)' : 'Valider le Pointage'}
           </button>
           ${isPointageValidated ? `<button class="btn btn-primary" onclick="PointageModule.showPayrollCloture()" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
             <i class="fas fa-money-check-alt"></i> Clôturer les Paies
@@ -10635,6 +10635,20 @@ const PointageModule = {
   async showRectifyModal(userId, dateStr) {
     if (!Auth.isAdmin()) {
       Utils.notify("Seul l'administrateur peut modifier le pointage RH.", "warning");
+      return;
+    }
+    
+    // Check if this month's pointage is already validated — block modifications
+    const rectMonth = dateStr.substring(0, 7); // "YYYY-MM"
+    const pvs = DB.getAll('pointage_validations') || [];
+    if (pvs.some(v => v.month === rectMonth)) {
+      // Check if paie was clôturée too
+      const paieVals = DB.getAll('paie_validations') || [];
+      if (paieVals.find(p => p.month === rectMonth)) {
+        Utils.notify("Modification impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge.", "error");
+      } else {
+        Utils.notify("Ce mois est déjà validé. Annulez d'abord la validation du pointage pour modifier.", "warning");
+      }
       return;
     }
     const u = DB.getById('users', userId) || DB.getAll('users').find(x => String(x.id) === String(userId));
@@ -11309,8 +11323,29 @@ const PointageModule = {
     }
     const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
     const pvs = DB.getAll('pointage_validations') || [];
-    if (pvs.some(v => v.month === targetYM)) {
-      Utils.notify("Le pointage de ce mois est déjà validé.", "warning");
+    const existing = pvs.find(v => v.month === targetYM);
+    if (existing) {
+      // Already validated — offer to UN-validate
+      const r = await Dialog.show({
+        title: 'Pointage déjà validé',
+        message: `<p>Le pointage de <strong>${targetYM}</strong> est déjà validé.</p>
+          <p>Voulez-vous <strong>annuler la validation</strong> pour permettre les modifications ?</p>
+          <p style="color:var(--danger);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Ceci ne sera possible que si les paies n'ont pas encore été clôturées.</p>`,
+        confirmText: 'Annuler la Validation',
+        cancelText: 'Fermer',
+        type: 'warning'
+      });
+      if (r) {
+        // Check if paie was already clôturée
+        const paieVals = DB.getAll('paie_validations') || [];
+        if (paieVals.find(p => p.month === targetYM)) {
+          Utils.notify("Impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge correspondante.", "error");
+          return;
+        }
+        DB.remove('pointage_validations', existing.id);
+        Utils.notify("Validation du pointage annulée. Vous pouvez modifier les présences.", "success");
+        App.loadModule('pointage');
+      }
       return;
     }
     
@@ -11485,52 +11520,54 @@ const PointageModule = {
       const admin = Auth.getCurrentUser();
       const payDate = Utils.today();
       
-      payrollData.forEach(d => {
-        if (d.netPay > 0) {
-          const chg = {
-            type: 'manual',
-            subtype: 'Salaires & Primes RH',
-            label: `Salaire ${String(this._month+1).padStart(2,'0')}/${this._year} — ${d.employee.name}`,
-            category: 'Salaires & Primes RH',
-            bankId: bankId,
-            amount: d.netPay,
-            date: payDate,
-            recurring: false,
-            paieValidation: true,
-            employeeId: d.employee.id,
-            employeeName: d.employee.name,
-            month: monthKey,
-            // Store full payroll details for charge detail view
-            paieDetails: {
-              baseSalary: d.baseSalary,
-              daysPresent: d.daysPresent,
-              absences: d.absences,
-              totalWorkingDays: totalWorkingDays,
-              netPay: d.netPay,
-              role: d.employee.role || '',
-              poste: d.employee.poste || d.employee.position || ''
-            },
-            createdBy: admin.id,
-            createdByName: admin.name,
-            createdAt: new Date().toISOString()
-          };
-          DB.insert('bank_charges', chg);
-          
-          if (bankId !== 'caisse') {
-            DB.insert('bank_transactions', {
-              bankId: bankId,
-              date: payDate,
-              type: 'withdrawal',
-              amount: d.netPay,
-              note: chg.label,
-              docRef: 'PAIE'
-            });
-          }
-        }
-      });
+      // Build details array for all employees
+      const employeeDetails = payrollData.filter(d => d.netPay > 0).map(d => ({
+        employeeId: d.employee.id,
+        employeeName: d.employee.name,
+        baseSalary: d.baseSalary,
+        daysPresent: d.daysPresent,
+        absences: d.absences,
+        totalWorkingDays: totalWorkingDays,
+        netPay: d.netPay,
+        role: d.employee.role || '',
+        poste: d.employee.poste || d.employee.position || ''
+      }));
+      
+      // Create ONE single charge for the total payroll
+      const chg = {
+        type: 'manual',
+        subtype: 'Salaires & Primes RH',
+        label: `Masse salariale ${String(this._month+1).padStart(2,'0')}/${this._year} (${employeeDetails.length} employés)`,
+        category: 'Salaires & Primes RH',
+        bankId: bankId,
+        amount: grandTotal,
+        date: payDate,
+        recurring: false,
+        paieValidation: true,
+        month: monthKey,
+        employeeCount: employeeDetails.length,
+        // Store ALL employee payroll details inside this single charge
+        paieDetails: employeeDetails,
+        createdBy: admin.id,
+        createdByName: admin.name,
+        createdAt: new Date().toISOString()
+      };
+      DB.insert('bank_charges', chg);
+      
+      // One single bank transaction for the total
+      if (bankId !== 'caisse') {
+        DB.insert('bank_transactions', {
+          bankId: bankId,
+          date: payDate,
+          type: 'withdrawal',
+          amount: grandTotal,
+          note: chg.label,
+          docRef: 'PAIE'
+        });
+      }
       
       DB.insert('paie_validations', { month: monthKey, validatedAt: new Date().toISOString(), validatedBy: admin.id });
-      Utils.notify("Paies validées et charges générées avec succès.", "success");
+      Utils.notify("Paies clôturées — 1 charge totale de " + Utils.fmtCurrency(grandTotal) + " créée.", "success");
       App.loadModule('charges');
     }
   }
@@ -12080,73 +12117,81 @@ const ChargesModule = {
     const c = charges.find(x => String(x.id) === String(id));
     if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
     
-    const d = c.paieDetails || {};
+    const details = c.paieDetails || [];
+    const isArray = Array.isArray(details);
+    const employees = isArray ? details : [details]; // backward compat
     const banks = DB.getSettings().banks || [];
     const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
-    const presenceRate = d.totalWorkingDays > 0 ? Math.round((d.daysPresent / d.totalWorkingDays) * 100) : 0;
+    const totalNet = employees.reduce((s, e) => s + (e.netPay || 0), 0);
+    const totalPresent = employees.reduce((s, e) => s + (e.daysPresent || 0), 0);
+    const totalAbsent = employees.reduce((s, e) => s + (e.absences || 0), 0);
+    
+    let empRows = employees.map(e => `
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:6px 10px;font-weight:600">${Utils.escHTML(e.employeeName || '-')}</td>
+        <td style="padding:6px 10px;font-size:11px;color:var(--text4)">${Utils.escHTML(e.poste || e.role || '-')}</td>
+        <td style="padding:6px 10px;text-align:center">${Utils.fmtCurrency(e.baseSalary || 0)}</td>
+        <td style="padding:6px 10px;text-align:center;color:var(--success);font-weight:700">${e.daysPresent || 0}/${e.totalWorkingDays || 0}</td>
+        <td style="padding:6px 10px;text-align:center;color:var(--danger);font-weight:700">${e.absences || 0}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(e.netPay || 0)}</td>
+      </tr>`).join('');
     
     const html = `
     <div style="padding:0">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:14px;background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border-radius:10px">
-        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:900">${(c.employeeName||'?')[0]}</div>
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:900"><i class="fas fa-users"></i></div>
         <div>
-          <div style="font-weight:800;font-size:16px;color:var(--text)">${Utils.escHTML(c.employeeName || '-')}</div>
-          <div style="font-size:12px;color:var(--text4)">${Utils.escHTML(d.poste || d.role || 'Employé')} · ${Utils.escHTML(c.month || '')}</div>
+          <div style="font-weight:800;font-size:16px;color:var(--text)">Masse Salariale — ${Utils.escHTML(c.month || '')}</div>
+          <div style="font-size:12px;color:var(--text4)">${employees.length} employés · ${Utils.escHTML(bank.name)}</div>
         </div>
-      </div>
-      
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-        <div style="background:var(--bg3);padding:12px;border-radius:8px;text-align:center">
-          <div style="font-size:11px;color:var(--text4);margin-bottom:4px">Salaire de Base</div>
-          <div style="font-weight:800;font-size:15px;color:var(--text)">${Utils.fmtCurrency(d.baseSalary || 0)}</div>
-        </div>
-        <div style="background:var(--bg3);padding:12px;border-radius:8px;text-align:center">
-          <div style="font-size:11px;color:var(--text4);margin-bottom:4px">Net à Payer</div>
-          <div style="font-weight:800;font-size:15px;color:var(--primary)">${Utils.fmtCurrency(d.netPay || c.amount)}</div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:11px;color:var(--text4)">Total</div>
+          <div style="font-weight:900;font-size:18px;color:var(--primary)">${Utils.fmtCurrency(totalNet)}</div>
         </div>
       </div>
       
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
         <div style="background:rgba(16,185,129,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(16,185,129,.15)">
-          <div style="font-size:11px;color:#059669;margin-bottom:3px">Jours Présent</div>
-          <div style="font-weight:800;font-size:18px;color:#10b981">${d.daysPresent || 0}</div>
+          <div style="font-size:11px;color:#059669;margin-bottom:3px">Total Présences</div>
+          <div style="font-weight:800;font-size:18px;color:#10b981">${totalPresent} j</div>
         </div>
         <div style="background:rgba(239,68,68,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(239,68,68,.15)">
-          <div style="font-size:11px;color:#dc2626;margin-bottom:3px">Absences</div>
-          <div style="font-weight:800;font-size:18px;color:#ef4444">${d.absences || 0}</div>
+          <div style="font-size:11px;color:#dc2626;margin-bottom:3px">Total Absences</div>
+          <div style="font-weight:800;font-size:18px;color:#ef4444">${totalAbsent} j</div>
         </div>
         <div style="background:rgba(14,165,233,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(14,165,233,.15)">
-          <div style="font-size:11px;color:#0284c7;margin-bottom:3px">Taux Présence</div>
-          <div style="font-weight:800;font-size:18px;color:#0ea5e9">${presenceRate}%</div>
+          <div style="font-size:11px;color:#0284c7;margin-bottom:3px">Date / Par</div>
+          <div style="font-weight:700;font-size:12px;color:#0ea5e9">${Utils.fmtDate(c.date)}<br>${Utils.escHTML(c.createdByName || '-')}</div>
         </div>
       </div>
       
-      <table style="width:100%;font-size:12px;border-collapse:collapse;background:var(--bg2);border-radius:8px;overflow:hidden;border:1px solid var(--border)">
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px 12px;color:var(--text4)">Jours ouvrables du mois</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:700">${d.totalWorkingDays || '-'} jours</td>
-        </tr>
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px 12px;color:var(--text4)">Calcul</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:600;font-size:11px">${Utils.fmtCurrency(d.baseSalary||0)} × ${d.daysPresent||0}/${d.totalWorkingDays||1}</td>
-        </tr>
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px 12px;color:var(--text4)">Source paiement</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:700"><i class="fas ${c.bankId==='caisse'?'fa-cash-register':'fa-university'}"></i> ${Utils.escHTML(bank.name)}</td>
-        </tr>
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px 12px;color:var(--text4)">Date</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:600">${Utils.fmtDate(c.date)}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 12px;color:var(--text4)">Créé par</td>
-          <td style="padding:8px 12px;text-align:right;font-weight:600">${Utils.escHTML(c.createdByName || '-')}</td>
-        </tr>
-      </table>
+      <div style="max-height:350px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead style="position:sticky;top:0;background:var(--bg3);z-index:1">
+            <tr style="border-bottom:2px solid var(--border)">
+              <th style="padding:8px 10px;text-align:left">Employé</th>
+              <th style="padding:8px 10px;text-align:left">Poste</th>
+              <th style="padding:8px 10px;text-align:center">Base</th>
+              <th style="padding:8px 10px;text-align:center">Prés.</th>
+              <th style="padding:8px 10px;text-align:center">Abs.</th>
+              <th style="padding:8px 10px;text-align:right">Net</th>
+            </tr>
+          </thead>
+          <tbody>${empRows}</tbody>
+          <tfoot>
+            <tr style="background:var(--bg3);border-top:2px solid var(--primary)">
+              <td colspan="3" style="padding:8px 10px;font-weight:900">TOTAL (${employees.length})</td>
+              <td style="padding:8px 10px;text-align:center;font-weight:800;color:var(--success)">${totalPresent}</td>
+              <td style="padding:8px 10px;text-align:center;font-weight:800;color:var(--danger)">${totalAbsent}</td>
+              <td style="padding:8px 10px;text-align:right;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(totalNet)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>`;
     
     Dialog.show({
-      title: `<i class="fas fa-id-badge" style="color:#6366f1"></i> Fiche de Paie — ${Utils.escHTML(c.employeeName || '-')}`,
+      title: `<i class="fas fa-file-invoice-dollar" style="color:#6366f1"></i> Détails Masse Salariale — ${Utils.escHTML(c.month || '')}`,
       message: html,
       confirmText: 'Fermer',
       cancelText: null,
