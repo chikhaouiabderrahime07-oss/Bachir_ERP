@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=31.0">
+<link rel="stylesheet" href="style.css?v=32.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -349,10 +349,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=31.0"></script>
-<script src="core.js?v=31.0"></script>
-<script src="modules.js?v=31.0"></script>
-<script src="pdf.js?v=31.0"></script>
+<script src="api.js?v=32.0"></script>
+<script src="core.js?v=32.0"></script>
+<script src="modules.js?v=32.0"></script>
+<script src="pdf.js?v=32.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -923,6 +923,13 @@ const App = {
     const savedSelEnd     = focused?.selectionEnd   ?? null;
 
     try {
+      // Reset lazy render limits when switching to a NEW module (not when reloading same)
+      if (mod !== this._lastModule) {
+        if (typeof BLModule !== 'undefined') BLModule._displayLimit = 50;
+        if (typeof BRModule !== 'undefined') BRModule._displayLimit = 50;
+        if (typeof ChargesModule !== 'undefined') ChargesModule._displayLimit = 50;
+        this._lastModule = mod;
+      }
       // Use rAF so the opacity fade paints BEFORE heavy render work
       const self = this;
       const doRender = () => {

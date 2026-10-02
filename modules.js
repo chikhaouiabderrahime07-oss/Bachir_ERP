@@ -356,6 +356,7 @@ function _wilayaSelect(id, currentVal='', required=false) {
 const BRModule = {
   _filters: { q:'', supplierId:'all', status:'all', year:'all', createdBy:'all', dateFrom:'', dateTo:'', sortDir:'desc' },
   _lineCount: 0,
+  _displayLimit: 50,
 
   render() {
     const { q, status, supplierId, year, createdBy, dateFrom, dateTo } = this._filters;
@@ -455,7 +456,7 @@ const BRModule = {
             <th>${T.get('col_status')}</th><th>Traçabilité</th><th class="td-actions">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
-            ${items.length ? items.map(br=>{
+            ${items.length ? items.slice(0, this._displayLimit).map(br=>{
               const sup = supMap[br.supplierId];
               const isLocked = br.status==='delivered'||br.status==='locked';
               const hasBL = !!blMap[br.id];
@@ -485,6 +486,16 @@ const BRModule = {
           </tbody>
         </table>
       </div>
+      ${items.length > this._displayLimit ? `
+        <div style="text-align:center;padding:16px;display:flex;align-items:center;justify-content:center;gap:12px">
+          <span style="font-size:12px;color:var(--text4)">${T.isRTL()?'عرض':'Affiché'} ${Math.min(this._displayLimit, items.length)} / ${items.length}</span>
+          <button class="btn" onclick="BRModule._displayLimit+=50;App.loadModule('brs')" style="background:linear-gradient(135deg,#6366f1,#818cf8);color:white;border:none;border-radius:8px;padding:8px 20px;font-weight:700;font-size:13px">
+            <i class="fas fa-arrow-down"></i> ${T.isRTL()?'تحميل المزيد':'Charger plus'} (+50)
+          </button>
+          <button class="btn btn-outline" onclick="BRModule._displayLimit=99999;App.loadModule('brs')" style="font-size:11px;padding:6px 12px">
+            ${T.isRTL()?'عرض الكل':'Tout afficher'} (${items.length})
+          </button>
+        </div>` : ''}
     </div></div>`;
   },
 
@@ -999,6 +1010,7 @@ const BRModule = {
 
 const BLModule = {
   _filters: { q:'', status:'all', clientId:'all', supplierId:'all', dateFrom:'', dateTo:'', createdBy:'all', driver:'all', sortDir:'desc' },
+  _displayLimit: 50, // Lazy render: show 50 at a time
 
   render() {
     // ── Inline History view ──
@@ -1133,7 +1145,7 @@ const BLModule = {
             <th style="font-size:11px">${T.get('col_total_ttc')}</th><th style="font-size:11px">${T.get('col_status')}</th><th class="td-actions" style="font-size:11px">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
-            ${items.length ? items.map(bl=>{
+            ${items.length ? items.slice(0, this._displayLimit).map(bl=>{
               const br = brMap[bl.brId];
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
@@ -1145,20 +1157,30 @@ const BLModule = {
                 <td>${Utils.escHTML(cli?.name||'-')}</td>
                 <td>${Utils.escHTML(bl.driverName||'-')}<div style="font-size:10px;color:var(--text4)"><code>${Utils.escHTML(bl.truckIMM||'')}</code></div></td>
                 <td class="fw-bold text-primary" style="white-space:nowrap">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
-                <td title="${Utils.escHTML(T.get('st_'+(bl.status||'open')))}"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:3px;padding:2px;background:rgba(16,185,129,.12);color:#059669;border-radius:4px;font-size:9px" title="Usine OK"><i class="fas fa-industry"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;margin-left:3px;padding:2px;background:rgba(245,158,11,.12);color:#d97706;border-radius:4px;font-size:9px"><i class="fas fa-hourglass-half"></i></span>` : '')}</td>
+                <td style="text-align:center"><div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div><div style="font-size:10px;font-weight:700;color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'};line-height:1.2">${bl.status==='delivered'?'Livré':bl.status==='returned'?'Retourné':'En cours'}</div><div style="font-size:9px;color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'};line-height:1;direction:rtl">${bl.status==='delivered'?'تم التسليم':bl.status==='returned'?'مرتجع':'قيد التنفيذ'}</div></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;margin-top:2px;padding:2px 4px;background:rgba(16,185,129,.12);color:#059669;border-radius:4px;font-size:8px" title="Usine OK"><i class="fas fa-industry"></i> Usine</span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;margin-top:2px;padding:2px 4px;background:rgba(245,158,11,.12);color:#d97706;border-radius:4px;font-size:8px"><i class="fas fa-hourglass-half"></i> Usine</span>` : '')}</td>
                 <td class="td-actions" style="white-space:nowrap">
-                  <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
-                  ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier"><i class="fas fa-edit"></i></button>`:''}
-                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.processReturn(${bl.id})" title="Retour"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs btn-outline" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer"><i class="fas fa-check"></i></button>`:''))}
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBL(${bl.id})" title="BL Route"><i class="fas fa-route"></i></button>
-                  ${Auth.canDelete(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer"><i class="fas fa-trash"></i></button>`:''}
+                  <button class="btn btn-xs" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}" style="color:#3b82f6;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2)"><i class="fas fa-eye"></i></button>
+                  ${Auth.canEdit(bl)?`<button class="btn btn-xs" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier" style="color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2)"><i class="fas fa-edit"></i></button>`:''}
+                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs" onclick="BLModule.processReturn(${bl.id})" title="Retour" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer" style="color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)"><i class="fas fa-check"></i></button>`:''))}
+                  <button class="btn btn-xs" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15)"><i class="fas fa-file-pdf"></i></button>
+                  <button class="btn btn-xs" onclick="PDFGen.exportBL(${bl.id})" title="BL Route" style="color:#8b5cf6;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2)"><i class="fas fa-route"></i></button>
+                  ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>`:''}
                 </td>
               </tr>`;
             }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
+      ${items.length > this._displayLimit ? `
+        <div style="text-align:center;padding:16px;display:flex;align-items:center;justify-content:center;gap:12px">
+          <span style="font-size:12px;color:var(--text4)">${T.isRTL()?'عرض':'Affiché'} ${Math.min(this._displayLimit, items.length)} / ${items.length}</span>
+          <button class="btn" onclick="BLModule._displayLimit+=50;App.loadModule('bls')" style="background:linear-gradient(135deg,#6366f1,#818cf8);color:white;border:none;border-radius:8px;padding:8px 20px;font-weight:700;font-size:13px">
+            <i class="fas fa-arrow-down"></i> ${T.isRTL()?'تحميل المزيد':'Charger plus'} (+50)
+          </button>
+          <button class="btn btn-outline" onclick="BLModule._displayLimit=99999;App.loadModule('bls')" style="font-size:11px;padding:6px 12px">
+            ${T.isRTL()?'عرض الكل':'Tout afficher'} (${items.length})
+          </button>
+        </div>` : ''}
     </div></div>`;
   },
 
@@ -2276,16 +2298,17 @@ const BLModule = {
     ${Utils.historyHTML('bls', blId)}`;
 
     const footer = `
-      ${Auth.canEdit(bl)?`<button class="btn btn-outline" onclick="UI.closeModal();BLModule.showEdit(${blId})"><i class="fas fa-edit"></i> ${T.get('edit')}</button>`:''}
-      ${(!isLocked && !isReturned)?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')}</button>`:''}
-      ${Auth.canReturn(bl)?`<button class="btn btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> Retour Marchandise</button>`:''}
+      ${Auth.canEdit(bl)?`<button class="btn btn-outline" onclick="UI.closeModal();BLModule.showEdit(${blId})"><i class="fas fa-edit"></i> ${T.get('edit')} / تعديل</button>`:''}
+      ${(!isLocked && !isReturned)?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')} / تم التسليم</button>`:''}
+      ${(isLocked && !isReturned && Auth.canReturn(bl))?`<button class="btn btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> Retour Marchandise / إرجاع</button>`:''}
+      ${isReturned?`<button class="btn" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2);cursor:default" disabled><i class="fas fa-warehouse"></i> En Stock / في المخزون</button>`:''}
       ${isLocked && !isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin Modif</button>`:''}
-      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-invoice"></i> Imprimer BCH (2 Volets)</button>
-      <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road"></i> BL pour la route</button>
+      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-invoice"></i> BCH (2 Volets)</button>
+      <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road"></i> BL Route</button>
       <button class="btn btn-outline" style="color:#7c3aed;border-color:#a78bfa;background:rgba(139,92,246,.05)" onclick="PDFGen.exportTempoBL(${blId})"><i class="fas fa-route"></i> BL</button>
       <button class="btn btn-outline" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
       ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> Valider Usine</button>` : ''}
-      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')}</button>`;
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')} / إغلاق</button>`;
     UI.showModal(`<i class="fas fa-file-export"></i> ${bl.ref}`, body, footer, 'lg');
   },
 
@@ -11581,6 +11604,7 @@ const ChargesModule = {
   _filter: 'all',
   _dateStart: null,
   _dateEnd: null,
+  _displayLimit: 50,
   
   render() {
     if (!Auth.isAdmin()) return "<div style='padding:40px;text-align:center;color:var(--text3)'><i class='fas fa-lock' style='font-size:48px;opacity:.2;display:block;margin-bottom:12px'></i>Accès administrateur uniquement</div>";
@@ -11677,7 +11701,7 @@ const ChargesModule = {
             </tr>
           </thead>
           <tbody>
-            ${charges.length ? charges.map(c => {
+            ${charges.length ? charges.slice(0, this._displayLimit).map(c => {
               const b = banks.find(x => x.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
               return `
               <tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
@@ -11695,7 +11719,7 @@ const ChargesModule = {
                     ${c.recurring ? `<span style="background:rgba(245,158,11,.12);color:#d97706;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-redo"></i> Récurrent</span>` : ''}
                     ${c.paieValidation ? `<span style="background:rgba(99,102,241,.12);color:#6366f1;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-id-badge"></i> Paie RH</span>` : ''}
                     ${c.category ? `<span style="color:var(--text4)">· ${Utils.escHTML(c.category)}</span>` : ''}
-                    ${c.paieDetails ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.daysPresent}j/${c.paieDetails.totalWorkingDays}j</span>` : ''}
+                    ${c.paieDetails && Array.isArray(c.paieDetails) ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.length} employés</span>` : (c.paieDetails ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.daysPresent}j/${c.paieDetails.totalWorkingDays}j</span>` : '')}
                   </div>
                 </td>
                 <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:right">-${Utils.fmtCurrency(c.amount)}</td>
@@ -11710,6 +11734,13 @@ const ChargesModule = {
           </tbody>
         </table>
       </div>
+      ${charges.length > this._displayLimit ? `
+        <div style="text-align:center;padding:16px;display:flex;align-items:center;justify-content:center;gap:12px">
+          <span style="font-size:12px;color:var(--text4)">Affiché ${Math.min(this._displayLimit, charges.length)} / ${charges.length}</span>
+          <button class="btn" onclick="ChargesModule._displayLimit+=50;App.loadModule('charges')" style="background:linear-gradient(135deg,#6366f1,#818cf8);color:white;border:none;border-radius:8px;padding:8px 20px;font-weight:700;font-size:13px">
+            <i class="fas fa-arrow-down"></i> Charger plus (+50)
+          </button>
+        </div>` : ''}
     `;
   },
 
