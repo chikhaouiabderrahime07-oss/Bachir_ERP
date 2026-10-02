@@ -212,6 +212,36 @@
       <button class="btn-icon" onclick="UI.toggleTheme()" id="themeToggleBtn" title="Thème">
         <i class="fas fa-moon" id="themeIcon"></i>
       </button>
+
+      <!-- Notification Center Widget -->
+      <div class="notif-menu" id="notifMenuWrap">
+        <button class="btn-icon" id="notifBellBtn" onclick="NotifMgr.toggleDropdown()" title="Notifications (Alertes & Chargements)" style="position:relative">
+          <i class="fas fa-bell"></i>
+          <span class="notif-badge" id="topNotifBadge" style="display:none">0</span>
+        </button>
+        <div class="notif-dropdown" id="notifDropdown" style="display:none">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg2)">
+            <div style="font-weight:800;font-size:13px;color:var(--text);display:flex;align-items:center;gap:6px">
+              <i class="fas fa-bell" style="color:var(--primary)"></i> Centre de Notifications
+            </div>
+            <button class="btn btn-xs btn-outline" onclick="NotifMgr.markAllAsRead()" style="font-size:10px">Tout marquer lu</button>
+          </div>
+          <div id="notifDropdownList" style="max-height:360px;overflow-y:auto"></div>
+          <div style="padding:8px 12px;border-top:1px solid var(--border);text-align:center;background:var(--bg2)">
+            <button class="btn btn-xs btn-outline" style="width:100%;font-size:11px" onclick="NotifMgr.closeDropdown();App.loadModule('bc_supervision')">
+              <i class="fas fa-stream"></i> Ouvrir le Suivi des Chargements
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- Autocorrect & Data Integrity Monitor (Runs every 15 min + live topbar indicator) -->
+      <div class="integrity-widget" id="topIntegrityWidget" onclick="if(window.AutocorrectBrain) AutocorrectBrain.showDetailsModal()" title="Moniteur d'intégrité et auto-correction (Toutes les 15 min)">
+        <div class="integrity-pulse" id="integrityPulse"></div>
+        <i class="fas fa-shield-alt" id="integrityIcon" style="color:var(--success);font-size:12px"></i>
+        <span id="integrityLabel" style="font-size:11px;font-weight:700;color:var(--text)">Intégrité: 100%</span>
+        <span id="integrityTimer" style="font-size:10px;color:var(--text4);font-family:var(--font-mono)">15:00</span>
+      </div>
+
       <!-- Clock Widget -->
       <div class="clock-widget" id="topClock">
         <span class="clock-time" id="clockTime">--:--:--</span>
@@ -403,9 +433,12 @@ const App = {
     // Global ESC key
     document.addEventListener('keydown', e => { if (e.key === 'Escape') UI.closeModal(); });
 
-    // Close user menu on outside click
+    // Close user menu and notification dropdown on outside click
     document.addEventListener('click', e => {
       if (!e.target.closest('#userMenuWrap')) document.getElementById('userDropdown')?.classList.remove('open');
+      if (!e.target.closest('#notifMenuWrap')) {
+        if (typeof NotifMgr !== 'undefined') NotifMgr.closeDropdown();
+      }
     });
 
     // ── Now handle auth / boot ──────────────────────────────────────
@@ -468,8 +501,14 @@ const App = {
     this._updateTopbar();
     this.buildSidebar();
     UI.startClock();
-    this.loadModule('dashboard');
+    const curU = Auth.getCurrentUser();
+    if (curU && (curU.role === 'supplier' || curU.role === 'supplier_agent')) {
+      this.loadModule('supplier_portal');
+    } else {
+      this.loadModule('dashboard');
+    }
     this._checkMorningSession();
+    if (typeof NotifMgr !== 'undefined') NotifMgr.updateUI();
     // Start live background sync so concurrent users see each other's changes
     DB.startLiveSync();
     // ── Recycle bin overflow notification (admin only) ──
@@ -687,26 +726,32 @@ const App = {
     console.log('[DEBUG Sidebar]', { userId: u.id, role: u.role, isAdmin, perms: JSON.parse(JSON.stringify(perms)), canViewBLs: Auth.can('canViewBLs'), canViewBRs: Auth.can('canViewBRs'), rawUserPerms: u.permissions });
     const menu = [
       { section: T.get('sec_documents'), items: [
-        { mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') },
+        ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [{ mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') }] : []),
         ...(isAdmin || Auth.can('canViewBRs') ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'bls', icon:'fa-file-export', label:T.get('nav_bls') }] : []),
-        ...(isAdmin ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'bls', icon:'fa-truck-loading', label:T.get('nav_bls') }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'supplier_portal', icon:'fa-industry', label:T.get('nav_supplier_portal') || 'Portail Usines' }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'bc_supervision', icon:'fa-stream', label:T.get('nav_bc_tracker') || 'Suivi Chargements' }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
       ]},
-      { section: T.get('sec_cash'), items: [
-        ...(isAdmin
-          ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }]
-          : (Auth.can('canViewCaisse') ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_caisse') }] : [])),
-        ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:'Banque' }] : []),
-        ...(isAdmin ? [{ mod:'charges', icon:'fa-receipt', label:T.get('nav_charges') }] : []),
-      ]},
-      { section: T.get('sec_refs'), items: [
-        ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
-        ...(isAdmin || Auth.can('canViewCatalogue') ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue' }] : []),
-      ]},
+      ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [
+        { section: T.get('sec_cash'), items: [
+          ...(Auth.can('canViewCaisse') || isAdmin ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_mini_caisse') || 'Ma Caisse' }] : []),
+          ...(isAdmin ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }] : []),
+          ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:T.get('nav_bank') || 'Banque' }] : []),
+          ...(isAdmin ? [{ mod:'charges', icon:'fa-receipt', label:T.get('nav_charges') }] : []),
+        ]},
+        { section: T.get('sec_refs'), items: [
+          ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
+          ...(isAdmin || Auth.can('canViewCatalogue') ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue' }] : []),
+        ]}
+      ] : []),
       ...(isAdmin ? [{ section: T.get('sec_analysis'), items: [
         { mod:'stats',   icon:'fa-chart-bar',  label:T.get('nav_stats') },
-        { mod:'eval',    icon:'fa-user-clock', label:T.get('nav_eval') },
-        { mod:'pointage', icon:'fa-user-clock', label:T.get('nav_pointage') },
+        { mod:'eval',    icon:'fa-chart-line', label:T.get('nav_eval') },
+      ]}] : []),
+      ...(isAdmin ? [{ section: 'Ressources Humaines', items: [
+        { mod:'users',        icon:'fa-users-cog',     label:'Gestion Employés' },
+        { mod:'pointage', icon:'fa-user-clock', label:T.get('nav_pointage') || 'Pointage & Présences' },
       ]}] : []),
       ...(isAdmin ? [{ section: T.get('sec_admin'), items: [
         { mod:'audit',        icon:'fa-shield-alt',    label:T.get('nav_audit') },
@@ -751,9 +796,17 @@ const App = {
 
   loadModule(mod) {
     const u = Auth.getCurrentUser();
+    // Non-admin can NEVER access admin_caisse
+    if (mod === 'admin_caisse' && !Auth.isAdmin()) {
+      mod = 'caisse';
+      Utils.notify("Accès réservé à l'administrateur", "warning");
+    }
+
     // Permission guard
-    const modPerms = {brs:'canViewBRs', bls:'canViewBLs', caisse:'canViewCaisse', bank:'canViewBank', suppliers:'canViewSuppliers', clients:'canViewClients', partners:'canViewClients', stats:'canViewStats', catalogue:'canViewCatalogue'};
-    if (u && u.role !== 'admin' && modPerms[mod] && !Auth.can(modPerms[mod])) {
+    const modPerms = {brs:'canViewBRs', bls:'canViewBLs', supplier_portal:'canViewBLs', bc_supervision:'canViewBLs', caisse:'canViewCaisse', bank:'canViewBank', suppliers:'canViewSuppliers', clients:'canViewClients', partners:'canViewClients', stats:'canViewStats', catalogue:'canViewCatalogue'};
+    const isSupplierRole = u?.role === 'supplier' || u?.role === 'supplier_agent';
+    const supplierAllowed = isSupplierRole && (mod === 'supplier_portal' || mod === 'bc_supervision');
+    if (u && u.role !== 'admin' && !supplierAllowed && modPerms[mod] && !Auth.can(modPerms[mod])) {
       mod = 'dashboard';
       Utils.notify('Accès non autorisé', 'warning');
     }
@@ -766,7 +819,7 @@ const App = {
       dashboard:'nav_dashboard', brs:'nav_brs', bls:'nav_bls', caisse:'nav_caisse',
       admin_caisse:'nav_admin_caisse', suppliers:'nav_suppliers', clients:'nav_clients', stats:'nav_stats',
       eval:'nav_eval', pointage:'nav_pointage', users:'nav_users', audit:'nav_audit', settings:'nav_settings',
-      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque', etat_vente:'nav_etat_vente', charges:'nav_charges'
+      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque', etat_vente:'nav_etat_vente', charges:'nav_charges', supplier_portal:'nav_supplier_portal', bc_supervision:'nav_bc_tracker'
     };
     if (bc) bc.textContent = labels[mod]?.startsWith?.('nav_') ? T.get(labels[mod]) : (labels[mod]||mod);
     this._setActiveSidebarItem(mod);
@@ -786,6 +839,8 @@ const App = {
         case 'dashboard':    html = DashboardModule.render(); break;
         case 'brs':          html = BRModule.render(); break;
         case 'bls':          html = BLModule.render(); break;
+        case 'supplier_portal': html = typeof SupplierPortalModule !== 'undefined' ? SupplierPortalModule.render() : ''; break;
+        case 'bc_supervision':  html = typeof BCSupervisionModule !== 'undefined' ? BCSupervisionModule.render() : ''; break;
         case 'caisse':       html = CaisseModule.render(); break;
         case 'admin_caisse': html = AdminCaisseModule.render(); break;
         case 'suppliers':    html = SuppliersModule.render(); break;
@@ -798,7 +853,7 @@ const App = {
         case 'bank':         html = typeof BankModule !== 'undefined' ? BankModule.render() : ''; break;
         case 'charges':      html = ChargesModule.render(); break;
         case 'etat_vente':   html = EtatVenteModule.render(); break;
-        case 'users':        SettingsModule._tab='users'; html = SettingsModule.render(); break;
+        case 'users':        html = typeof UsersModule !== 'undefined' ? UsersModule.render() : ''; break;
         case 'audit':        html = AuditModule.render(); break;
         case 'recycle_bin':  html = RecycleBinModule.render(); break;
         case 'settings':     html = SettingsModule.render(); break;

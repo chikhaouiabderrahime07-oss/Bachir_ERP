@@ -1,4 +1,4 @@
-﻿// Deploy: 2026-08-16 18:59:33
+// Deploy: 2026-08-16 18:59:33
 require('dotenv').config();
 const express    = require('express');
 const mongoose   = require('mongoose');
@@ -124,6 +124,18 @@ app.get('/api/health', (req, res) => {
     time:   new Date().toISOString(),
     db:     mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
   });
+});
+
+// ─── Reset: Clear localStorage & Force Resync from MongoDB ──────
+app.get('/reset', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Reset</title></head><body>
+    <script>
+      localStorage.clear();
+      sessionStorage.clear();
+      alert('✅ Cache vidé ! L\\'application va recharger les données depuis MongoDB.');
+      window.location.href = '/';
+    </script>
+  </body></html>`);
 });
 
 // ─── Serve Frontend ──────────────────────────────────────────────

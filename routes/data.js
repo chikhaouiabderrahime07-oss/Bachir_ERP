@@ -120,7 +120,11 @@ router.patch('/settings/main', async (req, res) => {
 // ─── GET /api/data/:col  (get all docs in a collection) ──────────
 router.get('/:col', async (req, res) => {
   try {
-    const docs = await Document.find({ col: req.params.col }).lean();
+    const limit = parseInt(req.query.limit) || 0;
+    const sortDir = req.query.sort === 'asc' ? 1 : -1;
+    let query = Document.find({ col: req.params.col });
+    if (limit > 0) query = query.sort({ createdAt: sortDir }).limit(limit);
+    const docs = await query.lean();
     res.json(docs.map(d => d.data));
   } catch (e) {
     console.error('[DATA/GET]', e);

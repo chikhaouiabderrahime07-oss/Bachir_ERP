@@ -130,7 +130,7 @@
       const num = Number(n)||0;
       const fixed = num.toFixed(dec!==undefined?dec:2);
       const parts = fixed.split('.');
-      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,'\u202f');
       return dec===0 ? parts[0] : parts[0]+','+parts[1];
     },
     _fmtMoney(v) { return this._numFmt(v,2)+'\u00a0DA'; },
@@ -493,7 +493,10 @@
        ROUTER (async — waits for Arabic font before generating)
     ══════════════════════════════════════════════════════════ */
     async exportBR(id)       { try{ await this._ensureArabicFont(); this._exportBR(id);       }catch(e){console.error(e);this._notify('Erreur BR: '+e.message,'error');} },
-    async exportBL(id)       { try{ await this._ensureArabicFont(); this._exportBL(id);       }catch(e){console.error(e);this._notify('Erreur BL: '+e.message,'error');} },
+    async exportBonChargement(id) { try{ await this._ensureArabicFont(); this._exportBonChargement(id); }catch(e){console.error(e);this._notify('Erreur Bon de Chargement: '+e.message,'error');} },
+    async exportBLRoute(id)       { try{ await this._ensureArabicFont(); this._exportBL(id, true); }catch(e){console.error(e);this._notify('Erreur BL Route: '+e.message,'error');} },
+    async exportTempoBL(id)       { try{ await this._ensureArabicFont(); this._exportTempoBL(id); }catch(e){console.error(e);this._notify('Erreur Tempo BL: '+e.message,'error');} },
+    async exportBL(id)       { try{ await this._ensureArabicFont(); this._exportBonChargement(id); }catch(e){console.error(e);this._notify('Erreur Bon de Chargement: '+e.message,'error');} },
     async exportDecharge(id) { try{ await this._ensureArabicFont(); this._exportDecharge(id); }catch(e){console.error(e);this._notify('Erreur Decharge: '+e.message,'error');} },
     async exportBankDecharge(id) { try{ await this._ensureArabicFont(); this._exportBankDecharge(id); }catch(e){console.error(e);this._notify('Erreur Bank Decharge: '+e.message,'error');} },
     async exportSupplierPayDecharge(id) { try{ await this._ensureArabicFont(); this._exportSupplierPayDecharge(id); }catch(e){console.error(e);this._notify('Erreur Pay Decharge: '+e.message,'error');} },
@@ -553,7 +556,7 @@
 
       const bodyRows6 = (br.lines||[]).map((l,i)=>{
         const qty=Number(l.qty)||0, pu=Number(l.price)||0, disc=Number(l.disc)||0;
-        const tot=qty*pu*(1-disc/100);
+        const tot=Math.round(qty*pu*(1-disc/100)*100)/100;
         return [
           String(i+1).padStart(2,'0'),
           this._t(l.designation||''),
@@ -615,17 +618,26 @@
     },
 
     _exportEtatVente(data) {
-      const { ref, createdByName, createdAt, items, totalHT, tvaAmt, tvaRate, timbreAmt, totalTTC, period, settings } = data;
+      const { 
+        ref, createdByName, createdAt, items, totalHT, tvaAmt, tvaRate, timbreAmt, 
+        totalTTC, period, settings, blList = [], returnList = [], 
+        grossTotalTTC = 0, returnsTotalTTC = 0, netTotalTTC = null 
+      } = data;
+
+      const finalNetTTC = netTotalTTC !== null && netTotalTTC !== undefined ? netTotalTTC : totalTTC;
+      const effectiveGross = grossTotalTTC || totalTTC;
+      const effectiveReturns = returnsTotalTTC || 0;
+
       const s = {
-        companyName: settings.evCompanyName,
-        address: settings.evAddress,
-        phone: settings.evPhone,
+        companyName: settings.evCompanyName || settings.companyName,
+        address: settings.evAddress || settings.address,
+        phone: settings.evPhone || settings.phone,
         fax: settings.evFax,
-        email: settings.evEmail,
-        nif: settings.evNif,
-        rc: settings.evRc,
-        nis: settings.evNis,
-        ai: settings.evAi,
+        email: settings.evEmail || settings.email,
+        nif: settings.evNif || settings.nif,
+        rc: settings.evRc || settings.rc,
+        nis: settings.evNis || settings.nis,
+        ai: settings.evAi || settings.ai,
         capital: settings.evCapital,
         logoLeft: settings.evLogoLeft,
         logoRight: settings.evLogoRight
@@ -634,17 +646,24 @@
       const doc = this._newDoc();
       
       let y = this._drawCompanyHeader(doc, s, MT);
-      y = this._drawBanner(doc, 'ÉTAT DE VENTE', y);
+      y = this._drawBanner(doc, 'ÉTAT DE VENTE & VERSEMENT BANCAIRE', y);
       
       const infoItems = [];
-      if (ref) infoItems.push({ label: 'Réf', value: this._t(ref) });
+      if (ref) infoItems.push({ label: 'Réf État', value: this._t(ref) });
       infoItems.push({ label: 'Période', value: this._t(period) });
       infoItems.push({ label: 'Édité le', value: this._fmtDate(createdAt ? new Date(createdAt) : new Date()) });
-      if (createdByName) infoItems.push({ label: 'Généré par', value: this._t(createdByName) });
+      if (createdByName) infoItems.push({ label: 'Établi par', value: this._t(createdByName) });
+      if (data.bankName) infoItems.push({ label: 'Banque', value: this._t(data.bankName) });
 
       y = this._drawInfoStrip(doc, infoItems, y);
-      
-      y += 8;
+      y += 6;
+
+      // ── Sub-header: Articles & Produits vendus ──
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      this._tc(doc, C.PRIMARY);
+      doc.text('I. RÉCAPITULATIF DES ARTICLES VENDUS (VENTES CUMULÉES)', ML, y);
+      y += 4;
       
       const COLS = [
         {label:'N°', width:12, halign:'center'},
@@ -655,41 +674,202 @@
         {label:'TOTAL HT', width:40, halign:'center'},
       ];
       
-      const bodyRows = items.map((l, i) => {
+      const bodyRows = (items || []).map((l, i) => {
         return [
           String(i+1).padStart(2,'0'),
           this._t(l.designation||''),
           this._t(l.unit||'U'),
           this._fmtNum(l.qty),
           this._fmtMoney(l.unitPrice),
-          this._fmtMoney(l.qty * l.unitPrice),
+          this._fmtMoney((l.qty || 0) * (l.unitPrice || 0)),
         ];
       });
-      if(!bodyRows.length) bodyRows.push(['01','-','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
+      if(!bodyRows.length) bodyRows.push(['01','Aucune ligne','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
       
-      const tEndY = this._buildTable(doc, y, COLS, bodyRows, {
+      let tEndY = this._buildTable(doc, y, COLS, bodyRows, {
         totalHT: totalHT,
         tvaAmount: tvaAmt,
         tvaRate: tvaRate,
         timbre: timbreAmt,
-        totalTTC: totalTTC
+        totalTTC: effectiveGross
       });
       
-      y = tEndY + 4;
-      
-      const wd = this._amountWords(totalTTC);
-      if(wd){
-        doc.setFont('helvetica','italic'); doc.setFontSize(8); this._tc(doc,C.GRAY_TXT);
-        const wl=doc.splitTextToSize(`Arretee a : ${wd} dinars algeriens`,CW);
-        doc.text(wl,ML,y); y+=wl.length*4+3;
+      y = tEndY + 8;
+
+      // ── Sub-header: Table 1 - Bons de Livraison inclus ──
+      if (blList && blList.length > 0) {
+        if (y + 35 > PH - 25) { doc.addPage(); y = MT + 8; }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        this._tc(doc, C.PRIMARY);
+        doc.text(`II. DETAIL DES BONS DE LIVRAISON INCLUS (VENTES DU JOUR : ${blList.length} BL)`, ML, y);
+        y += 4;
+
+        const blCols = [
+          {label:'N°', width:12, halign:'center'},
+          {label:'RÉFÉRENCE BL', width:42, halign:'center'},
+          {label:'DATE', width:26, halign:'center'},
+          {label:'CLIENT / DESTINATAIRE', width:72, halign:'left'},
+          {label:'MONTANT TTC', width:42, halign:'right'}
+        ];
+
+        const blRows = blList.map((b, i) => [
+          String(i+1).padStart(2, '0'),
+          this._t(b.ref || '—'),
+          this._fmtDate(b.date),
+          this._t(b.clientName || 'Client Comptoir'),
+          this._fmtMoney(b.totalTTC || 0)
+        ]);
+
+        // Total row for BLs
+        blRows.push([
+          { content: 'TOTAL BRUT VENTES BL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
+          { content: '+' + this._fmtMoney(effectiveGross), styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129], fillColor: [240, 244, 248] } }
+        ]);
+
+        const blColStyles = {};
+        blCols.forEach((c, i) => { blColStyles[i] = { halign: c.halign, cellWidth: c.width }; });
+
+        this._autoTable(doc, {
+          startY: y,
+          margin: { left: ML, right: MR },
+          tableWidth: CW,
+          theme: 'grid',
+          head: [blCols.map(c => c.label)],
+          body: blRows,
+          headStyles: { fillColor: [59, 130, 246], textColor: C.WHITE, fontStyle: 'bold', fontSize: 7.8, cellPadding: 2, halign: 'center' },
+          bodyStyles: { fontSize: 7.4, cellPadding: 1.6, valign: 'middle', lineColor: C.LINE, lineWidth: 0.15 },
+          alternateRowStyles: { fillColor: [249, 250, 252] },
+          columnStyles: blColStyles
+        });
+
+        y = doc.lastAutoTable.finalY + 8;
       }
-      
-      this._drawSigBlock(doc,[
-        {label:'Direction Générale', sub:this._t(s.companyName||''), value:'', sub2:'Cachet & Signature'}
-      ], Math.max(y+4, PH-62), 44);
-      
-      this._drawFooter(doc,1,1);
-      this._save(doc, `Etat_de_Vente_${period.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
+
+      // ── Sub-header: Table 2 - Retours Marchandise déduits ──
+      if (returnList && returnList.length > 0) {
+        if (y + 35 > PH - 25) { doc.addPage(); y = MT + 8; }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        this._tc(doc, [220, 38, 38]);
+        doc.text(`III. RETOURS MARCHANDISE DÉDUITS (BONS DE RETOUR : ${returnList.length} BR)`, ML, y);
+        y += 4;
+
+        const retCols = [
+          {label:'N°', width:12, halign:'center'},
+          {label:'BON DE RETOUR', width:38, halign:'center'},
+          {label:'BL ORIGINE', width:34, halign:'center'},
+          {label:'DATE', width:24, halign:'center'},
+          {label:'CLIENT & MOTIF', width:46, halign:'left'},
+          {label:'DÉDUCTION TTC', width:40, halign:'right'}
+        ];
+
+        const retRows = returnList.map((r, i) => [
+          String(i+1).padStart(2, '0'),
+          this._t(r.ref || '—'),
+          this._t(r.blRef || '—'),
+          this._fmtDate(r.date),
+          this._t((r.clientName ? r.clientName + (r.motif ? ' - ' + r.motif : '') : (r.motif || 'Retour'))),
+          '- ' + this._fmtMoney(r.totalTTC || 0)
+        ]);
+
+        // Total row for Returns
+        retRows.push([
+          { content: 'TOTAL RETOURS MARCHANDISE DÉDUITS', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [254, 242, 242], textColor: [220, 38, 38] } },
+          { content: '- ' + this._fmtMoney(effectiveReturns), styles: { halign: 'right', fontStyle: 'bold', textColor: [220, 38, 38], fillColor: [254, 242, 242] } }
+        ]);
+
+        const retColStyles = {};
+        retCols.forEach((c, i) => { retColStyles[i] = { halign: c.halign, cellWidth: c.width }; });
+
+        this._autoTable(doc, {
+          startY: y,
+          margin: { left: ML, right: MR },
+          tableWidth: CW,
+          theme: 'grid',
+          head: [retCols.map(c => c.label)],
+          body: retRows,
+          headStyles: { fillColor: [220, 38, 38], textColor: C.WHITE, fontStyle: 'bold', fontSize: 7.8, cellPadding: 2, halign: 'center' },
+          bodyStyles: { fontSize: 7.4, cellPadding: 1.6, valign: 'middle', lineColor: C.LINE, lineWidth: 0.15 },
+          alternateRowStyles: { fillColor: [255, 245, 245] },
+          columnStyles: retColStyles
+        });
+
+        y = doc.lastAutoTable.finalY + 8;
+      }
+
+      // ── Grand Récapitulatif Final Box ──
+      if (y + 40 > PH - 35) { doc.addPage(); y = MT + 8; }
+
+      const boxW = 100;
+      const boxX = ML + CW - boxW;
+      const boxH = effectiveReturns > 0 ? 30 : 22;
+
+      this._fill(doc, [248, 250, 252]);
+      this._stroke(doc, C.LINE);
+      doc.rect(boxX, y, boxW, boxH, 'FD');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      this._tc(doc, C.GRAY_TXT);
+      doc.text('Total Ventes BL (Brut) :', boxX + 4, y + 6);
+      doc.setFont('helvetica', 'bold');
+      this._tc(doc, [16, 185, 129]);
+      doc.text('+' + this._fmtMoney(effectiveGross), boxX + boxW - 4, y + 6, { align: 'right' });
+
+      let curY = y + 6;
+      if (effectiveReturns > 0) {
+        curY += 7;
+        doc.setFont('helvetica', 'normal');
+        this._tc(doc, C.GRAY_TXT);
+        doc.text('Déduction Retours (BR) :', boxX + 4, curY);
+        doc.setFont('helvetica', 'bold');
+        this._tc(doc, [220, 38, 38]);
+        doc.text('- ' + this._fmtMoney(effectiveReturns), boxX + boxW - 4, curY, { align: 'right' });
+      }
+
+      curY += 8;
+      this._fill(doc, C.PRIMARY);
+      doc.rect(boxX, curY - 4, boxW, 9, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      this._tc(doc, C.WHITE);
+      doc.text('NET FINAL (VERSEMENT) :', boxX + 4, curY + 2);
+      doc.text(this._fmtMoney(finalNetTTC), boxX + boxW - 4, curY + 2, { align: 'right' });
+
+      y += boxH + 6;
+
+      const wd = this._amountWords(finalNetTTC);
+      if (wd) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        this._tc(doc, C.GRAY_TXT);
+        const wl = doc.splitTextToSize(`Arrêtée la présente à la somme nette de : ${wd} dinars algériens.`, CW);
+        doc.text(wl, ML, y);
+        y += wl.length * 4 + 4;
+      }
+
+      // Check space for signature
+      if (y + 36 > PH - 15) {
+        doc.addPage();
+        y = MT + 10;
+      }
+
+      this._drawSigBlock(doc, [
+        { label: 'Le Responsable Caisse / Vendeur', sub: this._t(createdByName || 'Caissier'), value: '', sub2: 'Signature' },
+        { label: 'Direction Générale & Contrôle', sub: this._t(s.companyName || ''), value: '', sub2: 'Cachet & Visa' }
+      ], Math.max(y + 2, PH - 55), 38);
+
+      // Multi-page pagination
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        this._drawFooter(doc, p, totalPages);
+      }
+
+      this._save(doc, `Etat_de_Vente_${(ref || period).replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
     },
 
     exportBonRetour(doc) {
@@ -778,9 +958,125 @@
     },
 
     /* ══════════════════════════════════════════════════════════
-       BL — BON DE LIVRAISON
+       BON DE CHARGEMENT — 2 VOLETS EN 1 SEULE PAGE A4
+       Volet 1 (Chauffeur) + Découpe + Volet 2 (Usine)
+       Entête obligatoire : Société État de Vente (evCompanyName)
     ══════════════════════════════════════════════════════════ */
-    _exportBL(id) {
+    _exportBonChargement(id) {
+      let bc = DB.getById('bls', id);
+      if (!bc) {
+        const allBLs = DB.getAll('bls');
+        bc = allBLs.find(b => String(b.id) === String(id)) || allBLs[allBLs.length - 1];
+      }
+      if (!bc) { this._notify('Bon de chargement introuvable', 'error'); return; }
+
+      const rawSettings = this._settings();
+      // Strict client requirement: Bon de Chargement uses the État de Vente branding
+      const s = {
+        companyName: rawSettings.evCompanyName || rawSettings.companyName || 'SOCIÉTÉ',
+        address: rawSettings.evAddress || rawSettings.address || '',
+        phone: rawSettings.evPhone || rawSettings.phone || '',
+        email: rawSettings.evEmail || rawSettings.email || '',
+        nif: rawSettings.evNif || rawSettings.nif || '',
+        rc: rawSettings.evRc || rawSettings.rc || '',
+        nis: rawSettings.evNis || rawSettings.nis || '',
+        ai: rawSettings.evAi || rawSettings.ai || '',
+        capital: rawSettings.evCapital || rawSettings.capital || '',
+        logoLeft: rawSettings.evLogoLeft || rawSettings.logoLeft,
+        logoRight: rawSettings.evLogoRight || rawSettings.logoRight
+      };
+
+      const sup = bc.supplierId ? (DB.getById('suppliers', bc.supplierId) || {}) : (bc.brId ? (DB.getById('suppliers', (DB.getById('brs', bc.brId)||{}).supplierId) || {}) : {});
+      const cli = bc.clientId ? (DB.getById('clients', bc.clientId) || {}) : {};
+      const br = bc.linkedBrId ? DB.getById('brs', bc.linkedBrId) : (bc.brId ? DB.getById('brs', bc.brId) : null);
+      
+      const doc = this._newDoc();
+      const lines = bc.lines || [];
+      const totalHT = Number(bc.totalHT) || 0;
+      const timbre = Number(bc.timbreAmount) || 0;
+      const tvaAmount = Number(bc.tvaAmount) || 0;
+      const totalTTC = Number(bc.totalTTC) || (totalHT + tvaAmount + timbre);
+
+      let y = this._drawCompanyHeader(doc, s, MT);
+      
+      const titleBanner = `BON DE CHARGEMENT`;
+      y = this._drawBanner(doc, titleBanner, y);
+      
+      y = this._drawInfoStrip(doc, [
+        {label: 'N° BCH', value: this._t(bc.ref || 'BCH')},
+        {label: 'Date', value: this._fmtDate(bc.date)},
+        {label: 'Chauffeur', value: this._t(bc.driverName || '/')},
+        {label: 'Immat.', value: this._t(bc.truckIMM || '/')},
+      ], y);
+      y += 4;
+
+      const gap = 4, cw2 = (CW - gap) / 2, boxH = 32;
+
+      /* LEFT: Origine Usine / Fournisseur */
+      const supName = sup.name || bc.supplierName || 'Usine non spécifiée';
+      const compLines = [
+        supName,
+        `Tél : ${sup.phone || bc.driverPhone || '-'}`,
+        `Adresse : ${this._t(sup.address || '-')}`,
+        br ? `BR Lié : ${this._t(br.ref)}` : 'BR Lié : En attente usine'
+      ];
+      this._drawEntityBox(doc, 'Origine du Chargement (Usine)', compLines, ML, y, cw2, boxH);
+
+      /* RIGHT: Client / Destinataire */
+      const destAddr = bc.destinationAddress || cli.address || '-';
+      const cliLines = [
+        this._t(cli.name || bc.clientName || 'Client'),
+        `NIF : ${cli.nif || '-'}`,
+        `RC : ${cli.rc || '-'}`,
+        `Destination : ${this._t(destAddr.length > 40 ? destAddr.slice(0,40)+'...' : destAddr)}`,
+        `Tél : ${cli.phone || '-'}`
+      ];
+      this._drawEntityBox(doc, 'Client / Destinataire', cliLines, ML + cw2 + gap, y, cw2, boxH);
+      y += boxH + 4;
+
+      /* 6-col table */
+      const COLS = [
+        {label: 'N°', width: 12, halign: 'center'},
+        {label: 'DÉSIGNATION DES FOURNITURES', width: 75, halign: 'left'},
+        {label: 'UNITÉ', width: 15, halign: 'center'},
+        {label: 'QTÉ', width: 18, halign: 'center'},
+        {label: 'P.U. HT', width: 34, halign: 'center'},
+        {label: 'TOTAL HT', width: 40, halign: 'center'},
+      ];
+
+      const bodyRows = lines.map((l, i) => {
+        const qty = Number(l.qtyDelivered || l.qty || 0), pu = Number(l.price || 0), disc = Number(l.disc || 0);
+        const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
+        return [
+          String(i + 1).padStart(2, '0'),
+          this._t(l.designation || ''),
+          this._t(l.unit || 'U'),
+          this._fmtNum(qty),
+          this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''),
+          this._fmtMoney(tot),
+        ];
+      });
+      if (!bodyRows.length) bodyRows.push(['01', 'Marchandise', 'U', '0', '0,00', '0,00']);
+
+      const tEndY = this._buildTable(doc, y, COLS, bodyRows, {totalHT, timbre, totalTTC, tvaAmount, tvaRate: bc.tvaRate || 0});
+      y = tEndY + 8;
+
+      this._drawSigBlock(doc, [
+        {label: 'Caissier', sub: 'Visa & Cachet'},
+        {label: 'Chauffeur', sub: 'Visa & Date'},
+        {label: 'Cachet', sub: 'Validation Usine'}
+      ], y, 40);
+
+      // Footer is fine, let it be at the bottom of the page
+      this._drawFooter(doc, 1, 1);
+      
+      this._save(doc, `BON_CHARGEMENT_${this._t(bc.ref || 'BCH').replace(/\//g, '_')}.pdf`);
+    },
+
+    /* ══════════════════════════════════════════════════════════
+       BL — BON DE LIVRAISON (Pour la route / Société 2)
+    ══════════════════════════════════════════════════════════ */
+    _exportBL(id, isRoadOnly = false) {
       let bl = DB.getById('bls', id);
       // Fallback: in cloud mode, the server may reassign IDs — find by most recent
       if (!bl) {
@@ -788,8 +1084,8 @@
         bl = allBLs.find(b => String(b.id) === String(id)) || allBLs[allBLs.length - 1];
       }
       if(!bl) { this._notify('BL introuvable','error'); return; }
-      const br  = bl.brId ? DB.getById('brs',bl.brId) : null;
-      const sup = br ? DB.getById('suppliers',br.supplierId)||{} : {};
+      const br  = bl.brId ? DB.getById('brs',bl.brId) : (bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null);
+      const sup = br ? (DB.getById('suppliers',br.supplierId)||{}) : (bl.supplierId ? (DB.getById('suppliers', bl.supplierId)||{}) : {});
       const cli = bl.clientId ? DB.getById('clients',bl.clientId)||{} : {};
       const s   = this._settings();
       const doc = this._newDoc();
@@ -800,7 +1096,15 @@
       const totalTTC = bl.totalTTC||(br?br.totalTTC:0)||0;
 
       let y = this._drawCompanyHeader(doc,s,MT);
-      y = this._drawBanner(doc,'BON DE LIVRAISON',y);
+      const titleBanner = isRoadOnly ? 'BON DE LIVRAISON (POUR LA ROUTE)' : 'BON DE LIVRAISON';
+      y = this._drawBanner(doc,titleBanner,y);
+      if (isRoadOnly) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        this._tc(doc, [100, 116, 139]);
+        doc.text('DOCUMENT DE CONTRÔLE ROUTIER ET DE CIRCULATION DES MARCHANDISES', ML + CW/2, y + 1, { align: 'center' });
+        y += 4;
+      }
       y = this._drawInfoStrip(doc,[
         {label:'Date BL',   value:this._fmtDate(bl.date)},
         {label:'BR lié',    value:br?this._t(br.ref):'/'},
@@ -851,7 +1155,7 @@
 
       const bodyRows6=lines.map((l,i)=>{
         const qty=Number(l.qtyDelivered||l.qty||0),pu=Number(l.price||0),disc=Number(l.disc||0);
-        const tot=qty*pu*(1-disc/100);
+        const tot=Math.round(qty*pu*(1-disc/100)*100)/100;
         return [
           String(i+1).padStart(2,'0'),
           this._t(l.designation||''),
@@ -905,7 +1209,158 @@
       ], Math.max(y+4,PH-62), 44);
 
       this._drawFooter(doc,1,1);
-      this._save(doc,`BL_${this._t(bl.ref||'BROUILLON').replace(/\//g,'_')}.pdf`);
+      this._save(doc, isRoadOnly ? `BL_ROUTE_${this._t(bl.ref||'BROUILLON').replace(/\//g,'_')}.pdf` : `BL_${this._t(bl.ref||'BROUILLON').replace(/\//g,'_')}.pdf`);
+    },
+
+    /* ══════════════════════════════════════════════════════════
+       BL TEMPO — BON DE LIVRAISON (Document de circulation routière — Entête secondaire)
+    ══════════════════════════════════════════════════════════ */
+    _exportTempoBL(id) {
+      let bl = DB.getById('bls', id);
+      // Fallback: in cloud mode, the server may reassign IDs — find by most recent
+      if (!bl) {
+        const allBLs = DB.getAll('bls');
+        bl = allBLs.find(b => String(b.id) === String(id)) || allBLs[allBLs.length - 1];
+      }
+      if(!bl) { this._notify('BL introuvable','error'); return; }
+      const br  = bl.brId ? DB.getById('brs',bl.brId) : (bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null);
+      const cli = bl.clientId ? DB.getById('clients',bl.clientId)||{} : {};
+      
+      const rawSettings = this._settings();
+      const s = {
+        companyName: rawSettings.evCompanyName || rawSettings.companyName || 'SOCIÉTÉ',
+        address: rawSettings.evAddress || rawSettings.address || '',
+        phone: rawSettings.evPhone || rawSettings.phone || '',
+        email: rawSettings.evEmail || rawSettings.email || '',
+        nif: rawSettings.evNif || rawSettings.nif || '',
+        rc: rawSettings.evRc || rawSettings.rc || '',
+        nis: rawSettings.evNis || rawSettings.nis || '',
+        ai: rawSettings.evAi || rawSettings.ai || '',
+        capital: rawSettings.evCapital || rawSettings.capital || '',
+        logoLeft: rawSettings.evLogoLeft || rawSettings.logoLeft,
+        logoRight: rawSettings.evLogoRight || rawSettings.logoRight
+      };
+
+      const doc = this._newDoc();
+
+      const lines    = bl.lines||(br?br.lines||[]:[]);
+      const totalHT  = bl.totalHT ||(br?br.totalHT:0)||0;
+      const timbre   = bl.timbreAmount||(br?br.timbreAmount:0)||0;
+      const totalTTC = bl.totalTTC||(br?br.totalTTC:0)||0;
+
+      let y = this._drawCompanyHeader(doc,s,MT);
+      const titleBanner = 'BON DE LIVRAISON';
+      y = this._drawBanner(doc,titleBanner,y);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      this._tc(doc, [100, 116, 139]);
+      doc.text('(Entête commerciale)', ML + CW/2, y + 1, { align: 'center' });
+      y += 4;
+      
+      y = this._drawInfoStrip(doc,[
+        {label:'Date BL',   value:this._fmtDate(bl.date)},
+        {label:'BR lié',    value:br?this._t(br.ref):'/'},
+        {label:'Chauffeur', value:this._t(bl.driverName||'/')},
+        {label:'Immat.',    value:this._t(bl.truckIMM||'/')},
+      ],y);
+      y+=4;
+
+      const gap=4, cw2=(CW-gap)/2, boxH=42;
+
+      /* LEFT: Our Company / Fournisseur */
+      const supName=this._t(s.companyName||'/');
+      const compLines=[
+        supName,
+        `NIF : ${s.nif||'-'}`,
+        `NIS : ${s.nis||'-'}`,
+        `RC  : ${s.rc||'-'}`,
+        `Tel : ${s.phone||'-'}`,
+        `Adresse : ${this._t(s.address||'-')}`,
+      ];
+      this._drawEntityBox(doc,'Fournisseur / Origine',compLines,ML,y,cw2,boxH);
+
+      /* RIGHT: Client / Destinataire */
+      const wilayaDest = bl.destinationAddress || bl.wilaya || cli.address || '';
+      const cliLines=[
+        this._t(cli.name||'Client non specifie'),
+        `NIF : ${cli.nif||'-'}`,
+        `NIS : ${cli.nis||'-'}`,
+        `RC  : ${cli.rc||'-'}`,
+        `AI  : ${cli.ai||'-'}`,
+        `Adresse : ${this._t(cli.address||'-')}`,
+        `Tel : ${cli.phone||'-'}`,
+        ...(wilayaDest ? [`Dest. livr. : ${this._t(wilayaDest)}`] : []),
+      ];
+      this._drawEntityBox(doc,'Client / Destinataire',cliLines,ML+cw2+gap,y,cw2,boxH);
+      y+=boxH+4;
+
+      /* 6-col table — same COL_W as BR */
+      const COLS=[
+        {label:'N°',                                            width:12, halign:'center'},
+        {label:'DÉSIGNATION DES FOURNITURES / SERVICES',        width:75, halign:'left'},
+        {label:'UNITÉ',                                         width:15, halign:'center'},
+        {label:'QTÉ',                                           width:18, halign:'center'},
+        {label:'P.U. HT',                                       width:34, halign:'center'},
+        {label:'TOTAL HT',                                      width:40, halign:'center'},
+      ];
+
+      const bodyRows6=lines.map((l,i)=>{
+        const qty=Number(l.qtyDelivered||l.qty||0),pu=Number(l.price||0),disc=Number(l.disc||0);
+        const tot=Math.round(qty*pu*(1-disc/100)*100)/100;
+        return [
+          String(i+1).padStart(2,'0'),
+          this._t(l.designation||''),
+          this._t(l.unit||'U'),
+          this._fmtNum(qty),
+          this._fmtMoney(pu)+(disc?` (-${disc}%)`:''),
+          this._fmtMoney(tot),
+        ];
+      });
+      if(!bodyRows6.length) bodyRows6.push(['01','','U','','',this._fmtMoney(0)]);
+
+      const tEndY=this._buildTable(doc,y,COLS,bodyRows6,{totalHT,timbre,totalTTC,tvaAmount:bl.tvaAmount||0,tvaRate:bl.tvaRate||0});
+      y=tEndY+4;
+
+      /* ── DESTINATION ADDRESS — bold, prominent, below table ── */
+      const destAddr = bl.destinationAddress || bl.wilaya || cli.address || '';
+      if (destAddr) {
+        const destBoxH = 12;
+        this._tc(doc, C.PRIMARY);
+        doc.setFont('helvetica','bold'); doc.setFontSize(9);
+        doc.text('Adresse de livraison :', ML, y + 4);
+        doc.setFont('helvetica','bold'); doc.setFontSize(10);
+        this._tc(doc, [30,30,30]);
+        const destLines = doc.splitTextToSize(this._t(destAddr), CW - 60);
+        doc.text(destLines, ML + 42, y + 4);
+        // Underline box
+        doc.setDrawColor(...C.PRIMARY);
+        doc.setLineWidth(0.6);
+        doc.line(ML, y + destBoxH - 1, ML + CW, y + destBoxH - 1);
+        y += destBoxH + 3;
+      }
+
+      const wd=this._amountWords(totalTTC);
+      if(wd){
+        doc.setFont('helvetica','italic'); doc.setFontSize(8); this._tc(doc,C.GRAY_TXT);
+        const wl=doc.splitTextToSize(`Arretee a : ${wd} dinars algeriens`,CW);
+        doc.text(wl,ML,y); y+=wl.length*4+3;
+      }
+      if(bl.notes){
+        y+=2;
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); this._tc(doc,C.GRAY_TXT);
+        const nl=doc.splitTextToSize(`Observations : ${this._t(bl.notes)}`,CW);
+        doc.text(nl,ML,y); y+=nl.length*4+2;
+      }
+
+      /* 3 Sig blocks: Direction Générale LEFT, Chauffeur MID, Client RIGHT */
+      this._drawSigBlock(doc,[
+        {label:'Direction Générale', sub:this._t(s.companyName||''), value:'', sub2:'Cachet & Signature'},
+        {label:'Le Chauffeur / Livreur',   value:this._t(bl.driverName||''), sub:'Signature & Cachet'},
+        {label:'Le Client / Destinataire', value:this._t(cli.name||''),      sub:'Signature & Cachet'},
+      ], Math.max(y+4,PH-62), 44);
+
+      this._drawFooter(doc,1,1);
+      this._save(doc, `BL_TEMPO_${this._t(bl.ref||'BROUILLON').replace(/\//g,'_')}.pdf`);
     },
 
     /* ══════════════════════════════════════════════════════════
@@ -1140,6 +1595,101 @@
 
       this._drawFooter(doc,1,1);
       this._save(doc,`DECHARGE_PAY_${Utils.escHTML(sup.name||'').replace(/\s/g,'_')}_${ref.replace(/\//g,'_')}.pdf`);
+    },
+
+    /* ══════════════════════════════════════════════════════════
+       FICHE DE PAIE — Simple Payroll Slip
+    ══════════════════════════════════════════════════════════ */
+    async exportFicheDePayeSimple(data) { try{ await this._ensureArabicFont(); this._exportFicheDePayeSimple(data); }catch(e){console.error(e);this._notify('Erreur Fiche de Paie: '+e.message,'error');} },
+
+    _exportFicheDePayeSimple(data) {
+      if (!data) { this._notify('Données manquantes','error'); return; }
+      const s   = this._settings();
+      const doc = this._newDoc();
+
+      /* ── Company header ─────────────────────────────── */
+      let y = this._drawCompanyHeader(doc, s, MT);
+
+      /* ── Banner ─────────────────────────────────────── */
+      y = this._drawBanner(doc, `FICHE DE PAIE — ${(data.monthLabel || '').toUpperCase()}`, y);
+      y += 4;
+
+      /* ── Employee Info Strip ────────────────────────── */
+      this._rect(doc, ML, y, PW-ML-MR, 28, C.LIGHT, C.BORDER);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.TEXT);
+      const col1 = ML+4, col2 = ML+85;
+      doc.text('Employé :', col1, y+7);
+      doc.text('Département :', col1, y+14);
+      doc.text('Poste :', col1, y+21);
+      doc.text('Période :', col2, y+7);
+      doc.text('Jours Ouvrables :', col2, y+14);
+      doc.text('Jours Travaillés :', col2, y+21);
+      doc.setFont('helvetica','normal');
+      doc.text(String(data.employeeName || '—'), col1+28, y+7);
+      doc.text(String(data.department || '—'), col1+32, y+14);
+      doc.text(String(data.jobTitle || '—'), col1+18, y+21);
+      doc.text(String(data.monthLabel || '—'), col2+22, y+7);
+      doc.text(String(data.totalDays || '—'), col2+38, y+14);
+      doc.text(String(data.workedDays || '—'), col2+38, y+21);
+      y += 32;
+
+      /* ── Salary Breakdown Table ─────────────────────── */
+      const rows = [
+        { label: 'Salaire de Base', amount: data.baseSalary || 0 },
+        { label: 'Prorata Jours Travaillés', amount: data.prorata || 0 },
+        { label: 'Heures Supplémentaires', amount: data.overtime || 0 },
+        { label: 'Primes & Indemnités', amount: data.bonuses || 0 },
+        { label: 'Total Brut', amount: data.grossTotal || 0, bold: true },
+      ];
+      if (data.deductions && data.deductions.length) {
+        data.deductions.forEach(d => {
+          rows.push({ label: `Retenue : ${d.label}`, amount: -(d.amount || 0), isDeduction: true });
+        });
+      }
+      rows.push({ label: 'Total Retenues', amount: -(data.totalDeductions || 0), bold: true, isDeduction: true });
+      rows.push({ label: 'NET À PAYER', amount: data.netPay || 0, bold: true, isNet: true });
+
+      // Table header
+      this._rect(doc, ML, y, PW-ML-MR, 8, C.PRIMARY, C.PRIMARY);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,[255,255,255]);
+      doc.text('Désignation', ML+4, y+6);
+      doc.text('Montant (DA)', PW-MR-4, y+6, {align:'right'});
+      y += 8;
+
+      // Table rows
+      rows.forEach((row, i) => {
+        const bgColor = row.isNet ? [13,148,136] : (i%2===0 ? [255,255,255] : C.LIGHT);
+        const textColor = row.isNet ? [255,255,255] : (row.isDeduction ? [220,38,38] : C.TEXT);
+        const rowH = row.isNet ? 10 : 7;
+        this._rect(doc, ML, y, PW-ML-MR, rowH, bgColor, C.BORDER);
+        doc.setFont('helvetica', row.bold ? 'bold' : 'normal');
+        doc.setFontSize(row.isNet ? 11 : 9);
+        this._tc(doc, textColor);
+        doc.text(row.label, ML+4, y + (rowH === 10 ? 7 : 5));
+        const amtStr = this._fmtMoney(Math.abs(row.amount));
+        const prefix = row.isDeduction && row.amount !== 0 ? '−' : '';
+        doc.text(prefix + amtStr, PW-MR-4, y + (rowH === 10 ? 7 : 5), {align:'right'});
+        y += rowH;
+      });
+
+      y += 8;
+
+      /* ── Footer Note ────────────────────────────────── */
+      this._rect(doc, ML, y, PW-ML-MR, 12, [255,251,235], [251,191,36]);
+      doc.setFont('helvetica','italic'); doc.setFontSize(8); this._tc(doc,[146,64,14]);
+      doc.text('Arrêtée la présente fiche de paie à la somme de : ' + (data.netPayWords || this._amountWords(data.netPay || 0)), ML+4, y+5);
+      doc.text('Cette fiche est délivrée pour servir et valoir ce que de droit.', ML+4, y+10);
+      y += 16;
+
+      /* ── Signatures ─────────────────────────────────── */
+      this._drawSigBlock(doc, [
+        {label:'L\'Employé',  sub:'Signature'},
+        {label:'Le Responsable RH',  sub:'Signature & Cachet'},
+        {label:'Le Directeur',  sub:'Signature & Cachet'},
+      ], Math.max(y+4,PH-62), 44);
+
+      this._drawFooter(doc,1,1);
+      this._save(doc,`FICHE_PAIE_${(data.employeeName||'').replace(/\s/g,'_')}_${(data.monthLabel||'').replace(/[\s\/]/g,'_')}.pdf`);
     },
 
   }; /* end PDFGen */
