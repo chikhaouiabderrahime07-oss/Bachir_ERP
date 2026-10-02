@@ -1629,13 +1629,13 @@ const DB = {
 
   // ─── Driver autocomplete ───────────────────────────────────
   getDriverIMM(name) {
-    const d = this.getAll('drivers').find(d => d.name.toLowerCase() === (name || '').toLowerCase());
+    const d = this.getAll('drivers').find(d => d && d.name && d.name.toLowerCase() === (name || '').toLowerCase());
     return d ? d.imm : '';
   },
   saveDriver(name, imm) {
     if (!name || !imm) return;
     const drivers = this.getAll('drivers');
-    const idx = drivers.findIndex(d => d.name.toLowerCase() === name.toLowerCase());
+    const idx = drivers.findIndex(d => d && d.name && d.name.toLowerCase() === name.toLowerCase());
     if (idx >= 0) { drivers[idx].imm = imm; this.rawSet('drivers', drivers); }
     else { this.insert('drivers', { name, imm }); }
   },
@@ -1719,13 +1719,13 @@ const DB = {
   // ─── Article catalog ───────────────────────────────────────
   searchArticles(q) {
     return this.getAll('articles')
-      .filter(a => a.name.toLowerCase().includes((q||'').toLowerCase()))
+      .filter(a => a && a.name && a.name.toLowerCase().includes((q||'').toLowerCase()))
       .slice(0, 10);
   },
   saveArticle(name, unit, price) {
     if (!name) return;
     const arts = this.getAll('articles');
-    const idx = arts.findIndex(a => a.name.toLowerCase() === name.toLowerCase());
+    const idx = arts.findIndex(a => a && a.name && a.name.toLowerCase() === name.toLowerCase());
     if (idx >= 0) { arts[idx] = { ...arts[idx], unit: unit || arts[idx].unit, price: price || arts[idx].price }; this.rawSet('articles', arts); }
     else { this.insert('articles', { name, unit: unit||'', price: Number(price)||0 }); }
   },

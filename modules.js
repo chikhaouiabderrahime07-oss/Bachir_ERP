@@ -486,7 +486,7 @@ const BRModule = {
 
   // ── Supplier options ─────────────────────────────────────
   _supOpts(sel='') {
-    return DB.getAll('suppliers').sort((a,b)=>a.name.localeCompare(b.name))
+    return DB.getAll('suppliers').sort((a,b)=>(a.name||'').localeCompare(b.name||''))
       .map(s=>`<option value="${s.id}" ${String(sel)===String(s.id)?'selected':''}>${Utils.escHTML(s.name)}</option>`).join('');
   },
 
@@ -1069,7 +1069,7 @@ const BLModule = {
           <label>${T.get('col_client')}</label>
           <select onchange="BLModule._filters.clientId=this.value;App.loadModule('bls')">
             <option value="all">${T.get('all')}</option>
-            ${clients.sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${String(BLModule._filters.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
+            ${clients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c=>`<option value="${c.id}" ${String(BLModule._filters.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
           </select>
         </div>
         <div class="filter-group">
@@ -1406,7 +1406,7 @@ const BLModule = {
 
   _onDirectArticleSelect(idx, val) {
     if (!val) return;
-    const art = DB.getAll('articles').find(a => a.name.toLowerCase() === val.toLowerCase());
+    const art = DB.getAll('articles').find(a => a && a.name && a.name.toLowerCase() === val.toLowerCase());
     if (art) {
       const uInp = document.getElementById(`direct-bch-unit-${idx}`);
       const pInp = document.getElementById(`direct-bch-price-${idx}`);
@@ -1590,7 +1590,19 @@ const BLModule = {
       Utils.notify(`BR réservé: ${reservedBR.ref} — En attente validation usine`, 'info', 4000);
     } catch(e) { console.error('Reserved BR error:', e); }
 
-    Utils.notify(`✅ Bon de Chargement ${ref} créé ! En attente validation usine ${sup?.name || ''}`, 'success', 5000);
+    Utils.notify(`BCH ${ref} cree - En attente validation usine ${sup?.name || ''}`, 'success', 5000);
+
+    // Notify: BCH sent to usine
+    if (typeof NotifMgr !== 'undefined') {
+      NotifMgr.add({
+        type: 'bc_created',
+        title: 'BCH envoye vers l\'usine',
+        message: `Le BCH ${ref} a ete envoye vers ${sup?.name||'l\'usine'} pour chargement. Chauffeur: ${driver||'-'} (${imm||'-'}).`,
+        link: { mod: 'bls', id: savedBCH.id },
+        data: { bcId: savedBCH.id }
+      });
+    }
+
     UI.closeModal();
     App.loadModule('bls');
 
@@ -1696,7 +1708,7 @@ const BLModule = {
     const dd = document.getElementById('bl-driver-ac');
     if (!dd) return;
     if (!val || val.length < 1) { dd.style.display='none'; return; }
-    const drivers = DB.getAll('drivers').filter(d => d.name.toLowerCase().includes((val||'').toLowerCase()));
+    const drivers = DB.getAll('drivers').filter(d => (d.name||'').toLowerCase().includes((val||'').toLowerCase()));
     if (!drivers.length) { dd.style.display='none'; return; }
     // Show ALL matching drivers (same logic as article autocomplete in BR)
     dd.innerHTML = drivers.slice(0, 10).map(d =>
@@ -1767,7 +1779,7 @@ const BLModule = {
       <label class="required">${T.get('col_client')}</label>
       <select id="bl-client" required onchange="BLModule._updateClientCredit(this.value)">
         <option value="">-- Choisir un client --</option>
-        ${DB.getAll('clients').sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}" ${String(bl?.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
+        ${DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c=>`<option value="${c.id}" ${String(bl?.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
       </select>
     </div>
     <div class="form-group mb-2" id="bl-destination-wrap">
@@ -2217,7 +2229,19 @@ const BLModule = {
     // Brain recalibrates immediately after delivery
     DB.MasterBrain.recalibrateAll();
 
-    Utils.notify((T.isRTL()?'تم تأكيد التسليم! الوثائق مقفلة.':'Livraison confirmée ! Documents verrouillés.'), 'success');
+    Utils.notify((T.isRTL()?'تم تأكيد التسليم! الوثائق مقفلة.':'Livraison confirmee ! Documents verrouilles.'), 'success');
+
+    // Notify: goods arrived from usine
+    if (typeof NotifMgr !== 'undefined') {
+      NotifMgr.add({
+        type: 'bc_validated',
+        title: 'Livraison confirmee - Marchandise arrivee',
+        message: `Le BCH ${bl.ref} a ete livre. Montant: ${Utils.fmtCurrency(Number(bl.totalTTC||0))}. Documents verrouilles.`,
+        link: { mod: 'bls', id: blId },
+        data: { bcId: blId }
+      });
+    }
+
     App.loadModule('bls');
   },
 
@@ -2257,7 +2281,7 @@ const BLModule = {
       ${(!isLocked && !isReturned)?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')}</button>`:''}
       ${Auth.canReturn(bl)?`<button class="btn btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> Retour Marchandise</button>`:''}
       ${isLocked && !isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin Modif</button>`:''}
-      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-invoice"></i> Imprimer BC (2 Volets)</button>
+      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-invoice"></i> Imprimer BCH (2 Volets)</button>
       <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road"></i> BL pour la route</button>
       <button class="btn btn-outline" style="color:#7c3aed;border-color:#a78bfa;background:rgba(139,92,246,.05)" onclick="PDFGen.exportTempoBL(${blId})"><i class="fas fa-route"></i> BL</button>
       <button class="btn btn-outline" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
@@ -2412,7 +2436,18 @@ const BLModule = {
     // 4. Recalibrate MasterBrain
     DB.MasterBrain.recalibrateAll();
 
-    Utils.notify(`✅ Bon de Retour ${brRef} généré ! Bon de Chargement archivé définitivement.`, 'success', 6000);
+    Utils.notify(`Bon de Retour ${brRef} genere - BCH archive definitivement.`, 'success', 6000);
+
+    // Notify: goods returned to usine
+    if (typeof NotifMgr !== 'undefined') {
+      NotifMgr.add({
+        type: 'bc_returned',
+        title: 'Retour Marchandise vers l\'usine',
+        message: `Le BCH ${bl.ref} a ete retourne. Bon de Retour: ${brRef}. Montant: ${Utils.fmtCurrency(amount)}.`,
+        link: { mod: 'bls', id: bl.id },
+        data: { bcId: bl.id, brRef }
+      });
+    }
     if (typeof PDFGen !== 'undefined' && PDFGen.exportBonRetour) {
       setTimeout(() => PDFGen.exportBonRetour(brDoc), 400);
     }
@@ -2621,7 +2656,7 @@ const BLModule = {
     const data = this._getHistoryData();
     const f = this._historyFilters;
     const isAdmin = Auth.isAdmin();
-    const clients = Object.values(data.cliMap).sort((a,b) => a.name.localeCompare(b.name));
+    const clients = Object.values(data.cliMap).sort((a,b) => (a.name||'').localeCompare(b.name||''));
     const tbody = data.rows.map(r => {
       let refHtml = Utils.escHTML(r.blRef);
       if (isAdmin) refHtml = `<a href="javascript:void(0)" onclick="BLModule.hideHistory();setTimeout(()=>BLModule.showEdit(${r.blId}),200)" style="text-decoration:none;color:var(--primary);font-weight:700">${refHtml}</a>`;
@@ -2828,7 +2863,7 @@ const SupplierPortalModule = {
 
               <div style="display:flex;gap:8px;align-items:center">
                 <button class="btn btn-sm btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})" title="Imprimer Bon de Chargement 2 volets">
-                  <i class="fas fa-file-pdf"></i> Imprimer BC (2 Volets)
+                  <i class="fas fa-file-pdf"></i> Imprimer BCH (2 Volets)
                 </button>
                 ${!isValidated ? `
                 <button class="btn btn-sm btn-success" style="background:#10b981;color:#fff;font-weight:700" onclick="SupplierPortalModule.promptValidation(${bc.id})">
@@ -4819,7 +4854,7 @@ const AdminCaisseModule = {
 // ═══════════════════════════════════════════════════════════════
 const SuppliersModule = {
   render() {
-    const items = DB.getAll('suppliers').sort((a,b)=>a.name.localeCompare(b.name));
+    const items = DB.getAll('suppliers').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     const brMap = {};
     DB.getAll('brs').forEach(b=>{ if(!brMap[b.supplierId]) brMap[b.supplierId]=0; brMap[b.supplierId]++; });
     return `<div style="padding:24px">
@@ -4922,7 +4957,7 @@ const SuppliersModule = {
 
 const ClientsModule = {
   render() {
-    const items = DB.getAll('clients').sort((a,b)=>a.name.localeCompare(b.name));
+    const items = DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     const brMap = {};
     DB.getAll('brs').forEach(b=>{ if(!brMap[b.supplierId]) brMap[b.supplierId]=0; brMap[b.supplierId]++; });
     return `<div style="padding:24px">
@@ -5579,7 +5614,7 @@ const EvalModule = {
         <!-- Card header -->
         <div style="padding:16px 20px;background:linear-gradient(135deg,var(--bg3),var(--bg2));border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px">
           <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;flex-shrink:0">
-            ${u.name.charAt(0).toUpperCase()}
+            ${(u.name||'?').charAt(0).toUpperCase()}
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:800;font-size:15px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Utils.escHTML(u.name)}</div>
@@ -5845,7 +5880,7 @@ const EvalModule = {
           <i class="fas fa-arrow-left"></i> Retour
         </button>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900">${u.name.charAt(0).toUpperCase()}</div>
+          <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900">${(u.name||'?').charAt(0).toUpperCase()}</div>
           <div>
             <div style="font-size:18px;font-weight:900">${Utils.escHTML(u.name)}</div>
             <div style="font-size:12px;color:var(--text3)">${Utils.escHTML(u.username)}</div>
@@ -5954,8 +5989,8 @@ const CatalogueModule = {
 
   _renderArticles() {
     const q = this._q.toLowerCase();
-    let items = DB.getAll('articles').sort((a,b) => a.name.localeCompare(b.name));
-    if (q) items = items.filter(a => a.name.toLowerCase().includes(q)||(a.unit||'').toLowerCase().includes(q));
+    let items = DB.getAll('articles').filter(a => a && a.name).sort((a,b) => (a.name||'').localeCompare(b.name||''));
+    if (q) items = items.filter(a => (a.name||'').toLowerCase().includes(q)||(a.unit||'').toLowerCase().includes(q));
 
     return `<div style="padding:24px">
     <div class="card">
@@ -6006,8 +6041,8 @@ const CatalogueModule = {
 
   _renderDrivers() {
     const q = this._q.toLowerCase();
-    let items = DB.getAll('drivers').sort((a,b) => a.name.localeCompare(b.name));
-    if (q) items = items.filter(d => d.name.toLowerCase().includes(q)||(d.imm||'').toLowerCase().includes(q));
+    let items = DB.getAll('drivers').sort((a,b) => (a.name||'').localeCompare(b.name||''));
+    if (q) items = items.filter(d => (d.name||'').toLowerCase().includes(q)||(d.imm||'').toLowerCase().includes(q));
 
     return `<div style="padding:24px">
     <div class="card">
@@ -10379,7 +10414,7 @@ const PointageModule = {
     let filteredData = userData;
     if (this._searchQ) {
       const sq = this._searchQ.toLowerCase();
-      filteredData = userData.filter(d => d.user.name.toLowerCase().includes(sq) || (d.user.jobTitle||'').toLowerCase().includes(sq) || (d.user.department||'').toLowerCase().includes(sq));
+      filteredData = userData.filter(d => (d.user.name||'').toLowerCase().includes(sq) || (d.user.jobTitle||'').toLowerCase().includes(sq) || (d.user.department||'').toLowerCase().includes(sq));
     }
     const totalPages = Math.max(1, Math.ceil(filteredData.length / this._perPage));
     if (this._page >= totalPages) this._page = totalPages - 1;
@@ -10416,6 +10451,9 @@ const PointageModule = {
           </button>
           <button class="btn btn-primary" onclick="PointageModule._exportExcel()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none">
             <i class="fas fa-file-excel"></i> Export Excel
+          </button>
+          <button class="btn" onclick="PointageModule._closePaieMonth()" style="background:linear-gradient(135deg,#dc2626,#ef4444);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
+            <i class="fas fa-cash-register"></i> Cloturer Paie du Mois
           </button>
         </div>
       </div>
@@ -10695,6 +10733,94 @@ const PointageModule = {
   },
   _openRectifModal(userId, dateStr) { return this.showRectifyModal(userId, dateStr); },
 
+  async _closePaieMonth() {
+    const m = this._month + 1;
+    const y = this._year;
+    const label = `${String(m).padStart(2,'0')}/${y}`;
+    const fiches = DB.getAll('fiches_paie').filter(f => f.month === m && f.year === y);
+    if (!fiches.length) { Utils.notify('Aucune fiche de paie pour ' + label, 'warning'); return; }
+
+    // Check if already closed
+    const existing = DB.getAll('bank_charges').find(c => c.subtype === 'Salaires & Primes RH' && c.label && c.label.includes(label));
+    if (existing) { Utils.notify('La paie du mois ' + label + ' est deja cloturee dans les charges.', 'warning'); return; }
+
+    const totalNet = Math.round(fiches.reduce((s, f) => s + (f.netPayer || 0), 0) * 100) / 100;
+    const totalBrut = Math.round(fiches.reduce((s, f) => s + (f.salaireBrut || 0), 0) * 100) / 100;
+    const totalCNAS = Math.round(fiches.reduce((s, f) => s + (f.cotisationCNAS || 0), 0) * 100) / 100;
+
+    const banks = DB.getSettings().banks || [];
+    const bankOpts = banks.map(b => `<option value="${b.id}">Banque : ${Utils.escHTML(b.name)}</option>`).join('');
+
+    const detailHtml = fiches.map(f => 
+      `<tr><td style="padding:4px 8px">${Utils.escHTML(f.userName)}</td><td style="padding:4px 8px;text-align:right">${Utils.fmtCurrency(f.netPayer||0)}</td></tr>`
+    ).join('');
+
+    const r = await Dialog.show({
+      title: 'Cloturer la Paie du Mois ' + label,
+      message: `
+        <div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Fiches generees :</span><strong>${fiches.length}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Total Brut :</span><strong>${Utils.fmtCurrency(totalBrut)}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Total CNAS :</span><strong style="color:#ef4444">-${Utils.fmtCurrency(totalCNAS)}</strong></div>
+          <div style="display:flex;justify-content:space-between;border-top:2px solid var(--primary);padding-top:6px;margin-top:6px"><span style="font-weight:800;font-size:16px">Total Net a Payer :</span><strong style="font-size:18px;color:#10b981">${Utils.fmtCurrency(totalNet)}</strong></div>
+        </div>
+        <div style="max-height:120px;overflow-y:auto;margin-bottom:12px">
+          <table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:var(--bg3)"><th style="padding:4px 8px;text-align:left">Employe</th><th style="padding:4px 8px;text-align:right">Net</th></tr></thead><tbody>${detailHtml}</tbody></table>
+        </div>
+        <div class="form-group"><label style="font-weight:700">Source de paiement</label>
+          <select id="paie_source" class="input" style="width:100%">
+            <option value="caisse">Caisse Principale (Especes)</option>
+            ${bankOpts}
+          </select>
+        </div>`,
+      type: 'info',
+      confirmText: 'Cloturer et Enregistrer la Charge',
+      cancelText: 'Annuler'
+    });
+    if (!r) return;
+
+    const source = document.getElementById('paie_source')?.value || 'caisse';
+    const u = Auth.getCurrentUser();
+
+    // Create single charge for the monthly total
+    DB.insert('bank_charges', {
+      type: 'auto',
+      subtype: 'Salaires & Primes RH',
+      label: `Masse salariale ${label} (${fiches.length} employes)`,
+      category: 'Salaires & Primes RH',
+      bankId: source,
+      amount: totalNet,
+      date: Utils.today(),
+      recurring: false,
+      createdBy: u?.id,
+      createdByName: u?.name,
+      createdAt: new Date().toISOString()
+    });
+
+    // Create the financial debit transaction
+    if (source === 'caisse') {
+      DB.insert('caisse_admin', {
+        type: 'withdrawal', source: 'charge',
+        amount: totalNet,
+        note: `Paie mois ${label} - ${fiches.length} employes`,
+        userId: u?.id, userName: u?.name,
+        date: Utils.today()
+      });
+    } else {
+      DB.insert('bank_transactions', {
+        bankId: source, type: 'payment', subtype: 'charge',
+        amount: totalNet,
+        note: `Paie mois ${label} - ${fiches.length} employes`,
+        date: Utils.today(),
+        by: u?.id, byName: u?.name,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    Utils.notify(`Paie du mois ${label} cloturee : ${Utils.fmtCurrency(totalNet)} debite de ${source === 'caisse' ? 'la caisse' : 'la banque'}`, 'success');
+    App.loadModule('pointage');
+  },
+
   _exportExcel() {
     Utils.notify("Génération de l'export Excel des présences...", "info");
     // Simple table to CSV/XLS export
@@ -10933,24 +11059,6 @@ const PointageModule = {
     data.totalHeures = att.totalHeures || 0;
 
     DB.insert('fiches_paie', data);
-
-    // Auto-register as a charge in the journal
-    const cu = Auth.getCurrentUser();
-    DB.insert('bank_charges', {
-      type: 'auto',
-      subtype: 'Salaires & Primes RH',
-      label: `Paie ${data.userName} - ${String(data.month).padStart(2,'0')}/${data.year}`,
-      category: 'Salaires & Primes RH',
-      bankId: 'caisse',
-      amount: data.netPayer,
-      date: Utils.today(),
-      recurring: true,
-      status: 'pending',
-      ficheId: data.id,
-      createdBy: cu?.id,
-      createdByName: cu?.name,
-      createdAt: new Date().toISOString()
-    });
 
     if (action === 'pdf') {
       if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
@@ -11315,7 +11423,8 @@ const ChargesModule = {
                 </td>
                 <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:right">-${Utils.fmtCurrency(c.amount)}</td>
                 <td style="padding:12px 16px;font-size:12px;color:var(--text4)">${Utils.escHTML(c.createdByName || '—')}</td>
-                <td style="padding:12px 16px;text-align:right">
+                <td style="padding:12px 16px;text-align:right;white-space:nowrap">
+                  <button class="btn btn-xs btn-outline" onclick="ChargesModule._editCharge('${c.id}')" title="Modifier"><i class="fas fa-edit"></i></button>
                   <button class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="ChargesModule._deleteCharge('${c.id}')" title="Supprimer"><i class="fas fa-trash"></i></button>
                 </td>
               </tr>`;
@@ -11725,11 +11834,140 @@ const ChargesModule = {
     App.loadModule('charges');
   },
 
+  async _editCharge(id) {
+    const charges = DB.getAll('bank_charges');
+    const c = charges.find(x => String(x.id) === String(id));
+    if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
+
+    const banks = DB.getSettings().banks || [];
+    const categories = [
+      'Loyer & Bail commercial', 'Electricite & Gaz (Sonelgaz)', 'Eau (ADE)',
+      'Telecom & Internet', 'Salaires & Primes RH', 'Assurances professionnelles',
+      'Logiciels & Cloud', 'Entretien & Maintenance', 'Impots & Taxes',
+      'Frais bancaires', 'Autre charge'
+    ];
+    const bankOpts = banks.map(b => `<option value="${b.id}" ${c.bankId===b.id?'selected':''}>${Utils.escHTML(b.name)}</option>`).join('');
+    const catOpts = categories.map(cat => `<option value="${cat}" ${c.category===cat?'selected':''}>${cat}</option>`).join('');
+
+    const r = await Dialog.show({
+      title: 'Modifier la Charge',
+      message: `
+        <div style="padding:4px 0">
+          <div class="form-group mb-2"><label style="font-weight:700">Designation</label>
+            <input type="text" id="edit_chg_label" class="input" style="width:100%" value="${Utils.escHTML(c.label||'')}">
+          </div>
+          <div class="form-group mb-2"><label style="font-weight:700">Categorie</label>
+            <select id="edit_chg_cat" class="input" style="width:100%">${catOpts}</select>
+          </div>
+          <div class="form-group mb-2"><label style="font-weight:700">Montant (DA)</label>
+            <input type="number" id="edit_chg_amount" class="input" style="width:100%;font-size:18px;font-weight:800;text-align:center" min="0" step="any" value="${c.amount||0}">
+          </div>
+          <div class="form-group mb-2"><label style="font-weight:700">Source de paiement</label>
+            <select id="edit_chg_source" class="input" style="width:100%">
+              <option value="caisse" ${c.bankId==='caisse'?'selected':''}>Caisse Principale</option>
+              ${bankOpts}
+            </select>
+          </div>
+          <div class="form-group mb-2"><label style="font-weight:700">Date</label>
+            <input type="date" id="edit_chg_date" class="input" style="width:100%" value="${c.date||Utils.today()}">
+          </div>
+        </div>`,
+      type: 'info', confirmText: 'Enregistrer', cancelText: 'Annuler'
+    });
+    if (!r) return;
+
+    const newLabel = document.getElementById('edit_chg_label')?.value?.trim();
+    const newCat = document.getElementById('edit_chg_cat')?.value;
+    const newAmount = parseFloat(document.getElementById('edit_chg_amount')?.value || 0);
+    const newSource = document.getElementById('edit_chg_source')?.value || 'caisse';
+    const newDate = document.getElementById('edit_chg_date')?.value || c.date;
+
+    if (!newLabel) { Utils.notify('Designation obligatoire', 'warning'); return; }
+    if (newAmount <= 0) { Utils.notify('Montant invalide', 'warning'); return; }
+
+    const oldAmount = c.amount || 0;
+    const oldSource = c.bankId || 'caisse';
+    const diff = newAmount - oldAmount;
+    const u = Auth.getCurrentUser();
+
+    // Update the charge record
+    c.label = newLabel;
+    c.category = newCat;
+    c.subtype = newCat;
+    c.amount = newAmount;
+    c.bankId = newSource;
+    c.date = newDate;
+    c.modifiedAt = new Date().toISOString();
+    c.modifiedBy = u?.name;
+    DB.rawSet('bank_charges', charges);
+
+    // If amount or source changed, adjust financial records
+    if (diff !== 0 || oldSource !== newSource) {
+      // Reverse old transaction
+      if (oldSource === 'caisse') {
+        DB.insert('caisse_admin', {
+          type: 'deposit', source: 'charge_reversal',
+          amount: oldAmount,
+          note: `Ajustement charge: ${newLabel} (ancien montant annule)`,
+          userId: u?.id, userName: u?.name, date: Utils.today()
+        });
+      }
+      // Create new transaction with new amount/source
+      if (newSource === 'caisse') {
+        DB.insert('caisse_admin', {
+          type: 'withdrawal', source: 'charge',
+          amount: newAmount,
+          note: `Charge modifiee: ${newLabel}`,
+          userId: u?.id, userName: u?.name, date: newDate
+        });
+      } else {
+        DB.insert('bank_transactions', {
+          bankId: newSource, type: 'payment', subtype: 'charge',
+          amount: newAmount,
+          note: `Charge modifiee: ${newLabel}`,
+          date: newDate, by: u?.id, byName: u?.name,
+          createdAt: new Date().toISOString()
+        });
+      }
+    }
+
+    Utils.notify('Charge modifiee avec succes', 'success');
+    App.loadModule('charges');
+  },
+
   async _deleteCharge(id) {
-    const ok = await Utils.confirm2('Supprimer cette charge ?', 'Cette opération retirera la charge du journal.');
+    const c = DB.getAll('bank_charges').find(x => String(x.id) === String(id));
+    if (!c) return;
+
+    const ok = await Utils.confirm2(
+      'Supprimer cette charge ?',
+      `${c.label || 'Charge'} — ${Utils.fmtCurrency(c.amount||0)}\n\nLe montant sera re-credite dans ${c.bankId === 'caisse' ? 'la caisse' : 'le compte bancaire'}.`
+    );
     if (!ok) return;
+
+    const u = Auth.getCurrentUser();
+
+    // Reverse the financial impact
+    if (c.bankId === 'caisse' || !c.bankId) {
+      DB.insert('caisse_admin', {
+        type: 'deposit', source: 'charge_reversal',
+        amount: c.amount || 0,
+        note: `Annulation charge: ${c.label || 'Sans designation'}`,
+        userId: u?.id, userName: u?.name,
+        date: Utils.today()
+      });
+    } else {
+      DB.insert('bank_transactions', {
+        bankId: c.bankId, type: 'deposit', subtype: 'charge_reversal',
+        amount: c.amount || 0,
+        note: `Annulation charge: ${c.label || 'Sans designation'}`,
+        date: Utils.today(), by: u?.id, byName: u?.name,
+        createdAt: new Date().toISOString()
+      });
+    }
+
     DB.delete('bank_charges', id);
-    Utils.notify('Charge supprimée', 'success');
+    Utils.notify('Charge supprimee et montant re-credite', 'success');
     App.loadModule('charges');
   }
 };
