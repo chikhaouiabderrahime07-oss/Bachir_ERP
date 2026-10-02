@@ -10765,12 +10765,17 @@ const PointageModule = {
 
   _reprintFiche(ficheId) {
     const f = DB.getAll('fiches_paie').find(x => String(x.id) === String(ficheId));
-    if (!f) return;
+    if (!f) { Utils.notify('Fiche introuvable', 'warning'); return; }
     if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
       PDFGen.exportFicheDePayeSimple({
-        employeeName: f.userName, department: f.department||'—', jobTitle: f.jobTitle||'—',
+        employeeName: f.userName, department: f.department||'-', jobTitle: f.jobTitle||'-',
         monthLabel: `${String(f.month).padStart(2,'0')} / ${f.year}`,
         totalDays: String(f.joursTotal), workedDays: String(f.joursTravailles),
+        daysAbsent: f.joursAbsence || 0,
+        daysMission: f.joursMission || 0,
+        daysLate: f.joursRetard || 0,
+        daysLeave: f.joursConge || 0,
+        totalHours: f.totalHeures || 0,
         baseSalary: f.salaireBase, prorata: f.prorata, overtime: f.montantHS, bonuses: f.primes,
         grossTotal: f.salaireBrut,
         deductions: [
@@ -10920,32 +10925,62 @@ const PointageModule = {
       createdAt: new Date().toISOString()
     };
 
+    // Add attendance breakdown
+    const att = this._ficheAttendance || {};
+    data.joursMission = att.joursMission || 0;
+    data.joursRetard = att.joursRetard || 0;
+    data.joursConge = att.joursConge || 0;
+    data.totalHeures = att.totalHeures || 0;
+
     DB.insert('fiches_paie', data);
+
+    // Auto-register as a charge in the journal
+    const cu = Auth.getCurrentUser();
+    DB.insert('bank_charges', {
+      type: 'auto',
+      subtype: 'Salaires & Primes RH',
+      label: `Paie ${data.userName} - ${String(data.month).padStart(2,'0')}/${data.year}`,
+      category: 'Salaires & Primes RH',
+      bankId: 'caisse',
+      amount: data.netPayer,
+      date: Utils.today(),
+      recurring: true,
+      status: 'pending',
+      ficheId: data.id,
+      createdBy: cu?.id,
+      createdByName: cu?.name,
+      createdAt: new Date().toISOString()
+    });
 
     if (action === 'pdf') {
       if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
         const pdfData = {
           employeeName: data.userName,
-          department: data.department || '—',
-          jobTitle: data.jobTitle || '—',
+          department: data.department || '-',
+          jobTitle: data.jobTitle || '-',
           monthLabel: `${String(data.month).padStart(2,'0')} / ${data.year}`,
           totalDays: String(data.joursTotal),
           workedDays: String(data.joursTravailles),
+          daysAbsent: data.joursAbsence || 0,
+          daysMission: data.joursMission || 0,
+          daysLate: data.joursRetard || 0,
+          daysLeave: data.joursConge || 0,
+          totalHours: data.totalHeures || 0,
           baseSalary: data.salaireBase,
           prorata: data.prorata,
           overtime: data.montantHS,
           bonuses: data.primes,
           grossTotal: data.salaireBrut,
           deductions: [
-            ...(data.cotisationCNAS > 0 ? [{ label: `CNAS Salarié (${data.tauxCNAS}%)`, amount: data.cotisationCNAS }] : []),
-            ...(data.irg > 0 ? [{ label: 'IRG (Impôt sur revenu)', amount: data.irg }] : []),
+            ...(data.cotisationCNAS > 0 ? [{ label: `CNAS Salarie (${data.tauxCNAS}%)`, amount: data.cotisationCNAS }] : []),
+            ...(data.irg > 0 ? [{ label: 'IRG (Impot sur revenu)', amount: data.irg }] : []),
             ...(data.retenues > 0 ? [{ label: 'Autres retenues', amount: data.retenues }] : []),
           ],
           totalDeductions: Math.round((data.cotisationCNAS + data.irg + data.retenues) * 100) / 100,
           netPay: data.netPayer,
         };
         PDFGen.exportFicheDePayeSimple(pdfData);
-        Utils.notify("✅ Fiche de paie générée et exportée en PDF !", "success");
+        Utils.notify("Fiche de paie generee et exportee en PDF !", "success");
       } else {
         Utils.notify("Fiche enregistrée (générateur PDF en cours de chargement).", "info");
       }
@@ -10980,6 +11015,10 @@ const PointageModule = {
     
     let joursTravailles = 0;
     let joursAbsence = 0;
+    let joursMission = 0;
+    let joursRetard = 0;
+    let joursConge = 0;
+    let totalHeures = 0;
     
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${ficheYear}-${String(ficheMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
@@ -10988,14 +11027,27 @@ const PointageModule = {
       
       const rect = rects.find(r => r.date === dateStr);
       if (rect) {
-        if (rect.status === 'present' || rect.status === 'mission' || rect.status === 'late') { joursTravailles++; }
+        if (rect.status === 'present') { joursTravailles++; totalHeures += Number(rect.hours || 8); }
+        else if (rect.status === 'mission') { joursTravailles++; joursMission++; totalHeures += Number(rect.hours || 8); }
+        else if (rect.status === 'late') { joursTravailles++; joursRetard++; totalHeures += Number(rect.hours || 4); }
         else if (rect.status === 'absent_unjustified' || rect.status === 'absent_justified') { joursAbsence++; }
+        else if (rect.status === 'conge') { joursConge++; }
       } else {
-        const hasLog = logs.some(l => (l.date || '').startsWith(dateStr) || (l.loginTime || '').startsWith(dateStr));
-        if (hasLog) { joursTravailles++; }
+        const dayLogs = logs.filter(l => (l.date || '').startsWith(dateStr) || (l.loginTime || '').startsWith(dateStr));
+        if (dayLogs.length > 0) {
+          joursTravailles++;
+          let hrs = 0;
+          dayLogs.forEach(log => {
+            if (log.loginTime && log.logoutTime) hrs += (new Date(log.logoutTime) - new Date(log.loginTime)) / 3600000;
+            else if (log.loginTime) hrs += 8;
+          });
+          totalHeures += Math.min(Math.round(hrs * 10) / 10, 24);
+        }
         else if (!isWeekend && dateStr <= Utils.today()) { joursAbsence++; }
       }
     }
+    totalHeures = Math.round(totalHeures * 10) / 10;
+    this._ficheAttendance = { joursTravailles, joursAbsence, joursMission, joursRetard, joursConge, totalHeures };
 
     const salaireBase = u.baseSalary || u.salary || rhSettings.salaireDefaut || 45000;
     const tauxHoraireDefault = u.tauxHoraire || rhSettings.tauxHSDefaut || Math.round((salaireBase / 173.33) * 100) / 100;

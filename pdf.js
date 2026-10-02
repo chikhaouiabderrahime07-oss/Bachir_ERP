@@ -1656,11 +1656,11 @@
       };
       rowF('Type opération :',  title);
       rowF('Compte bancaire :',  this._t(bank?.name||'?') + (bank?.accountNum?' ('+this._t(bank.accountNum)+')':''));
-      rowF('Direction :',        isD?'Entrée (+)':'Sortie (−)');
+      rowF('Direction :',        isD?'Entrée (+)':'Sortie (-)');
       if (tx.supplierId) { const sup=DB.getById('suppliers',tx.supplierId); rowF('Fournisseur :',this._t(sup?.name||'?')); }
       rowF('Note :',             this._t(tx.note||'/'));
       cy+=2;
-      rowF('MONTANT :',          (isD?'+ ':'− ')+this._fmtMoney(montant), true);
+      rowF('MONTANT :',          (isD?'+ ':'- ')+this._fmtMoney(montant), true);
       const actualCardH = Math.max(cardH, (cy - y) + 4);
       y+=actualCardH+6;
 
@@ -1755,56 +1755,84 @@
     async exportFicheDePayeSimple(data) { try{ await this._ensureArabicFont(); this._exportFicheDePayeSimple(data); }catch(e){console.error(e);this._notify('Erreur Fiche de Paie: '+e.message,'error');} },
 
     _exportFicheDePayeSimple(data) {
-      if (!data) { this._notify('Données manquantes','error'); return; }
+      if (!data) { this._notify('Donnees manquantes','error'); return; }
       const s   = this._settings();
       const doc = this._newDoc();
 
-      /* ── Company header ─────────────────────────────── */
+      /* -- Company header -- */
       let y = this._drawCompanyHeader(doc, s, MT);
 
-      /* ── Banner ─────────────────────────────────────── */
-      y = this._drawBanner(doc, `FICHE DE PAIE — ${(data.monthLabel || '').toUpperCase()}`, y);
+      /* -- Banner -- */
+      y = this._drawBanner(doc, `FICHE DE PAIE - ${(data.monthLabel || '').toUpperCase()}`, y);
       y += 4;
 
-      /* ── Employee Info Strip ────────────────────────── */
-      this._rect(doc, ML, y, PW-ML-MR, 28, C.LIGHT, C.BORDER);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.TEXT);
-      const col1 = ML+4, col2 = ML+85;
-      doc.text('Employé :', col1, y+7);
-      doc.text('Département :', col1, y+14);
-      doc.text('Poste :', col1, y+21);
-      doc.text('Période :', col2, y+7);
-      doc.text('Jours Ouvrables :', col2, y+14);
-      doc.text('Jours Travaillés :', col2, y+21);
+      /* -- Employee Info Strip -- */
+      this._rect(doc, ML, y, CW, 34, C.LIGHT, C.BORDER);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc, C.TEXT);
+      const col1 = ML+4, col2 = ML+100;
+      doc.text('Employe :', col1, y+6);
+      doc.text('Departement :', col1, y+12);
+      doc.text('Poste :', col1, y+18);
+      doc.text('Periode :', col2, y+6);
+      doc.text('Jours Ouvrables :', col2, y+12);
+      doc.text('Jours Travailles :', col2, y+18);
       doc.setFont('helvetica','normal');
-      doc.text(String(data.employeeName || '—'), col1+28, y+7);
-      doc.text(String(data.department || '—'), col1+32, y+14);
-      doc.text(String(data.jobTitle || '—'), col1+18, y+21);
-      doc.text(String(data.monthLabel || '—'), col2+22, y+7);
-      doc.text(String(data.totalDays || '—'), col2+38, y+14);
-      doc.text(String(data.workedDays || '—'), col2+38, y+21);
-      y += 32;
+      doc.text(String(data.employeeName || '-'), col1+26, y+6);
+      doc.text(String(data.department || '-'), col1+30, y+12);
+      doc.text(String(data.jobTitle || '-'), col1+16, y+18);
+      doc.text(String(data.monthLabel || '-'), col2+20, y+6);
+      doc.text(String(data.totalDays || '-'), col2+36, y+12);
+      doc.text(String(data.workedDays || '-'), col2+36, y+18);
 
-      /* ── Salary Breakdown Table ─────────────────────── */
+      // Attendance breakdown row
+      if (data.daysAbsent !== undefined || data.daysMission !== undefined || data.daysLeave !== undefined) {
+        doc.setFont('helvetica','bold'); doc.setFontSize(8); this._tc(doc, C.TEXT);
+        doc.text('Detail Presence :', col1, y+26);
+        doc.setFont('helvetica','normal'); doc.setFontSize(8);
+        const parts = [];
+        if (data.workedDays) parts.push(`Present: ${data.workedDays}j`);
+        if (data.daysAbsent > 0) parts.push(`Absent: ${data.daysAbsent}j`);
+        if (data.daysMission > 0) parts.push(`Mission: ${data.daysMission}j`);
+        if (data.daysLeave > 0) parts.push(`Conge: ${data.daysLeave}j`);
+        if (data.daysLate > 0) parts.push(`Retard: ${data.daysLate}j`);
+        this._tc(doc, [71, 85, 105]);
+        doc.text(parts.join('  |  ') || '-', col1+36, y+26);
+        doc.setFont('helvetica','bold'); doc.setFontSize(8); this._tc(doc, [71, 85, 105]);
+        doc.text('Heures Totales :', col2, y+26);
+        doc.setFont('helvetica','normal');
+        doc.text(String(data.totalHours || '-') + 'h', col2+32, y+26);
+        y += 38;
+      } else {
+        y += 22;
+      }
+
+      /* -- Salary Breakdown Table -- */
       const rows = [
         { label: 'Salaire de Base', amount: data.baseSalary || 0 },
-        { label: 'Prorata Jours Travaillés', amount: data.prorata || 0 },
-        { label: 'Heures Supplémentaires', amount: data.overtime || 0 },
-        { label: 'Primes & Indemnités', amount: data.bonuses || 0 },
-        { label: 'Total Brut', amount: data.grossTotal || 0, bold: true },
+        { label: 'Prorata Jours Travailles', amount: data.prorata || 0 },
       ];
+      if ((data.overtime || 0) > 0) rows.push({ label: 'Heures Supplementaires', amount: data.overtime });
+      if ((data.bonuses || 0) > 0) rows.push({ label: 'Primes et Indemnites', amount: data.bonuses });
+      rows.push({ label: 'Total Brut', amount: data.grossTotal || 0, bold: true });
+
+      // Only add deductions that are > 0
       if (data.deductions && data.deductions.length) {
         data.deductions.forEach(d => {
-          rows.push({ label: `Retenue : ${d.label}`, amount: -(d.amount || 0), isDeduction: true });
+          if (d.amount > 0) {
+            rows.push({ label: 'Retenue : ' + d.label, amount: d.amount, isDeduction: true });
+          }
         });
       }
-      rows.push({ label: 'Total Retenues', amount: -(data.totalDeductions || 0), bold: true, isDeduction: true });
-      rows.push({ label: 'NET À PAYER', amount: data.netPay || 0, bold: true, isNet: true });
+      const totalDed = data.totalDeductions || 0;
+      if (totalDed > 0) {
+        rows.push({ label: 'Total Retenues', amount: totalDed, bold: true, isDeduction: true });
+      }
+      rows.push({ label: 'NET A PAYER', amount: data.netPay || 0, bold: true, isNet: true });
 
       // Table header
-      this._rect(doc, ML, y, PW-ML-MR, 8, C.PRIMARY, C.PRIMARY);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,[255,255,255]);
-      doc.text('Désignation', ML+4, y+6);
+      this._rect(doc, ML, y, CW, 8, C.PRIMARY, C.PRIMARY);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc, C.WHITE);
+      doc.text('Designation', ML+4, y+6);
       doc.text('Montant (DA)', PW-MR-4, y+6, {align:'right'});
       y += 8;
 
@@ -1813,31 +1841,32 @@
         const bgColor = row.isNet ? [13,148,136] : (i%2===0 ? [255,255,255] : C.LIGHT);
         const textColor = row.isNet ? [255,255,255] : (row.isDeduction ? [220,38,38] : C.TEXT);
         const rowH = row.isNet ? 10 : 7;
-        this._rect(doc, ML, y, PW-ML-MR, rowH, bgColor, C.BORDER);
+        this._rect(doc, ML, y, CW, rowH, bgColor, C.BORDER);
         doc.setFont('helvetica', row.bold ? 'bold' : 'normal');
         doc.setFontSize(row.isNet ? 11 : 9);
         this._tc(doc, textColor);
         doc.text(row.label, ML+4, y + (rowH === 10 ? 7 : 5));
-        const amtStr = this._fmtMoney(Math.abs(row.amount));
-        const prefix = row.isDeduction && row.amount !== 0 ? '−' : '';
+        const amtStr = this._fmtMoney(Math.abs(row.isDeduction ? row.amount : row.amount));
+        // Use regular hyphen-minus (ASCII 0x2D) instead of U+2212 which doesn't render in Helvetica
+        const prefix = row.isDeduction && row.amount > 0 ? '- ' : '';
         doc.text(prefix + amtStr, PW-MR-4, y + (rowH === 10 ? 7 : 5), {align:'right'});
         y += rowH;
       });
 
       y += 8;
 
-      /* ── Footer Note ────────────────────────────────── */
-      this._rect(doc, ML, y, PW-ML-MR, 12, [255,251,235], [251,191,36]);
+      /* -- Footer Note -- */
+      this._rect(doc, ML, y, CW, 12, [255,251,235], [251,191,36]);
       doc.setFont('helvetica','italic'); doc.setFontSize(8); this._tc(doc,[146,64,14]);
-      doc.text('Arrêtée la présente fiche de paie à la somme de : ' + (data.netPayWords || this._amountWords(data.netPay || 0)), ML+4, y+5);
-      doc.text('Cette fiche est délivrée pour servir et valoir ce que de droit.', ML+4, y+10);
+      doc.text('Arretee la presente fiche de paie a la somme de : ' + this._fmtMoney(data.netPay || 0), ML+4, y+5);
+      doc.text('Cette fiche est delivree pour servir et valoir ce que de droit.', ML+4, y+10);
       y += 16;
 
-      /* ── Signatures ─────────────────────────────────── */
+      /* -- Signatures -- */
       this._drawSigBlock(doc, [
-        {label:'L\'Employé',  sub:'Signature'},
-        {label:'Le Responsable RH',  sub:'Signature & Cachet'},
-        {label:'Le Directeur',  sub:'Signature & Cachet'},
+        {label:'L\'Employe',  sub:'Signature'},
+        {label:'Le Responsable RH',  sub:'Signature et Cachet'},
+        {label:'Le Directeur',  sub:'Signature et Cachet'},
       ], Math.max(y+4,PH-62), 44);
 
       this._drawFooter(doc,1,1);
