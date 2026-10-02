@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    PDF.JS — PROFESSIONAL DOCUMENT GENERATOR v15.0
    Exact match: BC_DG_BC_006_2026-7.pdf reference
    + Arabic font support (Amiri TTF auto-loaded from CDN)
@@ -30,6 +30,8 @@
     GRAY_TXT:     [100,116,139],
     LINE:         [203,213,225],
     BG_INFO:      [248,250,252],
+    TEXT:         [15,  23,  42],
+    BORDER:       [203,213,225],
   };
 
   /* ── Page geometry ──────────────────────────────────────── */
@@ -1243,21 +1245,25 @@
       // ── DRAW VOLET 1 (Top Half: Chauffeur / Transporteur) ──
       drawSingleVolet(5, 1, 'CHAUFFEUR / TRANSPORTEUR', '(À remettre au chauffeur pour circulation)', [13, 148, 136]);
 
-      // ── CUT / PERFORATION LINE AT Y = 146.5mm ──
-      doc.setDrawColor(148, 163, 184);
-      doc.setLineDash([2, 2], 0);
-      doc.line(ML, 146.5, ML + CW, 146.5);
-      doc.setLineDash([]); // reset to solid
+      // ── CUT / PERFORATION LINE (prominent for A4 cut) ──
+      const cutY = 147;
+      doc.setDrawColor(120, 130, 150);
+      doc.setLineWidth(0.4);
+      doc.setLineDash([3, 2], 0);
+      doc.line(ML, cutY - 1.5, ML + CW, cutY - 1.5);
+      doc.line(ML, cutY + 1.5, ML + CW, cutY + 1.5);
+      doc.setLineDash([]);
+      doc.setLineWidth(0.2);
 
       doc.setFillColor(255, 255, 255);
-      doc.rect(ML + (CW - 96)/2, 144.5, 96, 4, 'F');
+      doc.rect(ML + (CW - 110)/2, cutY - 3, 110, 6, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      this._tc(doc, [100, 116, 139]);
-      doc.text("✂   LIGNE DE COUPE / SÉPARATION DES DEUX VOLETS   ✂", ML + CW/2, 147.2, { align: 'center' });
+      doc.setFontSize(7.5);
+      this._tc(doc, [80, 90, 110]);
+      doc.text('--- DECOUPER ICI --- LIGNE DE SEPARATION DES DEUX VOLETS --- DECOUPER ICI ---', ML + CW/2, cutY + 1, { align: 'center' });
 
       // ── DRAW VOLET 2 (Bottom Half: Usine / Fournisseur Chargement) ──
-      drawSingleVolet(150.5, 2, 'USINE / FOURNISSEUR (CHARGEMENT & SOUCHE)', '(À conserver par l\'usine après validation)', [30, 41, 59]);
+      drawSingleVolet(152, 2, 'USINE / FOURNISSEUR (CHARGEMENT & SOUCHE)', '(À conserver par l\'usine après validation)', [30, 41, 59]);
 
       // Strictly enforce 1 single page!
       while (doc.getNumberOfPages() > 1) {
@@ -1280,7 +1286,6 @@
       }
       if(!bl) { this._notify('BL introuvable','error'); return; }
       const br  = bl.brId ? DB.getById('brs',bl.brId) : (bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null);
-      const bch = bl.bchId ? DB.getById('bls', bl.bchId) : (bl.linkedBchId ? DB.getById('bls', bl.linkedBchId) : null);
       const sup = br ? (DB.getById('suppliers',br.supplierId)||{}) : (bl.supplierId ? (DB.getById('suppliers', bl.supplierId)||{}) : {});
       const cli = bl.clientId ? DB.getById('clients',bl.clientId)||{} : {};
       const s   = this._settings();
@@ -1291,279 +1296,216 @@
       const timbre   = bl.timbreAmount||(br?br.timbreAmount:0)||0;
       const totalTTC = bl.totalTTC||(br?br.totalTTC:0)||0;
 
-      // References
-      const blRef = this._t(bl.ref || `BL-${String(bl.id).padStart(4,'0')}`);
-      // BCH reference: try linked BCH record, then bl.bchRef (only if it looks like a real ref), then derive from BL ref
-      let bchRef = '/';
-      if (bch && bch.ref) { bchRef = this._t(bch.ref); }
-      else if (bl.bchRef && /^BCH/i.test(bl.bchRef)) { bchRef = this._t(bl.bchRef); }
-      else if (bl.ref && /^BCH/i.test(bl.ref)) { bchRef = this._t(bl.ref); }
-      else { bchRef = blRef.replace(/^BL/i, 'BCH'); }
+      // References — BCH ref for traceability
+      const bchRef = this._t(bl.ref || `BCH/${String(bl.id).padStart(4,'0')}`);
       const brRef = br ? this._t(br.ref) : (bl.linkedBrId ? `BR/${bl.linkedBrId}` : (bl.brId ? `BR/${bl.brId}` : '/'));
 
-      // Security hash linking top and bottom volets
-      const secHash = Math.abs((Number(bl.id || 1) * 31337 + Math.round(totalTTC * 10)) % 899999 + 100000);
-      const secCode = `SEC-${secHash}-${blRef.replace(/[^a-zA-Z0-9]/g, '').slice(-6)}`;
+      let y = MT;
 
-      const drawSingleBLVolet = (startY, voletNum, voletTitle, voletSub, badgeColor) => {
-        let y = startY;
-
-        // 1. Company Header with Logos (Compact 12mm)
-        const SLOT_W = 24, SLOT_H = 12;
-        const drawLogo = (src, sx) => {
-          if (!src) return;
-          try {
-            const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/gif') ? 'GIF' : 'JPEG';
-            const props = doc.getImageProperties ? doc.getImageProperties(src) : null;
-            const ar = (props && props.width && props.height) ? props.width / props.height : 1;
-            let w = SLOT_W, h = w / ar;
-            if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
-            if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
-            doc.addImage(src, fmt, sx + (SLOT_W - w) / 2, y + (SLOT_H - h) / 2, w, h, undefined, 'FAST');
-          } catch(e) {}
-        };
-        drawLogo(s.logoLeft, ML);
-        drawLogo(s.logoRight, PW - MR - SLOT_W);
-
-        const cName = this._t(s.companyName || '/');
-        if (this._hasAr(cName) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
-        else doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
-        this._tc(doc, C.PRIMARY || [13, 148, 136]);
-        doc.text(cName.toUpperCase(), PW / 2, y + 4.5, { align: 'center' });
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        this._tc(doc, [71, 85, 105]);
-        const leg1 = [s.nif && `NIF : ${s.nif}`, s.rc && `RC : ${s.rc}`, s.nis && `NIS : ${s.nis}`, s.ai && `AI : ${s.ai}`].filter(Boolean).join('  |  ');
-        if (leg1) doc.text(leg1, PW / 2, y + 8, { align: 'center' });
-        const leg2 = [s.address && `Adresse : ${this._t(s.address)}`, s.phone && `Tél : ${s.phone}`].filter(Boolean).join('  |  ');
-        if (leg2) doc.text(leg2, PW / 2, y + 11.5, { align: 'center' });
-        y += 13.5;
-
-        // 2. Banner with Title & Volet Badge (7mm)
-        doc.setFillColor(241, 245, 249);
-        doc.roundedRect(ML, y, CW, 7, 1.2, 1.2, 'F');
-        doc.setDrawColor(203, 213, 225);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(ML, y, CW, 7, 1.2, 1.2, 'S');
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        this._tc(doc, [15, 23, 42]);
-        doc.text(isRoadOnly ? 'BON DE LIVRAISON (POUR LA ROUTE)' : 'BON DE LIVRAISON', ML + 4, y + 4.8);
-
-        // Volet badge on the right
-        doc.setFillColor(...badgeColor);
-        doc.roundedRect(ML + CW - 78, y + 1, 76, 5, 1, 1, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        this._tc(doc, [255, 255, 255]);
-        doc.text(`VOLET ${voletNum} : ${voletTitle}`, ML + CW - 40, y + 4.3, { align: 'center' });
-        y += 8;
-
-        // 3. Info Strip: N° BL, Date, N° BCH lié, N° BR lié, Chauffeur, Immat (8mm)
-        this._rect(doc, ML, y, CW, 7.5, [248, 250, 252], [226, 232, 240]);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
-        this._tc(doc, [15, 23, 42]);
-        const colW = CW / 6;
-        doc.text(`N° BL :`, ML + 2, y + 3.2);
-        doc.setFont('helvetica', 'normal');
-        doc.text(blRef, ML + 2, y + 6.2);
-
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Date :`, ML + colW + 2, y + 3.2);
-        doc.setFont('helvetica', 'normal');
-        doc.text(this._fmtDate(bl.date), ML + colW + 2, y + 6.2);
-
-        doc.setFont('helvetica', 'bold');
-        doc.text(`BCH Lié :`, ML + colW*2 + 2, y + 3.2);
-        doc.setFont('helvetica', 'normal');
-        doc.text(bchRef, ML + colW*2 + 2, y + 6.2);
-
-        doc.setFont('helvetica', 'bold');
-        doc.text(`BR Lié :`, ML + colW*3 + 2, y + 3.2);
-        doc.setFont('helvetica', 'normal');
-        doc.text(brRef, ML + colW*3 + 2, y + 6.2);
-
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Chauffeur :`, ML + colW*4 + 2, y + 3.2);
-        doc.setFont('helvetica', 'normal');
-        doc.text(this._t((bl.driverName || '/').slice(0, 18)), ML + colW*4 + 2, y + 6.2);
-
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Immat :`, ML + colW*5 + 2, y + 3.2);
-        doc.setFont('helvetica', 'normal');
-        doc.text(this._t(bl.truckIMM || '/'), ML + colW*5 + 2, y + 6.2);
-        y += 9;
-
-        // 4. Entity boxes (Fournisseur Origine & Client Destinataire) — 17mm
-        const gap = 3, cw2 = (CW - gap) / 2, boxH = 16.5;
-        // Left: Fournisseur
-        const supName = this._t(s.companyName || sup.name || 'Fournisseur');
-        this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
-        doc.setFillColor(241, 245, 249);
-        doc.rect(ML, y, cw2, 4, 'F');
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [51, 65, 85]);
-        doc.text('FOURNISSEUR / EXPÉDITEUR', ML + 2, y + 3);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        doc.text(supName.slice(0, 36), ML + 2, y + 7.5);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [71, 85, 105]);
-        doc.text(`Tél : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 2, y + 11);
-        doc.text(`Adresse : ${this._t(s.address || '-').slice(0, 42)}`, ML + 2, y + 14.5);
-
-        // Right: Client Destinataire
-        const cliName = this._t(cli.name || bl.clientName || 'Client Destinataire');
-        const wilayaDest = bl.destinationAddress || bl.wilaya || cli.address || '-';
-        this._rect(doc, ML + cw2 + gap, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
-        doc.setFillColor(241, 245, 249);
-        doc.rect(ML + cw2 + gap, y, cw2, 4, 'F');
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [51, 65, 85]);
-        doc.text('CLIENT / DESTINATAIRE', ML + cw2 + gap + 2, y + 3);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        doc.text(cliName.slice(0, 36), ML + cw2 + gap + 2, y + 7.5);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [71, 85, 105]);
-        doc.text(`Dest. livr. : ${this._t(wilayaDest).slice(0, 38)}`, ML + cw2 + gap + 2, y + 11);
-        doc.text(`NIF : ${cli.nif || '-'}  |  Tél : ${cli.phone || '-'}`, ML + cw2 + gap + 2, y + 14.5);
-        y += boxH + 2;
-
-        // 5. Items Table (6 cols: N°, DÉSIGNATION, UNITÉ, QTÉ, P.U. HT, TOTAL HT)
-        const colDef = [
-          { label: 'N°', w: 10, align: 'center' },
-          { label: 'DÉSIGNATION DES FOURNITURES / MARCHANDISES', w: 82, align: 'left' },
-          { label: 'UNITÉ', w: 14, align: 'center' },
-          { label: 'QTÉ', w: 20, align: 'center' },
-          { label: 'P.U. HT', w: 32, align: 'right' },
-          { label: 'TOTAL HT', w: 36, align: 'right' }
-        ];
-
-        // Table Header
-        this._rect(doc, ML, y, CW, 5, C.PRIMARY || [13, 148, 136], C.PRIMARY || [13, 148, 136]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [255, 255, 255]);
-        let cx = ML;
-        colDef.forEach(c => {
-          if (c.align === 'center') doc.text(c.label, cx + c.w / 2, y + 3.6, { align: 'center' });
-          else if (c.align === 'right') doc.text(c.label, cx + c.w - 2, y + 3.6, { align: 'right' });
-          else doc.text(c.label, cx + 2, y + 3.6);
-          cx += c.w;
-        });
-        y += 5;
-
-        // Table Rows (max 4 displayed cleanly in volet)
-        const maxRows = 4;
-        const visibleLines = lines.slice(0, maxRows);
-        const rowH = 4.8;
-        visibleLines.forEach((l, i) => {
-          const qty = Number(l.qtyDelivered || l.qty || 0);
-          const pu = Number(l.price || 0);
-          const disc = Number(l.disc || 0);
-          const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
-
-          const rowBg = i % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
-          this._rect(doc, ML, y, CW, rowH, rowBg, [226, 232, 240]);
-
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [30, 41, 59]);
-          let rx = ML;
-          // N°
-          doc.text(String(i + 1).padStart(2, '0'), rx + 5, y + 3.4, { align: 'center' });
-          rx += 10;
-          // Désignation
-          doc.text(this._t(l.designation || 'Marchandise').slice(0, 46), rx + 2, y + 3.4);
-          rx += 82;
-          // Unité
-          doc.text(this._t(l.unit || 'U'), rx + 7, y + 3.4, { align: 'center' });
-          rx += 14;
-          // Qté (Clean space formatting!)
-          doc.setFont('helvetica', 'bold');
-          doc.text(this._fmtNum(qty), rx + 10, y + 3.4, { align: 'center' });
-          rx += 20;
-          // P.U. HT
-          doc.setFont('helvetica', 'normal');
-          doc.text(this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''), rx + 30, y + 3.4, { align: 'right' });
-          rx += 32;
-          // Total HT
-          doc.setFont('helvetica', 'bold');
-          doc.text(this._fmtMoney(tot), rx + 34, y + 3.4, { align: 'right' });
-          y += rowH;
-        });
-
-        if (!visibleLines.length) {
-          this._rect(doc, ML, y, CW, rowH, [255, 255, 255], [226, 232, 240]);
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [148, 163, 184]);
-          doc.text('01', ML + 5, y + 3.4, { align: 'center' });
-          doc.text('Marchandise diverse', ML + 12, y + 3.4);
-          doc.text('U', ML + 99, y + 3.4, { align: 'center' });
-          doc.text('0', ML + 116, y + 3.4, { align: 'center' });
-          doc.text('0,00 DA', ML + 146, y + 3.4, { align: 'right' });
-          doc.text('0,00 DA', ML + 188, y + 3.4, { align: 'right' });
-          y += rowH;
-        }
-
-        // Totals Summary Bar (6mm)
-        this._rect(doc, ML, y, CW, 5.5, [241, 245, 249], [203, 213, 225]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        doc.text(`TOTAL HT : ${this._fmtMoney(totalHT)}`, ML + 4, y + 3.8);
-        if (timbre > 0) doc.text(`TIMBRE : ${this._fmtMoney(timbre)}`, ML + 75, y + 3.8);
-        doc.setFontSize(7.5); this._tc(doc, C.PRIMARY || [13, 148, 136]);
-        doc.text(`TOTAL TTC : ${this._fmtMoney(totalTTC)}`, ML + CW - 4, y + 3.8, { align: 'right' });
-        y += 6.8;
-
-        // 6. Anti-Counterfeit Verification Strip linking both volets (4.5mm)
-        this._rect(doc, ML, y, CW, 4.2, [254, 243, 199], [251, 191, 36]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5); this._tc(doc, [146, 64, 14]);
-        doc.text(`SECURITE ANTI-FRAUDE | CODE : ${secCode} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIE`, ML + CW / 2, y + 3, { align: 'center' });
-        y += 5.2;
-
-        // 7. Signature Blocks (3 boxes: Direction Générale, Chauffeur, Client Destinataire) — 13mm
-        const sigW = (CW - 4) / 3, sigH = 12.5;
-        // Sig 1: Direction
-        this._rect(doc, ML, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6); this._tc(doc, [51, 65, 85]);
-        doc.text('DIRECTION GÉNÉRALE', ML + 2, y + 3);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
-        doc.text('Cachet & Signature', ML + 2, y + sigH - 1.5);
-
-        // Sig 2: Chauffeur
-        this._rect(doc, ML + sigW + 2, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6); this._tc(doc, [51, 65, 85]);
-        doc.text('LE CHAUFFEUR / LIVREUR', ML + sigW + 4, y + 3);
-        doc.setFont('helvetica', 'italic'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
-        doc.text('« Pris en charge pour livraison »', ML + sigW + 4, y + sigH - 1.5);
-
-        // Sig 3: Client Destinataire
-        this._rect(doc, ML + (sigW + 2) * 2, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6); this._tc(doc, [51, 65, 85]);
-        doc.text('LE CLIENT / DESTINATAIRE', ML + (sigW + 2) * 2 + 2, y + 3);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
-        doc.text('Date, Signature & Cachet Réception', ML + (sigW + 2) * 2 + 2, y + sigH - 1.5);
+      // ── 1. Company Header with Logos ──
+      const SLOT_W = 28, SLOT_H = 16;
+      const drawLogo = (src, sx) => {
+        if (!src) return;
+        try {
+          const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/gif') ? 'GIF' : 'JPEG';
+          const props = doc.getImageProperties ? doc.getImageProperties(src) : null;
+          const ar = (props && props.width && props.height) ? props.width / props.height : 1;
+          let w = SLOT_W, h = w / ar;
+          if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
+          if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
+          doc.addImage(src, fmt, sx + (SLOT_W - w) / 2, y + (SLOT_H - h) / 2, w, h, undefined, 'FAST');
+        } catch(e) {}
       };
+      drawLogo(s.logoLeft, ML);
+      drawLogo(s.logoRight, PW - MR - SLOT_W);
 
-      // ── DRAW VOLET 1 (Top Half: Client / Destinataire) ──
-      drawSingleBLVolet(5, 1, 'EXEMPLAIRE CLIENT / RÉCEPTION', '(À remettre au client destinataire à la livraison)', [13, 148, 136]);
+      const cName = this._t(s.companyName || '/');
+      if (this._hasAr(cName) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+      else doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      this._tc(doc, C.PRIMARY);
+      doc.text(cName.toUpperCase(), PW / 2, y + 6, { align: 'center' });
 
-      // ── CUT / PERFORATION LINE AT Y = 146.5mm ──
-      doc.setDrawColor(148, 163, 184);
-      doc.setLineDash([2, 2], 0);
-      doc.line(ML, 146.5, ML + CW, 146.5);
-      doc.setLineDash([]); // reset to solid
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      this._tc(doc, [71, 85, 105]);
+      const leg1 = [s.nif && `NIF : ${s.nif}`, s.rc && `RC : ${s.rc}`, s.nis && `NIS : ${s.nis}`, s.ai && `AI : ${s.ai}`].filter(Boolean).join('  |  ');
+      if (leg1) doc.text(leg1, PW / 2, y + 10.5, { align: 'center' });
+      const leg2 = [s.address && `Adresse : ${this._t(s.address)}`, s.phone && `Tel : ${s.phone}`].filter(Boolean).join('  |  ');
+      if (leg2) doc.text(leg2, PW / 2, y + 14.5, { align: 'center' });
+      y += 18;
 
-      doc.setFillColor(255, 255, 255);
-      doc.rect(ML + (CW - 96)/2, 144.5, 96, 4, 'F');
+      // ── 2. Title Banner ──
+      doc.setFillColor(...C.PRIMARY);
+      doc.roundedRect(ML, y, CW, 10, 1.5, 1.5, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      this._tc(doc, [100, 116, 139]);
-      doc.text("✂   LIGNE DE COUPE / SÉPARATION DES DEUX VOLETS   ✂", ML + CW/2, 147.2, { align: 'center' });
+      doc.setFontSize(13);
+      this._tc(doc, C.WHITE);
+      doc.text(isRoadOnly ? 'BON DE LIVRAISON — POUR LA ROUTE' : 'BON DE LIVRAISON', PW / 2, y + 7, { align: 'center' });
+      y += 12;
 
-      // ── DRAW VOLET 2 (Bottom Half: Souche / Transporteur Archives) ──
-      drawSingleBLVolet(150.5, 2, 'EXEMPLAIRE SOUCHE / TRANSPORTEUR', '(Retour signé pour archives comptabilité)', [30, 41, 59]);
+      // ── 3. Info Strip (N° BCH, Date, BR Ref, Chauffeur, Immat) ──
+      this._rect(doc, ML, y, CW, 10, [248, 250, 252], [226, 232, 240]);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      this._tc(doc, [15, 23, 42]);
+      const iColW = CW / 5;
+      doc.text('N BCH :', ML + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(bchRef, ML + 2, y + 8);
 
-      // Strictly enforce 1 single page!
-      while (doc.getNumberOfPages() > 1) {
-        doc.deletePage(doc.getNumberOfPages());
+      doc.setFont('helvetica', 'bold');
+      doc.text('Date :', ML + iColW + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(this._fmtDate(bl.date), ML + iColW + 2, y + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('BR Ref :', ML + iColW*2 + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(brRef, ML + iColW*2 + 2, y + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Chauffeur :', ML + iColW*3 + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(this._t((bl.driverName || '/').slice(0, 20)), ML + iColW*3 + 2, y + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Immat :', ML + iColW*4 + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(this._t(bl.truckIMM || '/'), ML + iColW*4 + 2, y + 8);
+      y += 12;
+
+      // ── 4. Entity boxes (Fournisseur & Client) ──
+      const gap = 4, cw2 = (CW - gap) / 2, boxH = 22;
+      // Left: Fournisseur
+      const supName = this._t(s.companyName || sup.name || 'Fournisseur');
+      this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
+      doc.setFillColor(241, 245, 249);
+      doc.rect(ML, y, cw2, 5, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [51, 65, 85]);
+      doc.text('FOURNISSEUR / EXPEDITEUR', ML + 3, y + 3.5);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
+      doc.text(supName.slice(0, 40), ML + 3, y + 9.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
+      doc.text(`Tel : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + 14);
+      doc.text(`Adresse : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + 18);
+
+      // Right: Client
+      const cliName = this._t(cli.name || bl.clientName || 'Client Destinataire');
+      const wilayaDest = bl.destinationAddress || bl.wilaya || cli.address || '-';
+      this._rect(doc, ML + cw2 + gap, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
+      doc.setFillColor(241, 245, 249);
+      doc.rect(ML + cw2 + gap, y, cw2, 5, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [51, 65, 85]);
+      doc.text('CLIENT / DESTINATAIRE', ML + cw2 + gap + 3, y + 3.5);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
+      doc.text(cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
+      doc.text(`Dest. livr. : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + 14);
+      doc.text(`NIF : ${cli.nif || '-'}  |  Tel : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + 18);
+      y += boxH + 3;
+
+      // ── 5. Items Table ──
+      const colDef = [
+        { label: 'N', w: 10, align: 'center' },
+        { label: 'DESIGNATION DES FOURNITURES / MARCHANDISES', w: 82, align: 'left' },
+        { label: 'UNITE', w: 14, align: 'center' },
+        { label: 'QTE', w: 20, align: 'center' },
+        { label: 'P.U. HT', w: 32, align: 'right' },
+        { label: 'TOTAL HT', w: 36, align: 'right' }
+      ];
+
+      // Table Header
+      this._rect(doc, ML, y, CW, 6, C.PRIMARY, C.PRIMARY);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, C.WHITE);
+      let cx = ML;
+      colDef.forEach(c => {
+        if (c.align === 'center') doc.text(c.label, cx + c.w / 2, y + 4, { align: 'center' });
+        else if (c.align === 'right') doc.text(c.label, cx + c.w - 2, y + 4, { align: 'right' });
+        else doc.text(c.label, cx + 2, y + 4);
+        cx += c.w;
+      });
+      y += 6;
+
+      // Table Rows (up to 12 rows for full page)
+      const maxRows = 12;
+      const visibleLines = lines.slice(0, maxRows);
+      const rowH = 6;
+      visibleLines.forEach((l, i) => {
+        const qty = Number(l.qtyDelivered || l.qty || 0);
+        const pu = Number(l.price || 0);
+        const disc = Number(l.disc || 0);
+        const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
+
+        const rowBg = i % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
+        this._rect(doc, ML, y, CW, rowH, rowBg, [226, 232, 240]);
+
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); this._tc(doc, [30, 41, 59]);
+        let rx = ML;
+        doc.text(String(i + 1).padStart(2, '0'), rx + 5, y + 4, { align: 'center' });
+        rx += 10;
+        doc.text(this._t(l.designation || 'Marchandise').slice(0, 50), rx + 2, y + 4);
+        rx += 82;
+        doc.text(this._t(l.unit || 'U'), rx + 7, y + 4, { align: 'center' });
+        rx += 14;
+        doc.setFont('helvetica', 'bold');
+        doc.text(this._fmtNum(qty), rx + 10, y + 4, { align: 'center' });
+        rx += 20;
+        doc.setFont('helvetica', 'normal');
+        doc.text(this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''), rx + 30, y + 4, { align: 'right' });
+        rx += 32;
+        doc.setFont('helvetica', 'bold');
+        doc.text(this._fmtMoney(tot), rx + 34, y + 4, { align: 'right' });
+        y += rowH;
+      });
+
+      if (!visibleLines.length) {
+        this._rect(doc, ML, y, CW, rowH, [255, 255, 255], [226, 232, 240]);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7); this._tc(doc, [148, 163, 184]);
+        doc.text('Aucune ligne', ML + 12, y + 4);
+        y += rowH;
       }
 
-      this._save(doc, isRoadOnly ? `BL_ROUTE_${blRef.replace(/\//g,'_')}.pdf` : `BL_${blRef.replace(/\//g,'_')}.pdf`);
+      // ── 6. Totals Bar ──
+      this._rect(doc, ML, y, CW, 8, [241, 245, 249], [203, 213, 225]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); this._tc(doc, [15, 23, 42]);
+      doc.text(`TOTAL HT : ${this._fmtMoney(totalHT)}`, ML + 5, y + 5.5);
+      if (timbre > 0) doc.text(`TIMBRE : ${this._fmtMoney(timbre)}`, ML + 80, y + 5.5);
+      doc.setFontSize(9); this._tc(doc, C.PRIMARY);
+      doc.text(`TOTAL TTC : ${this._fmtMoney(totalTTC)}`, ML + CW - 5, y + 5.5, { align: 'right' });
+      y += 10;
+
+      // ── 7. Traceability Note ──
+      this._rect(doc, ML, y, CW, 6, [254, 243, 199], [251, 191, 36]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [146, 64, 14]);
+      doc.text(`DOCUMENT FORMEL (CHAKLI) POUR LA ROUTE | REF BCH : ${bchRef} | BR : ${brRef}`, ML + CW / 2, y + 4, { align: 'center' });
+      y += 8;
+
+      // ── 8. Signature Blocks ──
+      const sigW2 = (CW - 6) / 3, sigH = 28;
+      const sigY = Math.max(y + 4, PH - 50);
+      // Sig 1: Expediteur
+      this._rect(doc, ML, sigY, sigW2, sigH, [255, 255, 255], [203, 213, 225]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [51, 65, 85]);
+      doc.text('L\'EXPEDITEUR', ML + 3, sigY + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
+      doc.text('Cachet et Signature', ML + 3, sigY + sigH - 2);
+
+      // Sig 2: Chauffeur
+      this._rect(doc, ML + sigW2 + 3, sigY, sigW2, sigH, [255, 255, 255], [203, 213, 225]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [51, 65, 85]);
+      doc.text('LE CHAUFFEUR / LIVREUR', ML + sigW2 + 6, sigY + 4);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
+      doc.text('Pris en charge pour livraison', ML + sigW2 + 6, sigY + sigH - 2);
+
+      // Sig 3: Client
+      this._rect(doc, ML + (sigW2 + 3) * 2, sigY, sigW2, sigH, [255, 255, 255], [203, 213, 225]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [51, 65, 85]);
+      doc.text('LE CLIENT / DESTINATAIRE', ML + (sigW2 + 3) * 2 + 3, sigY + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
+      doc.text('Date, Signature et Cachet', ML + (sigW2 + 3) * 2 + 3, sigY + sigH - 2);
+
+      this._save(doc, `BL_${bchRef.replace(/[\/\\]/g,'_')}.pdf`);
     },
 
     /* ══════════════════════════════════════════════════════════
