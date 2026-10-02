@@ -11,7 +11,7 @@ const T = {
     login:'Connexion', logout:'Déconnexion', username:'Identifiant', password:'Mot de passe',
     login_error:'Identifiants incorrects', login_sub:'Système de gestion — Accès sécurisé',
     // Nav
-    nav_dashboard:'Tableau de Bord', nav_brs:'Bons de Réception', nav_bls:'Bons de Chargement',
+    nav_dashboard:'Tableau de Bord', nav_brs:'Bons de Réception', nav_bls:'Bons de Livraison',
     nav_supplier_portal:'Portail Usines & Enlèvements', nav_bc_tracker:'Suivi Chargements & Pipeline',
     nav_caisse:'Ma Caisse', nav_admin_caisse:'Caisse Principale', nav_suppliers:'Fournisseurs',
     nav_catalogue:'Catalogue BD', nav_stats:'Statistiques', nav_eval:'Évaluation Utilisateurs',
@@ -39,7 +39,7 @@ const T = {
     br_lock_msg:'Ce BR est verrouillé (issu de la validation usine ou déjà livré).',
     br_preview_ref:'Aperçu référence',
     // Bon de Chargement (BC - ancien BL)
-    bl_title:'Bons de Chargement', bl_new:'Nouveau Bon de Chargement', bl_from_br:'Charger depuis BR en stock',
+    bl_title:'Bons de Livraison', bl_new:'Nouveau Bon de Livraison', bl_from_br:'Charger depuis BR en stock',
     bl_route:'Générer BL (Pour la route)',
     bl_truck:'Immatriculation Camion', bl_driver:'Nom du Chauffeur',
     bl_driver_hint:'Le camion sera auto-rempli si le chauffeur est connu',
@@ -162,7 +162,7 @@ const T = {
     app_name:'نظام إدارة الموردين', app_by:'تطوير CHIKHAOUI ABDERRAHIME',
     login:'تسجيل الدخول', logout:'تسجيل الخروج', username:'اسم المستخدم', password:'كلمة المرور',
     login_error:'بيانات الدخول غير صحيحة', login_sub:'نظام الإدارة — دخول آمن',
-    nav_dashboard:'لوحة التحكم', nav_brs:'وصولات الاستلام', nav_bls:'وصولات الشحن',
+    nav_dashboard:'لوحة التحكم', nav_brs:'وصولات الاستلام', nav_bls:'وصولات التسليم',
     nav_supplier_portal:'بوابة المصانع والشحن', nav_bc_tracker:'متابعة الشحن والمصانع',
     nav_caisse:'صندوقي (ميني كاس)', nav_mini_caisse:'صندوقي', nav_admin_caisse:'الصندوق الرئيسي', nav_suppliers:'الموردون', nav_clients:'الزبائن',
     nav_catalogue:'قاعدة البيانات', nav_stats:'الإحصائيات', nav_eval:'تقييم المستخدمين',
@@ -187,7 +187,7 @@ const T = {
     br_lock_msg:'هذا الوصل مقفل (منبثق من المصنع أو مسلم).',
     br_preview_ref:'معاينة المرجع',
     // Bon de Chargement (BCH)
-    bl_title:'وصولات الشحن (BCH)', bl_new:'وصل شحن جديد (BCH)', bl_from_br:'شحن من وصل الاستلام',
+    bl_title:'وصولات التسليم (BL)', bl_new:'وصل تسليم جديد (BL)', bl_from_br:'شحن من وصل الاستلام',
     bl_route:'وصل تسليم (للطريق فقط)',
     bl_truck:'رقم الشاحنة', bl_driver:'اسم السائق',
     bl_driver_hint:'سيتم ملء رقم الشاحنة تلقائياً إذا كان السائق معروفاً',

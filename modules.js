@@ -10777,7 +10777,6 @@ const PointageModule = {
     const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
 
     const data = {
-      id: Utils.genId(),
       userId: u.id,
       userName: u.name,
       jobTitle: u.jobTitle || 'Employé',

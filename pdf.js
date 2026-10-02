@@ -1212,8 +1212,8 @@
 
         // 6. Anti-Counterfeit Verification Strip linking both volets (4.5mm)
         this._rect(doc, ML, y, CW, 4.2, [254, 243, 199], [251, 191, 36]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); this._tc(doc, [146, 64, 14]);
-        doc.text(`🔒 SÉCURITÉ ANTI-FRAUDE · CODE CONTRÔLE : ${secCode} · RAPPROCHEMENT BCH/BL/BR VALIDE · APPARIÉ AVEC LE VOLET ${(voletNum === 1 ? '2 (USINE)' : '1 (CHAUFFEUR)')}`, ML + CW / 2, y + 3, { align: 'center' });
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5); this._tc(doc, [146, 64, 14]);
+        doc.text(`SECURITE ANTI-FRAUDE | CODE : ${secCode} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIE`, ML + CW / 2, y + 3, { align: 'center' });
         y += 5.2;
 
         // 7. Signature Blocks (3 boxes: Émetteur Caisse, Chauffeur, Usine) — 13mm
@@ -1293,8 +1293,13 @@
 
       // References
       const blRef = this._t(bl.ref || `BL-${String(bl.id).padStart(4,'0')}`);
-      const bchRef = bch ? this._t(bch.ref) : (bl.bchRef ? this._t(bl.bchRef) : `BCH-${String(bl.id).padStart(4,'0')}`);
-      const brRef = br ? this._t(br.ref) : (bl.linkedBrId ? `BR-${bl.linkedBrId}` : '/');
+      // BCH reference: try linked BCH record, then bl.bchRef (only if it looks like a real ref), then derive from BL ref
+      let bchRef = '/';
+      if (bch && bch.ref) { bchRef = this._t(bch.ref); }
+      else if (bl.bchRef && /^BCH/i.test(bl.bchRef)) { bchRef = this._t(bl.bchRef); }
+      else if (bl.ref && /^BCH/i.test(bl.ref)) { bchRef = this._t(bl.ref); }
+      else { bchRef = blRef.replace(/^BL/i, 'BCH'); }
+      const brRef = br ? this._t(br.ref) : (bl.linkedBrId ? `BR/${bl.linkedBrId}` : (bl.brId ? `BR/${bl.brId}` : '/'));
 
       // Security hash linking top and bottom volets
       const secHash = Math.abs((Number(bl.id || 1) * 31337 + Math.round(totalTTC * 10)) % 899999 + 100000);
@@ -1506,8 +1511,8 @@
 
         // 6. Anti-Counterfeit Verification Strip linking both volets (4.5mm)
         this._rect(doc, ML, y, CW, 4.2, [254, 243, 199], [251, 191, 36]);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); this._tc(doc, [146, 64, 14]);
-        doc.text(`🔒 SÉCURITÉ ANTI-FRAUDE · CODE CONTRÔLE : ${secCode} · RAPPROCHEMENT BL/BCH/BR VALIDE · APPARIÉ AVEC LE VOLET ${(voletNum === 1 ? '2 (SOUCHE)' : '1 (CLIENT)')}`, ML + CW / 2, y + 3, { align: 'center' });
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5); this._tc(doc, [146, 64, 14]);
+        doc.text(`SECURITE ANTI-FRAUDE | CODE : ${secCode} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIE`, ML + CW / 2, y + 3, { align: 'center' });
         y += 5.2;
 
         // 7. Signature Blocks (3 boxes: Direction Générale, Chauffeur, Client Destinataire) — 13mm

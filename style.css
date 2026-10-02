@@ -535,7 +535,8 @@ hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
   display:flex;
   flex-direction:column;
   flex:1;
-  overflow-x:hidden;
+  overflow-x:auto;
+  overflow-y:auto;
   box-sizing:border-box;
 }
 .sidebar.collapsed ~ .main-content {
@@ -620,10 +621,12 @@ hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
   display:flex; align-items:center; justify-content:space-between;
   padding:0 20px; position:sticky; top:0; z-index:50;
   box-shadow:var(--shadow-xs);
+  width:100%; max-width:100%; box-sizing:border-box;
+  overflow:hidden;
 }
-.topbar-left  { display:flex; align-items:center; gap:12px }
-.topbar-right { display:flex; align-items:center; gap:10px }
-.breadcrumb-text { font-weight:700; font-size:15px; color:var(--text) }
+.topbar-left  { display:flex; align-items:center; gap:12px; min-width:0; flex-shrink:1; }
+.topbar-right { display:flex; align-items:center; gap:6px; min-width:0; flex-shrink:1; flex-wrap:wrap; justify-content:flex-end; }
+.breadcrumb-text { font-weight:700; font-size:15px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .btn-icon {
   background:none; border:none; font-size:17px;
   cursor:pointer; color:var(--text-light); padding:7px;
@@ -1149,7 +1152,7 @@ tbody tr:hover { background:rgba(var(--primary-rgb),.05) }
   width:calc(100vw - var(--sidebar-w));
   max-width:calc(100vw - var(--sidebar-w));
   min-width:0;
-  overflow-x:hidden;
+  overflow-x:auto;
   box-sizing:border-box;
   transition:margin var(--transition), width var(--transition), max-width var(--transition);
 }
@@ -1378,7 +1381,32 @@ th.pointage-sticky-col {
 .data-table,
 .lines-table,
 .detail-table {
-  max-width: 100%;
+  max-width: none;
+  min-width: 100%;
+}
+
+/* Sticky action column — always visible */
+.table-shell .data-table .td-actions,
+.table-shell .data-table thead th:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--bg2);
+  box-shadow: -2px 0 6px rgba(0,0,0,.06);
+  white-space: nowrap;
+}
+.table-shell .data-table thead th:last-child {
+  background: var(--bg3);
+  z-index: 3;
+}
+.table-shell .data-table tbody tr:hover .td-actions {
+  background: rgba(var(--primary-rgb),.05);
+}
+[dir="rtl"] .table-shell .data-table .td-actions,
+[dir="rtl"] .table-shell .data-table thead th:last-child {
+  right: auto;
+  left: 0;
+  box-shadow: 2px 0 6px rgba(0,0,0,.06);
 }
 
 /* ── Quick action button ── */
