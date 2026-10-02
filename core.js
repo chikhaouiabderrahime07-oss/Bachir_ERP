@@ -313,7 +313,8 @@ const T = {
 
 // ─── DATABASE ──────────────────────────────────────────────────
 const DB = {
-  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments','etat_vente_docs','bon_retours','bank_charges','notifications','fiches_paie','rh_rectifications','recurring_charges','bank_accounts','paie_validations'],
+  _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments','etat_vente_docs','bon_retours','bank_charges','notifications','fiches_paie','rh_rectifications','recurring_charges','bank_accounts','paie_validations','pointage_validations'],
+  _loaded: {},
 
   init() {
     this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
@@ -1034,21 +1035,70 @@ const DB = {
     if (window._ERP_DEBUG) console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
   },
 
+  async ensureLoaded(collections) {
+    if (!Array.isArray(collections)) collections = [collections];
+    if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
+    
+    const toLoad = collections.filter(c => {
+      if (this._loaded[c]) return false;
+      const lastSync = localStorage.getItem(`_sync_ts_${c}`);
+      if (lastSync && Date.now() - parseInt(lastSync) < 5 * 60 * 1000) {
+        this._loaded[c] = true;
+        return false;
+      }
+      return true;
+    });
+
+    if (toLoad.length === 0) return;
+    await Promise.all(toLoad.map(c => this._syncCollection(c)));
+  },
+
+  async _syncCollection(col) {
+    if (typeof window.API === 'undefined') return;
+    
+    try {
+      const isLarge = ['bls', 'brs', 'work_log'].includes(col);
+      const isHistory = ['history', 'audit_log'].includes(col);
+      let data = [];
+      
+      const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) { console.warn('[Sync] Quota for', k); } };
+      
+      if (col === '_settings') {
+        data = await window.API.getSettings();
+        if (data && typeof data === 'object' && Object.keys(data).length) {
+          safeSet('settings', JSON.stringify(data));
+        }
+      } else if (col === '_timbre_slabs') {
+        data = await window.API.getTimbreSlabs();
+        if (Array.isArray(data)) {
+          safeSet('timbre_slabs_data', JSON.stringify(data));
+        }
+      } else {
+        const qs = isLarge ? '?limit=1000' : '';
+        data = await window.API.getAll(col, qs);
+        if (!data || !Array.isArray(data)) return;
+        
+        if (isHistory) {
+          const local = JSON.parse(localStorage.getItem(col) || '[]');
+          const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
+          const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
+          safeSet(col, JSON.stringify([...data, ...uniqueLocal].slice(-5000)));
+        } else {
+          safeSet(col, JSON.stringify(data));
+        }
+      }
+      
+      this._loaded[col] = true;
+      safeSet(`_sync_ts_${col}`, Date.now().toString());
+    } catch (e) {
+      console.warn(`[Sync] Error syncing collection ${col}:`, e);
+    }
+  },
+
   // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
   startLiveSync() {
     if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
-    const SMALL_COLS = [
-      'users','suppliers','clients','caisse_admin','sessions',
-      'articles','drivers','work_log','recycle_bin','bank_transactions','supplier_payments',
-      'etat_vente_docs','bon_retours','bank_charges','notifications','fiches_paie','rh_rectifications','recurring_charges','bank_accounts'
-    ];
-    const LARGE_COLS = [
-      { col: 'bls', limit: 1000 },
-      { col: 'brs', limit: 1000 },
-    ];
-    const MERGE_COLS = new Set(['history', 'audit_log']);
-    const HISTORY_COLS = ['history', 'audit_log'];
-    const safeSet = (k,v) => { try { localStorage.setItem(k,v); } catch(e) { console.warn('[Sync] Quota for', k); } };
+    const ESSENTIAL = ['users', 'sessions', 'notifications', '_settings', '_timbre_slabs'];
     let indicator = null;
 
     const doSync = async () => {
@@ -1056,38 +1106,9 @@ const DB = {
       if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
 
       try {
-        const results = await Promise.allSettled([
-          ...SMALL_COLS.map(col => window.API.getAll(col).then(data => ({ col, data }))),
-          ...LARGE_COLS.map(({ col, limit }) => window.API.getAll(col, `?limit=${limit}`).then(data => ({ col, data }))),
-          ...HISTORY_COLS.map(col => window.API.getAll(col).then(data => ({ col, data, merge: true }))),
-          window.API.getSettings().then(data    => ({ col: '_settings', data })),
-          window.API.getTimbreSlabs().then(data => ({ col: '_timbre_slabs', data }))
-        ]);
-        for (const r of results) {
-          if (r.status !== 'fulfilled' || !r.value) continue;
-          const { col, data, merge } = r.value;
-          if (col === '_settings') {
-            if (data && typeof data === 'object' && Object.keys(data).length) {
-              safeSet('settings', JSON.stringify(data));
-            }
-            continue;
-          }
-          if (col === '_timbre_slabs') {
-            if (Array.isArray(data)) {
-              safeSet('timbre_slabs_data', JSON.stringify(data));
-            }
-            continue;
-          }
-          if (!data || !Array.isArray(data)) continue;
-          if (merge || MERGE_COLS.has(col)) {
-            const local = JSON.parse(localStorage.getItem(col) || '[]');
-            const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
-            const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
-            safeSet(col, JSON.stringify([...data, ...uniqueLocal].slice(-5000)));
-          } else {
-            safeSet(col, JSON.stringify(data));
-          }
-        }
+        const colsToSync = [...new Set([...ESSENTIAL, ...Object.keys(this._loaded)])];
+        await Promise.all(colsToSync.map(c => this._syncCollection(c)));
+
         // Update sync indicator dot only — NO page reload (that destroys open modals/forms)
         if (!indicator) {
           indicator = document.createElement('div');

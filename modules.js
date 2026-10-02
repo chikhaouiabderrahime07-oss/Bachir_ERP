@@ -1128,9 +1128,9 @@ const BLModule = {
       <div class="table-shell">
         <table class="data-table">
           <thead><tr>
-            <th>${T.get('col_ref')}</th><th>${T.get('bl_linked_br')}</th><th>${T.get('col_date')}</th>
-            <th>${T.get('col_client')}</th><th>${T.isRTL()?'السائق':'Chauffeur'}</th>
-            <th>${T.get('col_total_ttc')}</th><th>${T.get('col_status')}</th><th class="td-actions">${T.get('col_actions')}</th>
+            <th style="font-size:11px">${T.get('col_ref')}</th><th style="font-size:11px">${T.get('bl_linked_br')}</th><th style="font-size:11px">${T.get('col_date')}</th>
+            <th style="font-size:11px">${T.get('col_client')}</th><th style="font-size:11px">${T.isRTL()?'السائق':'Chauffeur'}</th>
+            <th style="font-size:11px">${T.get('col_total_ttc')}</th><th style="font-size:11px">${T.get('col_status')}</th><th class="td-actions" style="font-size:11px">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.map(bl=>{
@@ -1140,19 +1140,24 @@ const BLModule = {
               const dest = bl.destinationAddress||cli?.address||'';
               return `<tr>
                 <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:9px;color:#ef4444;margin-top:1px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:9px;color:var(--text4);margin-top:1px"><i class="fas fa-user" style="width:10px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
-                <td>${br?`<span class="badge badge-primary">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
-                <td style="white-space:nowrap">${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td>
-                <td>${Utils.escHTML(cli?.name||'-')}${dest?`<div style="font-size:10px;color:var(--text4);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(dest)}">${Utils.escHTML(dest.substring(0,28))}</div>`:''}</td>
-                <td>${Utils.escHTML(bl.driverName||'-')}<div style="font-size:10px;color:var(--text4)"><code>${Utils.escHTML(bl.truckIMM||'-')}</code></div></td>
-                <td class="fw-bold text-primary" style="white-space:nowrap">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
-                <td>${Utils.statusBadge(bl.status||'open')}${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px 6px;background:rgba(16,185,129,.12);color:#059669;border-radius:6px;font-size:9px;font-weight:700" title="Usine OK"><i class="fas fa-industry" style="font-size:8px"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px 6px;background:rgba(245,158,11,.12);color:#d97706;border-radius:6px;font-size:9px;font-weight:700"><i class="fas fa-hourglass-half" style="font-size:8px"></i></span>` : '')}</td>
+                <td>${br?`<span class="badge badge-primary" style="font-size:9px;padding:2px 4px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
+                <td style="white-space:nowrap;font-size:11px">${Utils.fmtDate(bl.date).substring(0,5)} <div style="color:var(--text4);font-size:9px;margin-top:1px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>
+                <td><div style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(cli?.name||'-')}">${Utils.escHTML(cli?.name||'-')}</div>${dest?`<div style="font-size:9px;color:var(--text4);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(dest)}">${Utils.escHTML(dest)}</div>`:''}</td>
+                <td><div style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(bl.driverName||'-')}">${Utils.escHTML(bl.driverName||'-')}</div><div style="font-size:9px;color:var(--text4);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><code>${Utils.escHTML(bl.truckIMM||'-')}</code></div></td>
+                <td class="fw-bold text-primary" style="white-space:nowrap;font-size:11px">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
+                <td title="${Utils.escHTML(T.get('st_'+(bl.status||'open')))}"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px;background:rgba(16,185,129,.12);color:#059669;border-radius:4px;font-size:9px" title="Usine OK"><i class="fas fa-industry"></i></span>` : (bl.status === 'pending_usine' ? `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px;padding:2px;background:rgba(245,158,11,.12);color:#d97706;border-radius:4px;font-size:9px"><i class="fas fa-hourglass-half"></i></span>` : '')}</td>
                 <td class="td-actions">
                   <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
-                  ${Auth.canEdit(bl)?`<button class="btn btn-xs btn-outline" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>`:''}
-                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${bl.id})" title="Retour"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs btn-success" onclick="BLModule.confirmDelivery(${bl.id})" title="${T.get('bl_delivered')}"><i class="fas fa-check-circle"></i></button>`:''))}
-                  <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs" style="background:rgba(139,92,246,.1);color:#7c3aed;border:1px solid rgba(139,92,246,.25)" onclick="PDFGen.exportBL(${bl.id})" title="BL Route"><i class="fas fa-route"></i></button>
-                  ${Auth.canDelete(bl)?`<button class="btn btn-xs btn-danger" onclick="BLModule.deleteBL(${bl.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>`:''}
+                  <div class="action-dropdown" style="position:relative;display:inline-block">
+                    <button class="btn btn-xs btn-outline" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='block'?'none':'block';event.stopPropagation()" title="Plus"><i class="fas fa-ellipsis-v"></i></button>
+                    <div class="dropdown-menu" style="display:none;position:absolute;right:0;top:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;min-width:140px;padding:4px">
+                      ${Auth.canEdit(bl)?`<a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.showEdit(${bl.id},${Auth.isAdmin()})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:var(--text);font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"><i class="fas fa-edit" style="width:14px"></i> Modifier</a>`:''}
+                      ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.processReturn(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#ef4444;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(239,68,68,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-undo" style="width:14px"></i> Retour</a>`:((!isLocked)?`<a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.confirmDelivery(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#10b981;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(16,185,129,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-check-circle" style="width:14px"></i> Livrer</a>`:''))}
+                      <a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';PDFGen.exportBonChargement(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:var(--text);font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"><i class="fas fa-file-pdf" style="width:14px"></i> BCH</a>
+                      <a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';PDFGen.exportBL(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#7c3aed;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(139,92,246,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-route" style="width:14px"></i> BL Route</a>
+                      ${Auth.canDelete(bl)?`<div style="height:1px;background:var(--border);margin:4px 0"></div><a href="#" onclick="event.preventDefault();this.parentElement.style.display='none';BLModule.deleteBL(${bl.id})" style="display:flex;align-items:center;gap:8px;padding:6px 10px;color:#ef4444;font-size:12px;text-decoration:none;border-radius:4px" onmouseenter="this.style.background='rgba(239,68,68,.1)'" onmouseleave="this.style.background=''"><i class="fas fa-trash" style="width:14px"></i> Supprimer</a>`:''}
+                    </div>
+                  </div>
                 </td>
               </tr>`;
             }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
@@ -10325,6 +10330,9 @@ const PointageModule = {
     const todayStr = Utils.today();
     const isAR = T.isRTL();
     const isAdmin = Auth.isAdmin();
+    const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
+    const pvs = DB.getAll('pointage_validations') || [];
+    const isPointageValidated = pvs.some(v => v.month === targetYM);
     
     // Build rich attendance data per user
     const userData = users.map(u => {
@@ -10451,12 +10459,12 @@ const PointageModule = {
           <button class="btn btn-primary" onclick="PointageModule._exportExcel()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none">
             <i class="fas fa-file-excel"></i> Export Excel
           </button>
-          <button class="btn" onclick="PointageModule._closePaieMonth()" style="background:linear-gradient(135deg,#dc2626,#ef4444);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
-            <i class="fas fa-cash-register"></i> Cloturer Paie du Mois
+          <button class="btn" onclick="PointageModule.validatePointage()" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
+            <i class="fas fa-check-circle"></i> Valider le Pointage
           </button>
-          <button class="btn btn-primary" onclick="PointageModule.showPayrollValidation()" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none">
-            <i class="fas fa-money-check-alt"></i> Valider les Paies
-          </button>
+          ${isPointageValidated ? `<button class="btn btn-primary" onclick="PointageModule.showPayrollCloture()" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
+            <i class="fas fa-money-check-alt"></i> Clôturer les Paies
+          </button>` : ''}
         </div>
       </div>
       
@@ -11299,15 +11307,78 @@ const PointageModule = {
     });
   },
 
-  async showPayrollValidation() {
+  async validatePointage() {
     if (!Auth.isAdmin()) {
-      Utils.notify("Seul l'administrateur peut valider les paies.", "error");
+      Utils.notify("Seul l'administrateur peut valider le pointage.", "error");
+      return;
+    }
+    const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
+    const pvs = DB.getAll('pointage_validations') || [];
+    if (pvs.some(v => v.month === targetYM)) {
+      Utils.notify("Le pointage de ce mois est déjà validé.", "warning");
+      return;
+    }
+    
+    const oldPage = this._page;
+    const oldPerPage = this._perPage;
+    this._page = 0;
+    this._perPage = 10000;
+    
+    const fullHtml = this.render();
+    
+    this._page = oldPage;
+    this._perPage = oldPerPage;
+    
+    const temp = document.createElement('div');
+    temp.innerHTML = fullHtml;
+    const tableDiv = temp.querySelector('.table-shell');
+    const tableHtml = tableDiv ? tableDiv.outerHTML : '<p>Table introuvable</p>';
+    
+    const modalHTML = `
+      <div style="padding:10px;">
+        <p style="margin-top:0">Veuillez vérifier les présences avant de valider. Une fois validé, vous pourrez clôturer les paies.</p>
+        <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:12px;margin-bottom:20px;box-shadow:0 4px 15px rgba(0,0,0,.03);">
+          ${tableHtml}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button class="btn btn-outline" onclick="UI.closeModal()">Annuler</button>
+          <button class="btn btn-success" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;font-weight:700" onclick="PointageModule.confirmValidatePointage()">
+            <i class="fas fa-check"></i> Valider définitivement le Pointage
+          </button>
+        </div>
+      </div>
+    `;
+    UI.showModal(`Valider le Pointage - ${String(this._month+1).padStart(2,'0')}/${this._year}`, modalHTML, "", "xl");
+  },
+
+  confirmValidatePointage() {
+    const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
+    DB.insert('pointage_validations', {
+      month: targetYM,
+      validatedBy: Auth.getCurrentUser().id,
+      validatedAt: new Date().toISOString()
+    });
+    UI.closeModal();
+    Utils.notify("Pointage validé avec succès", "success");
+    App.loadModule('pointage');
+  },
+
+  async showPayrollCloture() {
+    if (!Auth.isAdmin()) {
+      Utils.notify("Seul l'administrateur peut clôturer les paies.", "error");
       return;
     }
     const monthKey = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
+    
+    const pvs = DB.getAll('pointage_validations') || [];
+    if (!pvs.some(v => v.month === monthKey)) {
+      Utils.notify("Veuillez d'abord valider le pointage de ce mois.", "error");
+      return;
+    }
+    
     const validations = DB.getAll('paie_validations') || [];
     if (validations.find(v => v.month === monthKey)) {
-      Utils.notify("Les paies de ce mois ont déjà été validées.", "warning");
+      Utils.notify("Les paies de ce mois ont déjà été clôturées.", "warning");
       return;
     }
     
@@ -11395,9 +11466,9 @@ const PointageModule = {
     html += `</tbody></table></div></div>`;
 
     const r = await Dialog.show({
-      title: 'Valider les Paies',
+      title: 'Clôturer les Paies',
       message: html,
-      confirmText: 'Valider & Créer les Charges',
+      confirmText: 'Clôturer & Créer les Charges',
       cancelText: 'Annuler',
       type: 'warning'
     });

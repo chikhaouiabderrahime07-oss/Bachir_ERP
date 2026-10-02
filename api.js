@@ -70,20 +70,13 @@ const API = (() => {
 
   // ── Auth ────────────────────────────────────────────────────────
   async function syncCloudToLocal() {
-    // Small collections: sync all. Large ones: only recent records to avoid localStorage quota
-    const SMALL_COLS = [
-      'users', 'suppliers', 'clients', 'articles', 'drivers',
-      'caisse_admin', 'sessions', 'work_log', 'recycle_bin',
-      'bank_transactions', 'supplier_payments', 'etat_vente_docs',
-      'bon_retours', 'bank_charges', 'notifications', 'fiches_paie',
-      'rh_rectifications', 'recurring_charges', 'bank_accounts'
-    ];
-    const LARGE_COLS = [
-      { col: 'bls', limit: 1000 },
-      { col: 'brs', limit: 1000 },
-    ];
-    const MERGE_COLS = new Set(['history', 'audit_log']);
-    const HISTORY_COLS = ['history', 'audit_log'];
+    // Rely on lazy loading for most collections. Only load essentials here.
+    const ESSENTIAL = ['users', 'sessions', 'notifications', 'settings'];
+    
+    if (typeof window.DB !== 'undefined' && window.DB.ensureLoaded) {
+      await window.DB.ensureLoaded(ESSENTIAL);
+      return;
+    }
 
     const safeSet = (key, val) => {
       try { localStorage.setItem(key, val); }
@@ -91,37 +84,22 @@ const API = (() => {
     };
 
     const results = await Promise.allSettled([
-      ...SMALL_COLS.map(col => getAll(col).then(data => ({ col, data }))),
-      ...LARGE_COLS.map(({ col, limit }) => getAll(col, `?limit=${limit}`).then(data => ({ col, data }))),
-      ...HISTORY_COLS.map(col => getAll(col).then(data => ({ col, data, merge: true }))),
-      getSettings().then(data   => ({ col: '_settings', data })),
+      getAll('users').then(data => ({ col: 'users', data })),
+      getAll('sessions').then(data => ({ col: 'sessions', data })),
+      getAll('notifications').then(data => ({ col: 'notifications', data })),
+      getSettings().then(data => ({ col: '_settings', data })),
       getTimbreSlabs().then(data => ({ col: '_timbre_slabs', data }))
     ]);
 
     for (const result of results) {
       if (result.status !== 'fulfilled' || !result.value) continue;
-      const { col, data, merge } = result.value;
+      const { col, data } = result.value;
       if (col === '_settings') {
-        if (data && Object.keys(data).length) {
-          safeSet('settings', JSON.stringify(data));
-        }
+        if (data && Object.keys(data).length) safeSet('settings', JSON.stringify(data));
       } else if (col === '_timbre_slabs') {
-        if (Array.isArray(data)) {
-          safeSet('timbre_slabs_data', JSON.stringify(data));
-        }
+        if (Array.isArray(data)) safeSet('timbre_slabs_data', JSON.stringify(data));
       } else if (data && Array.isArray(data)) {
-        if (merge || MERGE_COLS.has(col)) {
-          const local = JSON.parse(localStorage.getItem(col) || '[]');
-          const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
-          const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
-          const merged = [...data, ...uniqueLocal].sort((a,b) => (a.ts||'').localeCompare(b.ts||''));
-          safeSet(col, JSON.stringify(merged.slice(-5000)));
-        } else {
-          // Client-side truncation: if data is too large, keep only the most recent 1000
-          const MAX_RECORDS = 1000;
-          const toStore = data.length > MAX_RECORDS ? data.slice(-MAX_RECORDS) : data;
-          safeSet(col, JSON.stringify(toStore));
-        }
+        safeSet(col, JSON.stringify(data));
       }
     }
   }
