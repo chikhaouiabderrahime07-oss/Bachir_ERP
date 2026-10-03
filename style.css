@@ -174,14 +174,19 @@ hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
 
 /* ── RTL NUMBER / CURRENCY FIX ── */
 /* Force all numeric/currency text to display LTR even in RTL context */
+/* Table cells must keep display:table-cell — only force LTR number reading */
+[dir="rtl"] td[style*="font-weight:7"],
+[dir="rtl"] td[style*="font-weight:8"],
+[dir="rtl"] td[style*="font-weight:9"] {
+  direction: ltr;
+  unicode-bidi: embed;
+  display: table-cell;
+}
 [dir="rtl"] .kpi-value,
 [dir="rtl"] .dash-val,
 [dir="rtl"] .vault-amount,
 [dir="rtl"] .totals-row span,
 [dir="rtl"] .tx-item .badge,
-[dir="rtl"] td[style*="font-weight:7"],
-[dir="rtl"] td[style*="font-weight:8"],
-[dir="rtl"] td[style*="font-weight:9"],
 [dir="rtl"] .grand-total span,
 [dir="rtl"] #br-total-ht, [dir="rtl"] #br-total-ttc, [dir="rtl"] #br-total-tva, [dir="rtl"] #br-total-timbre-disp,
 [dir="rtl"] #bl-tot-ht,  [dir="rtl"] #bl-tot-ttc,  [dir="rtl"] #bl-tot-tva,  [dir="rtl"] #bl-tot-timbre,
@@ -1451,16 +1456,23 @@ tbody tr:hover { background:rgba(var(--primary-rgb),.08); transition: background
   left: 0;
   z-index: 3;
   background: var(--bg2);
+  border-right: 1px solid var(--border);
 }
 th.pointage-sticky-col {
   background: var(--bg3);
   z-index: 4;
 }
 [dir="rtl"] .pointage-sticky-col {
-  left: auto !important;
-  right: 0 !important;
+  left: 0 !important;
+  right: auto !important;
   text-align: right !important;
+  border-right: 1px solid var(--border) !important;
+  border-left: none !important;
 }
+[data-theme="dark"] .pointage-sticky-col { background: #1a1d21; }
+[data-theme="dark"] th.pointage-sticky-col { background: #22262b; }
+[data-theme="comfort"] .pointage-sticky-col { background: #242019; }
+[data-theme="comfort"] th.pointage-sticky-col { background: #2d2820; }
 
 .data-table,
 .lines-table,

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=32.3">
+<link rel="stylesheet" href="style.css?v=33.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -23,7 +23,7 @@
     // Global Excel export helper — used everywhere in modules.js
     async function exportXLSX(headers, rows, filename) {
       if (typeof XLSX === 'undefined') {
-        await Dialog.alert('Erreur', 'SheetJS non chargé. Vérifiez votre connexion internet et rechargez la page.', 'danger');
+        const _isAR = typeof T !== 'undefined' && T.isRTL(); await Dialog.alert(_isAR ? 'خطأ' : 'Erreur', _isAR ? 'لم يتم تحميل SheetJS. يرجى التحقق من اتصال الإنترنت وإعادة تحميل الصفحة.' : 'SheetJS non chargé. Vérifiez votre connexion internet et rechargez la page.', 'danger');
         return;
       }
       try {
@@ -50,7 +50,7 @@
         XLSX.writeFile(wb, (filename || 'export') + '.xlsx');
       } catch(e) {
         console.error('exportXLSX error:', e);
-        await Dialog.alert('Erreur', 'Erreur export Excel: ' + e.message, 'danger');
+        const _isAR = typeof T !== 'undefined' && T.isRTL(); await Dialog.alert(_isAR ? 'خطأ' : 'Erreur', (_isAR ? 'خطأ في تصدير Excel: ' : 'Erreur export Excel: ') + e.message, 'danger');
       }
     }
   </script>
@@ -349,10 +349,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=32.3"></script>
-<script src="core.js?v=32.3"></script>
-<script src="modules.js?v=32.3"></script>
-<script src="pdf.js?v=32.3"></script>
+<script src="api.js?v=33.0"></script>
+<script src="core.js?v=33.0"></script>
+<script src="modules.js?v=33.0"></script>
+<script src="pdf.js?v=33.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -493,7 +493,7 @@ const App = {
   _tickClock() {
     const now = new Date();
     const pad = n => String(n).padStart(2,'0');
-    const days = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+    const days = T.isRTL() ? ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'] : ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
     const timeEl = document.getElementById('clockTime');
     const dateEl = document.getElementById('clockDate');
     if (timeEl) timeEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
@@ -534,7 +534,7 @@ const App = {
         const binCount = DB.getAll('recycle_bin').length;
         if (binCount >= 30) {
           Utils.notify(
-            `🗑️ Corbeille : ${binCount} éléments — pensez à vider la corbeille !`,
+            T.isRTL() ? `🗑️ سلة المحذوفات: ${binCount} عنصراً — يُرجى إفراغ السلة!` : `🗑️ Corbeille : ${binCount} éléments — pensez à vider la corbeille !`,
             'warning', 8000
           );
         }
@@ -586,7 +586,7 @@ const App = {
                   subtype: 'pack_bancaire',
                   bankId: b.id,
                   amount: amount,
-                  label: `Frais Pack Bancaire Mensuel`,
+                  label: T.isRTL() ? 'رسوم باقة بنكية شهرية' : `Frais Pack Bancaire Mensuel`,
                   date: chargeDate,
                   linkedTxId: txFee.id,
                   recurring: true,
@@ -595,7 +595,7 @@ const App = {
                   createdAt: now.toISOString()
                 };
                 DB.insert('bank_charges', charge);
-                Utils.notify(`Pack bancaire de ${Utils.fmtCurrency(amount)} déduit pour ${b.name}`, 'info');
+                Utils.notify(T.isRTL() ? `تم خصم باقة بنكية قدرها ${Utils.fmtCurrency(amount)} لحساب ${b.name}` : `Pack bancaire de ${Utils.fmtCurrency(amount)} déduit pour ${b.name}`, 'info');
               }
             }
           }
@@ -614,7 +614,7 @@ const App = {
       document.getElementById('appContainer').style.display = 'none';
       document.getElementById('loginScreen').style.display = 'flex';
       if (typeof Utils !== 'undefined') {
-        Utils.notify('⏰ Session expirée — veuillez vous reconnecter', 'warning');
+        Utils.notify(T.isRTL() ? '⏰ انتهت الجلسة — يرجى تسجيل الدخول مجدداً' : '⏰ Session expirée — veuillez vous reconnecter', 'warning');
       }
     }, { once: false });
 
@@ -625,7 +625,7 @@ const App = {
       document.getElementById('loginScreen').style.display = 'flex';
       const msg = e.detail || (T.isRTL() ? 'تم تسجيل الدخول إلى هذا الحساب من جهاز آخر. تم إنهاء هذه الجلسة.' : 'Ce compte a été ouvert sur un autre appareil. Votre session a été fermée.');
       if (typeof Dialog !== 'undefined' && Dialog.alert) {
-        Dialog.alert('⚠️ Session Déconnectée', msg, 'danger');
+        Dialog.alert(T.isRTL() ? '⚠️ تم قطع الجلسة' : '⚠️ Session Déconnectée', msg, 'danger');
       } else if (typeof Utils !== 'undefined') {
         Utils.notify('⚠️ ' + msg, 'error', 8000);
       }
@@ -730,6 +730,14 @@ const App = {
     });
     const themeBtn = document.getElementById('themeToggleBtn');
     if (themeBtn) themeBtn.title = lang === 'ar' ? 'السمة' : 'Thème';
+    const sbt = document.getElementById('sidebarToggleBtn');
+    if (sbt) sbt.title = lang === 'ar' ? 'القائمة' : 'Menu';
+    const nbb = document.getElementById('notifBellBtn');
+    if (nbb) nbb.title = lang === 'ar' ? 'الإشعارات (التنبيهات والشحنات)' : 'Notifications (Alertes & Chargements)';
+    const tiw = document.getElementById('topIntegrityWidget');
+    if (tiw) tiw.title = lang === 'ar' ? 'مراقب السلامة والتصحيح التلقائي (كل 15 دقيقة)' : "Moniteur d'intégrité et auto-correction (Toutes les 15 min)";
+    const pin = document.querySelector('.pin-btn');
+    if (pin) pin.title = lang === 'ar' ? 'تثبيت القائمة' : 'Épingler le menu';
     const nc = document.getElementById('lblNotifCenter'); if (nc) nc.textContent = T.get('notif_center');
     const nma = document.getElementById('lblNotifMarkAll'); if (nma) nma.textContent = T.get('notif_mark_all');
     const not = document.getElementById('lblNotifTracker'); if (not) not.textContent = T.get('notif_open_tracker');
@@ -749,29 +757,29 @@ const App = {
         ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [{ mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') }] : []),
         ...(isAdmin || Auth.can('canViewBRs') ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
         ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'bls', icon:'fa-truck-loading', label:T.get('nav_bls') }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'supplier_portal', icon:'fa-industry', label:T.get('nav_supplier_portal') || 'Portail Usines' }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'bc_supervision', icon:'fa-stream', label:T.get('nav_bc_tracker') || 'Suivi Chargements' }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'supplier_portal', icon:'fa-industry', label:T.get('nav_supplier_portal') || (T.isRTL() ? 'بوابة المصانع' : 'Portail Usines') }] : []),
+        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'bc_supervision', icon:'fa-stream', label:T.get('nav_bc_tracker') || (T.isRTL() ? 'متابعة الشحن' : 'Suivi Chargements') }] : []),
         ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
       ]},
       ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [
         { section: T.get('sec_cash'), items: [
-          ...(Auth.can('canViewCaisse') || isAdmin ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_mini_caisse') || 'Ma Caisse' }] : []),
+          ...(Auth.can('canViewCaisse') || isAdmin ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_mini_caisse') || (T.isRTL() ? 'صندوقي' : 'Ma Caisse') }] : []),
           ...(isAdmin ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }] : []),
-          ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:T.get('nav_bank') || 'Banque' }] : []),
+          ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:T.get('nav_bank') || (T.isRTL() ? 'البنك' : 'Banque') }] : []),
           ...(isAdmin ? [{ mod:'charges', icon:'fa-receipt', label:T.get('nav_charges') }] : []),
         ]},
         { section: T.get('sec_refs'), items: [
-          ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:'Fournisseurs & Clients' }] : []),
-          ...(isAdmin || Auth.can('canViewCatalogue') ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||'Catalogue' }] : []),
+          ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:T.isRTL() ? 'الموردون والزبائن' : 'Fournisseurs & Clients' }] : []),
+          ...(isAdmin || Auth.can('canViewCatalogue') ? [{ mod:'catalogue', icon:'fa-database', label:T.get('nav_catalogue')||(T.isRTL() ? 'قاعدة البيانات' : 'Catalogue') }] : []),
         ]}
       ] : []),
       ...(isAdmin ? [{ section: T.get('sec_analysis'), items: [
         { mod:'stats',   icon:'fa-chart-bar',  label:T.get('nav_stats') },
         { mod:'eval',    icon:'fa-chart-line', label:T.get('nav_eval') },
       ]}] : []),
-      ...(isAdmin ? [{ section: 'Ressources Humaines', items: [
-        { mod:'users',        icon:'fa-users-cog',     label:'Gestion Employés' },
-        { mod:'pointage', icon:'fa-user-clock', label:T.get('nav_pointage') || 'Pointage & Présences' },
+      ...(isAdmin ? [{ section: T.isRTL() ? 'الموارد البشرية' : 'Ressources Humaines', items: [
+        { mod:'users',        icon:'fa-users-cog',     label:T.isRTL() ? 'إدارة الموظفين' : 'Gestion Employés' },
+        { mod:'pointage', icon:'fa-user-clock', label:T.get('nav_pointage') || (T.isRTL() ? 'الحضور والموارد البشرية' : 'Pointage & Présences') },
       ]}] : []),
       ...(isAdmin ? [{ section: T.get('sec_admin'), items: [
         { mod:'audit',        icon:'fa-shield-alt',    label:T.get('nav_audit') },
@@ -848,7 +856,7 @@ const App = {
     // Non-admin can NEVER access admin_caisse
     if (mod === 'admin_caisse' && !Auth.isAdmin()) {
       mod = 'caisse';
-      Utils.notify("Accès réservé à l'administrateur", "warning");
+      Utils.notify(T.isRTL() ? 'الدخول مخصص للمسؤول فقط' : "Accès réservé à l'administrateur", "warning");
     }
 
     // Permission guard
@@ -857,7 +865,7 @@ const App = {
     const supplierAllowed = isSupplierRole && (mod === 'supplier_portal' || mod === 'bc_supervision');
     if (u && u.role !== 'admin' && !supplierAllowed && modPerms[mod] && !Auth.can(modPerms[mod])) {
       mod = 'dashboard';
-      Utils.notify('Accès non autorisé', 'warning');
+      Utils.notify(T.isRTL() ? 'غير مصرح بالدخول' : 'Accès non autorisé', 'warning');
     }
 
     // --- LAZY LOADING DATA (non-blocking: render from cache, sync in background) ---
@@ -908,7 +916,7 @@ const App = {
       dashboard:'nav_dashboard', brs:'nav_brs', bls:'nav_bls', caisse:'nav_caisse',
       admin_caisse:'nav_admin_caisse', suppliers:'nav_suppliers', clients:'nav_clients', stats:'nav_stats',
       eval:'nav_eval', pointage:'nav_pointage', users:'nav_users', audit:'nav_audit', settings:'nav_settings',
-      recycle_bin:'nav_recycle', partners:'Fournisseurs & Clients', bank:'Banque', etat_vente:'nav_etat_vente', charges:'nav_charges', supplier_portal:'nav_supplier_portal', bc_supervision:'nav_bc_tracker'
+      recycle_bin:'nav_recycle', partners: T.isRTL() ? 'الموردون والزبائن' : 'Fournisseurs & Clients', bank: T.isRTL() ? 'البنك' : 'Banque', etat_vente:'nav_etat_vente', charges:'nav_charges', supplier_portal:'nav_supplier_portal', bc_supervision:'nav_bc_tracker'
     };
     if (bc) bc.textContent = labels[mod]?.startsWith?.('nav_') ? T.get(labels[mod]) : (labels[mod]||mod);
     this._setActiveSidebarItem(mod);

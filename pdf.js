@@ -165,7 +165,7 @@
       this._registerAr(doc);
       return doc;
     },
-    _save(doc, fn) { doc.save(fn); this._notify('PDF généré','success'); },
+    _save(doc, fn) { doc.save(fn); const isAR = typeof T !== 'undefined' && T.isRTL(); this._notify(isAR ? 'تم إنشاء ملف PDF بنجاح' : 'PDF généré','success'); },
 
     /* ── Drawing ────────────────────────────────────────────  */
     _fill(doc,rgb)   { doc.setFillColor(rgb[0],rgb[1],rgb[2]); },
@@ -377,11 +377,12 @@
        PAGE FOOTER
     ══════════════════════════════════════════════════════════ */
     _drawFooter(doc, pg, total) {
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       doc.setFont('helvetica','normal');
       doc.setFontSize(8);
       this._tc(doc,C.GRAY_TXT);
-      doc.text(`Page ${pg} sur ${total}`,PW/2,PH-6,{align:'center'});
-      doc.text(`Genere le : ${this._fmtDateTime(new Date().toISOString())}`,ML,PH-6);
+      doc.text(isAR ? `صفحة ${pg} من ${total}` : `Page ${pg} sur ${total}`,PW/2,PH-6,{align:'center'});
+      doc.text(isAR ? `تاريخ الإصدار : ${this._fmtDateTime(new Date().toISOString())}` : `Genere le : ${this._fmtDateTime(new Date().toISOString())}`,ML,PH-6);
     },
 
     _amountWords(n) {
@@ -436,12 +437,13 @@
         return [spanCell, lblCell, valCell];
       };
 
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       const totRows = [];
-      if (totalsData.extraFees) totRows.push(mkTotRow('Frais suppl.',   this._fmtMoney(totalsData.extraFees), false));
-      totRows.push(mkTotRow('Total HT',   this._fmtMoney(totalsData.totalHT||0),  false));
-      if (totalsData.tvaAmount) totRows.push(mkTotRow(`Taxes (TVA ${totalsData.tvaRate||19}%)`, this._fmtMoney(totalsData.tvaAmount||0), false));
-      if (totalsData.timbre) totRows.push(mkTotRow('Timbre Fiscal', this._fmtMoney(totalsData.timbre||0), false));
-      totRows.push(mkTotRow('TOTAL TTC',  this._fmtMoney(totalsData.totalTTC||0), true));
+      if (totalsData.extraFees) totRows.push(mkTotRow(isAR ? 'مصاريف إضافية' : 'Frais suppl.',   this._fmtMoney(totalsData.extraFees), false));
+      totRows.push(mkTotRow(isAR ? 'المجموع خ.ر' : 'Total HT',   this._fmtMoney(totalsData.totalHT||0),  false));
+      if (totalsData.tvaAmount) totRows.push(mkTotRow(isAR ? `الضرائب (ر.ق.م ${totalsData.tvaRate||19}%)` : `Taxes (TVA ${totalsData.tvaRate||19}%)`, this._fmtMoney(totalsData.tvaAmount||0), false));
+      if (totalsData.timbre) totRows.push(mkTotRow(isAR ? 'الطابع الجبائي' : 'Timbre Fiscal', this._fmtMoney(totalsData.timbre||0), false));
+      totRows.push(mkTotRow(isAR ? 'المجموع ك.ر' : 'TOTAL TTC',  this._fmtMoney(totalsData.totalTTC||0), true));
 
       /* Tag first/last for mesh drawing */
       if (totRows.length) {
@@ -485,9 +487,19 @@
       return finalY;
     },
 
-    /* Wrapper for autoTable */
+    /* Wrapper for autoTable — ensures Amiri font for Arabic cells */
     _autoTable(doc, opts) {
       if (typeof doc.autoTable!=='function') throw new Error('autoTable not loaded');
+      if (_arFontB64) {
+        const origParse = opts.didParseCell;
+        opts.didParseCell = (data) => {
+          if (origParse) origParse(data);
+          const txt = (data.cell && data.cell.text) ? (Array.isArray(data.cell.text) ? data.cell.text.join(' ') : String(data.cell.text)) : '';
+          if (AR_RE.test(txt)) {
+            data.cell.styles.font = AR_FONT_NAME;
+          }
+        };
+      }
       doc.autoTable(opts);
       return doc.lastAutoTable.finalY;
     },
@@ -517,13 +529,14 @@
       const s   = this._settings();
       const doc = this._newDoc();
 
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       /* ── Header / Banner / Strip ── */
       let y = this._drawCompanyHeader(doc, s, MT);
-      y = this._drawBanner(doc, 'BON DE RÉCEPTION', y);
+      y = this._drawBanner(doc, isAR ? 'وصل الاستلام' : 'BON DE RÉCEPTION', y);
       y = this._drawInfoStrip(doc, [
-        {label:'Date',       value:this._fmtDate(br.date)},
-        {label:'Référence',  value:this._t(br.ref||'/')},
-        {label:'Année',      value:br.year||new Date().getFullYear()},
+        {label:isAR ? 'التاريخ' : 'Date',       value:this._fmtDate(br.date)},
+        {label:isAR ? 'المرجع' : 'Référence',  value:this._t(br.ref||'/')},
+        {label:isAR ? 'السنة' : 'Année',      value:br.year||new Date().getFullYear()},
       ], y);
       y += 4;
 
@@ -534,29 +547,26 @@
         `NIF : ${sup.nif||'-'}`,
         `NIS : ${sup.nis||'-'}`,
         `RC  : ${sup.rc||'-'}`,
-        `Adresse : ${this._t(sup.address||'-')}`,
-        `Tel : ${sup.phone||'-'}`,
+        `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address||'-')}`,
+        `${isAR ? 'الهاتف' : 'Tel'} : ${sup.phone||'-'}`,
       ];
-      this._drawEntityBox(doc,'Fournisseur', supLines, ML, y, cw2, boxH);
-      this._drawEntityBox(doc,'Réception / Contrôle',[
-        `Réceptionné par : ${this._t(br.receivedBy||'......................')}`,
-        `Contrôlé par    : ${this._t(br.controlledBy||'......................')}`,
+      this._drawEntityBox(doc, isAR ? 'المورد' : 'Fournisseur', supLines, ML, y, cw2, boxH);
+      this._drawEntityBox(doc, isAR ? 'الاستلام / المراقبة' : 'Réception / Contrôle',[
+        `${isAR ? 'استلم من طرف' : 'Réceptionné par'} : ${this._t(br.receivedBy||'......................')}`,
+        `${isAR ? 'فحص من طرف' : 'Contrôlé par   '} : ${this._t(br.controlledBy||'......................')}`,
         '',
-        `Date réception  : ${this._fmtDate(br.date)}`,
+        `${isAR ? 'تاريخ الاستلام' : 'Date réception '} : ${this._fmtDate(br.date)}`,
       ], ML+cw2+gap, y, cw2, boxH);
       y += boxH+4;
 
       /* ── 6-column table with mesh ── */
-      /* w0+w1+w2+w3+w4+w5 must = CW=194 */
-      /* 12+95+14+18+28+27 = 194 ✓ */
-      /* Exact reference BC widths: 12+75+15+18+34+40 = 194 = CW ✓ */
       const COLS = [
-        {label:'N°',                                            width:12, halign:'center'},
-        {label:'DÉSIGNATION DES FOURNITURES / SERVICES',        width:75, halign:'left'},
-        {label:'UNITÉ',                                         width:15, halign:'center'},
-        {label:'QTÉ',                                           width:18, halign:'center'},
-        {label:'P.U. HT',                                       width:34, halign:'center'},
-        {label:'TOTAL HT',                                      width:40, halign:'center'},
+        {label:isAR ? 'الرقم' : 'N°',                                            width:12, halign:'center'},
+        {label:isAR ? 'بيان التوريدات / الخدمات' : 'DÉSIGNATION DES FOURNITURES / SERVICES',        width:75, halign:'left'},
+        {label:isAR ? 'الوحدة' : 'UNITÉ',                                         width:15, halign:'center'},
+        {label:isAR ? 'الكمية' : 'QTÉ',                                           width:18, halign:'center'},
+        {label:isAR ? 'سعر الوحدة خ.ر' : 'P.U. HT',                                       width:34, halign:'center'},
+        {label:isAR ? 'المجموع خ.ر' : 'TOTAL HT',                                      width:40, halign:'center'},
       ];
 
       const bodyRows6 = (br.lines||[]).map((l,i)=>{
@@ -594,21 +604,21 @@
       /* ── Attestation ── */
       y+=3;
       doc.setFont('helvetica','bold'); doc.setFontSize(8.5); this._tc(doc,C.BLACK);
-      const att='Nous attestons que les fournitures receptionnees sont conformes a la commande qualitativement et quantitativement.';
+      const att = isAR ? 'نشهد بأن التوريدات المستلمة مطابقة للطلبية نوعياً وكمياً.' : 'Nous attestons que les fournitures receptionnees sont conformes a la commande qualitativement et quantitativement.';
       const attL=doc.splitTextToSize(att, CW);
-      doc.text(attL,ML,y); y+=attL.length*4.5+4;
+      this._text(doc, attL, ML, y); y+=attL.length*4.5+4;
 
       if(br.notes){
         doc.setFont('helvetica','normal'); doc.setFontSize(8); this._tc(doc,C.GRAY_TXT);
-        const nl=doc.splitTextToSize(`Observations : ${this._t(br.notes)}`, CW);
-        doc.text(nl,ML,y); y+=nl.length*4+3;
+        const nl=doc.splitTextToSize(`${isAR ? 'ملاحظات' : 'Observations'} : ${this._t(br.notes)}`, CW);
+        this._text(doc, nl, ML, y); y+=nl.length*4+3;
       }
 
       /* ── 3 Signature blocks ── */
       this._drawSigBlock(doc,[
-        {label:'Le Fournisseur',   sub:this._t(sup.name||'')},
-        {label:'Réceptionné par',  value:this._t(br.receivedBy||''),  sub:'Signature & Cachet'},
-        {label:'Contrôlé par',     value:this._t(br.controlledBy||''), sub:'Signature & Cachet'},
+        {label:isAR ? 'المورد' : 'Le Fournisseur',   sub:this._t(sup.name||'')},
+        {label:isAR ? 'استلم من طرف' : 'Réceptionné par',  value:this._t(br.receivedBy||''),  sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
+        {label:isAR ? 'فحص من طرف' : 'Contrôlé par',     value:this._t(br.controlledBy||''), sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
       ], Math.max(y, PH-62), 44);
 
       this._drawFooter(doc,1,1);
@@ -650,15 +660,16 @@
       
       const doc = this._newDoc();
       
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       let y = this._drawCompanyHeader(doc, s, MT);
-      y = this._drawBanner(doc, 'ÉTAT DE VENTE & VERSEMENT BANCAIRE', y);
+      y = this._drawBanner(doc, isAR ? 'كشف المبيعات والإيداع البنكي' : 'ÉTAT DE VENTE & VERSEMENT BANCAIRE', y);
       
       const infoItems = [];
-      if (ref) infoItems.push({ label: 'Réf État', value: this._t(ref) });
-      infoItems.push({ label: 'Période', value: this._t(period) });
-      infoItems.push({ label: 'Édité le', value: this._fmtDate(createdAt ? new Date(createdAt) : new Date()) });
-      if (createdByName) infoItems.push({ label: 'Établi par', value: this._t(createdByName) });
-      if (data.bankName) infoItems.push({ label: 'Banque', value: this._t(data.bankName) });
+      if (ref) infoItems.push({ label: isAR ? 'مرجع الكشف' : 'Réf État', value: this._t(ref) });
+      infoItems.push({ label: isAR ? 'الفترة' : 'Période', value: this._t(period) });
+      infoItems.push({ label: isAR ? 'حُرر في' : 'Édité le', value: this._fmtDate(createdAt ? new Date(createdAt) : new Date()) });
+      if (createdByName) infoItems.push({ label: isAR ? 'أُعد من طرف' : 'Établi par', value: this._t(createdByName) });
+      if (data.bankName) infoItems.push({ label: isAR ? 'البنك' : 'Banque', value: this._t(data.bankName) });
 
       y = this._drawInfoStrip(doc, infoItems, y);
       y += 6;
@@ -667,16 +678,16 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       this._tc(doc, C.PRIMARY);
-      doc.text('I. RÉCAPITULATIF DES ARTICLES VENDUS (VENTES CUMULÉES)', ML, y);
+      this._text(doc, isAR ? '1. ملخص المواد المباعة (المبيعات التراكمية)' : 'I. RÉCAPITULATIF DES ARTICLES VENDUS (VENTES CUMULÉES)', ML, y);
       y += 4;
       
       const COLS = [
-        {label:'N°', width:12, halign:'center'},
-        {label:'DÉSIGNATION', width:75, halign:'left'},
-        {label:'UNITÉ', width:15, halign:'center'},
-        {label:'QTÉ', width:18, halign:'center'},
-        {label:'P.U HT', width:34, halign:'center'},
-        {label:'TOTAL HT', width:40, halign:'center'},
+        {label:isAR ? 'الرقم' : 'N°', width:12, halign:'center'},
+        {label:isAR ? 'البيان' : 'DÉSIGNATION', width:75, halign:'left'},
+        {label:isAR ? 'الوحدة' : 'UNITÉ', width:15, halign:'center'},
+        {label:isAR ? 'الكمية' : 'QTÉ', width:18, halign:'center'},
+        {label:isAR ? 'سعر الوحدة خ.ر' : 'P.U HT', width:34, halign:'center'},
+        {label:isAR ? 'المجموع خ.ر' : 'TOTAL HT', width:40, halign:'center'},
       ];
       
       const bodyRows = (items || []).map((l, i) => {
@@ -708,28 +719,28 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         this._tc(doc, C.PRIMARY);
-        doc.text(`II. DETAIL DES BONS DE LIVRAISON INCLUS (VENTES DU JOUR : ${blList.length} BL)`, ML, y);
+        this._text(doc, isAR ? `2. تفاصيل وصولات التسليم المتضمنة (مبيعات اليوم : ${blList.length} وصل)` : `II. DETAIL DES BONS DE LIVRAISON INCLUS (VENTES DU JOUR : ${blList.length} BL)`, ML, y);
         y += 4;
 
         const blCols = [
-          {label:'N°', width:12, halign:'center'},
-          {label:'RÉFÉRENCE BL', width:42, halign:'center'},
-          {label:'DATE', width:26, halign:'center'},
-          {label:'CLIENT / DESTINATAIRE', width:72, halign:'left'},
-          {label:'MONTANT TTC', width:42, halign:'right'}
+          {label:isAR ? 'الرقم' : 'N°', width:12, halign:'center'},
+          {label:isAR ? 'مرجع وصل التسليم' : 'RÉFÉRENCE BL', width:42, halign:'center'},
+          {label:isAR ? 'التاريخ' : 'DATE', width:26, halign:'center'},
+          {label:isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', width:72, halign:'left'},
+          {label:isAR ? 'المبلغ ك.ر' : 'MONTANT TTC', width:42, halign:'right'}
         ];
 
         const blRows = blList.map((b, i) => [
           String(i+1).padStart(2, '0'),
           this._t(b.ref || '—'),
           this._fmtDate(b.date),
-          this._t(b.clientName || 'Client Comptoir'),
+          this._t(b.clientName || (isAR ? 'زبون عادي' : 'Client Comptoir')),
           this._fmtMoney(b.totalTTC || 0)
         ]);
 
         // Total row for BLs
         blRows.push([
-          { content: 'TOTAL BRUT VENTES BL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
+          { content: isAR ? 'إجمالي مبيعات وصولات التسليم (خام)' : 'TOTAL BRUT VENTES BL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
           { content: '+' + this._fmtMoney(effectiveGross), styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129], fillColor: [240, 244, 248] } }
         ]);
 
@@ -782,7 +793,7 @@
 
         // Total row for Returns
         retRows.push([
-          { content: 'TOTAL RETOURS MARCHANDISE DÉDUITS', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [254, 242, 242], textColor: [220, 38, 38] } },
+          { content: isAR ? 'إجمالي مردودات البضائع المخصومة' : 'TOTAL RETOURS MARCHANDISE DÉDUITS', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [254, 242, 242], textColor: [220, 38, 38] } },
           { content: '- ' + this._fmtMoney(effectiveReturns), styles: { halign: 'right', fontStyle: 'bold', textColor: [220, 38, 38], fillColor: [254, 242, 242] } }
         ]);
 
@@ -909,6 +920,7 @@
       const cli = bc.clientId ? (DB.getById('clients', bc.clientId) || {}) : {};
       const br = bc.linkedBrId ? DB.getById('brs', bc.linkedBrId) : (bc.brId ? DB.getById('brs', bc.brId) : null);
       
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       const doc = this._newDoc();
       const lines = bc.lines || [];
       const totalHT = Number(bc.totalHT) || 0;
@@ -971,7 +983,7 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         this._tc(doc, [15, 23, 42]);
-        doc.text('BON DE CHARGEMENT', ML + 4, y + 4.8);
+        this._text(doc, isAR ? 'وصل الشحن' : 'BON DE CHARGEMENT', ML + 4, y + 4.8);
 
         // Volet badge on the right
         doc.setFillColor(...badgeColor);
@@ -979,7 +991,7 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);
         this._tc(doc, [255, 255, 255]);
-        doc.text(`VOLET ${voletNum} : ${voletTitle}`, ML + CW - 40, y + 4.3, { align: 'center' });
+        this._text(doc, isAR ? `النسخة ${voletNum} : ${voletTitle}` : `VOLET ${voletNum} : ${voletTitle}`, ML + CW - 40, y + 4.3, { align: 'center' });
         y += 8;
 
         // 3. Info Strip: N° BCH, Date, N° BL lié, N° BR lié, Chauffeur, Immat (8mm)
@@ -988,32 +1000,32 @@
         doc.setFontSize(7);
         this._tc(doc, [15, 23, 42]);
         const colW = CW / 6;
-        doc.text(`N° BCH :`, ML + 2, y + 3.2);
+        this._text(doc, isAR ? 'رقم وصل الشحن :' : 'N° BCH :', ML + 2, y + 3.2);
         doc.setFont('helvetica', 'normal');
         doc.text(bchRef, ML + 2, y + 6.2);
 
         doc.setFont('helvetica', 'bold');
-        doc.text(`Date :`, ML + colW + 2, y + 3.2);
+        this._text(doc, isAR ? 'التاريخ :' : 'Date :', ML + colW + 2, y + 3.2);
         doc.setFont('helvetica', 'normal');
         doc.text(this._fmtDate(bc.date), ML + colW + 2, y + 6.2);
 
         doc.setFont('helvetica', 'bold');
-        doc.text(`BL Lié :`, ML + colW*2 + 2, y + 3.2);
+        this._text(doc, isAR ? 'وصل التسليم المرتبط :' : 'BL Lié :', ML + colW*2 + 2, y + 3.2);
         doc.setFont('helvetica', 'normal');
         doc.text(blRef, ML + colW*2 + 2, y + 6.2);
 
         doc.setFont('helvetica', 'bold');
-        doc.text(`BR Lié :`, ML + colW*3 + 2, y + 3.2);
+        this._text(doc, isAR ? 'وصل الاستلام المرتبط :' : 'BR Lié :', ML + colW*3 + 2, y + 3.2);
         doc.setFont('helvetica', 'normal');
         doc.text(brRef, ML + colW*3 + 2, y + 6.2);
 
         doc.setFont('helvetica', 'bold');
-        doc.text(`Chauffeur :`, ML + colW*4 + 2, y + 3.2);
+        this._text(doc, isAR ? 'السائق :' : 'Chauffeur :', ML + colW*4 + 2, y + 3.2);
         doc.setFont('helvetica', 'normal');
-        doc.text(this._t((bc.driverName || '/').slice(0, 18)), ML + colW*4 + 2, y + 6.2);
+        this._text(doc, this._t((bc.driverName || '/').slice(0, 18)), ML + colW*4 + 2, y + 6.2);
 
         doc.setFont('helvetica', 'bold');
-        doc.text(`Immat :`, ML + colW*5 + 2, y + 3.2);
+        this._text(doc, isAR ? 'رقم اللوحة :' : 'Immat :', ML + colW*5 + 2, y + 3.2);
         doc.setFont('helvetica', 'normal');
         doc.text(this._t(bc.truckIMM || '/'), ML + colW*5 + 2, y + 6.2);
         y += 9;
@@ -1026,36 +1038,36 @@
         doc.setFillColor(241, 245, 249);
         doc.rect(ML, y, cw2, 4, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [51, 65, 85]);
-        doc.text('ORIGINE DU CHARGEMENT (USINE)', ML + 2, y + 3);
+        this._text(doc, isAR ? 'مصدر الشحن (المصنع)' : 'ORIGINE DU CHARGEMENT (USINE)', ML + 2, y + 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        doc.text(supName.slice(0, 36), ML + 2, y + 7.5);
+        this._text(doc, supName.slice(0, 36), ML + 2, y + 7.5);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [71, 85, 105]);
-        doc.text(`Tél : ${sup.phone || bc.driverPhone || '-'}`, ML + 2, y + 11);
-        doc.text(`Adresse : ${this._t(sup.address || '-').slice(0, 42)}`, ML + 2, y + 14.5);
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || bc.driverPhone || '-'}`, ML + 2, y + 11);
+        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || '-').slice(0, 42)}`, ML + 2, y + 14.5);
 
         // Right: Client
-        const cliName = this._t(cli.name || bc.clientName || 'Client Destinataire');
+        const cliName = this._t(cli.name || bc.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
         const destAddr = this._t(bc.destinationAddress || cli.address || '-');
         this._rect(doc, ML + cw2 + gap, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
         doc.setFillColor(241, 245, 249);
         doc.rect(ML + cw2 + gap, y, cw2, 4, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [51, 65, 85]);
-        doc.text('CLIENT / DESTINATAIRE', ML + cw2 + gap + 2, y + 3);
+        this._text(doc, isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', ML + cw2 + gap + 2, y + 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        doc.text(cliName.slice(0, 36), ML + cw2 + gap + 2, y + 7.5);
+        this._text(doc, cliName.slice(0, 36), ML + cw2 + gap + 2, y + 7.5);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [71, 85, 105]);
-        doc.text(`Destination : ${destAddr.slice(0, 38)}`, ML + cw2 + gap + 2, y + 11);
-        doc.text(`NIF : ${cli.nif || '-'}  |  Tél : ${cli.phone || '-'}`, ML + cw2 + gap + 2, y + 14.5);
+        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 38)}`, ML + cw2 + gap + 2, y + 11);
+        this._text(doc, `NIF : ${cli.nif || '-'}  |  ${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}`, ML + cw2 + gap + 2, y + 14.5);
         y += boxH + 2;
 
         // 5. Items Table (6 cols: N°, DÉSIGNATION, UNITÉ, QTÉ, P.U. HT, TOTAL HT)
         const colDef = [
-          { label: 'N°', w: 10, align: 'center' },
-          { label: 'DÉSIGNATION DES FOURNITURES', w: 82, align: 'left' },
-          { label: 'UNITÉ', w: 14, align: 'center' },
-          { label: 'QTÉ', w: 20, align: 'center' },
-          { label: 'P.U. HT', w: 32, align: 'right' },
-          { label: 'TOTAL HT', w: 36, align: 'right' }
+          { label: isAR ? 'الرقم' : 'N°', w: 10, align: 'center' },
+          { label: isAR ? 'بيان التوريدات' : 'DÉSIGNATION DES FOURNITURES', w: 82, align: 'left' },
+          { label: isAR ? 'الوحدة' : 'UNITÉ', w: 14, align: 'center' },
+          { label: isAR ? 'الكمية' : 'QTÉ', w: 20, align: 'center' },
+          { label: isAR ? 'سعر الوحدة خ.ر' : 'P.U. HT', w: 32, align: 'right' },
+          { label: isAR ? 'المجموع خ.ر' : 'TOTAL HT', w: 36, align: 'right' }
         ];
 
         // Table Header
@@ -1123,16 +1135,16 @@
         // Totals Summary Bar (6mm)
         this._rect(doc, ML, y, CW, 5.5, [241, 245, 249], [203, 213, 225]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        doc.text(`TOTAL HT : ${this._fmtMoney(totalHT)}`, ML + 4, y + 3.8);
-        if (timbre > 0) doc.text(`TIMBRE : ${this._fmtMoney(timbre)}`, ML + 75, y + 3.8);
+        this._text(doc, `${isAR ? 'المجموع خ.ر' : 'TOTAL HT'} : ${this._fmtMoney(totalHT)}`, ML + 4, y + 3.8);
+        if (timbre > 0) this._text(doc, `${isAR ? 'الطابع' : 'TIMBRE'} : ${this._fmtMoney(timbre)}`, ML + 75, y + 3.8);
         doc.setFontSize(7.5); this._tc(doc, C.PRIMARY || [13, 148, 136]);
-        doc.text(`TOTAL TTC : ${this._fmtMoney(totalTTC)}`, ML + CW - 4, y + 3.8, { align: 'right' });
+        this._text(doc, `${isAR ? 'المجموع ك.ر' : 'TOTAL TTC'} : ${this._fmtMoney(totalTTC)}`, ML + CW - 4, y + 3.8, { align: 'right' });
         y += 6.8;
 
         // 6. Anti-Counterfeit Verification Strip linking both volets (4.5mm)
         this._rect(doc, ML, y, CW, 4.2, [254, 243, 199], [251, 191, 36]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5); this._tc(doc, [146, 64, 14]);
-        doc.text(`SECURITE ANTI-FRAUDE | CODE : ${secCode} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIE`, ML + CW / 2, y + 3, { align: 'center' });
+        this._text(doc, isAR ? `حماية ضد التزوير | رمز : ${secCode} | النسخة ${voletNum}/${voletNum === 1 ? '2' : '1'} مطابقة` : `SECURITE ANTI-FRAUDE | CODE : ${secCode} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIE`, ML + CW / 2, y + 3, { align: 'center' });
         y += 5.2;
 
         // 7. Signature Blocks (3 boxes: Émetteur Caisse, Chauffeur, Usine) — 13mm
@@ -1140,23 +1152,23 @@
         // Sig 1: Caisse
         this._rect(doc, ML, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6); this._tc(doc, [51, 65, 85]);
-        doc.text('VISA / CAISSIER ÉMETTEUR', ML + 2, y + 3);
+        this._text(doc, isAR ? 'تأشيرة / أمين الصندوق' : 'VISA / CAISSIER ÉMETTEUR', ML + 2, y + 3);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
-        doc.text('Date & Cachet Caisse', ML + 2, y + sigH - 1.5);
+        this._text(doc, isAR ? 'التاريخ وختم الصندوق' : 'Date & Cachet Caisse', ML + 2, y + sigH - 1.5);
 
         // Sig 2: Chauffeur
         this._rect(doc, ML + sigW + 2, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6); this._tc(doc, [51, 65, 85]);
-        doc.text('LE CHAUFFEUR / TRANSPORTEUR', ML + sigW + 4, y + 3);
+        this._text(doc, isAR ? 'السائق / الناقل' : 'LE CHAUFFEUR / TRANSPORTEUR', ML + sigW + 4, y + 3);
         doc.setFont('helvetica', 'italic'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
-        doc.text('« Reçu marchandises en bon état »', ML + sigW + 4, y + sigH - 1.5);
+        this._text(doc, isAR ? '« استلمت البضائع بحالة جيدة »' : '« Reçu marchandises en bon état »', ML + sigW + 4, y + sigH - 1.5);
 
         // Sig 3: Usine
         this._rect(doc, ML + (sigW + 2) * 2, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6); this._tc(doc, [51, 65, 85]);
-        doc.text('VALIDATION USINE / CHARGEMENT', ML + (sigW + 2) * 2 + 2, y + 3);
+        this._text(doc, isAR ? 'تأكيد المصنع / الشحن' : 'VALIDATION USINE / CHARGEMENT', ML + (sigW + 2) * 2 + 2, y + 3);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
-        doc.text('Cachet Usine & Bon à charger', ML + (sigW + 2) * 2 + 2, y + sigH - 1.5);
+        this._text(doc, isAR ? 'ختم المصنع والموافقة على الشحن' : 'Cachet Usine & Bon à charger', ML + (sigW + 2) * 2 + 2, y + sigH - 1.5);
       };
 
       // ── DRAW VOLET 1 (Top Half: Chauffeur / Transporteur) ──
@@ -1252,13 +1264,14 @@
       if (leg2) doc.text(leg2, PW / 2, y + 14.5, { align: 'center' });
       y += 18;
 
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       // ── 2. Title Banner ──
       doc.setFillColor(...C.PRIMARY);
       doc.roundedRect(ML, y, CW, 10, 1.5, 1.5, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
       this._tc(doc, C.WHITE);
-      doc.text('BON DE LIVRAISON', PW / 2, y + 7, { align: 'center' });
+      this._text(doc, isAR ? (isRoute ? 'وصل التسليم (طريق / تنقل)' : 'وصل التسليم') : (isRoute ? 'BON DE LIVRAISON (ROUTE / CIRCULATION)' : 'BON DE LIVRAISON'), PW / 2, y + 7, { align: 'center' });
       y += 12;
 
       // ── 3. Info Strip (N° BCH, Date, BR Ref, Chauffeur, Immat) ──
@@ -1267,29 +1280,29 @@
       doc.setFontSize(8);
       this._tc(doc, [15, 23, 42]);
       const iColW = CW / 5;
-      doc.text('N BCH :', ML + 2, y + 4);
+      this._text(doc, isAR ? 'رقم وصل الشحن :' : 'N BCH :', ML + 2, y + 4);
       doc.setFont('helvetica', 'normal');
       doc.text(bchRef, ML + 2, y + 8);
 
       doc.setFont('helvetica', 'bold');
-      doc.text('Date :', ML + iColW + 2, y + 4);
+      this._text(doc, isAR ? 'التاريخ :' : 'Date :', ML + iColW + 2, y + 4);
       doc.setFont('helvetica', 'normal');
       doc.text(this._fmtDate(bl.date), ML + iColW + 2, y + 8);
 
       doc.setFont('helvetica', 'bold');
-      doc.text('BR Ref :', ML + iColW*2 + 2, y + 4);
+      this._text(doc, isAR ? 'مرجع و.ا :' : 'BR Ref :', ML + iColW*2 + 2, y + 4);
       doc.setFont('helvetica', 'normal');
       doc.text(brRef, ML + iColW*2 + 2, y + 8);
 
       doc.setFont('helvetica', 'bold');
-      doc.text('Chauffeur :', ML + iColW*3 + 2, y + 4);
+      this._text(doc, isAR ? 'السائق :' : 'Chauffeur :', ML + iColW*3 + 2, y + 4);
       doc.setFont('helvetica', 'normal');
-      doc.text(this._t((bl.driverName || '/').slice(0, 20)), ML + iColW*3 + 2, y + 8);
+      this._text(doc, this._t((bl.driverName || '/').slice(0, 20)), ML + iColW*3 + 2, y + 8);
 
       doc.setFont('helvetica', 'bold');
-      doc.text('Immat :', ML + iColW*4 + 2, y + 4);
+      this._text(doc, isAR ? 'رقم اللوحة :' : 'Immat :', ML + iColW*4 + 2, y + 4);
       doc.setFont('helvetica', 'normal');
-      doc.text(this._t(bl.truckIMM || '/'), ML + iColW*4 + 2, y + 8);
+      this._text(doc, this._t(bl.truckIMM || '/'), ML + iColW*4 + 2, y + 8);
       y += 12;
 
       // ── 4. Entity boxes (Fournisseur & Client) ──
@@ -1300,36 +1313,36 @@
       doc.setFillColor(241, 245, 249);
       doc.rect(ML, y, cw2, 5, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [51, 65, 85]);
-      doc.text('FOURNISSEUR / EXPEDITEUR', ML + 3, y + 3.5);
+      this._text(doc, isAR ? 'المورد / المرسل' : 'FOURNISSEUR / EXPEDITEUR', ML + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
-      doc.text(supName.slice(0, 40), ML + 3, y + 9.5);
+      this._text(doc, supName.slice(0, 40), ML + 3, y + 9.5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      doc.text(`Tel : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + 14);
-      doc.text(`Adresse : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + 18);
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tel'} : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + 14);
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + 18);
 
       // Right: Client
-      const cliName = this._t(cli.name || bl.clientName || 'Client Destinataire');
+      const cliName = this._t(cli.name || bl.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
       const wilayaDest = bl.destinationAddress || bl.wilaya || cli.address || '-';
       this._rect(doc, ML + cw2 + gap, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
       doc.setFillColor(241, 245, 249);
       doc.rect(ML + cw2 + gap, y, cw2, 5, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [51, 65, 85]);
-      doc.text('CLIENT / DESTINATAIRE', ML + cw2 + gap + 3, y + 3.5);
+      this._text(doc, isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', ML + cw2 + gap + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
-      doc.text(cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
+      this._text(doc, cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      doc.text(`Dest. livr. : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + 14);
-      doc.text(`NIF : ${cli.nif || '-'}  |  Tel : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + 18);
+      this._text(doc, `${isAR ? 'وجهة التسليم' : 'Dest. livr.'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + 14);
+      this._text(doc, `NIF : ${cli.nif || '-'}  |  ${isAR ? 'الهاتف' : 'Tel'} : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + 18);
       y += boxH + 3;
 
       // ── 5. Items Table ──
       const colDef = [
-        { label: 'N', w: 10, align: 'center' },
-        { label: 'DESIGNATION DES FOURNITURES / MARCHANDISES', w: 82, align: 'left' },
-        { label: 'UNITE', w: 14, align: 'center' },
-        { label: 'QTE', w: 20, align: 'center' },
-        { label: 'P.U. HT', w: 32, align: 'right' },
-        { label: 'TOTAL HT', w: 36, align: 'right' }
+        { label: isAR ? 'الرقم' : 'N°', w: 10, align: 'center' },
+        { label: isAR ? 'بيان التوريدات / البضائع' : 'DESIGNATION DES FOURNITURES / MARCHANDISES', w: 82, align: 'left' },
+        { label: isAR ? 'الوحدة' : 'UNITE', w: 14, align: 'center' },
+        { label: isAR ? 'الكمية' : 'QTE', w: 20, align: 'center' },
+        { label: isAR ? 'سعر الوحدة خ.ر' : 'P.U. HT', w: 32, align: 'right' },
+        { label: isAR ? 'المجموع خ.ر' : 'TOTAL HT', w: 36, align: 'right' }
       ];
 
       // Table Header
@@ -1440,7 +1453,8 @@
       if (!br) {
         br = DB.getAll('bon_retours').find(r => String(r.blId) === String(id) || String(r.bcId) === String(id));
       }
-      if (!br) { this._notify('Bon de Retour introuvable','error'); return; }
+      const isAR = typeof T !== 'undefined' && T.isRTL();
+      if (!br) { this._notify(isAR ? 'وصل الإرجاع غير موجود' : 'Bon de Retour introuvable','error'); return; }
       
       const cli = br.clientId ? DB.getById('clients', br.clientId)||{} : {};
       const s   = this._settings();
@@ -1494,7 +1508,7 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
       this._tc(doc, C.WHITE);
-      doc.text('BON DE RETOUR', PW / 2, y + 7, { align: 'center' });
+      this._text(doc, isAR ? 'وصل الإرجاع' : 'BON DE RETOUR', PW / 2, y + 7, { align: 'center' });
       y += 12;
 
       // ── 3. Info Strip ──
@@ -1508,22 +1522,22 @@
       this._tc(doc, [15, 23, 42]);
       const iColW = CW / 4;
       
-      doc.text('N\u00b0 BON RETOUR :', ML + 2, y + 4);
+      this._text(doc, isAR ? 'رقم وصل الإرجاع :' : 'N° BON RETOUR :', ML + 2, y + 4);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
       doc.text(brRef, ML + 2, y + 9);
 
       doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-      doc.text('DATE RETOUR :', ML + iColW + 2, y + 4);
+      this._text(doc, isAR ? 'تاريخ الإرجاع :' : 'DATE RETOUR :', ML + iColW + 2, y + 4);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
       doc.text(returnDate, ML + iColW + 2, y + 9);
 
       doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-      doc.text('R\u00c9F BCH :', ML + iColW*2 + 2, y + 4);
+      this._text(doc, isAR ? 'مرجع وصل الشحن :' : 'RÉF BCH :', ML + iColW*2 + 2, y + 4);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
       doc.text(bchRef, ML + iColW*2 + 2, y + 9);
 
       doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-      doc.text('R\u00c9F BR :', ML + iColW*3 + 2, y + 4);
+      this._text(doc, isAR ? 'مرجع وصل الاستلام :' : 'RÉF BR :', ML + iColW*3 + 2, y + 4);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
       doc.text(blRef, ML + iColW*3 + 2, y + 9);
       y += 16;
@@ -1666,15 +1680,16 @@
        DÉCHARGE CAISSE — 2 sig blocks only
     ══════════════════════════════════════════════════════════ */
     _exportDecharge(id) {
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       const tx = DB.getById('caisse_admin',id)
               || DB.getById('caisse_transactions',id)
               || DB.getById('transactions',id);
-      if(!tx){ this._notify('Transaction introuvable','error'); return; }
+      if(!tx){ this._notify(isAR ? 'العملية غير موجودة' : 'Transaction introuvable','error'); return; }
 
       const s   = this._settings();
       const doc = this._newDoc();
       const isDeposit = tx.type==='deposit';
-      const title     = isDeposit?'BON DE VERSEMENT':'BON DE RETRAIT';
+      const title     = isDeposit ? (isAR ? 'وصل إيداع نقدي' : 'BON DE VERSEMENT') : (isAR ? 'وصل سحب نقدي' : 'BON DE RETRAIT');
       const userName  = this._t(tx.userName||tx.createdByName||'/');
       const montant   = Number(tx.amount)||0;
       const ref       = this._t(tx.ref||`TX-${tx.id||'?'}`);
@@ -1682,9 +1697,9 @@
       let y = this._drawCompanyHeader(doc,s,MT);
       y = this._drawBanner(doc,title,y);
       y = this._drawInfoStrip(doc,[
-        {label:'Date/Heure', value:this._fmtDateTime(tx.date||tx.createdAt)},
-        {label:'N° Réf',     value:ref},
-        {label:'Type',       value:isDeposit?'Versement':'Retrait'},
+        {label:isAR ? 'التاريخ / الوقت' : 'Date/Heure', value:this._fmtDateTime(tx.date||tx.createdAt)},
+        {label:isAR ? 'رقم المرجع' : 'N° Réf',     value:ref},
+        {label:isAR ? 'النوع' : 'Type',       value:isDeposit ? (isAR ? 'إيداع' : 'Versement') : (isAR ? 'سحب' : 'Retrait')},
       ],y);
       y+=6;
 
@@ -1693,12 +1708,12 @@
       this._rect(doc,ML,y,CW,cardH,C.BG_INFO,C.LINE);
       this._rect(doc,ML,y,CW,8,C.LIGHT,C.LINE);
       doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.PRIMARY_DARK);
-      doc.text("DÉTAILS DE L'OPÉRATION",ML+4,y+5.5);
+      this._text(doc, isAR ? 'تفاصيل العملية' : "DÉTAILS DE L'OPÉRATION", ML+4, y+5.5);
 
       let cy=y+14;
       const rowF=(lbl,val,bold)=>{
         doc.setFont('helvetica','bold'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
-        doc.text(lbl,ML+4,cy);
+        this._text(doc, lbl, ML+4, cy);
         doc.setFont('helvetica',bold?'bold':'normal');
         doc.setFontSize(bold?11:8.5);
         this._tc(doc,bold?C.PRIMARY:C.BLACK);
@@ -1715,13 +1730,13 @@
         }
         cy+=6.5;
       };
-      rowF('Opérateur :',    userName);
-      rowF('Date / Heure :', this._fmtDateTime(tx.date||tx.createdAt));
-      rowF('Caisse :',       this._t(tx.accountName||'Caisse Principale'));
-      rowF('Destination :',  this._t(tx.destination||'/'));
-      rowF('Motif :',        this._t(tx.note||tx.description||'/'));
+      rowF(isAR ? 'العون / المنفذ :' : 'Opérateur :',    userName);
+      rowF(isAR ? 'التاريخ / الوقت :' : 'Date / Heure :', this._fmtDateTime(tx.date||tx.createdAt));
+      rowF(isAR ? 'الصندوق :' : 'Caisse :',       this._t(tx.accountName || (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale')));
+      rowF(isAR ? 'الوجهة :' : 'Destination :',  this._t(tx.destination||'/'));
+      rowF(isAR ? 'السبب :' : 'Motif :',        this._t(tx.note||tx.description||'/'));
       cy+=2;
-      rowF('MONTANT :',      this._fmtMoney(montant), true);
+      rowF(isAR ? 'المبلغ :' : 'MONTANT :',      this._fmtMoney(montant), true);
       const actualCardH = Math.max(cardH, (cy - y) + 4);
       y+=actualCardH+6;
 
@@ -1729,14 +1744,14 @@
       const wd=this._amountWords(montant);
       if(wd){
         doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK);
-        const wl=doc.splitTextToSize(`Arretee a la somme de : ${wd} dinars algeriens`,CW);
-        doc.text(wl,ML,y); y+=wl.length*4.5+4;
+        const wl=doc.splitTextToSize(isAR ? `أوقفت عند مبلغ قدره : ${wd} دينار جزائري` : `Arretee a la somme de : ${wd} dinars algeriens`,CW);
+        this._text(doc, wl, ML, y); y+=wl.length*4.5+4;
       }
 
       /* 2 Sig blocks: Responsable Caisse + DG */
       this._drawSigBlock(doc,[
-        {label:'Le Responsable Caisse', sub:'Signature & Cachet'},
-        {label:'Le Directeur Général',  sub:'Signature & Cachet'},
+        {label:isAR ? 'مسؤول الصندوق' : 'Le Responsable Caisse', sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
+        {label:isAR ? 'المدير العام' : 'Le Directeur Général',  sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
       ], Math.max(y+4,PH-62), 44);
 
       this._drawFooter(doc,1,1);
@@ -1748,20 +1763,21 @@
        BANK TRANSACTION DÉCHARGE
     ══════════════════════════════════════════════════════════ */
     _exportBankDecharge(txId) {
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       const tx = DB.getById('bank_transactions', txId);
-      if (!tx) { this._notify('Transaction bancaire introuvable','error'); return; }
+      if (!tx) { this._notify(isAR ? 'المعاملة البنكية غير موجودة' : 'Transaction bancaire introuvable','error'); return; }
       const settings = DB.getSettings();
       const bank = (settings.banks||[]).find(b=>b.id===tx.bankId);
       const s    = this._settings();
       const doc  = this._newDoc();
 
       const subtypeTitles = {
-        transfer_from_caisse: 'BON DE VIREMENT CAISSE → BANQUE',
-        external_deposit:     'BON DE DÉPÔT EXTERNE',
-        supplier_payment:     'BON DE PAIEMENT FOURNISSEUR (BANQUE)',
-        correction:           'BON DE CORRECTION BANCAIRE',
+        transfer_from_caisse: isAR ? 'وصل تحويل من الصندوق إلى البنك' : 'BON DE VIREMENT CAISSE → BANQUE',
+        external_deposit:     isAR ? 'وصل إيداع خارجي' : 'BON DE DÉPÔT EXTERNE',
+        supplier_payment:     isAR ? 'وصل دفع للمورد (بنك)' : 'BON DE PAIEMENT FOURNISSEUR (BANQUE)',
+        correction:           isAR ? 'وصل تصحيح بنكي' : 'BON DE CORRECTION BANCAIRE',
       };
-      const title = subtypeTitles[tx.subtype] || (tx.type==='deposit'?'BON DE DÉPÔT BANCAIRE':'BON DE SORTIE BANCAIRE');
+      const title = subtypeTitles[tx.subtype] || (tx.type==='deposit' ? (isAR ? 'وصل إيداع بنكي' : 'BON DE DÉPÔT BANCAIRE') : (isAR ? 'وصل سحب بنكي' : 'BON DE SORTIE BANCAIRE'));
       const ref   = this._t(tx.ref || `BANK-${tx.id}`);
       const montant = Number(tx.amount)||0;
       const isD   = tx.type==='deposit';
@@ -1769,9 +1785,9 @@
       let y = this._drawCompanyHeader(doc,s,MT);
       y = this._drawBanner(doc,title,y);
       y = this._drawInfoStrip(doc,[
-        {label:'Réf', value:ref},
-        {label:'Date', value:this._fmtDateTime(tx.date||tx.createdAt)},
-        {label:'Compte', value:this._t(bank?.name||'?') + (bank?.bankName?' — '+this._t(bank.bankName):'')},
+        {label:isAR ? 'المرجع' : 'Réf', value:ref},
+        {label:isAR ? 'التاريخ' : 'Date', value:this._fmtDateTime(tx.date||tx.createdAt)},
+        {label:isAR ? 'الحساب' : 'Compte', value:this._t(bank?.name||'?') + (bank?.bankName?' — '+this._t(bank.bankName):'')},
       ],y);
       y+=6;
 
@@ -1779,12 +1795,12 @@
       this._rect(doc,ML,y,CW,cardH,C.BG_INFO,C.LINE);
       this._rect(doc,ML,y,CW,8,C.LIGHT,C.LINE);
       doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.PRIMARY_DARK);
-      doc.text("DÉTAILS DE L'OPÉRATION",ML+4,y+5.5);
+      this._text(doc, isAR ? 'تفاصيل العملية' : "DÉTAILS DE L'OPÉRATION", ML+4, y+5.5);
 
       let cy=y+14;
       const rowF=(lbl,val,bold)=>{
         doc.setFont('helvetica','bold'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
-        doc.text(lbl,ML+4,cy);
+        this._text(doc, lbl, ML+4, cy);
         doc.setFont('helvetica',bold?'bold':'normal');
         doc.setFontSize(bold?11:8.5);
         this._tc(doc,bold?C.PRIMARY:C.BLACK);
@@ -1801,22 +1817,26 @@
         }
         cy+=6.5;
       };
-      rowF('Type opération :',  title);
-      rowF('Compte bancaire :',  this._t(bank?.name||'?') + (bank?.accountNum?' ('+this._t(bank.accountNum)+')':''));
-      rowF('Direction :',        isD?'Entrée (+)':'Sortie (-)');
-      if (tx.supplierId) { const sup=DB.getById('suppliers',tx.supplierId); rowF('Fournisseur :',this._t(sup?.name||'?')); }
-      rowF('Note :',             this._t(tx.note||'/'));
+      rowF(isAR ? 'نوع العملية :' : 'Type opération :',  title);
+      rowF(isAR ? 'الحساب البنكي :' : 'Compte bancaire :',  this._t(bank?.name||'?') + (bank?.accountNum?' ('+this._t(bank.accountNum)+')':''));
+      rowF(isAR ? 'الاتجاه :' : 'Direction :',        isD ? (isAR ? 'إيداع (+)' : 'Entrée (+)') : (isAR ? 'سحب (-)' : 'Sortie (-)'));
+      if (tx.supplierId) { const sup=DB.getById('suppliers',tx.supplierId); rowF(isAR ? 'المورد :' : 'Fournisseur :',this._t(sup?.name||'?')); }
+      rowF(isAR ? 'ملاحظة :' : 'Note :',             this._t(tx.note||'/'));
       cy+=2;
-      rowF('MONTANT :',          (isD?'+ ':'- ')+this._fmtMoney(montant), true);
+      rowF(isAR ? 'المبلغ :' : 'MONTANT :',          (isD?'+ ':'- ')+this._fmtMoney(montant), true);
       const actualCardH = Math.max(cardH, (cy - y) + 4);
       y+=actualCardH+6;
 
       const wd=this._amountWords(montant);
-      if(wd){ doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK); const wl=doc.splitTextToSize('Arrêtée à la somme de : '+wd+' dinars algériens',CW); doc.text(wl,ML,y); y+=wl.length*4.5+4; }
+      if(wd){
+        doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK);
+        const wl=doc.splitTextToSize(isAR ? `أوقفت عند مبلغ قدره : ${wd} دينار جزائري` : 'Arrêtée à la somme de : '+wd+' dinars algériens',CW);
+        this._text(doc, wl, ML, y); y+=wl.length*4.5+4;
+      }
 
       this._drawSigBlock(doc,[
-        {label:'Le Responsable Banque', sub:'Signature & Cachet'},
-        {label:'Le Directeur Général',  sub:'Signature & Cachet'},
+        {label:isAR ? 'مسؤول البنك' : 'Le Responsable Banque', sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
+        {label:isAR ? 'المدير العام' : 'Le Directeur Général',  sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
       ], Math.max(y+4,PH-62), 44);
 
       this._drawFooter(doc,1,1);
@@ -1827,8 +1847,9 @@
        SUPPLIER PAYMENT DÉCHARGE
     ══════════════════════════════════════════════════════════ */
     _exportSupplierPayDecharge(payId) {
+      const isAR = typeof T !== 'undefined' && T.isRTL();
       const pay = DB.getById('supplier_payments', payId);
-      if (!pay) { this._notify('Paiement introuvable','error'); return; }
+      if (!pay) { this._notify(isAR ? 'عملية الدفع غير موجودة' : 'Paiement introuvable','error'); return; }
       const settings = DB.getSettings();
       const sup  = DB.getById('suppliers', pay.supplierId)||{name:'?'};
       const bank = pay.bankId ? (settings.banks||[]).find(b=>b.id===pay.bankId) : null;
@@ -1837,15 +1858,15 @@
 
       const ref     = this._t(pay.ref || `PAY-${pay.id}`);
       const montant = Number(pay.amount)||0;
-      const title   = 'BON DE PAIEMENT FOURNISSEUR';
-      const source  = pay.source==='caisse' ? 'Caisse (espèces)' : (bank ? `${bank.name} (${bank.bankName||''})` : 'Banque');
+      const title   = isAR ? 'وصل دفع للمورد' : 'BON DE PAIEMENT FOURNISSEUR';
+      const source  = pay.source==='caisse' ? (isAR ? 'الصندوق (نقداً)' : 'Caisse (espèces)') : (bank ? `${bank.name} (${bank.bankName||''})` : (isAR ? 'البنك' : 'Banque'));
 
       let y = this._drawCompanyHeader(doc,s,MT);
       y = this._drawBanner(doc,title,y);
       y = this._drawInfoStrip(doc,[
-        {label:'Réf',          value:ref},
-        {label:'Date',         value:this._fmtDateTime(pay.date||pay.createdAt)},
-        {label:'Fournisseur',  value:this._t(sup.name)},
+        {label:isAR ? 'المرجع' : 'Réf',          value:ref},
+        {label:isAR ? 'التاريخ' : 'Date',         value:this._fmtDateTime(pay.date||pay.createdAt)},
+        {label:isAR ? 'المورد' : 'Fournisseur',  value:this._t(sup.name)},
       ],y);
       y+=6;
 
@@ -1853,25 +1874,25 @@
       this._rect(doc,ML,y,CW,cardH,C.BG_INFO,C.LINE);
       this._rect(doc,ML,y,CW,8,C.LIGHT,C.LINE);
       doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc,C.PRIMARY_DARK);
-      doc.text('DÉTAILS DU PAIEMENT',ML+4,y+5.5);
+      this._text(doc, isAR ? 'تفاصيل الدفع' : 'DÉTAILS DU PAIEMENT', ML+4, y+5.5);
 
       let cy=y+14;
       const rowF=(lbl,val,bold)=>{
         doc.setFont('helvetica','bold'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
-        doc.text(lbl,ML+4,cy);
+        this._text(doc, lbl, ML+4, cy);
         doc.setFont('helvetica',bold?'bold':'normal');
         doc.setFontSize(bold?11:8.5);
         this._tc(doc,bold?C.PRIMARY:C.BLACK);
         this._text(doc, this._t(String(val||'/')), ML+62, cy);
         cy+=6.5;
       };
-      rowF('Fournisseur :',   this._t(sup.name));
+      rowF(isAR ? 'المورد :' : 'Fournisseur :',   this._t(sup.name));
       if (sup.nif)  rowF('NIF :',  this._t(sup.nif));
-      rowF('Source :',        source);
-      rowF('Note / Réf :',   this._t(pay.note||'/'));
-      rowF('Opérateur :',    this._t(pay.byName||'/'));
+      rowF(isAR ? 'المصدر :' : 'Source :',        source);
+      rowF(isAR ? 'ملاحظة / مرجع :' : 'Note / Réf :',   this._t(pay.note||'/'));
+      rowF(isAR ? 'العون / المنفذ :' : 'Opérateur :',    this._t(pay.byName||'/'));
       cy+=2;
-      rowF('MONTANT PAYÉ :', this._fmtMoney(montant), true);
+      rowF(isAR ? 'المبلغ المدفوع :' : 'MONTANT PAYÉ :', this._fmtMoney(montant), true);
       y+=cardH+6;
 
       // Running balance
@@ -1881,15 +1902,19 @@
       const remaining = Math.max(0, totalBR - totalPaid);
 
       doc.setFont('helvetica','normal'); doc.setFontSize(8.5); this._tc(doc,C.GRAY_TXT);
-      doc.text(`Total achats (BR): ${this._fmtMoney(totalBR)} | Total payé: ${this._fmtMoney(totalPaid)} | Reste: ${this._fmtMoney(remaining)}`,ML,y);
+      this._text(doc, isAR ? `إجمالي المشتريات (و.ا): ${this._fmtMoney(totalBR)} | إجمالي المدفوع: ${this._fmtMoney(totalPaid)} | المتبقي: ${this._fmtMoney(remaining)}` : `Total achats (BR): ${this._fmtMoney(totalBR)} | Total payé: ${this._fmtMoney(totalPaid)} | Reste: ${this._fmtMoney(remaining)}`, ML, y);
       y+=7;
 
       const wd=this._amountWords(montant);
-      if(wd){ doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK); const wl=doc.splitTextToSize('Arrêtée à la somme de : '+wd+' dinars algériens',CW); doc.text(wl,ML,y); y+=wl.length*4.5+4; }
+      if(wd){
+        doc.setFont('helvetica','italic'); doc.setFontSize(9); this._tc(doc,C.BLACK);
+        const wl=doc.splitTextToSize(isAR ? `أوقفت عند مبلغ قدره : ${wd} دينار جزائري` : 'Arrêtée à la somme de : '+wd+' dinars algériens',CW);
+        this._text(doc, wl, ML, y); y+=wl.length*4.5+4;
+      }
 
       this._drawSigBlock(doc,[
-        {label:'Le Fournisseur',        sub:'Signature & Cachet (Pour acquit)'},
-        {label:'Le Directeur Général',  sub:'Signature & Cachet'},
+        {label:isAR ? 'المورد' : 'Le Fournisseur',        sub:isAR ? 'التوقيع والختم (للإبراء والمخالصة)' : 'Signature & Cachet (Pour acquit)'},
+        {label:isAR ? 'المدير العام' : 'Le Directeur Général',  sub:isAR ? 'التوقيع والختم' : 'Signature & Cachet'},
       ], Math.max(y+4,PH-62), 44);
 
       this._drawFooter(doc,1,1);
@@ -1910,19 +1935,20 @@
       let y = this._drawCompanyHeader(doc, s, MT);
 
       /* -- Banner -- */
-      y = this._drawBanner(doc, `FICHE DE PAIE - ${(data.monthLabel || '').toUpperCase()}`, y);
+      const isAR = typeof T !== 'undefined' && T.isRTL();
+      y = this._drawBanner(doc, isAR ? `كشف الراتب - ${(data.monthLabel || '').toUpperCase()}` : `FICHE DE PAIE - ${(data.monthLabel || '').toUpperCase()}`, y);
       y += 4;
 
       /* -- Employee Info Strip -- */
       this._rect(doc, ML, y, CW, 34, C.LIGHT, C.BORDER);
       doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc, C.TEXT);
       const col1 = ML+4, col2 = ML+100;
-      doc.text('Employe :', col1, y+6);
-      doc.text('Departement :', col1, y+12);
-      doc.text('Poste :', col1, y+18);
-      doc.text('Periode :', col2, y+6);
-      doc.text('Jours Ouvrables :', col2, y+12);
-      doc.text('Jours Travailles :', col2, y+18);
+      this._text(doc, isAR ? 'الموظف :' : 'Employe :', col1, y+6);
+      this._text(doc, isAR ? 'القسم :' : 'Departement :', col1, y+12);
+      this._text(doc, isAR ? 'المنصب :' : 'Poste :', col1, y+18);
+      this._text(doc, isAR ? 'الفترة :' : 'Periode :', col2, y+6);
+      this._text(doc, isAR ? 'أيام العمل :' : 'Jours Ouvrables :', col2, y+12);
+      this._text(doc, isAR ? 'الأيام المشتغلة :' : 'Jours Travailles :', col2, y+18);
       doc.setFont('helvetica','normal');
       doc.text(String(data.employeeName || '-'), col1+26, y+6);
       doc.text(String(data.department || '-'), col1+30, y+12);
@@ -1934,20 +1960,20 @@
       // Attendance breakdown row
       if (data.daysAbsent !== undefined || data.daysMission !== undefined || data.daysLeave !== undefined) {
         doc.setFont('helvetica','bold'); doc.setFontSize(8); this._tc(doc, C.TEXT);
-        doc.text('Detail Presence :', col1, y+26);
+        this._text(doc, isAR ? 'تفاصيل الحضور :' : 'Detail Presence :', col1, y+26);
         doc.setFont('helvetica','normal'); doc.setFontSize(8);
         const parts = [];
-        if (data.workedDays) parts.push(`Present: ${data.workedDays}j`);
-        if (data.daysAbsent > 0) parts.push(`Absent: ${data.daysAbsent}j`);
-        if (data.daysMission > 0) parts.push(`Mission: ${data.daysMission}j`);
-        if (data.daysLeave > 0) parts.push(`Conge: ${data.daysLeave}j`);
-        if (data.daysLate > 0) parts.push(`Retard: ${data.daysLate}j`);
+        if (data.workedDays) parts.push(isAR ? `حاضر: ${data.workedDays}ي` : `Present: ${data.workedDays}j`);
+        if (data.daysAbsent > 0) parts.push(isAR ? `غائب: ${data.daysAbsent}ي` : `Absent: ${data.daysAbsent}j`);
+        if (data.daysMission > 0) parts.push(isAR ? `مهمة: ${data.daysMission}ي` : `Mission: ${data.daysMission}j`);
+        if (data.daysLeave > 0) parts.push(isAR ? `عطلة: ${data.daysLeave}ي` : `Conge: ${data.daysLeave}j`);
+        if (data.daysLate > 0) parts.push(isAR ? `تأخر: ${data.daysLate}ي` : `Retard: ${data.daysLate}j`);
         this._tc(doc, [71, 85, 105]);
-        doc.text(parts.join('  |  ') || '-', col1+36, y+26);
+        this._text(doc, parts.join('  |  ') || '-', col1+36, y+26);
         doc.setFont('helvetica','bold'); doc.setFontSize(8); this._tc(doc, [71, 85, 105]);
-        doc.text('Heures Totales :', col2, y+26);
+        this._text(doc, isAR ? 'مجموع الساعات :' : 'Heures Totales :', col2, y+26);
         doc.setFont('helvetica','normal');
-        doc.text(String(data.totalHours || '-') + 'h', col2+32, y+26);
+        this._text(doc, String(data.totalHours || '-') + (isAR ? ' س' : 'h'), col2+32, y+26);
         y += 38;
       } else {
         y += 22;
@@ -1955,32 +1981,32 @@
 
       /* -- Salary Breakdown Table -- */
       const rows = [
-        { label: 'Salaire de Base', amount: data.baseSalary || 0 },
-        { label: 'Prorata Jours Travailles', amount: data.prorata || 0 },
+        { label: isAR ? 'الراتب الأساسي' : 'Salaire de Base', amount: data.baseSalary || 0 },
+        { label: isAR ? 'التناسب مع أيام العمل' : 'Prorata Jours Travailles', amount: data.prorata || 0 },
       ];
-      if ((data.overtime || 0) > 0) rows.push({ label: 'Heures Supplementaires', amount: data.overtime });
-      if ((data.bonuses || 0) > 0) rows.push({ label: 'Primes et Indemnites', amount: data.bonuses });
-      rows.push({ label: 'Total Brut', amount: data.grossTotal || 0, bold: true });
+      if ((data.overtime || 0) > 0) rows.push({ label: isAR ? 'الساعات الإضافية' : 'Heures Supplementaires', amount: data.overtime });
+      if ((data.bonuses || 0) > 0) rows.push({ label: isAR ? 'العلاوات والتعويضات' : 'Primes et Indemnites', amount: data.bonuses });
+      rows.push({ label: isAR ? 'المجموع الخام' : 'Total Brut', amount: data.grossTotal || 0, bold: true });
 
       // Only add deductions that are > 0
       if (data.deductions && data.deductions.length) {
         data.deductions.forEach(d => {
           if (d.amount > 0) {
-            rows.push({ label: 'Retenue : ' + d.label, amount: d.amount, isDeduction: true });
+            rows.push({ label: (isAR ? 'اقتطاع : ' : 'Retenue : ') + d.label, amount: d.amount, isDeduction: true });
           }
         });
       }
       const totalDed = data.totalDeductions || 0;
       if (totalDed > 0) {
-        rows.push({ label: 'Total Retenues', amount: totalDed, bold: true, isDeduction: true });
+        rows.push({ label: isAR ? 'مجموع الاقتطاعات' : 'Total Retenues', amount: totalDed, bold: true, isDeduction: true });
       }
-      rows.push({ label: 'NET A PAYER', amount: data.netPay || 0, bold: true, isNet: true });
+      rows.push({ label: isAR ? 'الصافي للدفع' : 'NET A PAYER', amount: data.netPay || 0, bold: true, isNet: true });
 
       // Table header
       this._rect(doc, ML, y, CW, 8, C.PRIMARY, C.PRIMARY);
       doc.setFont('helvetica','bold'); doc.setFontSize(9); this._tc(doc, C.WHITE);
-      doc.text('Designation', ML+4, y+6);
-      doc.text('Montant (DA)', PW-MR-4, y+6, {align:'right'});
+      this._text(doc, isAR ? 'البيان' : 'Designation', ML+4, y+6);
+      this._text(doc, isAR ? 'المبلغ (د.ج)' : 'Montant (DA)', PW-MR-4, y+6, {align:'right'});
       y += 8;
 
       // Table rows
@@ -1992,9 +2018,8 @@
         doc.setFont('helvetica', row.bold ? 'bold' : 'normal');
         doc.setFontSize(row.isNet ? 11 : 9);
         this._tc(doc, textColor);
-        doc.text(row.label, ML+4, y + (rowH === 10 ? 7 : 5));
+        this._text(doc, row.label, ML+4, y + (rowH === 10 ? 7 : 5));
         const amtStr = this._fmtMoney(Math.abs(row.isDeduction ? row.amount : row.amount));
-        // Use regular hyphen-minus (ASCII 0x2D) instead of U+2212 which doesn't render in Helvetica
         const prefix = row.isDeduction && row.amount > 0 ? '- ' : '';
         doc.text(prefix + amtStr, PW-MR-4, y + (rowH === 10 ? 7 : 5), {align:'right'});
         y += rowH;
@@ -2005,15 +2030,15 @@
       /* -- Footer Note -- */
       this._rect(doc, ML, y, CW, 12, [255,251,235], [251,191,36]);
       doc.setFont('helvetica','italic'); doc.setFontSize(8); this._tc(doc,[146,64,14]);
-      doc.text('Arretee la presente fiche de paie a la somme de : ' + this._fmtMoney(data.netPay || 0), ML+4, y+5);
-      doc.text('Cette fiche est delivree pour servir et valoir ce que de droit.', ML+4, y+10);
+      this._text(doc, (isAR ? 'أوقف كشف الراتب هذا عند مبلغ قدره : ' : 'Arretee la presente fiche de paie a la somme de : ') + this._fmtMoney(data.netPay || 0), ML+4, y+5);
+      this._text(doc, isAR ? 'سُلم هذا الكشف للإدلاء به واستعماله في حدود ما يسمح به القانون.' : 'Cette fiche est delivree pour servir et valoir ce que de droit.', ML+4, y+10);
       y += 16;
 
       /* -- Signatures -- */
       this._drawSigBlock(doc, [
-        {label:'L\'Employe',  sub:'Signature'},
-        {label:'Le Responsable RH',  sub:'Signature et Cachet'},
-        {label:'Le Directeur',  sub:'Signature et Cachet'},
+        {label:isAR ? 'الموظف' : "L'Employe",  sub:isAR ? 'التوقيع' : 'Signature'},
+        {label:isAR ? 'مسؤول الموارد البشرية' : 'Le Responsable RH',  sub:isAR ? 'التوقيع والختم' : 'Signature et Cachet'},
+        {label:isAR ? 'المدير' : 'Le Directeur',  sub:isAR ? 'التوقيع والختم' : 'Signature et Cachet'},
       ], Math.max(y+4,PH-62), 44);
 
       this._drawFooter(doc,1,1);

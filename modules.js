@@ -114,13 +114,13 @@ const DashboardModule = {
     const recentBLs = [...bls].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,4);
     const activity = [...recentBRs.map(b=>({type:'BR',ref:b.ref,date:b.date,amount:b.totalTTC,name:supMap[b.supplierId]?.name})), ...recentBLs.map(b=>({type:'BL',ref:b.ref,date:b.date,amount:b.totalTTC,name:cliMap[b.clientId]?.name}))].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,8);
 
+    const isAR = T.isRTL();
     const sessionBanner = (!session && u.role !== 'admin') ? `
     <div style="background:linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.2);border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div style="display:flex;align-items:center;gap:10px"><i class="fas fa-sun" style="font-size:20px;color:#f59e0b"></i><div><div style="font-weight:700;font-size:13px;color:var(--text)">${T.get('caisse_no_session')}</div><div style="font-size:11px;color:var(--text4)">Démarrez votre journée pour activer la caisse</div></div></div>
+      <div style="display:flex;align-items:center;gap:10px"><i class="fas fa-sun" style="font-size:20px;color:#f59e0b"></i><div><div style="font-weight:700;font-size:13px;color:var(--text)">${T.get('caisse_no_session')}</div><div style="font-size:11px;color:var(--text4)">${isAR ? 'ابدأ يومك لتفعيل الصندوق' : 'Démarrez votre journée pour activer la caisse'}</div></div></div>
       <button class="btn btn-warning btn-sm" onclick="CaisseModule.showMorningPrompt()"><i class="fas fa-play-circle"></i> ${T.get('caisse_start_now')}</button>
     </div>` : '';
 
-    const isAR = T.isRTL();
     return `<div style="padding:20px 24px;max-width:1200px;margin:0 auto">
     ${sessionBanner}
 
@@ -130,51 +130,51 @@ const DashboardModule = {
         <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(14,165,233,.08);border-radius:50%"></div>
         <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'إجمالي المبيعات':'Chiffre d\'affaires'}</div>
         <div style="font-size:22px;font-weight:900;color:#0ea5e9;margin-top:4px">${Utils.fmtCurrency(totalRevenue)}</div>
-        <div style="font-size:10px;color:var(--text4);margin-top:2px">${deliveredBLs.length} BL livrés</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${deliveredBLs.length} ${isAR ? 'سند تسليم' : 'BL livrés'}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
         <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(139,92,246,.08);border-radius:50%"></div>
         <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'إجمالي المشتريات':'Total achats'}</div>
         <div style="font-size:22px;font-weight:900;color:#8b5cf6;margin-top:4px">${Utils.fmtCurrency(totalPurchases)}</div>
-        <div style="font-size:10px;color:var(--text4);margin-top:2px">${brs.length} BR</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${brs.length} ${isAR ? 'سند استلام' : 'BR'}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
         <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(${margin>=0?'16,185,129':'239,68,68'},.08);border-radius:50%"></div>
         <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'الهامش':'Marge'}</div>
         <div style="font-size:22px;font-weight:900;color:${margin>=0?'#10b981':'#ef4444'};margin-top:4px">${Utils.fmtCurrency(margin)}</div>
-        <div style="font-size:10px;color:var(--text4);margin-top:2px">${margin>=0?'↑ Bénéfice':'↓ Perte'}</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${margin>=0 ? (isAR ? '↑ ربح' : '↑ Bénéfice') : (isAR ? '↓ خسارة' : '↓ Perte')}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
         <div style="position:absolute;top:-8px;right:-8px;width:50px;height:50px;background:rgba(245,158,11,.08);border-radius:50%"></div>
         <div style="font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:.5px">${isAR?'في الانتظار':'En attente'}</div>
         <div style="font-size:22px;font-weight:900;color:#f59e0b;margin-top:4px">${openBRs + openBLs}</div>
-        <div style="font-size:10px;color:var(--text4);margin-top:2px">${openBRs} BR + ${openBLs} BL ouverts</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${openBRs} BR + ${openBLs} ${isAR ? 'مفتوح' : 'BL ouverts'}</div>
       </div>
     </div>
 
     ${isAdmin ? `<!-- Admin Finance Strip -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
       <div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:14px;padding:16px 20px;color:#fff;cursor:pointer" onclick="App.loadModule('admin_caisse')">
-        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">SOLDE CAISSE</div><i class="fas fa-vault" style="opacity:.3"></i></div>
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">${isAR ? 'رصيد الصندوق' : 'SOLDE CAISSE'}</div><i class="fas fa-vault" style="opacity:.3"></i></div>
         <div style="font-size:24px;font-weight:900;margin-top:6px">${Utils.fmtCurrency(vaultBalance)}</div>
       </div>
       <div style="background:linear-gradient(135deg,#064e3b,#065f46);border-radius:14px;padding:16px 20px;color:#fff;cursor:pointer" onclick="App.loadModule('bank')">
-        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">SOLDE BANQUE</div><i class="fas fa-university" style="opacity:.3"></i></div>
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">${isAR ? 'رصيد البنك' : 'SOLDE BANQUE'}</div><i class="fas fa-university" style="opacity:.3"></i></div>
         <div style="font-size:24px;font-weight:900;margin-top:6px">${Utils.fmtCurrency(bankTotal)}</div>
       </div>
       <div style="background:linear-gradient(135deg,#312e81,#4338ca);border-radius:14px;padding:16px 20px;color:#fff">
-        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">AUJOURD'HUI</div><i class="fas fa-calendar-day" style="opacity:.3"></i></div>
-        <div style="font-size:24px;font-weight:900;margin-top:6px">${todayBRs.length + todayBLs.length} docs</div>
+        <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:10px;letter-spacing:1px;opacity:.7">${isAR ? 'اليوم' : 'AUJOURD\'HUI'}</div><i class="fas fa-calendar-day" style="opacity:.3"></i></div>
+        <div style="font-size:24px;font-weight:900;margin-top:6px">${todayBRs.length + todayBLs.length} ${isAR ? 'وثيقة' : 'docs'}</div>
         <div style="font-size:10px;opacity:.7;margin-top:2px">${todayBRs.length} BR · ${todayBLs.length} BL</div>
       </div>
     </div>` : ''}
 
     <!-- Quick Actions -->
     <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="App.loadModule('brs')"><i class="fas fa-plus"></i> Nouveau BR</button>
-      <button class="btn btn-sm" style="background:rgba(14,165,233,.1);color:#0ea5e9;border:1px solid rgba(14,165,233,.2)" onclick="App.loadModule('bls')"><i class="fas fa-file-export"></i> Voir les BL</button>
-      <button class="btn btn-sm" style="background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)" onclick="App.loadModule('partners')"><i class="fas fa-handshake"></i> Hub Commercial</button>
-      ${isAdmin?'<button class="btn btn-sm" style="background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.2)" onclick="App.loadModule(\'admin_caisse\')"><i class="fas fa-vault"></i> Caisse Admin</button>':''}
+      <button class="btn btn-primary btn-sm" onclick="App.loadModule('brs')"><i class="fas fa-plus"></i> ${isAR ? 'سند استلام جديد' : 'Nouveau BR'}</button>
+      <button class="btn btn-sm" style="background:rgba(14,165,233,.1);color:#0ea5e9;border:1px solid rgba(14,165,233,.2)" onclick="App.loadModule('bls')"><i class="fas fa-file-export"></i> ${isAR ? 'عرض سندات التسليم' : 'Voir les BL'}</button>
+      <button class="btn btn-sm" style="background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)" onclick="App.loadModule('partners')"><i class="fas fa-handshake"></i> ${isAR ? 'المركز التجاري' : 'Hub Commercial'}</button>
+      ${isAdmin?`<button class="btn btn-sm" style="background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.2)" onclick="App.loadModule('admin_caisse')"><i class="fas fa-vault"></i> ${isAR ? 'صندوق الإدارة' : 'Caisse Admin'}</button>`:''}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -184,7 +184,7 @@ const DashboardModule = {
         <div style="padding:16px 18px">
           ${months.length>0 ? `<div style="display:flex;align-items:flex-end;gap:8px;height:120px">
             ${months.map(m => { const h=(byMonth[m]/maxMonth)*100; return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:9px;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(byMonth[m])}</div><div style="width:100%;background:linear-gradient(180deg,var(--primary),rgba(var(--primary-rgb),.4));border-radius:6px 6px 0 0;height:${Math.max(h,8)}%;transition:height .5s"></div><div style="font-size:9px;color:var(--text4);font-weight:600">${m.substring(5)}</div></div>`; }).join('')}
-          </div>` : '<div style="text-align:center;color:var(--text4);padding:30px">Pas encore de données</div>'}
+          </div>` : `<div style="text-align:center;color:var(--text4);padding:30px">${isAR ? 'لا توجد بيانات بعد' : 'Pas encore de données'}</div>`}
         </div>
       </div>
 
@@ -196,7 +196,7 @@ const DashboardModule = {
             <div style="width:28px;height:28px;border-radius:8px;background:${a.type==='BR'?'rgba(139,92,246,.1)':'rgba(14,165,233,.1)'};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas ${a.type==='BR'?'fa-file-import':'fa-file-export'}" style="font-size:10px;color:${a.type==='BR'?'#8b5cf6':'#0ea5e9'}"></i></div>
             <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:var(--text)">${Utils.escHTML(a.ref||'')}</div><div style="font-size:10px;color:var(--text4)">${Utils.escHTML(a.name||'')} · ${a.date||''}</div></div>
             <div style="font-size:12px;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(a.amount||0)}</div>
-          </div>`).join('') : '<div style="padding:20px;text-align:center;color:var(--text4)">Aucune activité</div>'}
+          </div>`).join('') : `<div style="padding:20px;text-align:center;color:var(--text4)">${isAR ? 'لا يوجد أي نشاط' : 'Aucune activité'}</div>`}
         </div>
       </div>
     </div>
@@ -236,8 +236,8 @@ function _buildDeliveryAddrSection(entity, addrs, isAdmin) {
         </div>
       </div>
       ${isAdmin ? `<div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
-        <button class="btn btn-xs ${a.isDefault?'btn-primary':'btn-outline'}" onclick="_setDefaultDeliveryAddr('${entity}',${i})" title="${a.isDefault?'Par défaut':'Définir par défaut'}" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px">${a.isDefault?'<i class="fas fa-star" style="font-size:10px"></i>':'<i class="far fa-star" style="font-size:10px"></i>'}</button>
-        <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}',${i})" title="Supprimer" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px;opacity:.7"><i class="fas fa-trash-alt" style="font-size:9px"></i></button>
+        <button class="btn btn-xs ${a.isDefault?'btn-primary':'btn-outline'}" onclick="_setDefaultDeliveryAddr('${entity}',${i})" title="${a.isDefault ? (T.isRTL() ? 'الافتراضي' : 'Par défaut') : (T.isRTL() ? 'تعيين كافتراضي' : 'Définir par défaut')}" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px">${a.isDefault?'<i class="fas fa-star" style="font-size:10px"></i>':'<i class="far fa-star" style="font-size:10px"></i>'}</button>
+        <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}',${i})" title="${T.isRTL() ? 'حذف' : 'Supprimer'}" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px;opacity:.7"><i class="fas fa-trash-alt" style="font-size:9px"></i></button>
       </div>` : ''}
     </div>`).join('');
 
@@ -263,6 +263,7 @@ function _addDeliveryAddr(entity) {
   const c = document.getElementById('da-container-' + entity);
   if (!c) return;
   const idx = Date.now();
+  const isAR = T.isRTL();
   const emptyDiv = c.querySelector('[id^="da-empty-"]');
   if (emptyDiv) emptyDiv.remove();
   c.insertAdjacentHTML('beforeend', `
@@ -270,16 +271,16 @@ function _addDeliveryAddr(entity) {
       <div style="flex:1;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;gap:8px;align-items:center">
           <i class="fas fa-map-pin" style="color:var(--text4);font-size:12px;width:14px"></i>
-          <input type="text" class="da-label" placeholder="Nom du lieu (ex: Dépôt Oran, Chantier...)" style="font-weight:700;font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
+          <input type="text" class="da-label" placeholder="${isAR ? 'اسم الموقع (مثال: مستودع وهران، الورشة...)' : 'Nom du lieu (ex: Dépôt Oran, Chantier...)'}" style="font-weight:700;font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <i class="fas fa-road" style="color:var(--text4);font-size:11px;width:14px"></i>
-          <input type="text" class="da-addr" placeholder="Adresse complète de livraison..." style="font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
+          <input type="text" class="da-addr" placeholder="${isAR ? 'العنوان الكامل للتسليم...' : 'Adresse complète de livraison...'}" style="font-size:12px;flex:1;border:none;background:transparent;padding:4px 0;border-bottom:1px dashed var(--border)">
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:4px;justify-content:center">
-        <button class="btn btn-xs btn-outline" onclick="_setDefaultDeliveryAddr('${entity}','${idx}')" title="Définir par défaut" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px"><i class="far fa-star" style="font-size:10px"></i></button>
-        <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}','${idx}')" title="Supprimer" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px;opacity:.7"><i class="fas fa-trash-alt" style="font-size:9px"></i></button>
+        <button class="btn btn-xs btn-outline" onclick="_setDefaultDeliveryAddr('${entity}','${idx}')" title="${isAR ? 'تعيين كافتراضي' : 'Définir par défaut'}" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px"><i class="far fa-star" style="font-size:10px"></i></button>
+        <button class="btn btn-xs btn-danger" onclick="_removeDeliveryAddr('${entity}','${idx}')" title="${isAR ? 'حذف' : 'Supprimer'}" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:8px;opacity:.7"><i class="fas fa-trash-alt" style="font-size:9px"></i></button>
       </div>
     </div>`);
   const newRow = document.getElementById('da-row-' + entity + '-' + idx);
@@ -519,7 +520,7 @@ const BRModule = {
           <div class="autocomplete-dropdown" id="br-ac-${idx}"></div>
         </div>
       </td>
-      <td class="col-unit"><input type="text" id="br-unit-${idx}" value="${Utils.escHTML(line.unit||'')}" placeholder="u"></td>
+      <td class="col-unit"><input type="text" id="br-unit-${idx}" value="${Utils.escHTML(line.unit||'')}" placeholder="${T.isRTL() ? 'وحدة' : 'u'}"></td>
       <td class="col-qty"><input type="number" id="br-qty-${idx}" value="${qty}" min="0" step="any" oninput="BRModule._recalcLine(${idx})"></td>
       <td class="col-price"><input type="number" id="br-price-${idx}" value="${price}" min="0" step="any" oninput="BRModule._recalcLine(${idx})"></td>
       <td class="col-disc"><input type="number" id="br-disc-${idx}" value="${disc}" min="0" max="100" step="any" oninput="BRModule._recalcLine(${idx})"></td>
@@ -712,12 +713,11 @@ const BRModule = {
       </div>
       <div class="form-group">
         <label>${T.isRTL()?'استُلم بواسطة':'Réceptionné par'}</label>
-        <input type="text" id="br-receiver" value="${Utils.escHTML(br?.receivedBy||Auth.getCurrentUser()?.name||'')}" placeholder="Nom du réceptionnaire">
+        <input type="text" id="br-receiver" value="${Utils.escHTML(br?.receivedBy||Auth.getCurrentUser()?.name||'')}" placeholder="${T.isRTL() ? 'اسم المستلم...' : 'Nom du réceptionnaire'}">
       </div>
       <div class="form-group">
         <label>${T.isRTL()?'مراقب بواسطة':'Contrôlé par'}</label>
-        <input type="text" id="br-controller" value="${Utils.escHTML(br?.controlledBy||Auth.getCurrentUser()?.name||'')}" placeholder="Nom du contrôleur">
-
+        <input type="text" id="br-controller" value="${Utils.escHTML(br?.controlledBy||Auth.getCurrentUser()?.name||'')}" placeholder="${T.isRTL() ? 'اسم المراقب...' : 'Nom du contrôleur'}">
       </div>
     </div>
 
@@ -728,12 +728,12 @@ const BRModule = {
       <table class="lines-table">
         <thead><tr>
           <th>#</th>
-          <th style="text-align:left">${T.get('br_designation')}</th>
+          <th style="text-align:${T.isRTL()?'right':'left'}">${T.get('br_designation')}</th>
           <th>${T.get('br_unit')}</th>
           <th>${T.get('br_qty')}</th>
           <th>${T.get('br_unit_price')}</th>
           <th>${T.get('br_disc')} %</th>
-          <th>Total HT</th>
+          <th>${T.isRTL() ? 'المجموع خ.ر' : 'Total HT'}</th>
           <th></th>
         </tr></thead>
         <tbody id="br-lines-body">
@@ -778,11 +778,12 @@ const BRModule = {
     </div>
     <div class="form-group" style="margin-top:10px">
       <label>${T.get('br_notes')}</label>
-      <textarea id="br-notes" rows="2" style="resize:vertical;width:100%" placeholder="Observations...">${Utils.escHTML(br?.notes||'')}</textarea>
+      <textarea id="br-notes" rows="2" style="resize:vertical;width:100%" placeholder="${T.isRTL() ? 'ملاحظات وتفاصيل...' : 'Observations...'}">${Utils.escHTML(br?.notes||'')}</textarea>
     </div>`;
   },
 
   async showCreate() {
+    const isAR = T.isRTL();
     // Admin must pick a user to assign this BR to (caisse attribution)
     if (Auth.isAdmin()) {
       // Only show users who have canCreateBR permission
@@ -790,9 +791,9 @@ const BRModule = {
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
-          title: '👤 Créer en tant que...',
-          message: `<div style="margin-bottom:10px;font-size:13px">Ce BR sera attribué à la caisse de :</div><select id="dlg_as_user">${opts}</select><div style="margin-top:10px;font-size:11px">Vous restez affiché comme "Modifié par" pour transparence</div>`,
-          type: 'info', confirmText: 'Continuer', cancelText: 'Annuler'
+          title: isAR ? '👤 إنشاء باسم...' : '👤 Créer en tant que...',
+          message: `<div style="margin-bottom:10px;font-size:13px">${isAR ? 'سيتم تخصيص وصل الاستلام لصندوق :' : 'Ce BR sera attribué à la caisse de :'}</div><select id="dlg_as_user" class="input" style="width:100%">${opts}</select><div style="margin-top:10px;font-size:11px;color:var(--text4)">${isAR ? 'ستبقى مسجلاً كـ "عُدّل بواسطة" لضمان الشفافية' : 'Vous restez affiché comme "Modifié par" pour transparence'}</div>`,
+          type: 'info', confirmText: isAR ? 'متابعة' : 'Continuer', cancelText: isAR ? 'إلغاء' : 'Annuler'
         });
         if (!picked) return;
         BRModule._adminActAsUserId = parseInt(document.getElementById('dlg_as_user')?.value);
@@ -801,7 +802,7 @@ const BRModule = {
     const body = await this._modalBody(null);
     UI.showModal(`<i class="fas fa-file-import"></i> ${T.get('br_new')}`, body, `
       <button class="btn btn-secondary" onclick="UI.closeModal()"> ${T.get('cancel')}</button>
-      <button class="btn btn-outline" onclick="BRModule._saveBR(null,true)"><i class="fas fa-print"></i> Sauver & PDF</button>
+      <button class="btn btn-outline" onclick="BRModule._saveBR(null,true)"><i class="fas fa-print"></i> ${isAR ? 'حفظ وطباعة PDF' : 'Sauver & PDF'}</button>
       <button class="btn btn-primary" onclick="BRModule._saveBR(null,false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
     setTimeout(()=>{ BRModule._recalcTotals(); FormGuide.start(['br-supplier','br-date','br-num','br-des-0','br-qty-0','br-price-0']); }, 100);
   },
@@ -817,10 +818,11 @@ const BRModule = {
   },
 
   _saveBR(editId, andPrint) {
+    const isAR = T.isRTL();
     // Permission guard: non-admin users must have canCreateBR permission
     const curUser = Auth.getCurrentUser();
     if (!Auth.isAdmin() && !Auth.can('canCreateBR')) {
-      Utils.notify('⛔ Permission refusée : création BR', 'error');
+      Utils.notify(isAR ? '⛔ إذن مرفوض : إنشاء وصل الاستلام' : '⛔ Permission refusée : création BR', 'error');
       UI.closeModal(); return;
     }
     const brNum    = parseInt(document.getElementById('br-num')?.value);
@@ -836,12 +838,12 @@ const BRModule = {
     const receivedBy  = (document.getElementById('br-receiver')?.value||Auth.getCurrentUser()?.name||'').trim();
     const controlledBy= (document.getElementById('br-controller')?.value||'').trim();
 
-    if (!supplierId) { Utils.notify('Sélectionnez un fournisseur', 'error'); return; }
-    if (!brNum || brNum<1) { Utils.notify('Numéro BR invalide', 'error'); return; }
-    if (DB.isBRNumTaken(brNum, year, editId)) { Utils.notify('Ce numéro BR est déjà utilisé', 'error'); return; }
+    if (!supplierId) { Utils.notify(isAR ? 'يرجى اختيار المورد' : 'Sélectionnez un fournisseur', 'error'); return; }
+    if (!brNum || brNum<1) { Utils.notify(isAR ? 'رقم وصل الاستلام غير صالح' : 'Numéro BR invalide', 'error'); return; }
+    if (DB.isBRNumTaken(brNum, year, editId)) { Utils.notify(isAR ? 'رقم وصل الاستلام هذا مستخدم بالفعل' : 'Ce numéro BR est déjà utilisé', 'error'); return; }
 
     const lines = this._getLines();
-    if (!lines.length) { Utils.notify('Ajoutez au moins un article', 'error'); return; }
+    if (!lines.length) { Utils.notify(isAR ? 'أضف منتجاً واحداً على الأقل' : 'Ajoutez au moins un article', 'error'); return; }
 
     const totalHT  = Math.round((lines.reduce((s,l)=>s+l.total,0) + extraFees) * 100) / 100;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
@@ -932,7 +934,7 @@ const BRModule = {
   },
 
   async deleteBR(id) {
-    if (!Auth.isAdmin() && !Auth.can('canDeleteBR')) { Utils.notify('\u26d4 Permission refusée — suppression BR','error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canDeleteBR')) { Utils.notify(T.isRTL() ? '⛔ إذن مرفوض — حذف وصل الاستلام' : '\u26d4 Permission refusée — suppression BR', 'error'); return; }
     const ok1 = await Dialog.confirm(T.isRTL() ? 'حذف الوصل' : 'Supprimer le BR', T.get('delete')+(T.isRTL()?' هذا الوصل؟':' ce BR ?'), 'danger');
     if (!ok1) return;
     const linkedBLs = DB.getAll('bls').filter(b=>Number(b.brId)===Number(id));
@@ -1190,16 +1192,18 @@ const BLModule = {
       const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== false);
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
+        const isAR = T.isRTL();
         const picked = await Dialog.show({
-          title: '👤 Attribuer la création à...',
-          message: `<div style="margin-bottom:10px;font-size:13px">Ce Bon de Chargement sera comptabilisé dans la mini-caisse de :</div><select id="dlg_bl_as_user" class="input">${opts}</select><div style="margin-top:10px;font-size:11px">Vous restez affiché comme "Modifié par" pour transparence</div>`,
-          type: 'info', confirmText: 'Continuer', cancelText: 'Annuler'
+          title: isAR ? '👤 تخصيص الإنشاء إلى...' : '👤 Attribuer la création à...',
+          message: `<div style="margin-bottom:10px;font-size:13px">${isAR ? 'سيتم احتساب سند الشحن هذا في صندوق :' : 'Ce Bon de Chargement sera comptabilisé dans la mini-caisse de :'}</div><select id="dlg_bl_as_user" class="input" style="width:100%">${opts}</select><div style="margin-top:10px;font-size:11px;color:var(--text4)">${isAR ? 'ستبقى مسجلاً كـ "عُدّل بواسطة" لضمان الشفافية' : 'Vous restez affiché comme "Modifié par" pour transparence'}</div>`,
+          type: 'info', confirmText: isAR ? 'متابعة' : 'Continuer', cancelText: isAR ? 'إلغاء' : 'Annuler'
         });
         if (!picked) return;
         BLModule._adminActAsUserId = parseInt(document.getElementById('dlg_bl_as_user')?.value);
       }
     }
 
+    const isAR = T.isRTL();
     const allBRs = DB.getAll('brs');
     const openBRs = allBRs.filter(b => b.status !== 'delivered' && b.status !== 'locked');
     const supMap = {}; DB.getAll('suppliers').forEach(s => supMap[s.id] = s);
@@ -1215,16 +1219,16 @@ const BLModule = {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
         <button type="button" id="btn-mode-direct" class="btn btn-primary" onclick="BLModule._switchNewBCHMode('direct')" style="padding:12px 14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:700">
           <i class="fas fa-industry" style="font-size:18px"></i>
-          <div style="text-align:left">
-            <div>1. Courtage Direct Usine</div>
-            <div style="font-size:10px;font-weight:400;opacity:.85">Enlèvement usine sans BR préalable</div>
+          <div style="text-align:${isAR?'right':'left'}">
+            <div>${isAR ? '1. سمسرة مباشرة من المصنع' : '1. Courtage Direct Usine'}</div>
+            <div style="font-size:10px;font-weight:400;opacity:.85">${isAR ? 'شحن من المصنع دون وصل استلام مسبق' : 'Enlèvement usine sans BR préalable'}</div>
           </div>
         </button>
         <button type="button" id="btn-mode-stock" class="btn btn-outline" onclick="BLModule._switchNewBCHMode('stock')" style="padding:12px 14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:700">
           <i class="fas fa-boxes" style="font-size:18px"></i>
-          <div style="text-align:left">
-            <div>2. Déstockage Dépôt</div>
-            <div style="font-size:10px;font-weight:400;opacity:.85">Depuis un BR existant en stock (${openBRs.length})</div>
+          <div style="text-align:${isAR?'right':'left'}">
+            <div>${isAR ? '2. إخراج من المستودع' : '2. Déstockage Dépôt'}</div>
+            <div style="font-size:10px;font-weight:400;opacity:.85">${isAR ? `من وصل استلام موجود في المخزون (${openBRs.length})` : `Depuis un BR existant en stock (${openBRs.length})`}</div>
           </div>
         </button>
       </div>
@@ -1234,45 +1238,45 @@ const BLModule = {
         <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
           <div class="form-row-3" style="margin-bottom:10px">
             <div class="form-group mb-0">
-              <label class="required"><i class="fas fa-industry"></i> Usine / Fournisseur</label>
+              <label class="required"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</label>
               <select id="direct-bch-supplier" class="input" required>
-                <option value="">— Choisir l'Usine —</option>
+                <option value="">${isAR ? '— اختيار المصنع —' : "— Choisir l'Usine —"}</option>
                 ${allSuppliers.map(s => `<option value="${s.id}">${Utils.escHTML(s.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group mb-0">
-              <label class="required"><i class="fas fa-user-tie"></i> Client Destinataire</label>
+              <label class="required"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون المستلم' : 'Client Destinataire'}</label>
               <select id="direct-bch-client" class="input" required onchange="BLModule._onDirectClientChange(this.value)">
-                <option value="">— Choisir le Client —</option>
+                <option value="">${isAR ? '— اختيار الزبون —' : '— Choisir le Client —'}</option>
                 ${allClients.map(c => `<option value="${c.id}">${Utils.escHTML(c.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group mb-0">
-              <label><i class="fas fa-calendar-day"></i> Date d'émission</label>
+              <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
               <input type="date" id="direct-bch-date" class="input" value="${Utils.today()}">
             </div>
           </div>
 
           <div class="form-row-3">
             <div class="form-group mb-0">
-              <label class="required"><i class="fas fa-id-card"></i> Nom du Chauffeur</label>
-              <input type="text" id="direct-bch-driver" class="input" placeholder="Nom complet..." oninput="BLModule._onDirectDriverInput(this.value)">
+              <label class="required"><i class="fas fa-id-card"></i> ${isAR ? 'اسم السائق' : 'Nom du Chauffeur'}</label>
+              <input type="text" id="direct-bch-driver" class="input" placeholder="${isAR ? 'الاسم الكامل للسائق...' : 'Nom complet...'}" oninput="BLModule._onDirectDriverInput(this.value)">
             </div>
             <div class="form-group mb-0">
-              <label class="required"><i class="fas fa-truck"></i> Matricule Camion</label>
-              <input type="text" id="direct-bch-truck" class="input" placeholder="Ex: 01234-123-16">
+              <label class="required"><i class="fas fa-truck"></i> ${isAR ? 'رقم تسجيل الشاحنة' : 'Matricule Camion'}</label>
+              <input type="text" id="direct-bch-truck" class="input" placeholder="${isAR ? 'مثال: 01234-123-16' : 'Ex: 01234-123-16'}">
             </div>
             <div class="form-group mb-0">
-              <label><i class="fas fa-map-marker-alt"></i> Destination / Chantier</label>
-              <input type="text" id="direct-bch-dest" class="input" placeholder="Adresse de livraison...">
+              <label><i class="fas fa-map-marker-alt"></i> ${isAR ? 'الوجهة / الورشة' : 'Destination / Chantier'}</label>
+              <input type="text" id="direct-bch-dest" class="input" placeholder="${isAR ? 'عنوان التسليم...' : 'Adresse de livraison...'}">
             </div>
           </div>
         </div>
 
         <!-- Articles Table -->
         <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:var(--text);display:flex;justify-content:space-between;align-items:center">
-          <span><i class="fas fa-list"></i> Marchandises à charger</span>
-          <button type="button" class="btn btn-xs btn-outline" onclick="BLModule._addDirectBCHRow()"><i class="fas fa-plus"></i> Ajouter ligne</button>
+          <span><i class="fas fa-list"></i> ${isAR ? 'البضائع المراد شحنها' : 'Marchandises à charger'}</span>
+          <button type="button" class="btn btn-xs btn-outline" onclick="BLModule._addDirectBCHRow()"><i class="fas fa-plus"></i> ${isAR ? 'إضافة سطر' : 'Ajouter ligne'}</button>
         </div>
 
         <datalist id="bch-articles-list">
@@ -1283,13 +1287,13 @@ const BLModule = {
           <table class="table" style="width:100%;font-size:12px">
             <thead>
               <tr style="background:var(--bg3)">
-                <th style="min-width:180px">Désignation</th>
-                <th style="width:70px">Unité</th>
-                <th style="width:90px">Quantité</th>
-                <th style="width:110px">P.U. Vente HT</th>
-                <th style="width:110px">P.U. Achat Usine</th>
-                <th style="width:80px">Remise %</th>
-                <th style="width:110px;text-align:right">Total HT</th>
+                <th style="min-width:180px;text-align:${isAR?'right':'left'}">${isAR ? 'التعيين / المنتج' : 'Désignation'}</th>
+                <th style="width:70px;text-align:center">${isAR ? 'الوحدة' : 'Unité'}</th>
+                <th style="width:90px;text-align:center">${isAR ? 'الكمية' : 'Quantité'}</th>
+                <th style="width:110px;text-align:center">${isAR ? 'سعر البيع خ.ر' : 'P.U. Vente HT'}</th>
+                <th style="width:110px;text-align:center">${isAR ? 'سعر شراء المصنع' : 'P.U. Achat Usine'}</th>
+                <th style="width:80px;text-align:center">${isAR ? 'تخفيض %' : 'Remise %'}</th>
+                <th style="width:110px;text-align:${isAR?'left':'right'}">${isAR ? 'المجموع خ.ر' : 'Total HT'}</th>
                 <th style="width:40px"></th>
               </tr>
             </thead>
@@ -1301,25 +1305,25 @@ const BLModule = {
         <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px">
           <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
             <div class="form-group mb-0" style="width:110px">
-              <label>TVA %</label>
+              <label>${isAR ? 'نسبة TVA %' : 'TVA %'}</label>
               <select id="direct-bch-tva-rate" class="input" onchange="BLModule._recalcDirectBCHTotals()">
                 <option value="19" selected>19 %</option>
                 <option value="9">9 %</option>
-                <option value="0">0 % (Exo)</option>
+                <option value="0">0 % (${isAR ? 'معفى' : 'Exo'})</option>
               </select>
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:14px">
               <input type="checkbox" id="direct-bch-no-timbre" onchange="BLModule._recalcDirectBCHTotals()">
-              Exonéré de timbre
+              ${isAR ? 'معفى من الطابع الضريبي' : 'Exonéré de timbre'}
             </label>
           </div>
 
-          <div style="display:flex;flex-direction:column;gap:4px;min-width:260px;text-align:right">
-            <div style="font-size:12px;color:var(--text3)">Total HT : <strong id="direct-bch-tot-ht" style="color:var(--text)">0,00 DA</strong></div>
-            <div style="font-size:12px;color:var(--text3)">TVA (<span id="direct-bch-tva-pct">19%</span>) : <strong id="direct-bch-tot-tva" style="color:var(--text)">0,00 DA</strong></div>
-            <div style="font-size:12px;color:var(--text3)">Timbre Fiscal : <strong id="direct-bch-tot-timbre" style="color:var(--text)">0,00 DA</strong></div>
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:260px;text-align:${isAR?'left':'right'}">
+            <div style="font-size:12px;color:var(--text3)">${isAR ? 'المجموع خ.ر :' : 'Total HT :'} <strong id="direct-bch-tot-ht" style="color:var(--text)">0,00 DA</strong></div>
+            <div style="font-size:12px;color:var(--text3)">${isAR ? 'الرسم TVA' : 'TVA'} (<span id="direct-bch-tva-pct">19%</span>) : <strong id="direct-bch-tot-tva" style="color:var(--text)">0,00 DA</strong></div>
+            <div style="font-size:12px;color:var(--text3)">${isAR ? 'الطابع الجبائي :' : 'Timbre Fiscal :'} <strong id="direct-bch-tot-timbre" style="color:var(--text)">0,00 DA</strong></div>
             <div style="font-size:16px;font-weight:900;color:var(--primary);border-top:2px solid var(--primary);padding-top:6px;margin-top:2px">
-              TOTAL TTC : <span id="direct-bch-tot-ttc">0,00 DA</span>
+              ${isAR ? 'المجموع الشامل TTC :' : 'TOTAL TTC :'} <span id="direct-bch-tot-ttc">0,00 DA</span>
             </div>
           </div>
         </div>
@@ -1328,9 +1332,9 @@ const BLModule = {
       <!-- PANEL 2: STOCK BR MODE (Existing BR) -->
       <div id="bch-panel-stock" style="display:none">
         <div class="form-group mb-2">
-          <label class="required">Sélectionner le BR en stock</label>
+          <label class="required">${isAR ? 'اختيار وصل الاستلام في المخزون' : 'Sélectionner le BR en stock'}</label>
           <select id="newbl-br" onchange="BLModule._onNewBLBRChange(this.value)">
-            <option value="">— Choisir un BR en stock —</option>
+            <option value="">${isAR ? '— اختيار وصل الاستلام في المخزون —' : '— Choisir un BR en stock —'}</option>
             ${openBRs.map(br => `<option value="${br.id}">${Utils.escHTML(br.ref)} — ${Utils.escHTML(supMap[br.supplierId]?.name||'?')} — ${Utils.fmtCurrency(br.totalTTC)}</option>`).join('')}
           </select>
         </div>
@@ -1343,18 +1347,18 @@ const BLModule = {
     const footerHTML = `
       <div id="bch-footer-direct" style="display:flex;gap:8px;justify-content:flex-end;width:100%">
         <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
-        <button class="btn btn-outline" onclick="BLModule._saveDirectBCH(true, 'route')"><i class="fas fa-road"></i> Sauver & BL Route</button>
-        <button class="btn btn-outline" onclick="BLModule._saveDirectBCH(true, 'bch')"><i class="fas fa-file-pdf"></i> Sauver & Bon Chargement (2 Volets)</button>
-        <button class="btn btn-success" onclick="BLModule._saveDirectBCH(false)"><i class="fas fa-truck-loading"></i> Créer Bon de Chargement</button>
+        <button class="btn btn-outline" onclick="BLModule._saveDirectBCH(true, 'route')"><i class="fas fa-road"></i> ${isAR ? 'حفظ وسند التسليم للطريق' : 'Sauver & BL Route'}</button>
+        <button class="btn btn-outline" onclick="BLModule._saveDirectBCH(true, 'bch')"><i class="fas fa-file-pdf"></i> ${isAR ? 'حفظ وسند الشحن (نسختان)' : 'Sauver & Bon Chargement (2 Volets)'}</button>
+        <button class="btn btn-success" onclick="BLModule._saveDirectBCH(false)"><i class="fas fa-truck-loading"></i> ${isAR ? 'إنشاء سند الشحن' : 'Créer Bon de Chargement'}</button>
       </div>
       <div id="bch-footer-stock" style="display:none;gap:8px;justify-content:flex-end;width:100%">
         <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
-        <button class="btn btn-outline" id="newbl-pdf" style="display:none" onclick="BLModule._saveFromNewBL(true)"><i class="fas fa-file-pdf"></i> Sauver & PDF</button>
-        <button class="btn btn-success" id="newbl-save" style="display:none" onclick="BLModule._saveFromNewBL(false)"><i class="fas fa-truck"></i> Créer BL</button>
+        <button class="btn btn-outline" id="newbl-pdf" style="display:none" onclick="BLModule._saveFromNewBL(true)"><i class="fas fa-file-pdf"></i> ${isAR ? 'حفظ و PDF' : 'Sauver & PDF'}</button>
+        <button class="btn btn-success" id="newbl-save" style="display:none" onclick="BLModule._saveFromNewBL(false)"><i class="fas fa-truck"></i> ${isAR ? 'إنشاء سند التسليم' : 'Créer BL'}</button>
       </div>
     `;
 
-    UI.showModal(`<i class="fas fa-truck-loading"></i> Nouveau Bon de Chargement (BCH)`, modalHTML, footerHTML, 'xl');
+    UI.showModal(`<i class="fas fa-truck-loading"></i> ${isAR ? 'سند شحن جديد (BCH)' : 'Nouveau Bon de Chargement (BCH)'}`, modalHTML, footerHTML, 'xl');
 
     // Initialize with 1 default empty line in Direct mode
     BLModule._directBCHRows = [];
@@ -1396,10 +1400,10 @@ const BLModule = {
     tr.id = `direct-bch-tr-${idx}`;
     tr.innerHTML = `
       <td>
-        <input type="text" id="direct-bch-des-${idx}" list="bch-articles-list" class="input" style="padding:6px 8px;font-size:12px" placeholder="Désignation marchandise..." value="${Utils.escHTML(item.designation||'')}" oninput="BLModule._onDirectArticleSelect(${idx}, this.value)">
+        <input type="text" id="direct-bch-des-${idx}" list="bch-articles-list" class="input" style="padding:6px 8px;font-size:12px" placeholder="${T.isRTL() ? 'تعيين البضاعة...' : 'Désignation marchandise...'}" value="${Utils.escHTML(item.designation||'')}" oninput="BLModule._onDirectArticleSelect(${idx}, this.value)">
       </td>
       <td>
-        <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" placeholder="U" value="${Utils.escHTML(item.unit||'U')}">
+        <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" placeholder="${T.isRTL() ? 'وحدة' : 'U'}" value="${Utils.escHTML(item.unit||'U')}">
       </td>
       <td>
         <input type="number" id="direct-bch-qty-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" step="any" placeholder="0" value="${item.qty||''}" oninput="BLModule._recalcDirectBCHRow(${idx})">
@@ -1499,8 +1503,9 @@ const BLModule = {
   },
 
   async _saveDirectBCH(andPrint = false, printType = 'bch') {
+    const isAR = T.isRTL();
     if (!Auth.isAdmin() && !Auth.can('canCreateBL')) {
-      Utils.notify('⛔ Vous n’avez pas la permission de créer des Bons de Chargement', 'error');
+      Utils.notify(isAR ? '⛔ ليس لديك إذن لإنشاء سندات الشحن' : '⛔ Vous n’avez pas la permission de créer des Bons de Chargement', 'error');
       return;
     }
 
@@ -1511,10 +1516,10 @@ const BLModule = {
     const truckIMM   = (document.getElementById('direct-bch-truck')?.value||'').trim();
     const destAddr   = (document.getElementById('direct-bch-dest')?.value||'').trim();
 
-    if (!supplierId) { Utils.notify('Veuillez sélectionner une Usine / Fournisseur', 'error'); return; }
-    if (!clientId)   { Utils.notify('Veuillez sélectionner un Client', 'error'); return; }
-    if (!driverName) { Utils.notify('Veuillez indiquer le nom du chauffeur', 'error'); return; }
-    if (!truckIMM)   { Utils.notify('Veuillez indiquer le matricule du camion', 'error'); return; }
+    if (!supplierId) { Utils.notify(isAR ? 'يرجى اختيار المصنع / المورد' : 'Veuillez sélectionner une Usine / Fournisseur', 'error'); return; }
+    if (!clientId)   { Utils.notify(isAR ? 'يرجى اختيار الزبون' : 'Veuillez sélectionner un Client', 'error'); return; }
+    if (!driverName) { Utils.notify(isAR ? 'يرجى إدخال اسم السائق' : 'Veuillez indiquer le nom du chauffeur', 'error'); return; }
+    if (!truckIMM)   { Utils.notify(isAR ? 'يرجى إدخال رقم تسجيل الشاحنة' : 'Veuillez indiquer le matricule du camion', 'error'); return; }
 
     const rows = document.querySelectorAll('#direct-bch-rows tr');
     const lines = [];
@@ -1543,7 +1548,7 @@ const BLModule = {
     });
 
     if (!lines.length) {
-      Utils.notify('Veuillez saisir au moins une marchandise avec quantité > 0', 'error');
+      Utils.notify(isAR ? 'يرجى إدخال سلعة واحدة على الأقل بكمية أكبر من الصفر' : 'Veuillez saisir au moins une marchandise avec quantité > 0', 'error');
       return;
     }
 
@@ -1607,17 +1612,17 @@ const BLModule = {
     // Create reserved BR immediately
     try {
       const reservedBR = await DB.createReservedBR(savedBCH.id);
-      Utils.notify(`BR réservé: ${reservedBR.ref} — En attente validation usine`, 'info', 4000);
+      Utils.notify(isAR ? `وصل استلام محجوز: ${reservedBR.ref} — في انتظار تأكيد المصنع` : `BR réservé: ${reservedBR.ref} — En attente validation usine`, 'info', 4000);
     } catch(e) { console.error('Reserved BR error:', e); }
 
-    Utils.notify(`BCH ${ref} cree - En attente validation usine ${sup?.name || ''}`, 'success', 5000);
+    Utils.notify(isAR ? `تم إنشاء سند الشحن ${ref} — في انتظار تأكيد المصنع ${sup?.name || ''}` : `BCH ${ref} créé - En attente validation usine ${sup?.name || ''}`, 'success', 5000);
 
     // Notify: BCH sent to usine
     if (typeof NotifMgr !== 'undefined') {
       NotifMgr.add({
         type: 'bc_created',
-        title: T.isRTL() ? 'تم إرسال BCH إلى المصنع' : 'BCH envoye vers l\'usine',
-        message: T.isRTL() ? `تم إرسال BCH ${ref} إلى ${sup?.name||'المصنع'} للشحن. السائق: ${driver||'-'} (${imm||'-'}).` : `Le BCH ${ref} a ete envoye vers ${sup?.name||'l\'usine'} pour chargement. Chauffeur: ${driver||'-'} (${imm||'-'}).`,
+        title: isAR ? 'تم إرسال BCH إلى المصنع' : 'BCH envoyé vers l\'usine',
+        message: isAR ? `تم إرسال BCH ${ref} إلى ${sup?.name||'المصنع'} للشحن. السائق: ${driverName||'-'} (${truckIMM||'-'}).` : `Le BCH ${ref} a été envoyé vers ${sup?.name||'l\'usine'} pour chargement. Chauffeur: ${driverName||'-'} (${truckIMM||'-'}).`,
         link: { mod: 'bls', id: savedBCH.id },
         data: { bcId: savedBCH.id }
       });
@@ -1666,13 +1671,15 @@ const BLModule = {
   },
 
   _saveFromNewBL(andPrint) {
+    const isAR = T.isRTL();
     const brId = Number(document.getElementById('newbl-br')?.value);
-    if (!brId) { Utils.notify('Sélectionnez un BR', 'error'); return; }
+    if (!brId) { Utils.notify(isAR ? 'يرجى اختيار وصل استلام' : 'Sélectionnez un BR', 'error'); return; }
     this._saveBL(brId, null, andPrint||false);
   },
 
   async showGenerate(brId) {
-    if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify('⛔ Permission refusée — création BL', 'error'); return; }
+    const isAR = T.isRTL();
+    if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify(isAR ? '⛔ إذن مرفوض — إنشاء سند التسليم' : '⛔ Permission refusée — création BL', 'error'); return; }
     const br = DB.getById('brs', brId);
     if (!br) return;
 
@@ -1682,9 +1689,9 @@ const BLModule = {
       if (users.length > 0) {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
-          title: '👤 Créer en tant que...',
-          message: `<div style="margin-bottom:10px;font-size:13px">Ce BL sera attribué à la caisse de :</div><select id="dlg_bl_as_user">${opts}</select><div style="margin-top:10px;font-size:11px">Vous restez affiché comme "Modifié par" pour transparence</div>`,
-          type: 'info', confirmText: 'Continuer', cancelText: 'Annuler'
+          title: isAR ? '👤 تخصيص الإنشاء إلى...' : '👤 Créer en tant que...',
+          message: `<div style="margin-bottom:10px;font-size:13px">${isAR ? 'سيتم احتساب سند التسليم هذا في صندوق :' : 'Ce BL sera attribué à la caisse de :'}</div><select id="dlg_bl_as_user" class="input" style="width:100%">${opts}</select><div style="margin-top:10px;font-size:11px;color:var(--text4)">${isAR ? 'ستبقى مسجلاً كـ "عُدّل بواسطة" لضمان الشفافية' : 'Vous restez affiché comme "Modifié par" pour transparence'}</div>`,
+          type: 'info', confirmText: isAR ? 'متابعة' : 'Continuer', cancelText: isAR ? 'إلغاء' : 'Annuler'
         });
         if (!picked) return;
         BLModule._adminActAsUserId = parseInt(document.getElementById('dlg_bl_as_user')?.value);
@@ -1693,34 +1700,35 @@ const BLModule = {
 
     UI.showModal(`<i class="fas fa-truck"></i> ${T.get('bl_from_br')} — ${br.ref}`, this._blModalBody(br, null), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
-      <button class="btn btn-outline" onclick="BLModule._saveBL(${brId},null,true)"><i class="fas fa-print"></i> Sauver & PDF</button>
-      <button class="btn btn-success" onclick="BLModule._saveBL(${brId},null,false)"><i class="fas fa-truck"></i> Générer BL</button>`, 'xl');
+      <button class="btn btn-outline" onclick="BLModule._saveBL(${brId},null,true)"><i class="fas fa-print"></i> ${isAR ? 'حفظ و PDF' : 'Sauver & PDF'}</button>
+      <button class="btn btn-success" onclick="BLModule._saveBL(${brId},null,false)"><i class="fas fa-truck"></i> ${isAR ? 'توليد سند التسليم' : 'Générer BL'}</button>`, 'xl');
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
   showEdit(blId, adminOverride = false) {
+    const isAR = T.isRTL();
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     if (bl.status === 'returned') {
-      Utils.notify("Ce bon de livraison a été retourné et est archivé définitivement. Modification impossible.", 'error');
+      Utils.notify(isAR ? "تم إرجاع سند التسليم هذا وأرشفته نهائياً. التعديل غير ممكن." : "Ce bon de livraison a été retourné et est archivé définitivement. Modification impossible.", 'error');
       return;
     }
     if (!Auth.canEdit(bl) && !adminOverride) {
-      Utils.notify("Ce document date d'un jour antérieur ou la caisse est clôturée. Seul l'administrateur peut le modifier.", 'warning');
+      Utils.notify(isAR ? "هذا المستند يعود ليوم سابق أو أن الصندوق مغلق. المسؤول فقط يمكنه التعديل." : "Ce document date d'un jour antérieur ou la caisse est clôturée. Seul l'administrateur peut le modifier.", 'warning');
       return;
     }
     const br = DB.getById('brs', bl.brId);
     if (!br) return;
     const title = adminOverride
-      ? `<i class="fas fa-shield-alt" style="color:#a78bfa"></i> Admin Edit — ${bl.ref} <span style="font-size:11px;background:rgba(99,102,241,.15);color:#a78bfa;padding:2px 8px;border-radius:6px;margin-left:6px">Override</span>`
+      ? `<i class="fas fa-shield-alt" style="color:#a78bfa"></i> ${isAR ? 'تعديل المسؤول — ' : 'Admin Edit — '}${bl.ref} <span style="font-size:11px;background:rgba(99,102,241,.15);color:#a78bfa;padding:2px 8px;border-radius:6px;margin-inline-start:6px">Override</span>`
       : `<i class="fas fa-edit"></i> ${T.get('edit')} BL — ${bl.ref}`;
     UI.showModal(title, this._blModalBody(br, bl), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       ${adminOverride
-        ? `<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff" onclick="BLModule._saveBL(${bl.brId},${blId},false,true)"><i class="fas fa-shield-alt"></i> Sauver (Admin)</button>`
+        ? `<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff" onclick="BLModule._saveBL(${bl.brId},${blId},false,true)"><i class="fas fa-shield-alt"></i> ${isAR ? 'حفظ (المسؤول)' : 'Sauver (Admin)'}</button>`
         : `<button class="btn btn-warning" onclick="BLModule._saveBL(${bl.brId},${blId},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`
       }
-      ${(bl.status !== 'delivered' && bl.status !== 'locked') ? `<button class="btn btn-success" onclick="BLModule._saveBL(${bl.brId},${blId},false);setTimeout(()=>BLModule.confirmDelivery(${blId}),500)"><i class="fas fa-check-circle"></i> Sauver & Valider</button>` : ''}`, 'xl');
+      ${(bl.status !== 'delivered' && bl.status !== 'locked') ? `<button class="btn btn-success" onclick="BLModule._saveBL(${bl.brId},${blId},false);setTimeout(()=>BLModule.confirmDelivery(${blId}),500)"><i class="fas fa-check-circle"></i> ${isAR ? 'حفظ وتأكيد' : 'Sauver & Valider'}</button>` : ''}`, 'xl');
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
@@ -1842,14 +1850,14 @@ const BLModule = {
       </div>
     </div>
     <div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">
-      <i class="fas fa-list"></i> Articles à livrer
+      <i class="fas fa-list"></i> ${T.isRTL() ? 'السلع المراد تسليمها' : 'Articles à livrer'}
     </div>
     <div class="table-wrap" style="margin-bottom:12px">
       <table class="lines-table">
         <thead><tr>
-          <th>#</th><th style="text-align:left">Désignation</th><th>Unité</th>
-          <th>Qté BR</th><th>Qté à livrer <span style="color:var(--danger)">*</span></th>
-          <th>Prix Unit.</th><th>Remise</th><th>Total HT</th>
+          <th>#</th><th style="text-align:${T.isRTL()?'right':'left'}">${T.get('br_designation')}</th><th>${T.get('br_unit')}</th>
+          <th>${T.isRTL() ? 'كمية BR' : 'Qté BR'}</th><th>${T.isRTL() ? 'الكمية للتسليم' : 'Qté à livrer'} <span style="color:var(--danger)">*</span></th>
+          <th>${T.isRTL() ? 'السعر الفردي' : 'Prix Unit.'}</th><th>${T.isRTL() ? 'تخفيض' : 'Remise'}</th><th>${T.isRTL() ? 'المجموع خ.ر' : 'Total HT'}</th>
         </tr></thead>
         <tbody>
           ${lines.map((l,i) => {
@@ -1968,7 +1976,7 @@ const BLModule = {
       qty = maxQty;
       input.value = maxQty;
       input.style.borderColor = 'var(--danger)';
-      Utils.notify('Quantité limitée à ' + maxQty + ' (quantité BR)', 'warning');
+      Utils.notify(T.isRTL() ? 'الكمية محددة بـ ' + maxQty + ' (كمية وصل الاستلام)' : 'Quantité limitée à ' + maxQty + ' (quantité BR)', 'warning');
     } else {
       input.style.borderColor = '';
     }
@@ -2042,9 +2050,10 @@ const BLModule = {
   },
 
   _saveBL(brId, editBlId, andPrint, adminOverride = false) {
+    const isAR = T.isRTL();
     // Permission guard: non-admin users must have canCreateBL permission
     if (!Auth.isAdmin() && !Auth.can('canCreateBL')) {
-      Utils.notify('⛔ Vous n’avez pas la permission de créer des BL', 'error');
+      Utils.notify(isAR ? '⛔ ليس لديك إذن لإنشاء سندات التسليم' : '⛔ Vous n’avez pas la permission de créer des BL', 'error');
       UI.closeModal(); return;
     }
     const driverName = (document.getElementById('bl-driver')?.value||'').trim();
@@ -2055,13 +2064,13 @@ const BLModule = {
     const br = DB.getById('brs', brId);
     // ── Guard: block BL generation if BR was deleted (moved to recycle bin) ──
     if (!br) {
-      Utils.notify(T.isRTL() ? 'خطأ: هذا الوصل محذوف ولا يمكن إنشاء BL منه.' : 'Erreur : ce BR a été supprimé — impossible de créer un BL.', 'error');
+      Utils.notify(isAR ? 'خطأ: هذا الوصل محذوف ولا يمكن إنشاء BL منه.' : 'Erreur : ce BR a été supprimé — impossible de créer un BL.', 'error');
       UI.closeModal();
       return;
     }
-    if (!clientId)   { Utils.notify(T.get('col_client')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
-    if (!driverName) { Utils.notify(T.get('bl_driver')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
-    if (!truckIMM)   { Utils.notify(T.get('bl_truck')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
+    if (!clientId)   { Utils.notify(T.get('col_client')+(isAR?' مطلوب':' requis'), 'error'); return; }
+    if (!driverName) { Utils.notify(T.get('bl_driver')+(isAR?' مطلوب':' requis'), 'error'); return; }
+    if (!truckIMM)   { Utils.notify(T.get('bl_truck')+(isAR?' مطلوب':' requis'), 'error'); return; }
 
 
     /* Collect lines with their delivered quantities */
@@ -2075,7 +2084,7 @@ const BLModule = {
     }).filter(l => l.qtyDelivered > 0);
 
     if (!deliveredLines.length) {
-      Utils.notify('Saisissez au moins une quantité à livrer > 0.', 'error');
+      Utils.notify(isAR ? 'أدخل كمية للتسليم أكبر من الصفر على الأقل.' : 'Saisissez au moins une quantité à livrer > 0.', 'error');
       return;
     }
 
@@ -2141,7 +2150,7 @@ const BLModule = {
     if (editBlId) {
       savedBL = DB.update('bls', editBlId, data,
         adminOverride ? `Admin override edit (${Auth.getCurrentUser()?.name})` : null);
-      Utils.notify((T.isRTL()?'تم تعديل وصل التسليم': adminOverride ? '✅ BL modifié (Admin Override)' : 'BL modifié'), 'success');
+      Utils.notify((isAR ? (adminOverride ? '✅ تم تعديل سند التسليم (تجاوز إداري)' : 'تم تعديل وصل التسليم') : (adminOverride ? '✅ BL modifié (Admin Override)' : 'BL modifié')), 'success');
     } else {
       savedBL = DB.insert('bls', data);
       // Auto-purge any old recycle bin entries for this BR since merchandise is now assigned to a new BL
@@ -2155,7 +2164,7 @@ const BLModule = {
         }
       }
       if (!isPartial) DB.update('brs', brId, { status:'delivered', deliveredAt:new Date().toISOString() }, 'Livraison complète via BL');
-      Utils.notify(isPartial ? `BL partiel créé : ${ref}` : `BL créé : ${ref}`, 'success');
+      Utils.notify(isAR ? (isPartial ? `تم إنشاء سند تسليم جزئي: ${ref}` : `تم إنشاء سند التسليم: ${ref}`) : (isPartial ? `BL partiel créé : ${ref}` : `BL créé : ${ref}`), 'success');
     }
     UI.closeModal();
     App.loadModule('bls');
@@ -2167,15 +2176,16 @@ const BLModule = {
     if (!bl) return;
     const br = DB.getById('brs', bl.brId);
     const u = Auth.getCurrentUser();
+    const isAR = T.isRTL();
 
     // ── Returned BL is permanently reserved & locked forever ──
     if (bl.status === 'returned') {
-      Utils.notify('⛔ Ce Bon de Livraison est définitivement archivé comme RETOURNÉ. Sa référence est réservée et ne peut pas être réutilisée.', 'warning', 5000);
+      Utils.notify(isAR ? '⛔ سند التسليم هذا مؤرشف نهائياً كـ مرتجع. رقمه محجوز ولا يمكن إعادة استخدامه.' : '⛔ Ce Bon de Livraison est définitivement archivé comme RETOURNÉ. Sa référence est réservée et ne peut pas être réutilisée.', 'warning', 5000);
       return;
     }
     // ── Already delivered — no double-confirm ──
     if (bl.status === 'delivered') {
-      Utils.notify('ℹ️ Ce bon est déjà marqué comme livré.', 'info');
+      Utils.notify(isAR ? 'ℹ️ هذا السند محدد بالفعل كـ مسلّم.' : 'ℹ️ Ce bon est déjà marqué comme livré.', 'info');
       return;
     }
     // ── pending_usine: factory hasn't validated yet ──
@@ -2183,7 +2193,7 @@ const BLModule = {
       // Check if BR is still reserved (factory hasn't validated yet)
       const linkedBR = bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null;
       if (!linkedBR || linkedBR.status === 'reserved') {
-        Utils.notify('⛔ Ce bon est en attente de validation usine. L\'usine doit d\'abord confirmer le chargement.', 'error', 5000);
+        Utils.notify(isAR ? '⛔ هذا السند في انتظار تأكيد المصنع. يجب على المصنع أولاً تأكيد الشحن.' : '⛔ Ce bon est en attente de validation usine. L\'usine doit d\'abord confirmer le chargement.', 'error', 5000);
         return;
       }
     }
@@ -2192,7 +2202,7 @@ const BLModule = {
     const amount = Number(bl.totalTTC || br?.totalTTC || 0);
     const ok = await Utils.confirm2(
       T.get('bl_delivered_msg'),
-      `Montant TTC: ${Utils.fmtCurrency(amount)}\n\nConfirmer définitivement ?`
+      `${isAR ? 'المبلغ الشامل TTC:' : 'Montant TTC:'} ${Utils.fmtCurrency(amount)}\n\n${isAR ? 'تأكيد التسليم نهائياً؟' : 'Confirmer définitivement ?'}`
     );
     if (!ok) return;
 
@@ -2272,6 +2282,11 @@ const BLModule = {
     const cli = bl ? DB.getById('clients', bl.clientId) : null;
     const isLocked = bl.status==='delivered'||bl.status==='locked';
     const isReturned = bl.status==='returned';
+    const retDoc = isReturned ? ((DB.getAll('bon_retours')||[]).find(r => r.blId === bl.id || r.bcId === bl.id || r.blRef === bl.ref) || null) : null;
+    const effReturnedAt = bl.returnedAt || retDoc?.createdAt;
+    const effReturnedByName = bl.returnedByName || retDoc?.createdByName;
+    const effReturnReason = bl.returnReason || retDoc?.reason;
+    const effReturnRef = bl.returnRef || retDoc?.ref;
 
     const body = `
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
@@ -2284,7 +2299,7 @@ const BLModule = {
         <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#ef4444,#dc2626);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0"><i class="fas fa-undo"></i></div>
         <div>
           <div style="font-weight:900;font-size:16px;color:#ef4444">${T.isRTL()?'سند إرجاع البضاعة':'BON DE RETOUR'}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">${Utils.escHTML(bl.returnRef||'—')}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${Utils.escHTML(effReturnRef||'—')}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
@@ -2298,16 +2313,16 @@ const BLModule = {
         </div>
         <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
           <i class="fas fa-calendar-times" style="color:#ef4444;width:16px"></i>
-          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'تاريخ الإرجاع':'Date de retour'}</div><strong>${bl.returnedAt ? Utils.fmtDateTime(bl.returnedAt) : '—'}</strong></div>
+          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'تاريخ الإرجاع':'Date de retour'}</div><strong>${effReturnedAt ? Utils.fmtDateTime(effReturnedAt) : '—'}</strong></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
           <i class="fas fa-user-shield" style="color:#8b5cf6;width:16px"></i>
-          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'بواسطة':'Traité par'}</div><strong>${Utils.escHTML(bl.returnedByName||'—')}</strong></div>
+          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'بواسطة':'Traité par'}</div><strong>${Utils.escHTML(effReturnedByName||'—')}</strong></div>
         </div>
       </div>
       <div style="margin-top:12px;padding:10px 12px;background:rgba(239,68,68,.06);border-radius:8px;border:1px solid rgba(239,68,68,.12)">
         <div style="font-size:10px;color:#ef4444;font-weight:700;margin-bottom:4px"><i class="fas fa-exclamation-circle"></i> ${T.isRTL()?'سبب الإرجاع':'MOTIF DU RETOUR'}</div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">${Utils.escHTML(bl.returnReason||'—')}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${Utils.escHTML(effReturnReason||'—')}</div>
       </div>
     </div>` : ''}
     <table class="detail-table">
@@ -2328,7 +2343,7 @@ const BLModule = {
       ${(isLocked && !isReturned && Auth.canReturn(bl))?`<button class="btn" style="background:#ef4444;color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> ${T.isRTL()?'إرجاع':'Retour'}</button>`:''}
       ${isLocked && !isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin</button>`:''}
       ${isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.undoReturn(${blId})"><i class="fas fa-undo-alt"></i> ${T.isRTL()?'إلغاء الإرجاع':'Annuler Retour'}</button>`:''}
-      ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none;font-size:12px" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> Valider Usine</button>` : ''}
+      ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none;font-size:12px" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> ${T.isRTL() ? 'تأكيد المصنع' : 'Valider Usine'}</button>` : ''}
       <span style="width:1px;height:24px;background:var(--border);margin:0 2px"></span>
       <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-pdf" style="color:#ef4444"></i> BCH</button>
       <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road" style="color:#3b82f6"></i> BL Route</button>
@@ -2393,10 +2408,11 @@ const BLModule = {
   },
 
   async processReturn(blId) {
+    const isAR = T.isRTL();
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     if (bl.status === 'returned') {
-      Utils.notify('Ce bon de livraison a déjà été retourné.', 'warning');
+      Utils.notify(isAR ? 'تم إرجاع سند التسليم هذا مسبقاً.' : 'Ce bon de livraison a déjà été retourné.', 'warning');
       return;
     }
     const u = Auth.getCurrentUser();
@@ -2404,7 +2420,6 @@ const BLModule = {
     const br = bl.brId ? DB.getById('brs', bl.brId) : null;
     const amount = Number(bl.totalTTC || br?.totalTTC || 0);
 
-    const isAR = T.isRTL();
     const reasons = isAR ? [
       'بضاعة تالفة',
       'عدم مطابقة المواد',
@@ -2428,7 +2443,7 @@ const BLModule = {
           </div>
           <div>
             <div style="font-weight:800;font-size:15px;color:var(--text)">${isAR ? 'إنشاء سند إرجاع' : 'Générer un Bon de Retour (BR)'}</div>
-            <div style="font-size:12px;color:var(--text4);margin-top:2px">Bon de Chargement: <strong>${Utils.escHTML(bl.ref||'')}</strong> — Montant: <strong style="color:var(--danger)">${Utils.fmtCurrency(amount)}</strong></div>
+            <div style="font-size:12px;color:var(--text4);margin-top:2px">${isAR ? 'سند الشحن:' : 'Bon de Chargement:'} <strong>${Utils.escHTML(bl.ref||'')}</strong> — ${isAR ? 'المبلغ:' : 'Montant:'} <strong style="color:var(--danger)">${Utils.fmtCurrency(amount)}</strong></div>
           </div>
         </div>
 
@@ -2461,12 +2476,12 @@ const BLModule = {
           <select id="ret_reason_sel" class="input" style="width:100%;margin-bottom:8px" onchange="if(this.value==='Autre motif' || this.value==='سبب آخر') document.getElementById('ret_reason_custom').style.display='block'; else document.getElementById('ret_reason_custom').style.display='none';">
             ${opts}
           </select>
-          <input type="text" id="ret_reason_custom" class="input" style="width:100%;display:none" placeholder="Précisez le motif du retour...">
+          <input type="text" id="ret_reason_custom" class="input" style="width:100%;display:none" placeholder="${isAR ? 'حدد سبب الإرجاع بالتفصيل...' : 'Précisez le motif du retour...'}">
         </div>
 
         <div class="form-group mb-2">
           <label style="font-weight:700">${isAR ? 'ملاحظات' : 'Observations / Remarques'}</label>
-          <textarea id="ret_notes" class="input" style="width:100%;height:60px" placeholder="Détails supplémentaires..."></textarea>
+          <textarea id="ret_notes" class="input" style="width:100%;height:60px" placeholder="${isAR ? 'تفاصيل وملاحظات إضافية...' : 'Détails supplémentaires...'}"></textarea>
         </div>
       </div>`;
 
@@ -2546,7 +2561,7 @@ const BLModule = {
     // 4. Recalibrate MasterBrain
     DB.MasterBrain.recalibrateAll();
 
-    Utils.notify(`Bon de Retour ${brRef} genere - BCH archive definitivement.`, 'success', 6000);
+    Utils.notify(isAR ? `تم إنشاء سند الإرجاع ${brRef} — وتمت أرشفة BCH نهائياً.` : `Bon de Retour ${brRef} généré — BCH archivé définitivement.`, 'success', 6000);
 
     // Notify: goods returned to usine
     if (typeof NotifMgr !== 'undefined') {
@@ -2565,17 +2580,18 @@ const BLModule = {
   },
 
   async deleteBL(id) {
+    const isAR = T.isRTL();
     const bl = DB.getById('bls', id);
     if (!bl) return;
     if (bl.status === 'returned') {
-      Utils.notify('⛔ Ce bon de livraison a été retourné et est archivé définitivement. Suppression impossible.', 'error');
+      Utils.notify(isAR ? '⛔ تم إرجاع سند التسليم هذا وأرشفته نهائياً. الحذف غير ممكن.' : '⛔ Ce bon de livraison a été retourné et est archivé définitivement. Suppression impossible.', 'error');
       return;
     }
     if (!Auth.canDelete(bl)) {
-      Utils.notify("⛔ Ce BL date d'un jour antérieur ou la caisse est clôturée. Seul un administrateur peut le supprimer.", 'error');
+      Utils.notify(isAR ? "⛔ يعود هذا السند ليوم سابق أو أن الصندوق مغلق. المسؤول فقط يمكنه حذفه." : "⛔ Ce BL date d'un jour antérieur ou la caisse est clôturée. Seul un administrateur peut le supprimer.", 'error');
       return;
     }
-    if (!Auth.isAdmin() && !Auth.can('canDeleteBL')) { Utils.notify('⛔ Permission refusée — suppression BL','error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canDeleteBL')) { Utils.notify(isAR ? '⛔ إذن مرفوض — حذف سند التسليم' : '⛔ Permission refusée — suppression BL','error'); return; }
 
     const isValidated = bl.status === 'delivered' || bl.status === 'locked';
     const u = Auth.getCurrentUser();
@@ -2583,50 +2599,50 @@ const BLModule = {
 
     // Non-admin can only delete their own non-delivered BLs
     if (!Auth.isAdmin() && isValidated) {
-      Utils.notify('⛔ BL livré — suppression admin uniquement', 'error'); return;
+      Utils.notify(isAR ? '⛔ سند التسليم مسلّم — الحذف للمسؤول فقط' : '⛔ BL livré — suppression admin uniquement', 'error'); return;
     }
     if (!Auth.isAdmin() && bl.createdBy !== u?.id) {
-      Utils.notify('⛔ Vous ne pouvez supprimer que vos propres BL','error'); return;
+      Utils.notify(isAR ? '⛔ يمكنك حذف سندات التسليم الخاصة بك فقط' : '⛔ Vous ne pouvez supprimer que vos propres BL','error'); return;
     }
 
     // ── Admin always gets two-path dialog, non-admin gets simple confirm ──
     if (!Auth.isAdmin()) {
-      const ok = await Dialog.confirm('Supprimer BL', `Supprimer le BL ${bl.ref||''} ?`, 'danger');
+      const ok = await Dialog.confirm(isAR ? 'حذف سند التسليم' : 'Supprimer BL', isAR ? `حذف سند التسليم ${bl.ref||''}؟` : `Supprimer le BL ${bl.ref||''} ?`, 'danger');
       if (!ok) return;
       DB.delete('bls', id);
-      Utils.notify('BL supprimé', 'success');
+      Utils.notify(isAR ? 'تم حذف سند التسليم' : 'BL supprimé', 'success');
       App.loadModule('bls');
       return;
     }
 
     const returnBtn = `<button id="dlg_bl_return" onclick="document.getElementById('dlg_bl_choice').value='return';document.querySelector('.dlg-btn-primary').click()"
-      style="display:flex;align-items:center;gap:14px;padding:16px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;width:100%">
+      style="display:flex;align-items:center;gap:14px;padding:16px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:${isAR?'right':'left'};width:100%">
       <span style="font-size:28px;flex-shrink:0">🔄</span>
-      <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">Retour Marchandise</div>
-      <div style="font-size:11px;opacity:.85">Génère un Bon de Retour officiel et déduit le montant de l'État de Vente du jour.</div></div>
+      <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">${isAR ? 'إرجاع البضاعة' : 'Retour Marchandise'}</div>
+      <div style="font-size:11px;opacity:.85">${isAR ? "توليد سند إرجاع رسمي وخصم المبلغ من تقرير مبيعات اليوم." : "Génère un Bon de Retour officiel et déduit le montant de l'État de Vente du jour."}</div></div>
     </button>`;
 
     const errorBtn = `<button id="dlg_bl_error" onclick="document.getElementById('dlg_bl_choice').value='error';document.querySelector('.dlg-btn-primary').click()"
-      style="display:flex;align-items:center;gap:14px;padding:16px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:left;width:100%">
+      style="display:flex;align-items:center;gap:14px;padding:16px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:12px;cursor:pointer;text-align:${isAR?'right':'left'};width:100%">
       <span style="font-size:28px;flex-shrink:0">🗑️</span>
-      <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">BL Erroné — Supprimer</div>
-      <div style="font-size:11px;opacity:.85">Le BL va à la corbeille.${isValidated ? ' Le montant est corrigé en caisse.' : ''}</div></div>
+      <div><div style="font-weight:700;font-size:14px;margin-bottom:2px">${isAR ? 'سند تسليم خاطئ — حذف' : 'BL Erroné — Supprimer'}</div>
+      <div style="font-size:11px;opacity:.85">${isAR ? `يُنقل السند إلى سلة المهملات.${isValidated ? ' ويتم تصحيح رصيد الصندوق تلقائياً.' : ''}` : `Le BL va à la corbeille.${isValidated ? ' Le montant est corrigé en caisse.' : ''}`}</div></div>
     </button>`;
 
     const choice = await Dialog.show({
-      title: '⚠️ Suppression BL',
-      message: `<div style="margin-bottom:16px;padding:14px 16px;background:var(--bg-inset);border-radius:10px;border-left:4px solid #f59e0b">
+      title: isAR ? '⚠️ خيارات حذف سند التسليم' : '⚠️ Suppression BL',
+      message: `<div style="margin-bottom:16px;padding:14px 16px;background:var(--bg-inset);border-radius:10px;border-${isAR?'right':'left'}:4px solid #f59e0b">
         <div style="color:#fbbf24;font-weight:700;margin-bottom:4px;font-size:15px">BL ${Utils.escHTML(bl.ref||'')} — ${Utils.fmtCurrency(amount)}</div>
-        <div style="font-size:12px;color:var(--text3)">${isValidated ? '✅ Livré — un dépôt de ' + Utils.fmtCurrency(amount) + ' a été généré en caisse.' : '📝 Brouillon — aucun mouvement de caisse.'}</div>
+        <div style="font-size:12px;color:var(--text3)">${isValidated ? (isAR ? `✅ مسلّم — تم تسجيل إيداع بمبلغ ${Utils.fmtCurrency(amount)} في الصندوق.` : `✅ Livré — un dépôt de ${Utils.fmtCurrency(amount)} a été généré en caisse.`) : (isAR ? '📝 مسودة — لم يتم تسجيل أي حركة في الصندوق.' : '📝 Brouillon — aucun mouvement de caisse.')}</div>
       </div>
-      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">${isValidated ? 'Choisissez une action :' : 'Confirmer la suppression :'}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">${isAR ? (isValidated ? 'اختر الإجراء المطلوب :' : 'تأكيد الحذف :') : (isValidated ? 'Choisissez une action :' : 'Confirmer la suppression :')}</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         ${isValidated ? returnBtn : ''}
         ${errorBtn}
       </div>
       <input type="hidden" id="dlg_bl_choice" value="">
       <style>.dlg-btn-primary{display:none!important}</style>`,
-      type: 'warning', confirmText: 'OK', cancelText: 'Annuler'
+      type: 'warning', confirmText: 'OK', cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     const action = document.getElementById('dlg_bl_choice')?.value;
@@ -2663,7 +2679,7 @@ const BLModule = {
             (Number(b.brId) === Number(brIdToCheck) || Number(b.linkedBrId) === Number(brIdToCheck)) && Number(b.id) !== Number(id) && b.status === 'delivered'
           );
           if (!otherDelivered.length) {
-            DB.update('brs', linkedBR.id, { status: 'open' }, 'BL erroné supprimé — BR libéré');
+            DB.update('brs', linkedBR.id, { status: 'open' }, isAR ? 'تم حذف سند تسليم خاطئ — تحرير BR' : 'BL erroné supprimé — BR libéré');
           }
         }
       }
@@ -2671,7 +2687,7 @@ const BLModule = {
       // 3. Brain recalibrates immediately — removes the deposit for this deleted BL
       DB.MasterBrain.recalibrateAll();
 
-      Utils.notify(`🗑️ BL ${ref} supprimé${isValidated ? ` — caisse corrigée automatiquement` : ''}`, 'success', 6000);
+      Utils.notify(isAR ? `🗑️ تم حذف ${ref}${isValidated ? ' — وتم تصحيح الصندوق تلقائياً' : ''}` : `🗑️ BL ${ref} supprimé${isValidated ? ` — caisse corrigée automatiquement` : ''}`, 'success', 6000);
       App.loadModule('bls');
     }
   },
@@ -2763,6 +2779,7 @@ const BLModule = {
   },
 
   _renderHistoryHTML() {
+    const isAR = T.isRTL();
     const data = this._getHistoryData();
     const f = this._historyFilters;
     const isAdmin = Auth.isAdmin();
@@ -2784,44 +2801,50 @@ const BLModule = {
 
     const hasFilters = f.q || f.dateFrom || f.dateTo || f.clientId !== 'all' || f.status !== 'all';
     const sortIcon = f.sortDir === 'asc' ? 'fa-sort-amount-up' : 'fa-sort-amount-down';
-    const sortLabel = f.sortDir === 'asc' ? 'Plus ancien' : 'Plus récent';
+    const sortLabel = f.sortDir === 'asc' ? (isAR ? 'الأقدم' : 'Plus ancien') : (isAR ? 'الأحدث' : 'Plus récent');
 
     return `
       <div class="smart-filters">
         <div class="sf-search">
           <i class="fas fa-search sf-search-icon"></i>
-          <input type="text" class="sf-search-input" value="${Utils.escHTML(f.q)}" placeholder="Rechercher réf, client, article..." oninput="BLModule._historyFilters.q=this.value;BLModule.updateHistory()">
+          <input type="text" class="sf-search-input" value="${Utils.escHTML(f.q)}" placeholder="${isAR ? 'بحث بالمرجع، الزبون، المادة...' : 'Rechercher réf, client, article...'}" oninput="BLModule._historyFilters.q=this.value;BLModule.updateHistory()">
         </div>
         <div class="sf-chips">
           <select class="sf-chip-select" onchange="BLModule._historyFilters.clientId=this.value;BLModule.updateHistory()">
-            <option value="all">Tous clients</option>
+            <option value="all">${isAR ? 'جميع الزبائن' : 'Tous clients'}</option>
             ${clients.map(c=>`<option value="${c.id}" ${String(f.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
           </select>
           <select class="sf-chip-select" onchange="BLModule._historyFilters.status=this.value;BLModule.updateHistory()">
-            <option value="all" ${f.status==='all'?'selected':''}>Tous statuts</option>
-            <option value="open" ${f.status==='open'?'selected':''}>✅ Ouverts</option>
-            <option value="delivered" ${f.status==='delivered'?'selected':''}>📦 Livrés</option>
+            <option value="all" ${f.status==='all'?'selected':''}>${isAR ? 'جميع الحالات' : 'Tous statuts'}</option>
+            <option value="open" ${f.status==='open'?'selected':''}>${isAR ? '✅ مفتوحة' : '✅ Ouverts'}</option>
+            <option value="delivered" ${f.status==='delivered'?'selected':''}>${isAR ? '📦 تم التسليم' : '📦 Livrés'}</option>
           </select>
-          <input type="date" class="sf-date-input" value="${f.dateFrom}" title="Date début" onchange="BLModule._historyFilters.dateFrom=this.value;BLModule.updateHistory()">
+          <input type="date" class="sf-date-input" value="${f.dateFrom}" title="${isAR ? 'تاريخ البداية' : 'Date début'}" onchange="BLModule._historyFilters.dateFrom=this.value;BLModule.updateHistory()">
           <span class="sf-date-sep">→</span>
-          <input type="date" class="sf-date-input" value="${f.dateTo}" title="Date fin" onchange="BLModule._historyFilters.dateTo=this.value;BLModule.updateHistory()">
-          <button class="btn btn-outline btn-sm" onclick="BLModule._historyFilters.sortDir=BLModule._historyFilters.sortDir==='asc'?'desc':'asc';BLModule.updateHistory()" title="Trier">
+          <input type="date" class="sf-date-input" value="${f.dateTo}" title="${isAR ? 'تاريخ النهاية' : 'Date fin'}" onchange="BLModule._historyFilters.dateTo=this.value;BLModule.updateHistory()">
+          <button class="btn btn-outline btn-sm" onclick="BLModule._historyFilters.sortDir=BLModule._historyFilters.sortDir==='asc'?'desc':'asc';BLModule.updateHistory()" title="${isAR ? 'ترتيب' : 'Trier'}">
             <i class="fas ${sortIcon}"></i> ${sortLabel}
           </button>
-          ${hasFilters ? `<button class="sf-clear" title="Effacer filtres" onclick="BLModule._historyFilters={dateFrom:'',dateTo:'',clientId:'all',q:'',status:'all',sortDir:'desc'};BLModule.updateHistory()"><i class="fas fa-times"></i></button>` : ''}
+          ${hasFilters ? `<button class="sf-clear" title="${isAR ? 'مسح التصفية' : 'Effacer filtres'}" onclick="BLModule._historyFilters={dateFrom:'',dateTo:'',clientId:'all',q:'',status:'all',sortDir:'desc'};BLModule.updateHistory()"><i class="fas fa-times"></i></button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="BLModule.exportHistory()"><i class="fas fa-file-excel" style="color:#1d6f42"></i> Excel</button>
-          <span class="badge badge-secondary" style="margin-left:4px">${data.rows.length} ligne(s)</span>
+          <span class="badge badge-secondary" style="margin-left:4px">${data.rows.length} ${isAR ? 'سطر' : 'ligne(s)'}</span>
         </div>
       </div>
       <div class="table-shell">
         <table class="data-table">
           <thead><tr>
-            <th>Date</th><th>BL Réf</th><th>Client</th><th>Désignation</th>
-            <th style="text-align:center">Qté</th><th>Prix Unit.</th><th>Total</th><th>Statut</th>
+            <th>${T.get('col_date')}</th>
+            <th>${isAR ? 'مرجع س.ت' : 'BL Réf'}</th>
+            <th>${T.get('col_client')}</th>
+            <th>${isAR ? 'التعيين' : 'Désignation'}</th>
+            <th style="text-align:center">${isAR ? 'الكمية' : 'Qté'}</th>
+            <th>${isAR ? 'سعر الوحدة' : 'Prix Unit.'}</th>
+            <th>${isAR ? 'المجموع' : 'Total'}</th>
+            <th>${isAR ? 'الحالة' : 'Statut'}</th>
           </tr></thead>
           <tbody>${data.rows.length ? tbody : `<tr><td colspan="8" class="text-center text-muted" style="padding:32px"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:8px;opacity:.3"></i>${T.get('no_data')}</td></tr>`}</tbody>
           <tfoot><tr>
-            <td colspan="6" style="text-align:right;font-weight:700;padding:12px 16px">Grand Total (${data.rows.length} lignes)</td>
+            <td colspan="6" style="text-align:right;font-weight:700;padding:12px 16px">${isAR ? `المجموع الإجمالي (${data.rows.length} سطر)` : `Grand Total (${data.rows.length} lignes)`}</td>
             <td colspan="2" style="font-weight:900;color:var(--primary);font-size:15px;padding:12px 16px">${Utils.fmtCurrency(data.grandTotal)}</td>
           </tr></tfoot>
         </table>
@@ -2838,6 +2861,7 @@ const SupplierPortalModule = {
   _suiviSearch: '',
 
   render() {
+    const isAR = T.isRTL();
     const curUser = Auth.getCurrentUser();
     const isSupplier = curUser?.role === 'supplier' || curUser?.role === 'supplier_agent';
     const supplierId = isSupplier ? curUser.supplierId : this._filterSupplierId;
@@ -2874,11 +2898,11 @@ const SupplierPortalModule = {
         ${mySupplier.logo ? `<img src="${mySupplier.logo}" style="width:56px;height:56px;border-radius:12px;object-fit:cover;border:3px solid rgba(255,255,255,.3);box-shadow:0 4px 12px rgba(0,0,0,.2)">` : `<div style="width:56px;height:56px;border-radius:12px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:26px;color:#fff;font-weight:900;border:3px solid rgba(255,255,255,.3)">${Utils.escHTML((mySupplier.name||'?').charAt(0))}</div>`}
         <div style="flex:1">
           <div style="font-size:22px;font-weight:900;color:#fff;letter-spacing:0.5px">${Utils.escHTML(mySupplier.name)}</div>
-          <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:3px">${curUser.role === 'supplier_agent' ? '👷 Agent de Validation sur Site' : '🏭 Portail Enlèvements & Validation'}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:3px">${curUser.role === 'supplier_agent' ? `👷 ${isAR ? 'وكيل التحقق في الموقع' : 'Agent de Validation sur Site'}` : `🏭 ${isAR ? 'بوابة السحب والتحقق' : 'Portail Enlèvements & Validation'}`}</div>
           ${mySupplier.address ? `<div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px"><i class="fas fa-map-marker-alt"></i> ${Utils.escHTML(mySupplier.address)}</div>` : ''}
         </div>
         <div style="text-align:right">
-          <div style="font-size:11px;color:rgba(255,255,255,.7)">Connecté en tant que</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.7)">${isAR ? 'متصل كـ' : 'Connecté en tant que'}</div>
           <div style="font-size:14px;font-weight:700;color:#fff">${Utils.escHTML(curUser.name || curUser.username)}</div>
         </div>
       </div>` : `
@@ -2888,38 +2912,38 @@ const SupplierPortalModule = {
             <i class="fas fa-industry"></i>
           </div>
           <div>
-            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">Portail Usines & Fournisseurs — Enlèvements</h2>
-            <div style="font-size:13px;color:var(--text4);margin-top:2px">Validation des chargements camions et génération automatique des Bons de Réception (BR)</div>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${isAR ? 'بوابة المصانع والموردين — عمليات السحب' : 'Portail Usines & Fournisseurs — Enlèvements'}</h2>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">${isAR ? 'التحقق من تحميلات الشاحنات والإنشاء التلقائي لـ (BR)' : 'Validation des chargements camions et génération automatique des Bons de Réception (BR)'}</div>
           </div>
         </div>
 
         <div style="display:flex;gap:10px;align-items:center">
-          <button class="btn btn-outline" onclick="App.loadModule('bls')"><i class="fas fa-arrow-left"></i> Bons de Chargement</button>
-          <button class="btn btn-primary" onclick="App.loadModule('bc_supervision')"><i class="fas fa-stream"></i> Pipeline Suivi</button>
+          <button class="btn btn-outline" onclick="App.loadModule('bls')"><i class="fas fa-arrow-left"></i> ${isAR ? 'وصل التحميل' : 'Bons de Chargement'}</button>
+          <button class="btn btn-primary" onclick="App.loadModule('bc_supervision')"><i class="fas fa-stream"></i> ${isAR ? 'متابعة خط الإنتاج' : 'Pipeline Suivi'}</button>
         </div>
       </div>`}
 
       <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px">
         <div class="stat-card" style="border-left:4px solid #f59e0b;background:var(--bg)">
-          <div class="stat-title"><i class="fas fa-clock" style="color:#f59e0b"></i> En attente Usine</div>
+          <div class="stat-title"><i class="fas fa-clock" style="color:#f59e0b"></i> ${isAR ? 'في انتظار المصنع' : 'En attente Usine'}</div>
           <div class="stat-val" style="color:#f59e0b;font-size:24px">${pendingCount}</div>
-          <div class="stat-sub">Camions en route / à charger</div>
+          <div class="stat-sub">${isAR ? 'شاحنات في الطريق / للتحميل' : 'Camions en route / à charger'}</div>
         </div>
         <div class="stat-card" style="border-left:4px solid #10b981;background:var(--bg)">
-          <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> Validés Aujourd'hui</div>
+          <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? 'تم التحقق اليوم' : 'Validés Aujourd\'hui'}</div>
           <div class="stat-val" style="color:#10b981;font-size:24px">${validatedToday}</div>
-          <div class="stat-sub">BRs créés automatiquement</div>
+          <div class="stat-sub">${isAR ? 'BRs تم إنشاؤها تلقائياً' : 'BRs créés automatiquement'}</div>
         </div>
         <div class="stat-card" style="border-left:4px solid var(--primary);background:var(--bg)">
-          <div class="stat-title"><i class="fas fa-boxes" style="color:var(--primary)"></i> Total Chargements</div>
+          <div class="stat-title"><i class="fas fa-boxes" style="color:var(--primary)"></i> ${isAR ? 'إجمالي التحميلات' : 'Total Chargements'}</div>
           <div class="stat-val" style="color:var(--primary);font-size:24px">${items.length}</div>
-          <div class="stat-sub">Actuellement affichés</div>
+          <div class="stat-sub">${isAR ? 'معروض حالياً' : 'Actuellement affichés'}</div>
         </div>
       </div>
 
       <div style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg2);padding:4px;border-radius:10px">
-        <button class="btn" style="flex:1;border:none;padding:10px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;${this._activeTab==='validation'?'background:var(--primary);color:#fff':'background:transparent;color:var(--text3)'}" onclick="SupplierPortalModule._activeTab='validation';App.loadModule(App._currentModule)"><i class="fas fa-clipboard-check"></i> Validation Chargements</button>
-        <button class="btn" style="flex:1;border:none;padding:10px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;${this._activeTab==='suivi'?'background:var(--primary);color:#fff':'background:transparent;color:var(--text3)'}" onclick="SupplierPortalModule._activeTab='suivi';App.loadModule(App._currentModule)"><i class="fas fa-chart-line"></i> Suivi & Historique</button>
+        <button class="btn" style="flex:1;border:none;padding:10px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;${this._activeTab==='validation'?'background:var(--primary);color:#fff':'background:transparent;color:var(--text3)'}" onclick="SupplierPortalModule._activeTab='validation';App.loadModule(App._currentModule)"><i class="fas fa-clipboard-check"></i> ${isAR ? 'التحقق من التحميلات' : 'Validation Chargements'}</button>
+        <button class="btn" style="flex:1;border:none;padding:10px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;${this._activeTab==='suivi'?'background:var(--primary);color:#fff':'background:transparent;color:var(--text3)'}" onclick="SupplierPortalModule._activeTab='suivi';App.loadModule(App._currentModule)"><i class="fas fa-chart-line"></i> ${isAR ? 'متابعة وتاريخ' : 'Suivi & Historique'}</button>
       </div>
 
       ${this._activeTab === 'validation' ? `
@@ -2927,25 +2951,25 @@ const SupplierPortalModule = {
         <div class="filters-bar" style="padding:14px 18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           ${!isSupplier ? `
           <div class="filter-group" style="min-width:200px">
-            <label>Usine / Fournisseur</label>
+            <label>${isAR ? 'مصنع / مورد' : 'Usine / Fournisseur'}</label>
             <select onchange="SupplierPortalModule._filterSupplierId=this.value;App.loadModule('supplier_portal')">
-              <option value="all">Toutes les Usines</option>
+              <option value="all">${isAR ? 'كل المصانع' : 'Toutes les Usines'}</option>
               ${allSuppliers.map(s => `<option value="${s.id}" ${String(this._filterSupplierId)===String(s.id)?'selected':''}>${Utils.escHTML(s.name)}</option>`).join('')}
             </select>
           </div>` : ''}
 
           <div class="filter-group" style="min-width:180px">
-            <label>Statut</label>
+            <label>${isAR ? 'الحالة' : 'Statut'}</label>
             <select onchange="SupplierPortalModule._filterStatus=this.value;App.loadModule('supplier_portal')">
-              <option value="all" ${this._filterStatus==='all'?'selected':''}>Tous les statuts</option>
-              <option value="pending_usine" ${this._filterStatus==='pending_usine'?'selected':''}>⏳ En attente de chargement</option>
-              <option value="validated_usine" ${this._filterStatus==='validated_usine'?'selected':''}>🏭 Validés usine (BR coordonné)</option>
-              <option value="delivered" ${this._filterStatus==='delivered'?'selected':''}>✅ Livrés client</option>
+              <option value="all" ${this._filterStatus==='all'?'selected':''}>${isAR ? 'كل الحالات' : 'Tous les statuts'}</option>
+              <option value="pending_usine" ${this._filterStatus==='pending_usine'?'selected':''}>${isAR ? '⏳ في انتظار التحميل' : '⏳ En attente de chargement'}</option>
+              <option value="validated_usine" ${this._filterStatus==='validated_usine'?'selected':''}>${isAR ? '🏭 تم التحقق (BR منسق)' : '🏭 Validés usine (BR coordonné)'}</option>
+              <option value="delivered" ${this._filterStatus==='delivered'?'selected':''}>${isAR ? '✅ تم التسليم' : '✅ Livrés client'}</option>
             </select>
           </div>
 
           <div style="margin-left:auto;display:flex;gap:8px">
-            <button class="btn btn-outline btn-sm" onclick="App.loadModule('supplier_portal')"><i class="fas fa-sync-alt"></i> Actualiser</button>
+            <button class="btn btn-outline btn-sm" onclick="App.loadModule('supplier_portal')"><i class="fas fa-sync-alt"></i> ${isAR ? 'تحديث' : 'Actualiser'}</button>
           </div>
         </div>
       </div>
@@ -2963,57 +2987,57 @@ const SupplierPortalModule = {
                 <div style="display:flex;align-items:center;gap:10px">
                   <span style="font-size:16px;font-weight:900;color:var(--text)">${Utils.escHTML(bc.ref)}</span>
                   ${Utils.statusBadge(bc.status || 'pending_usine')}
-                  ${bc.linkedBrRef ? `<span class="badge badge-success"><i class="fas fa-link"></i> BR Coordonné : ${Utils.escHTML(bc.linkedBrRef)}</span>` : ''}
+                  ${bc.linkedBrRef ? `<span class="badge badge-success"><i class="fas fa-link"></i> ${isAR ? 'BR منسق :' : 'BR Coordonné :'} ${Utils.escHTML(bc.linkedBrRef)}</span>` : ''}
                 </div>
                 <div style="font-size:12px;color:var(--text4);margin-top:4px">
-                  Émis le ${Utils.fmtDate(bc.date)} ${bc.createdAt ? 'à ' + new Date(bc.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : ''}
-                  ${bc.createdByName ? ` par <strong>${Utils.escHTML(bc.createdByName)}</strong>` : ''}
+                  ${isAR ? 'صدر في' : 'Émis le'} ${Utils.fmtDate(bc.date)} ${bc.createdAt ? (isAR ? '' : 'à ') + new Date(bc.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : ''}
+                  ${bc.createdByName ? ` ${isAR ? 'من طرف' : 'par'} <strong>${Utils.escHTML(bc.createdByName)}</strong>` : ''}
                 </div>
               </div>
 
               <div style="display:flex;gap:8px;align-items:center">
-                <button class="btn btn-sm btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})" title="Imprimer Bon de Chargement 2 volets">
-                  <i class="fas fa-file-pdf"></i> Imprimer BCH (2 Volets)
+                <button class="btn btn-sm btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})" title="${isAR ? 'طباعة وصل التحميل' : 'Imprimer Bon de Chargement 2 volets'}">
+                  <i class="fas fa-file-pdf"></i> ${isAR ? 'طباعة BCH' : 'Imprimer BCH (2 Volets)'}
                 </button>
                 ${!isValidated ? `
                 <button class="btn btn-sm btn-success" style="background:#10b981;color:#fff;font-weight:700" onclick="SupplierPortalModule.promptValidation(${bc.id})">
-                  <i class="fas fa-check-circle"></i> Valider Chargement & Générer BR
+                  <i class="fas fa-check-circle"></i> ${isAR ? 'التحقق وإنشاء BR' : 'Valider Chargement & Générer BR'}
                 </button>` : `
                 <span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,.1);padding:5px 12px;border-radius:8px">
-                  <i class="fas fa-lock"></i> Chargé & BR Validé
+                  <i class="fas fa-lock"></i> ${isAR ? 'تم التحميل و التحقق' : 'Chargé & BR Validé'}
                 </span>`}
               </div>
             </div>
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;background:var(--bg2);padding:12px;border-radius:10px;margin-bottom:12px">
               <div>
-                <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--primary);margin-bottom:3px"><i class="fas fa-industry"></i> Usine / Fournisseur</div>
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--primary);margin-bottom:3px"><i class="fas fa-industry"></i> ${isAR ? 'مصنع / مورد' : 'Usine / Fournisseur'}</div>
                 <div style="font-size:13px;font-weight:700;color:var(--text)">${Utils.escHTML(sup.name)}</div>
               </div>
               <div>
-                <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#10b981;margin-bottom:3px"><i class="fas fa-id-card"></i> Chauffeur & Camion</div>
-                <div style="font-size:13px;font-weight:700;color:var(--text)">${Utils.escHTML(bc.driverName || 'Non spécifié')} ${bc.driverPhone ? `<a href="tel:${bc.driverPhone}" style="color:var(--primary);font-size:11px;margin-left:4px"><i class="fas fa-phone"></i> ${Utils.escHTML(bc.driverPhone)}</a>` : ''}</div>
-                <div style="font-size:11px;color:var(--text3)">Matricule: <code>${Utils.escHTML(bc.truckIMM || '-')}</code></div>
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#10b981;margin-bottom:3px"><i class="fas fa-id-card"></i> ${isAR ? 'السائق والشاحنة' : 'Chauffeur & Camion'}</div>
+                <div style="font-size:13px;font-weight:700;color:var(--text)">${Utils.escHTML(bc.driverName || (isAR?'غير محدد':'Non spécifié'))} ${bc.driverPhone ? `<a href="tel:${bc.driverPhone}" style="color:var(--primary);font-size:11px;margin-left:4px"><i class="fas fa-phone"></i> ${Utils.escHTML(bc.driverPhone)}</a>` : ''}</div>
+                <div style="font-size:11px;color:var(--text3)">${isAR ? 'لوحة التسجيل:' : 'Matricule:'} <code>${Utils.escHTML(bc.truckIMM || '-')}</code></div>
               </div>
               <div>
-                <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text);margin-bottom:3px"><i class="fas fa-user-tie"></i> Client & Destination</div>
+                <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text);margin-bottom:3px"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون والوجهة' : 'Client & Destination'}</div>
                 <div style="font-size:13px;font-weight:700;color:var(--text)">${Utils.escHTML(cli.name || '-')}</div>
                 <div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${Utils.escHTML(bc.destinationAddress||'')}">${Utils.escHTML(bc.destinationAddress || '-')}</div>
               </div>
             </div>
 
             <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text4);margin-bottom:6px">
-              <i class="fas fa-list"></i> Marchandises à charger pour ce camion :
+              <i class="fas fa-list"></i> ${isAR ? 'البضائع المراد تحميلها لهذه الشاحنة :' : 'Marchandises à charger pour ce camion :'}
             </div>
             <div class="table-wrap">
               <table style="width:100%;border-collapse:collapse;font-size:12px">
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);background:var(--bg3)">
                     <th style="padding:6px 10px;text-align:left">#</th>
-                    <th style="padding:6px 10px;text-align:left">Désignation</th>
-                    <th style="padding:6px 10px;text-align:center">Unité</th>
-                    <th style="padding:6px 10px;text-align:center">Quantité à Charger</th>
-                    <th style="padding:6px 10px;text-align:right">Montant HT</th>
+                    <th style="padding:6px 10px;text-align:left">${isAR ? 'التعيين' : 'Désignation'}</th>
+                    <th style="padding:6px 10px;text-align:center">${isAR ? 'الوحدة' : 'Unité'}</th>
+                    <th style="padding:6px 10px;text-align:center">${isAR ? 'الكمية للتحميل' : 'Quantité à Charger'}</th>
+                    <th style="padding:6px 10px;text-align:right">${isAR ? 'المبلغ HT' : 'Montant HT'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3031,14 +3055,14 @@ const SupplierPortalModule = {
 
             ${bc.ticketPesee ? `
             <div style="margin-top:10px;font-size:11px;color:#10b981;display:flex;align-items:center;gap:6px">
-              <i class="fas fa-weight-hanging"></i> <strong>Ticket de Pesée / Bon Usine :</strong> ${Utils.escHTML(bc.ticketPesee)} (Validé par ${Utils.escHTML(bc.validatedBy||'Usine')} le ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.validatedAt) : bc.validatedAt})
+              <i class="fas fa-weight-hanging"></i> <strong>${isAR ? 'تذكرة الوزن / وصل المصنع :' : 'Ticket de Pesée / Bon Usine :'}</strong> ${Utils.escHTML(bc.ticketPesee)} (${isAR ? 'تم التحقق من طرف' : 'Validé par'} ${Utils.escHTML(bc.validatedBy||(isAR?'المصنع':'Usine'))} ${isAR ? 'في' : 'le'} ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.validatedAt) : bc.validatedAt})
             </div>` : ''}
           </div>`;
         }).join('') : `
         <div class="empty-state" style="padding:60px 20px;text-align:center;background:var(--bg);border-radius:12px;border:1px solid var(--border)">
           <i class="fas fa-check-circle" style="font-size:42px;color:#10b981;opacity:.6;margin-bottom:12px"></i>
-          <h4 style="font-size:16px;color:var(--text);margin:0">Aucun chargement en attente pour le moment</h4>
-          <p style="color:var(--text4);font-size:13px;margin-top:4px">Tous les camions ont été chargés et les bons de réception coordonnés ont été générés.</p>
+          <h4 style="font-size:16px;color:var(--text);margin:0">${isAR ? 'لا توجد تحميلات في الانتظار حالياً' : 'Aucun chargement en attente pour le moment'}</h4>
+          <p style="color:var(--text4);font-size:13px;margin-top:4px">${isAR ? 'تم تحميل جميع الشاحنات وإنشاء وصولات الاستلام المنسقة.' : 'Tous les camions ont été chargés et les bons de réception coordonnés ont été générés.'}</p>
         </div>`}
       </div>
       ` : ''}
@@ -3060,28 +3084,28 @@ const SupplierPortalModule = {
         const prods = Object.values(pm).sort((a,b) => b.a - a.a);
         return `
       <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px">
-        <div class="stat-card" style="border-left:4px solid #7c3aed;background:var(--bg)"><div class="stat-title"><i class="fas fa-file-import" style="color:#7c3aed"></i> Total Achats (BR)</div><div class="stat-val" style="color:#7c3aed;font-size:20px">${Utils.fmtCurrency(totalPurchased)}</div><div class="stat-sub">${allBRs.filter(b=>b.status!=='reserved').length} bons de réception</div></div>
-        <div class="stat-card" style="border-left:4px solid #10b981;background:var(--bg)"><div class="stat-title"><i class="fas fa-check-double" style="color:#10b981"></i> Total Payé</div><div class="stat-val" style="color:#10b981;font-size:20px">${Utils.fmtCurrency(totalPaid)}</div><div class="stat-sub">${allPays.length} paiements</div></div>
-        <div class="stat-card" style="border-left:4px solid ${balance>0?'#ef4444':'#10b981'};background:var(--bg)"><div class="stat-title"><i class="fas fa-balance-scale" style="color:${balance>0?'#ef4444':'#10b981'}"></i> Solde Dû</div><div class="stat-val" style="color:${balance>0?'#ef4444':'#10b981'};font-size:20px">${Utils.fmtCurrency(balance)}</div><div class="stat-sub">${balance>0?'Créance fournisseur':'Soldé'}</div></div>
+        <div class="stat-card" style="border-left:4px solid #7c3aed;background:var(--bg)"><div class="stat-title"><i class="fas fa-file-import" style="color:#7c3aed"></i> ${isAR ? 'إجمالي المشتريات (BR)' : 'Total Achats (BR)'}</div><div class="stat-val" style="color:#7c3aed;font-size:20px">${Utils.fmtCurrency(totalPurchased)}</div><div class="stat-sub">${allBRs.filter(b=>b.status!=='reserved').length} ${isAR ? 'وصل استلام' : 'bons de réception'}</div></div>
+        <div class="stat-card" style="border-left:4px solid #10b981;background:var(--bg)"><div class="stat-title"><i class="fas fa-check-double" style="color:#10b981"></i> ${isAR ? 'إجمالي المدفوع' : 'Total Payé'}</div><div class="stat-val" style="color:#10b981;font-size:20px">${Utils.fmtCurrency(totalPaid)}</div><div class="stat-sub">${allPays.length} ${isAR ? 'دفعات' : 'paiements'}</div></div>
+        <div class="stat-card" style="border-left:4px solid ${balance>0?'#ef4444':'#10b981'};background:var(--bg)"><div class="stat-title"><i class="fas fa-balance-scale" style="color:${balance>0?'#ef4444':'#10b981'}"></i> ${isAR ? 'الرصيد المستحق' : 'Solde Dû'}</div><div class="stat-val" style="color:${balance>0?'#ef4444':'#10b981'};font-size:20px">${Utils.fmtCurrency(balance)}</div><div class="stat-sub">${balance>0?(isAR?'مستحقات للمورد':'Créance fournisseur'):(isAR?'مُسوى بالكامل':'Soldé')}</div></div>
       </div>
       <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
         <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${this._suiviDateFrom}" onchange="SupplierPortalModule._suiviDateFrom=this.value;App.loadModule(App._currentModule)">
         <span style="color:var(--text4);font-size:12px">→</span>
         <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${this._suiviDateTo}" onchange="SupplierPortalModule._suiviDateTo=this.value;App.loadModule(App._currentModule)">
-        <input type="text" class="input" style="padding:6px 10px;font-size:12px;flex:1;min-width:180px" value="${Utils.escHTML(this._suiviSearch||'')}" onchange="SupplierPortalModule._suiviSearch=this.value;App.loadModule(App._currentModule)" placeholder="🔍 Rechercher (réf, produit...)">
-        <button class="btn btn-outline" style="font-size:12px" onclick="SupplierPortalModule._suiviDateFrom='';SupplierPortalModule._suiviDateTo='';SupplierPortalModule._suiviSearch='';App.loadModule(App._currentModule)"><i class="fas fa-times"></i> Reset</button>
+        <input type="text" class="input" style="padding:6px 10px;font-size:12px;flex:1;min-width:180px" value="${Utils.escHTML(this._suiviSearch||'')}" onchange="SupplierPortalModule._suiviSearch=this.value;App.loadModule(App._currentModule)" placeholder="${isAR ? '🔍 بحث (المرجع، المادة...)' : '🔍 Rechercher (réf, produit...)'}">
+        <button class="btn btn-outline" style="font-size:12px" onclick="SupplierPortalModule._suiviDateFrom='';SupplierPortalModule._suiviDateTo='';SupplierPortalModule._suiviSearch='';App.loadModule(App._currentModule)"><i class="fas fa-times"></i> ${isAR ? 'إعادة ضبط' : 'Reset'}</button>
       </div>
       <div style="margin-bottom:16px">
-        <h4 style="font-size:14px;font-weight:800;color:var(--text);margin:0 0 10px"><i class="fas fa-boxes" style="color:var(--primary)"></i> Récapitulatif par Produit</h4>
+        <h4 style="font-size:14px;font-weight:800;color:var(--text);margin:0 0 10px"><i class="fas fa-boxes" style="color:var(--primary)"></i> ${isAR ? 'ملخص حسب المادة' : 'Récapitulatif par Produit'}</h4>
         <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)"><table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="background:var(--bg3)"><th style="padding:8px 12px;text-align:left">Produit</th><th style="padding:8px 12px;text-align:center">Unité</th><th style="padding:8px 12px;text-align:center">Qté Totale Livrée</th><th style="padding:8px 12px;text-align:right">Montant Total</th><th style="padding:8px 12px;text-align:center">Nb Livraisons</th></tr></thead>
-          <tbody>${prods.map(p=>'<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px;font-weight:700">'+Utils.escHTML(p.d)+'</td><td style="padding:6px 12px;text-align:center">'+Utils.escHTML(p.u)+'</td><td style="padding:6px 12px;text-align:center;font-weight:800;color:var(--primary)">'+Utils.fmtNum(p.q)+'</td><td style="padding:6px 12px;text-align:right;font-weight:600">'+Utils.fmtCurrency(p.a)+'</td><td style="padding:6px 12px;text-align:center;color:var(--text4)">'+p.n+'</td></tr>').join('')}${!prods.length?'<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text4)">Aucun produit livré</td></tr>':''}</tbody>
+          <thead><tr style="background:var(--bg3)"><th style="padding:8px 12px;text-align:left">${isAR ? 'المادة' : 'Produit'}</th><th style="padding:8px 12px;text-align:center">${isAR ? 'الوحدة' : 'Unité'}</th><th style="padding:8px 12px;text-align:center">${isAR ? 'الكمية المستلمة' : 'Qté Totale Livrée'}</th><th style="padding:8px 12px;text-align:right">${isAR ? 'المبلغ الإجمالي' : 'Montant Total'}</th><th style="padding:8px 12px;text-align:center">${isAR ? 'العدد' : 'Nb Livraisons'}</th></tr></thead>
+          <tbody>${prods.map(p=>'<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px;font-weight:700">'+Utils.escHTML(p.d)+'</td><td style="padding:6px 12px;text-align:center">'+Utils.escHTML(p.u)+'</td><td style="padding:6px 12px;text-align:center;font-weight:800;color:var(--primary)">'+Utils.fmtNum(p.q)+'</td><td style="padding:6px 12px;text-align:right;font-weight:600">'+Utils.fmtCurrency(p.a)+'</td><td style="padding:6px 12px;text-align:center;color:var(--text4)">'+p.n+'</td></tr>').join('')}${!prods.length?`<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text4)">${isAR ? 'لم يتم تسليم أي مادة' : 'Aucun produit livré'}</td></tr>`:''}</tbody>
         </table></div>
       </div>
-      <h4 style="font-size:14px;font-weight:800;color:var(--text);margin:0 0 10px"><i class="fas fa-history" style="color:var(--primary)"></i> Historique des Livraisons (${fBRs.length})</h4>
+      <h4 style="font-size:14px;font-weight:800;color:var(--text);margin:0 0 10px"><i class="fas fa-history" style="color:var(--primary)"></i> ${isAR ? `سجل عمليات التسليم (${fBRs.length})` : `Historique des Livraisons (${fBRs.length})`}</h4>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${fBRs.slice(0,50).map(br=>{const bcR=br.bcRef||(br.bcId?(DB.getById('bls',br.bcId)||{}).ref:null);return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="display:flex;align-items:center;gap:8px"><span style="font-weight:800;color:var(--primary);font-size:13px">'+Utils.escHTML(br.ref||'')+'</span>'+Utils.statusBadge(br.status||'open')+(br.isAutoGenerated?'<span style="padding:2px 8px;background:rgba(139,92,246,.1);color:#7c3aed;border-radius:6px;font-size:10px;font-weight:700">BCH Auto</span>':'<span style="padding:2px 8px;background:rgba(59,130,246,.1);color:#3b82f6;border-radius:6px;font-size:10px;font-weight:700">Dépôt Direct</span>')+'</div><div style="font-size:11px;color:var(--text4)">'+(br.date||(br.createdAt||'').slice(0,10))+'</div></div><div style="display:flex;gap:14px;font-size:12px;color:var(--text3);flex-wrap:wrap">'+(bcR?'<span><i class="fas fa-truck-loading"></i> BCH: '+Utils.escHTML(bcR)+'</span>':'')+'<span><i class="fas fa-boxes"></i> '+(br.lines||[]).length+' article(s)</span><span style="font-weight:700;color:var(--text)"><i class="fas fa-coins"></i> '+Utils.fmtCurrency(br.totalTTC||0)+'</span></div>'+((br.lines||[]).length?'<div style="margin-top:4px;font-size:11px;color:var(--text4)">'+((br.lines||[]).map(l=>Utils.fmtNum(l.qty)+' '+Utils.escHTML(l.unit||'U')+' '+Utils.escHTML(l.designation)).join(' · '))+'</div>':'')+'</div>';}).join('')}
-        ${!fBRs.length?'<div style="padding:40px;text-align:center;color:var(--text4);background:var(--bg);border-radius:10px"><i class="fas fa-inbox" style="font-size:30px;margin-bottom:8px;opacity:.4"></i><br>Aucune livraison trouvée</div>':''}
+        ${fBRs.slice(0,50).map(br=>{const bcR=br.bcRef||(br.bcId?(DB.getById('bls',br.bcId)||{}).ref:null);return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="display:flex;align-items:center;gap:8px"><span style="font-weight:800;color:var(--primary);font-size:13px">'+Utils.escHTML(br.ref||'')+'</span>'+Utils.statusBadge(br.status||'open')+(br.isAutoGenerated?`<span style="padding:2px 8px;background:rgba(139,92,246,.1);color:#7c3aed;border-radius:6px;font-size:10px;font-weight:700">${isAR?'سند شحن تلقائي':'BCH Auto'}</span>`:`<span style="padding:2px 8px;background:rgba(59,130,246,.1);color:#3b82f6;border-radius:6px;font-size:10px;font-weight:700">${isAR?'إخراج مستودع':'Dépôt Direct'}</span>`)+'</div><div style="font-size:11px;color:var(--text4)">'+(br.date||(br.createdAt||'').slice(0,10))+'</div></div><div style="display:flex;gap:14px;font-size:12px;color:var(--text3);flex-wrap:wrap">'+(bcR?'<span><i class="fas fa-truck-loading"></i> BCH: '+Utils.escHTML(bcR)+'</span>':'')+'<span><i class="fas fa-boxes"></i> '+(br.lines||[]).length+` ${isAR?'مواد':'article(s)'}</span><span style="font-weight:700;color:var(--text)"><i class="fas fa-coins"></i> `+Utils.fmtCurrency(br.totalTTC||0)+'</span></div>'+((br.lines||[]).length?'<div style="margin-top:4px;font-size:11px;color:var(--text4)">'+((br.lines||[]).map(l=>Utils.fmtNum(l.qty)+' '+Utils.escHTML(l.unit||'U')+' '+Utils.escHTML(l.designation)).join(' · '))+'</div>':'')+'</div>';}).join('')}
+        ${!fBRs.length?`<div style="padding:40px;text-align:center;color:var(--text4);background:var(--bg);border-radius:10px"><i class="fas fa-inbox" style="font-size:30px;margin-bottom:8px;opacity:.4"></i><br>${isAR ? 'لا توجد عمليات تسليم' : 'Aucune livraison trouvée'}</div>`:''}
       </div>`;
       })() : ''}
 
@@ -3089,6 +3113,7 @@ const SupplierPortalModule = {
   },
 
   async promptValidation(bcId) {
+    const isAR = T.isRTL();
     const bc = DB.getById('bls', bcId);
     if (!bc) return;
     const lines = bc.lines || [];
@@ -3101,39 +3126,39 @@ const SupplierPortalModule = {
             <i class="fas fa-industry"></i>
           </div>
           <div>
-            <div style="font-weight:800;font-size:14px;color:var(--text)">Validation du Chargement — ${Utils.escHTML(bc.ref)}</div>
-            <div style="font-size:12px;color:var(--text4)">Usine : <strong>${Utils.escHTML(sup.name)}</strong></div>
+            <div style="font-weight:800;font-size:14px;color:var(--text)">${isAR ? 'التحقق من التحميل — ' : 'Validation du Chargement — '}${Utils.escHTML(bc.ref)}</div>
+            <div style="font-size:12px;color:var(--text4)">${isAR ? 'المصنع :' : 'Usine :'} <strong>${Utils.escHTML(sup.name)}</strong></div>
           </div>
         </div>
 
         <div style="background:var(--bg2);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px">
-          <div><i class="fas fa-id-card" style="color:var(--primary)"></i> Chauffeur : <strong>${Utils.escHTML(bc.driverName || '-')}</strong> (${Utils.escHTML(bc.driverPhone || '-')})</div>
-          <div><i class="fas fa-truck" style="color:var(--primary)"></i> Matricule Camion : <strong>${Utils.escHTML(bc.truckIMM || '-')}</strong></div>
-          <div><i class="fas fa-user" style="color:var(--primary)"></i> Client : <strong>${Utils.escHTML(bc.clientName || 'Client')}</strong></div>
+          <div><i class="fas fa-id-card" style="color:var(--primary)"></i> ${isAR ? 'السائق :' : 'Chauffeur :'} <strong>${Utils.escHTML(bc.driverName || '-')}</strong> (${Utils.escHTML(bc.driverPhone || '-')})</div>
+          <div><i class="fas fa-truck" style="color:var(--primary)"></i> ${isAR ? 'رقم الشاحنة :' : 'Matricule Camion :'} <strong>${Utils.escHTML(bc.truckIMM || '-')}</strong></div>
+          <div><i class="fas fa-user" style="color:var(--primary)"></i> ${isAR ? 'الزبون :' : 'Client :'} <strong>${Utils.escHTML(bc.clientName || 'Client')}</strong></div>
         </div>
 
-        <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">Articles chargés dans le camion :</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">${isAR ? 'المواد المحملة في الشاحنة :' : 'Articles chargés dans le camion :'}</div>
         <ul style="margin:0 0 12px 18px;padding:0;font-size:12px;color:var(--text)">
           ${lines.map(l => `<li><strong>${Utils.fmtNum(l.qtyDelivered || l.qty)} ${Utils.escHTML(l.unit||'U')}</strong> — ${Utils.escHTML(l.designation)}</li>`).join('')}
         </ul>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700"><i class="fas fa-weight-hanging"></i> N° Bon usine / Ticket de pesée (optionnel)</label>
-          <input type="text" id="dlg_ticket_pesee" class="input" placeholder="Ex: PESEE-10492 ou N° Bon usine">
+          <label style="font-weight:700"><i class="fas fa-weight-hanging"></i> ${isAR ? 'رقم وصل المصنع / تذكرة الوزن (اختياري)' : 'N° Bon usine / Ticket de pesée (optionnel)'}</label>
+          <input type="text" id="dlg_ticket_pesee" class="input" placeholder="${isAR ? 'مثال: PESEE-10492 أو رقم وصل المصنع' : 'Ex: PESEE-10492 ou N° Bon usine'}">
         </div>
 
         <div class="alert alert-info" style="font-size:11px;margin-top:10px">
-          <i class="fas fa-info-circle"></i> Cette action va <strong>générer automatiquement le Bon de Réception (BR)</strong> officiel, verrouillé et coordonné avec ce chargement.
+          <i class="fas fa-info-circle"></i> ${isAR ? 'سيؤدي هذا الإجراء إلى <strong>إنشاء وصل الاستلام (BR)</strong> الرسمي تلقائياً، مقفل ومنسق مع هذا التحميل.' : 'Cette action va <strong>générer automatiquement le Bon de Réception (BR)</strong> officiel, verrouillé et coordonné avec ce chargement.'}
         </div>
       </div>
     `;
 
     const ok = await Dialog.show({
-      title: '🏭 Confirmer le Chargement Usine',
+      title: isAR ? '🏭 تأكيد تحميل المصنع' : '🏭 Confirmer le Chargement Usine',
       message: modalHTML,
       type: 'info',
-      confirmText: 'Confirmer & Générer BR Auto',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'تأكيد وإنشاء BR تلقائياً' : 'Confirmer & Générer BR Auto',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!ok) return;
@@ -3143,11 +3168,11 @@ const SupplierPortalModule = {
 
     try {
       const autoBR = await DB.createAutoBRFromBC(bcId, curUser, ticket);
-      Utils.notify(`✅ Chargement validé ! BR ${autoBR.ref} généré automatiquement.`, 'success', 5000);
+      Utils.notify(isAR ? `✅ تم تأكيد التحميل! تم إنشاء BR ${autoBR.ref} تلقائياً.` : `✅ Chargement validé ! BR ${autoBR.ref} généré automatiquement.`, 'success', 5000);
       App.loadModule(App._currentModule === 'supplier_portal' ? 'supplier_portal' : 'bls');
     } catch(e) {
       console.error(e);
-      Utils.notify('Erreur validation : ' + e.message, 'error');
+      Utils.notify((isAR ? 'خطأ في التحقق : ' : 'Erreur validation : ') + e.message, 'error');
     }
   }
 };
@@ -3162,6 +3187,7 @@ const BCSupervisionModule = {
     const allBCs = DB.getAll('bls');
     const allSuppliers = DB.getAll('suppliers');
     const allClients = DB.getAll('clients');
+    const isAR = T.isRTL();
 
     const supMap = {}; allSuppliers.forEach(s => supMap[s.id] = s);
     const cliMap = {}; allClients.forEach(c => cliMap[c.id] = c);
@@ -3207,35 +3233,35 @@ const BCSupervisionModule = {
             <i class="fas fa-stream"></i>
           </div>
           <div>
-            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">Suivi & Supervision des Chargements</h2>
-            <div style="font-size:13px;color:var(--text4);margin-top:2px">Pipeline en temps réel, traçabilité usine, BRs coordonnés et audit des flux</div>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${isAR ? 'متابعة و إشراف التحميلات' : 'Suivi & Supervision des Chargements'}</h2>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">${isAR ? 'خط إنتاج مباشر، تتبع المصنع، وصولات الاستلام المنسقة ومراجعة التدفقات' : 'Pipeline en temps réel, traçabilité usine, BRs coordonnés et audit des flux'}</div>
           </div>
         </div>
 
         <div style="display:flex;gap:10px;align-items:center">
-          <button class="btn btn-outline" onclick="App.loadModule('bls')"><i class="fas fa-list"></i> Liste des Bons</button>
-          <button class="btn btn-primary" onclick="App.loadModule('supplier_portal')"><i class="fas fa-industry"></i> Portail Usines</button>
+          <button class="btn btn-outline" onclick="App.loadModule('bls')"><i class="fas fa-list"></i> ${isAR ? 'قائمة الوصولات' : 'Liste des Bons'}</button>
+          <button class="btn btn-primary" onclick="App.loadModule('supplier_portal')"><i class="fas fa-industry"></i> ${isAR ? 'بوابة المصانع' : 'Portail Usines'}</button>
         </div>
       </div>
 
       <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px">
         <div class="stat-card" style="border-left:4px solid #f59e0b">
-          <div class="stat-title"><i class="fas fa-clock" style="color:#f59e0b"></i> En attente Usine</div>
+          <div class="stat-title"><i class="fas fa-clock" style="color:#f59e0b"></i> ${isAR ? 'في انتظار المصنع' : 'En attente Usine'}</div>
           <div class="stat-val" style="color:#f59e0b">${pipePending.length}</div>
           <div class="stat-sub">${Utils.fmtCurrency(pipePending.reduce((s,b)=>s+(Number(b.totalTTC)||0),0))}</div>
         </div>
         <div class="stat-card" style="border-left:4px solid #0d9488">
-          <div class="stat-title"><i class="fas fa-industry" style="color:#0d9488"></i> Validés Usine / BR</div>
+          <div class="stat-title"><i class="fas fa-industry" style="color:#0d9488"></i> ${isAR ? 'تم التحقق من المصنع / وصل استلام' : 'Validés Usine / BR'}</div>
           <div class="stat-val" style="color:#0d9488">${pipeValidated.length}</div>
           <div class="stat-sub">${Utils.fmtCurrency(pipeValidated.reduce((s,b)=>s+(Number(b.totalTTC)||0),0))}</div>
         </div>
         <div class="stat-card" style="border-left:4px solid #10b981">
-          <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> Enlevés & Livrés</div>
+          <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? 'تم السحب والتسليم' : 'Enlevés & Livrés'}</div>
           <div class="stat-val" style="color:#10b981">${pipeDelivered.length}</div>
           <div class="stat-sub">${Utils.fmtCurrency(pipeDelivered.reduce((s,b)=>s+(Number(b.totalTTC)||0),0))}</div>
         </div>
         <div class="stat-card" style="border-left:4px solid #ef4444">
-          <div class="stat-title"><i class="fas fa-undo" style="color:#ef4444"></i> Retours Déduits</div>
+          <div class="stat-title"><i class="fas fa-undo" style="color:#ef4444"></i> ${isAR ? 'مرتجعات مخصومة' : 'Retours Déduits'}</div>
           <div class="stat-val" style="color:#ef4444">${pipeReturned.length}</div>
           <div class="stat-sub">−${Utils.fmtCurrency(totalReturnsTTC)}</div>
         </div>
@@ -3244,35 +3270,35 @@ const BCSupervisionModule = {
       <div class="card" style="margin-bottom:20px">
         <div class="filters-bar" style="padding:14px 18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="filter-group" style="flex:2;min-width:180px">
-            <label>Recherche rapide</label>
-            <input type="text" value="${Utils.escHTML(q)}" placeholder="Réf BCH, Chauffeur, Camion, BR..."
+            <label>${isAR ? 'بحث سريع' : 'Recherche rapide'}</label>
+            <input type="text" value="${Utils.escHTML(q)}" placeholder="${isAR ? 'مرجع BCH، سائق، شاحنة...' : 'Réf BCH, Chauffeur, Camion, BR...'}"
               oninput="BCSupervisionModule._filters.q=this.value;App.reloadDebounced('bc_supervision')">
           </div>
           <div class="filter-group">
-            <label>Usine / Fournisseur</label>
+            <label>${isAR ? 'مصنع / مورد' : 'Usine / Fournisseur'}</label>
             <select onchange="BCSupervisionModule._filters.supplierId=this.value;App.loadModule('bc_supervision')">
-              <option value="all">Toutes les usines</option>
+              <option value="all">${isAR ? 'كل المصانع' : 'Toutes les usines'}</option>
               ${allSuppliers.map(s => `<option value="${s.id}" ${String(supplierId)===String(s.id)?'selected':''}>${Utils.escHTML(s.name)}</option>`).join('')}
             </select>
           </div>
           <div class="filter-group">
-            <label>Chauffeur</label>
+            <label>${isAR ? 'السائق' : 'Chauffeur'}</label>
             <select onchange="BCSupervisionModule._filters.driver=this.value;App.loadModule('bc_supervision')">
-              <option value="all">Tous les chauffeurs</option>
+              <option value="all">${isAR ? 'كل السائقين' : 'Tous les chauffeurs'}</option>
               ${[...new Set(allBCs.map(b => b.driverName).filter(Boolean))].sort().map(d => `<option value="${d}" ${driver===d?'selected':''}>${Utils.escHTML(d)}</option>`).join('')}
             </select>
           </div>
           <div class="filter-group">
-            <label>Période début</label>
+            <label>${isAR ? 'بداية الفترة' : 'Période début'}</label>
             <input type="date" value="${dateFrom}" onchange="BCSupervisionModule._filters.dateFrom=this.value;App.loadModule('bc_supervision')">
           </div>
           <div class="filter-group">
-            <label>Période fin</label>
+            <label>${isAR ? 'نهاية الفترة' : 'Période fin'}</label>
             <input type="date" value="${dateTo}" onchange="BCSupervisionModule._filters.dateTo=this.value;App.loadModule('bc_supervision')">
           </div>
           <div class="filter-group" style="flex:0 0 auto">
             <label>&nbsp;</label>
-            <button class="btn btn-outline btn-sm" onclick="BCSupervisionModule._filters={supplierId:'all',driver:'all',status:'all',dateFrom:'',dateTo:'',q:''};App.loadModule('bc_supervision')"><i class="fas fa-times"></i> Réinitialiser</button>
+            <button class="btn btn-outline btn-sm" onclick="BCSupervisionModule._filters={supplierId:'all',driver:'all',status:'all',dateFrom:'',dateTo:'',q:''};App.loadModule('bc_supervision')"><i class="fas fa-times"></i> ${isAR ? 'إعادة تعيين' : 'Réinitialiser'}</button>
           </div>
         </div>
       </div>
@@ -3281,44 +3307,44 @@ const BCSupervisionModule = {
         <!-- Col 1: En attente Usine -->
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #f59e0b">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-clock" style="color:#f59e0b"></i> 1. En attente Usine</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-clock" style="color:#f59e0b"></i> ${isAR ? '1. في انتظار المصنع' : '1. En attente Usine'}</strong>
             <span class="badge badge-warning">${pipePending.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipePending.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">Aucun en attente</div>`}
+            ${pipePending.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد في الانتظار' : 'Aucun en attente'}</div>`}
           </div>
         </div>
 
         <!-- Col 2: Validé Usine (BR Généré) -->
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #0d9488">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-industry" style="color:#0d9488"></i> 2. Validé Usine / BR</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-industry" style="color:#0d9488"></i> ${isAR ? '2. تم التحقق / وصل استلام' : '2. Validé Usine / BR'}</strong>
             <span class="badge badge-primary">${pipeValidated.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipeValidated.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">Aucun validé</div>`}
+            ${pipeValidated.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد' : 'Aucun validé'}</div>`}
           </div>
         </div>
 
         <!-- Col 3: Enlevé & Livré -->
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #10b981">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-check-circle" style="color:#10b981"></i> 3. Enlevé & Livré</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? '3. تم السحب والتسليم' : '3. Enlevé & Livré'}</strong>
             <span class="badge badge-success">${pipeDelivered.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipeDelivered.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">Aucun livré</div>`}
+            ${pipeDelivered.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد' : 'Aucun livré'}</div>`}
           </div>
         </div>
 
         <!-- Col 4: Retourné -->
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #ef4444">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-undo" style="color:#ef4444"></i> 4. Retourné</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-undo" style="color:#ef4444"></i> ${isAR ? '4. مرتجع' : '4. Retourné'}</strong>
             <span class="badge badge-danger">${pipeReturned.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipeReturned.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">Aucun retour</div>`}
+            ${pipeReturned.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد مرتجعات' : 'Aucun retour'}</div>`}
           </div>
         </div>
       </div>
@@ -3326,6 +3352,7 @@ const BCSupervisionModule = {
   },
 
   _renderKanbanCard(bc, supMap, cliMap) {
+    const isAR = T.isRTL();
     const sup = supMap[bc.supplierId] || { name: bc.supplierName || 'Usine' };
     const cli = cliMap[bc.clientId] || { name: 'Client' };
     return `
@@ -3335,17 +3362,17 @@ const BCSupervisionModule = {
           <span style="font-size:11px;font-weight:800;color:var(--text)">${Utils.fmtCurrency(bc.totalTTC)}</span>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">
-          <i class="fas fa-industry" style="width:12px"></i> Usine: <strong>${Utils.escHTML(sup.name)}</strong>
+          <i class="fas fa-industry" style="width:12px"></i> ${isAR ? 'المصنع:' : 'Usine:'} <strong>${Utils.escHTML(sup.name)}</strong>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">
-          <i class="fas fa-id-card" style="width:12px"></i> Chauffeur: <strong>${Utils.escHTML(bc.driverName||'-')}</strong> <code>${Utils.escHTML(bc.truckIMM||'')}</code>
+          <i class="fas fa-id-card" style="width:12px"></i> ${isAR ? 'السائق:' : 'Chauffeur:'} <strong>${Utils.escHTML(bc.driverName||'-')}</strong> <code>${Utils.escHTML(bc.truckIMM||'')}</code>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:8px">
-          <i class="fas fa-user-tie" style="width:12px"></i> Client: <strong>${Utils.escHTML(cli.name||'-')}</strong>
+          <i class="fas fa-user-tie" style="width:12px"></i> ${isAR ? 'الزبون:' : 'Client:'} <strong>${Utils.escHTML(cli.name||'-')}</strong>
         </div>
-        ${bc.linkedBrRef ? `<div style="font-size:10px;background:rgba(16,185,129,.1);color:#10b981;padding:3px 6px;border-radius:6px;font-weight:700;margin-bottom:8px"><i class="fas fa-link"></i> Coordonné: ${Utils.escHTML(bc.linkedBrRef)}</div>` : ''}
+        ${bc.linkedBrRef ? `<div style="font-size:10px;background:rgba(16,185,129,.1);color:#10b981;padding:3px 6px;border-radius:6px;font-weight:700;margin-bottom:8px"><i class="fas fa-link"></i> ${isAR ? 'منسق:' : 'Coordonné:'} ${Utils.escHTML(bc.linkedBrRef)}</div>` : ''}
         <div style="display:flex;gap:4px;border-top:1px solid var(--border);padding-top:8px">
-          <button class="btn btn-xs btn-outline" style="flex:1" onclick="BCSupervisionModule.showTimeline(${bc.id})" title="Traçabilité & Historique"><i class="fas fa-history"></i> Traçabilité</button>
+          <button class="btn btn-xs btn-outline" style="flex:1" onclick="BCSupervisionModule.showTimeline(${bc.id})" title="Traçabilité & Historique"><i class="fas fa-history"></i> ${isAR ? 'تتبع' : 'Traçabilité'}</button>
           <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})" title="Imprimer BCH (2 Volets)"><i class="fas fa-print"></i></button>
           <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBLRoute(${bc.id})" title="BL pour la route"><i class="fas fa-truck"></i></button>
         </div>
@@ -3360,6 +3387,7 @@ const BCSupervisionModule = {
     const cli = DB.getById('clients', bc.clientId) || { name: 'Client' };
     const br = bc.linkedBrId ? DB.getById('brs', bc.linkedBrId) : null;
     const ret = bc.status === 'returned' ? DB.getAll('bon_retours').find(r => Number(r.bcId) === Number(bc.id) || r.blRef === bc.ref) : null;
+    const isAR = T.isRTL();
 
     const html = `
       <div style="padding:10px 0">
@@ -3368,66 +3396,66 @@ const BCSupervisionModule = {
             <i class="fas fa-stream"></i>
           </div>
           <div>
-            <div style="font-weight:800;font-size:16px;color:var(--text)">Traçabilité & Cycle de Vie — ${Utils.escHTML(bc.ref)}</div>
-            <div style="font-size:12px;color:var(--text4)">Client: <strong>${Utils.escHTML(cli.name)}</strong> | Usine: <strong>${Utils.escHTML(sup.name)}</strong> | Montant: <strong style="color:var(--primary)">${Utils.fmtCurrency(bc.totalTTC)}</strong></div>
+            <div style="font-weight:800;font-size:16px;color:var(--text)">${isAR ? 'تتبع و دورة الحياة' : 'Traçabilité & Cycle de Vie'} — ${Utils.escHTML(bc.ref)}</div>
+            <div style="font-size:12px;color:var(--text4)">${isAR ? 'الزبون' : 'Client'}: <strong>${Utils.escHTML(cli.name)}</strong> | ${isAR ? 'المصنع' : 'Usine'}: <strong>${Utils.escHTML(sup.name)}</strong> | ${isAR ? 'المبلغ' : 'Montant'}: <strong style="color:var(--primary)">${Utils.fmtCurrency(bc.totalTTC)}</strong></div>
           </div>
         </div>
 
-        <div style="position:relative;padding-left:32px;display:flex;flex-direction:column;gap:20px;border-left:2px solid var(--border);margin-left:14px">
+        <div style="position:relative;${isAR ? 'padding-right:32px;border-right:2px solid var(--border);margin-right:14px' : 'padding-left:32px;border-left:2px solid var(--border);margin-left:14px'};display:flex;flex-direction:column;gap:20px">
           <!-- Step 1 -->
           <div style="position:relative">
-            <div style="position:absolute;left:-41px;top:0;width:18px;height:18px;border-radius:50%;background:#10b981;border:3px solid var(--bg);box-shadow:0 0 0 2px #10b981"></div>
-            <div style="font-weight:800;font-size:13px;color:var(--text)">1. Émission du Bon de Chargement & Encaissement Caisse</div>
-            <div style="font-size:11px;color:var(--text4);margin-top:2px">Date: ${Utils.fmtDate(bc.date)} ${bc.createdAt ? 'à ' + new Date(bc.createdAt).toLocaleTimeString('fr-FR') : ''} | Émetteur: <strong>${Utils.escHTML(bc.createdByName||'Caissier')}</strong></div>
-            <div style="font-size:11px;color:var(--text3);margin-top:4px">Montant TTC perçu au comptoir : <strong>${Utils.fmtCurrency(bc.totalTTC)}</strong> (${Utils.escHTML(bc.paymentMethod||'Espèces')})</div>
+            <div style="position:absolute;${isAR ? 'right:-41px' : 'left:-41px'};top:0;width:18px;height:18px;border-radius:50%;background:#10b981;border:3px solid var(--bg);box-shadow:0 0 0 2px #10b981"></div>
+            <div style="font-weight:800;font-size:13px;color:var(--text)">${isAR ? '1. إصدار وصل التحميل والتحصيل' : '1. Émission du Bon de Chargement & Encaissement Caisse'}</div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'التاريخ' : 'Date'}: ${Utils.fmtDate(bc.date)} ${bc.createdAt ? (isAR ? '' : 'à ') + new Date(bc.createdAt).toLocaleTimeString('fr-FR') : ''} | ${isAR ? 'المُصدر' : 'Émetteur'}: <strong>${Utils.escHTML(bc.createdByName||(isAR?'أمين الصندوق':'Caissier'))}</strong></div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">${isAR ? 'المبلغ الإجمالي المحصل :' : 'Montant TTC perçu au comptoir :'} <strong>${Utils.fmtCurrency(bc.totalTTC)}</strong> (${Utils.escHTML(bc.paymentMethod||(isAR?'نقدي':'Espèces'))})</div>
           </div>
 
           <!-- Step 2 -->
           <div style="position:relative">
-            <div style="position:absolute;left:-41px;top:0;width:18px;height:18px;border-radius:50%;background:#3b82f6;border:3px solid var(--bg);box-shadow:0 0 0 2px #3b82f6"></div>
-            <div style="font-weight:800;font-size:13px;color:var(--text)">2. Prise en charge Chauffeur & Départ Usine</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">Chauffeur: <strong>${Utils.escHTML(bc.driverName||'-')}</strong> | Téléphone: <strong>${Utils.escHTML(bc.driverPhone||'-')}</strong> | Véhicule: <code>${Utils.escHTML(bc.truckIMM||'-')}</code></div>
-            <div style="font-size:11px;color:var(--text4);margin-top:2px">Documents remis au chauffeur : Volet 1 (Chauffeur) + Volet 2 (Usine)</div>
+            <div style="position:absolute;${isAR ? 'right:-41px' : 'left:-41px'};top:0;width:18px;height:18px;border-radius:50%;background:#3b82f6;border:3px solid var(--bg);box-shadow:0 0 0 2px #3b82f6"></div>
+            <div style="font-weight:800;font-size:13px;color:var(--text)">${isAR ? '2. تكفل السائق والانطلاق نحو المصنع' : '2. Prise en charge Chauffeur & Départ Usine'}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${isAR ? 'السائق' : 'Chauffeur'}: <strong>${Utils.escHTML(bc.driverName||'-')}</strong> | ${isAR ? 'الهاتف' : 'Téléphone'}: <strong>${Utils.escHTML(bc.driverPhone||'-')}</strong> | ${isAR ? 'المركبة' : 'Véhicule'}: <code>${Utils.escHTML(bc.truckIMM||'-')}</code></div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'الوثائق المسلمة للسائق: النسخة 1 (السائق) + النسخة 2 (المصنع)' : 'Documents remis au chauffeur : Volet 1 (Chauffeur) + Volet 2 (Usine)'}</div>
           </div>
 
           <!-- Step 3 -->
           <div style="position:relative">
-            <div style="position:absolute;left:-41px;top:0;width:18px;height:18px;border-radius:50%;background:${bc.validatedAt ? '#0d9488' : '#94a3b8'};border:3px solid var(--bg);box-shadow:0 0 0 2px ${bc.validatedAt ? '#0d9488' : '#94a3b8'}"></div>
-            <div style="font-weight:800;font-size:13px;color:${bc.validatedAt ? 'var(--text)' : 'var(--text4)'}">3. Validation Usine & Confirmation Chargement</div>
+            <div style="position:absolute;${isAR ? 'right:-41px' : 'left:-41px'};top:0;width:18px;height:18px;border-radius:50%;background:${bc.validatedAt ? '#0d9488' : '#94a3b8'};border:3px solid var(--bg);box-shadow:0 0 0 2px ${bc.validatedAt ? '#0d9488' : '#94a3b8'}"></div>
+            <div style="font-weight:800;font-size:13px;color:${bc.validatedAt ? 'var(--text)' : 'var(--text4)'}">${isAR ? '3. التحقق من المصنع وتأكيد التحميل' : '3. Validation Usine & Confirmation Chargement'}</div>
             ${bc.validatedAt ? `
-            <div style="font-size:11px;color:#0d9488;margin-top:2px"><i class="fas fa-check-circle"></i> Validé le ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.validatedAt) : bc.validatedAt} par <strong>${Utils.escHTML(bc.validatedBy||'Usine')}</strong></div>
-            ${bc.ticketPesee ? `<div style="font-size:11px;color:var(--text3);margin-top:2px"><i class="fas fa-weight-hanging"></i> Ticket de Pesée / N° Usine : <strong>${Utils.escHTML(bc.ticketPesee)}</strong></div>` : ''}
-            ` : `<div style="font-size:11px;color:#f59e0b;margin-top:2px"><i class="fas fa-clock"></i> En cours — Chauffeur en route vers l'usine ${Utils.escHTML(sup.name)}</div>`}
+            <div style="font-size:11px;color:#0d9488;margin-top:2px"><i class="fas fa-check-circle"></i> ${isAR ? 'تم التحقق في' : 'Validé le'} ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.validatedAt) : bc.validatedAt} ${isAR ? 'من طرف' : 'par'} <strong>${Utils.escHTML(bc.validatedBy||(isAR?'المصنع':'Usine'))}</strong></div>
+            ${bc.ticketPesee ? `<div style="font-size:11px;color:var(--text3);margin-top:2px"><i class="fas fa-weight-hanging"></i> ${isAR ? 'تذكرة الوزن / رقم المصنع :' : 'Ticket de Pesée / N° Usine :'} <strong>${Utils.escHTML(bc.ticketPesee)}</strong></div>` : ''}
+            ` : `<div style="font-size:11px;color:#f59e0b;margin-top:2px"><i class="fas fa-clock"></i> ${isAR ? 'جاري — السائق في الطريق نحو المصنع' : "En cours — Chauffeur en route vers l'usine"} ${Utils.escHTML(sup.name)}</div>`}
           </div>
 
           <!-- Step 4 -->
           <div style="position:relative">
-            <div style="position:absolute;left:-41px;top:0;width:18px;height:18px;border-radius:50%;background:${br ? '#8b5cf6' : '#94a3b8'};border:3px solid var(--bg);box-shadow:0 0 0 2px ${br ? '#8b5cf6' : '#94a3b8'}"></div>
-            <div style="font-weight:800;font-size:13px;color:${br ? 'var(--text)' : 'var(--text4)'}">4. Génération Automatique du Bon de Réception (BR)</div>
+            <div style="position:absolute;${isAR ? 'right:-41px' : 'left:-41px'};top:0;width:18px;height:18px;border-radius:50%;background:${br ? '#8b5cf6' : '#94a3b8'};border:3px solid var(--bg);box-shadow:0 0 0 2px ${br ? '#8b5cf6' : '#94a3b8'}"></div>
+            <div style="font-weight:800;font-size:13px;color:${br ? 'var(--text)' : 'var(--text4)'}">${isAR ? '4. إنشاء تلقائي لوصل الاستلام (BR)' : '4. Génération Automatique du Bon de Réception (BR)'}</div>
             ${br ? `
-            <div style="font-size:11px;color:#8b5cf6;margin-top:2px"><i class="fas fa-link"></i> BR officiel généré : <strong>${Utils.escHTML(br.ref)}</strong> (${Utils.fmtCurrency(br.totalTTC)})</div>
-            <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-lock"></i> Verrouillé — Modifiable uniquement par l'administrateur</div>
-            ` : `<div style="font-size:11px;color:var(--text4);margin-top:2px">En attente de validation usine pour génération automatique</div>`}
+            <div style="font-size:11px;color:#8b5cf6;margin-top:2px"><i class="fas fa-link"></i> ${isAR ? 'وصل استلام رسمي :' : 'BR officiel généré :'} <strong>${Utils.escHTML(br.ref)}</strong> (${Utils.fmtCurrency(br.totalTTC)})</div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-lock"></i> ${isAR ? 'مقفل — يمكن التعديل فقط من المسؤول' : 'Verrouillé — Modifiable uniquement par l\'administrateur'}</div>
+            ` : `<div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'في انتظار التحقق من المصنع للإنشاء التلقائي' : 'En attente de validation usine pour génération automatique'}</div>`}
           </div>
 
           <!-- Step 5 (if returned) -->
           ${bc.status === 'returned' ? `
           <div style="position:relative">
-            <div style="position:absolute;left:-41px;top:0;width:18px;height:18px;border-radius:50%;background:#ef4444;border:3px solid var(--bg);box-shadow:0 0 0 2px #ef4444"></div>
-            <div style="font-weight:800;font-size:13px;color:#ef4444">5. Marchandise Retournée (Bon de Retour Émis)</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">Retourné le ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.returnedAt) : bc.returnedAt} par <strong>${Utils.escHTML(bc.returnedByName||'Utilisateur')}</strong></div>
-            ${ret ? `<div style="font-size:11px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> Motif : <strong>${Utils.escHTML(ret.reason||'Non spécifié')}</strong> | Déduit en MOINS (−) sur l'État de Vente : <strong>−${Utils.fmtCurrency(bc.totalTTC)}</strong></div>` : ''}
-            <div style="font-size:10px;color:var(--text4);margin-top:2px">Référence ${bc.ref} réservée définitivement comme retournée.</div>
+            <div style="position:absolute;${isAR ? 'right:-41px' : 'left:-41px'};top:0;width:18px;height:18px;border-radius:50%;background:#ef4444;border:3px solid var(--bg);box-shadow:0 0 0 2px #ef4444"></div>
+            <div style="font-weight:800;font-size:13px;color:#ef4444">${isAR ? '5. بضاعة مرتجعة (سند الإرجاع صادر)' : '5. Marchandise Retournée (Bon de Retour Émis)'}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${isAR ? 'تم الإرجاع في' : 'Retourné le'} ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.returnedAt) : bc.returnedAt} ${isAR ? 'من طرف' : 'par'} <strong>${Utils.escHTML(bc.returnedByName||(isAR?'مستخدم':'Utilisateur'))}</strong></div>
+            ${ret ? `<div style="font-size:11px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> ${isAR ? 'السبب :' : 'Motif :'} <strong>${Utils.escHTML(ret.reason||(isAR?'غير محدد':'Non spécifié'))}</strong> | ${isAR ? 'تم الخصم (−) من حالة المبيعات :' : "Déduit en MOINS (−) sur l'État de Vente :"} <strong>−${Utils.fmtCurrency(bc.totalTTC)}</strong></div>` : ''}
+            <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR ? `المرجع ${bc.ref} محجوز نهائياً كمرتجع.` : `Référence ${bc.ref} réservée définitivement comme retournée.`}</div>
           </div>
           ` : ''}
         </div>
       </div>
     `;
 
-    UI.showModal(`<i class="fas fa-history"></i> Traçabilité — ${bc.ref}`, html, `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">Fermer</button>
-      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})"><i class="fas fa-print"></i> Imprimer BCH (2 Volets)</button>
-      <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${bc.id})"><i class="fas fa-truck"></i> BL Route</button>
+    UI.showModal(`<i class="fas fa-history"></i> ${isAR ? 'تتبع' : 'Traçabilité'} — ${bc.ref}`, html, `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${isAR ? 'إغلاق' : 'Fermer'}</button>
+      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})"><i class="fas fa-print"></i> ${isAR ? 'طباعة BCH' : 'Imprimer BCH (2 Volets)'}</button>
+      <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${bc.id})"><i class="fas fa-truck"></i> ${isAR ? 'وصل الطريق' : 'BL Route'}</button>
     `, 'lg');
   }
 };
@@ -3464,9 +3492,9 @@ const CaisseModule = {
         <td style="padding:10px 14px;text-align:center">${Utils.statusBadge(b.status || 'delivered')}</td>
         <td style="padding:10px 14px;text-align:right;white-space:nowrap">
           <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${b.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
-          <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${b.id})" title="Imprimer BCH (2 Volets)"><i class="fas fa-print"></i></button>
-          <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBLRoute(${b.id})" title="BL pour la route"><i class="fas fa-truck"></i></button>
-          ${!isClosed ? `<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${b.id})" title="Retour Marchandise"><i class="fas fa-undo"></i></button>` : ''}
+          <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${b.id})" title="${isAR ? 'طباعة سند الشحن (نسختان)' : 'Imprimer BCH (2 Volets)'}"><i class="fas fa-print"></i></button>
+          <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBLRoute(${b.id})" title="${isAR ? 'سند التسليم للطريق' : 'BL pour la route'}"><i class="fas fa-truck"></i></button>
+          ${!isClosed ? `<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${b.id})" title="${isAR ? 'إرجاع بضاعة' : 'Retour Marchandise'}"><i class="fas fa-undo"></i></button>` : ''}
         </td>
       </tr>`;
     }).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text-muted)"><i class="fas fa-inbox" style="font-size:24px;opacity:.3;display:block;margin-bottom:8px"></i>${isAR ? 'لا توجد وصولات تسليم اليوم' : 'Aucun bon de livraison validé aujourd\'hui'}</td></tr>`;
@@ -3506,7 +3534,7 @@ const CaisseModule = {
         </div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" onclick="CaisseModule.printDailyTicket()" title="Imprimer le ticket récapitulatif du jour">
+          <button class="btn btn-outline btn-sm" onclick="CaisseModule.printDailyTicket()" title="${isAR ? 'طباعة الوصل التلخيصي لليوم' : 'Imprimer le ticket récapitulatif du jour'}">
             <i class="fas fa-receipt"></i> ${isAR ? 'طباعة الوصل' : 'Ticket Récapitulatif'}
           </button>
           ${isClosed
@@ -3516,7 +3544,7 @@ const CaisseModule = {
                 <i class="fas fa-door-closed"></i> ${isAR ? 'إغلاق الصندوق وتحويل للبنك' : 'Clôturer ma Caisse & Verser en Banque'}
                </button>`
           }
-          ${Auth.isAdmin() ? `<button class="btn btn-secondary btn-sm" onclick="App.loadModule('admin_caisse')" title="Supervision générale Admin"><i class="fas fa-vault"></i> Caisse Principale</button>` : ''}
+          ${Auth.isAdmin() ? `<button class="btn btn-secondary btn-sm" onclick="App.loadModule('admin_caisse')" title="${isAR ? 'إشراف عام للمسؤول' : 'Supervision générale Admin'}"><i class="fas fa-vault"></i> ${isAR ? 'صندوق الإدارة' : 'Caisse Principale'}</button>` : ''}
         </div>
       </div>
 
@@ -3527,7 +3555,7 @@ const CaisseModule = {
             <i class="fas fa-truck" style="color:var(--success)"></i> ${isAR ? 'مبيعات اليوم (BCH)' : 'Ventes BCH du jour'}
           </div>
           <div style="font-size:24px;font-weight:900;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</div>
-          <div style="font-size:11px;color:var(--text4);margin-top:2px">${summary.bls.length} bon(s) de chargement</div>
+          <div style="font-size:11px;color:var(--text4);margin-top:2px">${summary.bls.length} ${isAR ? 'سند شحن' : 'bon(s) de chargement'}</div>
         </div>
 
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);border-top:3px solid var(--danger)">
@@ -3535,7 +3563,7 @@ const CaisseModule = {
             <i class="fas fa-undo" style="color:var(--danger)"></i> ${isAR ? 'مرتجعات البضاعة (BR)' : 'Retours Marchandise (BR)'}
           </div>
           <div style="font-size:24px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</div>
-          <div style="font-size:11px;color:var(--text4);margin-top:2px">${summary.retours.length} bon(s) de retour déduit(s)</div>
+          <div style="font-size:11px;color:var(--text4);margin-top:2px">${summary.retours.length} ${isAR ? 'سند إرجاع مخصوم' : 'bon(s) de retour déduit(s)'}</div>
         </div>
 
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);border-top:3px solid var(--primary)">
@@ -3543,7 +3571,7 @@ const CaisseModule = {
             <i class="fas fa-wallet" style="color:var(--primary)"></i> ${isAR ? 'صافي الصندوق (في اليد)' : 'Net en Caisse (À Verser)'}
           </div>
           <div style="font-size:26px;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(isClosed ? closedNet : summary.netAmount)}</div>
-          <div style="font-size:11px;color:var(--text4);margin-top:2px">Formule : Ventes − Retours</div>
+          <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'المعادلة : المبيعات − المرتجعات' : 'Formule : Ventes − Retours'}</div>
         </div>
 
         <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);border-top:3px solid var(--info,#38bdf8)">
@@ -3552,11 +3580,11 @@ const CaisseModule = {
           </div>
           <div style="font-size:14px;font-weight:800;color:var(--text);margin-top:6px">
             ${isClosed
-              ? `<span style="color:var(--success)"><i class="fas fa-check-circle"></i> Versé à ${Utils.escHTML(bankName)}</span>`
-              : `<span style="color:var(--warning)"><i class="fas fa-hourglass-half"></i> En attente de clôture</span>`
+              ? `<span style="color:var(--success)"><i class="fas fa-check-circle"></i> ${isAR ? `تم التحويل إلى ${Utils.escHTML(bankName)}` : `Versé à ${Utils.escHTML(bankName)}`}</span>`
+              : `<span style="color:var(--warning)"><i class="fas fa-hourglass-half"></i> ${isAR ? 'في انتظار الإغلاق' : 'En attente de clôture'}</span>`
             }
           </div>
-          <div style="font-size:11px;color:var(--text4);margin-top:4px">${isClosed ? 'État de vente généré & transmis' : 'Sera versé automatiquement'}</div>
+          <div style="font-size:11px;color:var(--text4);margin-top:4px">${isClosed ? (isAR ? 'تم إنشاء كشف المبيعات وإرساله' : 'État de vente généré & transmis') : (isAR ? 'سيتم التحويل تلقائياً' : 'Sera versé automatiquement')}</div>
         </div>
       </div>
 
@@ -3568,17 +3596,17 @@ const CaisseModule = {
           </div>
           <div>
             <div style="font-weight:700;font-size:13px;color:var(--text)">
-              ${isClosed ? 'État de Vente du jour clôturé & déposé' : 'Aperçu de l\'État de Vente à générer'}
+              ${isClosed ? (isAR ? 'كشف مبيعات اليوم مغلق ومودع' : 'État de Vente du jour clôturé & déposé') : (isAR ? 'معاينة كشف المبيعات المراد إنشاؤه' : 'Aperçu de l\'État de Vente à générer')}
             </div>
             <div style="font-size:12px;color:var(--text3);margin-top:2px">
               ${isClosed
-                ? `Réf : <strong>${Utils.escHTML(session.etatVenteRef || 'Généré')}</strong> — Montant transféré : <strong>${Utils.fmtCurrency(closedNet)}</strong> vers <strong>${Utils.escHTML(bankName)}</strong>.`
-                : `Total Ventes : <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong> − Retours : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong> = Net à transférer en banque : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.`
+                ? (isAR ? `مرجع : <strong>${Utils.escHTML(session.etatVenteRef || 'تم الإنشاء')}</strong> — المبلغ المحول : <strong>${Utils.fmtCurrency(closedNet)}</strong> إلى <strong>${Utils.escHTML(bankName)}</strong>.` : `Réf : <strong>${Utils.escHTML(session.etatVenteRef || 'Généré')}</strong> — Montant transféré : <strong>${Utils.fmtCurrency(closedNet)}</strong> vers <strong>${Utils.escHTML(bankName)}</strong>.`)
+                : (isAR ? `إجمالي المبيعات : <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong> − المرتجعات : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong> = الصافي المحول للبنك : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.` : `Total Ventes : <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong> − Retours : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong> = Net à transférer en banque : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.`)
               }
             </div>
           </div>
         </div>
-        ${isClosed ? `<button class="btn btn-outline btn-sm" onclick="CaisseModule.viewEtatVente()"><i class="fas fa-eye"></i> Consulter</button>` : ''}
+        ${isClosed ? `<button class="btn btn-outline btn-sm" onclick="CaisseModule.viewEtatVente()"><i class="fas fa-eye"></i> ${isAR ? 'معاينة' : 'Consulter'}</button>` : ''}
       </div>
 
       <!-- Tables Grid: Ventes BLs & Retours Marchandise -->
@@ -3588,22 +3616,22 @@ const CaisseModule = {
           <div style="padding:14px 18px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
             <i class="fas fa-truck" style="color:var(--primary)"></i>
             <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR ? 'وصولات الشحن الصادرة اليوم (المبيعات)' : 'Mes Bons de Chargement du jour (Ventes)'}</h3>
-            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.bls.length} chargement(s) — Total : <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong></span>
+            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.bls.length} ${isAR ? 'سند' : 'chargement(s)'} — ${isAR ? 'المجموع :' : 'Total :'} <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong></span>
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;font-size:13px">
               <thead><tr style="background:var(--bg-inset);border-bottom:2px solid var(--border)">
-                <th style="${thStyle};text-align:left">Réf BCH</th>
-                <th style="${thStyle};text-align:left">Client</th>
-                <th style="${thStyle};text-align:left">Heure</th>
-                <th style="${thStyle};text-align:right">Montant TTC</th>
-                <th style="${thStyle};text-align:center">Statut</th>
-                <th style="${thStyle};text-align:right">Actions</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${isAR ? 'مرجع السند' : 'Réf BCH'}</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${T.get('col_client')}</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${isAR ? 'الوقت' : 'Heure'}</th>
+                <th style="${thStyle};text-align:${isAR?'left':'right'}">${T.get('col_total_ttc')}</th>
+                <th style="${thStyle};text-align:center">${T.get('col_status')}</th>
+                <th style="${thStyle};text-align:${isAR?'left':'right'}">${T.get('col_actions')}</th>
               </tr></thead>
               <tbody>${blRows}</tbody>
               ${summary.bls.length ? `<tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)">
-                <td colspan="3" style="padding:12px 14px;font-weight:800;text-align:right;font-size:13px;color:var(--text)">TOTAL VENTES BCH</td>
-                <td style="padding:12px 14px;text-align:right;font-weight:900;font-size:15px;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</td>
+                <td colspan="3" style="padding:12px 14px;font-weight:800;text-align:${isAR?'left':'right'};font-size:13px;color:var(--text)">${isAR ? 'إجمالي مبيعات الشحن' : 'TOTAL VENTES BCH'}</td>
+                <td style="padding:12px 14px;text-align:${isAR?'left':'right'};font-weight:900;font-size:15px;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</td>
                 <td colspan="2"></td>
               </tr></tfoot>` : ''}
             </table>
@@ -3615,22 +3643,22 @@ const CaisseModule = {
           <div style="padding:14px 18px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
             <i class="fas fa-undo" style="color:var(--danger)"></i>
             <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR ? 'مرتجعات البضاعة اليوم (خصومات)' : 'Mes Retours Marchandise du jour (Bons de Retour)'}</h3>
-            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.retours.length} retour(s) — Total : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong></span>
+            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.retours.length} ${isAR ? 'مرتجع' : 'retour(s)'} — ${isAR ? 'المجموع :' : 'Total :'} <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong></span>
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;font-size:13px">
               <thead><tr style="background:var(--bg-inset);border-bottom:2px solid var(--border)">
-                <th style="${thStyle};text-align:left">Réf BR</th>
-                <th style="${thStyle};text-align:left">BCH d'origine</th>
-                <th style="${thStyle};text-align:left">Client</th>
-                <th style="${thStyle};text-align:left">Motif</th>
-                <th style="${thStyle};text-align:right">Montant Déduit</th>
-                <th style="${thStyle};text-align:right">Actions</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${isAR ? 'مرجع الإرجاع' : 'Réf BR'}</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${isAR ? 'السند الأصلي' : 'BCH d\'origine'}</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${T.get('col_client')}</th>
+                <th style="${thStyle};text-align:${isAR?'right':'left'}">${isAR ? 'السبب' : 'Motif'}</th>
+                <th style="${thStyle};text-align:${isAR?'left':'right'}">${isAR ? 'المبلغ المخصوم' : 'Montant Déduit'}</th>
+                <th style="${thStyle};text-align:${isAR?'left':'right'}">${T.get('col_actions')}</th>
               </tr></thead>
               <tbody>${retoursRows}</tbody>
               ${summary.retours.length ? `<tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)">
-                <td colspan="4" style="padding:12px 14px;font-weight:800;text-align:right;font-size:13px;color:var(--text)">TOTAL RETOURS DÉDUITS</td>
-                <td style="padding:12px 14px;text-align:right;font-weight:900;font-size:15px;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</td>
+                <td colspan="4" style="padding:12px 14px;font-weight:800;text-align:${isAR?'left':'right'};font-size:13px;color:var(--text)">${isAR ? 'إجمالي المرتجعات المخصومة' : 'TOTAL RETOURS DÉDUITS'}</td>
+                <td style="padding:12px 14px;text-align:${isAR?'left':'right'};font-weight:900;font-size:15px;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</td>
                 <td></td>
               </tr></tfoot>` : ''}
             </table>
@@ -3646,10 +3674,11 @@ const CaisseModule = {
   async showCloture() {
     const u = Auth.getCurrentUser();
     if (!u) return;
+    const isAR = T.isRTL();
     const today = Utils.today();
     const session = SessionMgr.getTodaySession(u.id);
     if (session && session.status === 'closed') {
-      Utils.notify('Votre caisse est déjà clôturée pour aujourd\'hui.', 'info');
+      Utils.notify(isAR ? 'صندوقك مغلق بالفعل لهذا اليوم.' : 'Votre caisse est déjà clôturée pour aujourd\'hui.', 'info');
       return;
     }
 
@@ -3657,54 +3686,54 @@ const CaisseModule = {
     const settings = DB.getSettings();
     const banks = settings.banks || [];
     if (!banks.length) {
-      Utils.notify("Aucun compte bancaire configuré dans les paramètres de l'entreprise.", 'warning');
+      Utils.notify(isAR ? 'لا يوجد أي حساب بنكي مهيأ في إعدادات الشركة.' : "Aucun compte bancaire configuré dans les paramètres de l'entreprise.", 'warning');
       return;
     }
 
-    const bankOpts = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName || '')} (${Utils.escHTML(b.accountNum || 'Compte')})</option>`).join('');
+    const bankOpts = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName || '')} (${Utils.escHTML(b.accountNum || (isAR ? 'حساب' : 'Compte'))})</option>`).join('');
 
     const modalHTML = `
-      <div style="padding:4px 0">
+      <div style="padding:4px 0" ${isAR ? 'dir="rtl"' : ''}>
         <div style="background:linear-gradient(135deg,rgba(2,132,199,.08),rgba(2,132,199,.02));border:1px solid rgba(2,132,199,.2);border-radius:12px;padding:16px;margin-bottom:16px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:8px">Récapitulatif de clôture</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:8px">${isAR ? 'ملخص إغلاق الصندوق' : 'Récapitulatif de clôture'}</div>
           <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
-            <span style="color:var(--text2)">Total Ventes Bons de Chargement (${summary.bls.length})</span>
+            <span style="color:var(--text2)">${isAR ? `إجمالي مبيعات وصولات الشحن (${summary.bls.length})` : `Total Ventes Bons de Chargement (${summary.bls.length})`}</span>
             <span style="font-weight:700;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
-            <span style="color:var(--text2)">Total Retours Marchandise (${summary.retours.length})</span>
+            <span style="color:var(--text2)">${isAR ? `إجمالي مرتجعات البضاعة (${summary.retours.length})` : `Total Retours Marchandise (${summary.retours.length})`}</span>
             <span style="font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--border);font-size:16px;font-weight:900">
-            <span style="color:var(--text)">Net à transférer en Banque</span>
+            <span style="color:var(--text)">${isAR ? 'الصافي للتحويل إلى البنك' : 'Net à transférer en Banque'}</span>
             <span style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</span>
           </div>
         </div>
 
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700"><i class="fas fa-university" style="color:var(--primary)"></i> Compte bancaire destinataire</label>
+          <label class="required" style="font-weight:700"><i class="fas fa-university" style="color:var(--primary);${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'الحساب البنكي المستلم' : 'Compte bancaire destinataire'}</label>
           <select id="cloture_bank_id" class="input" style="width:100%;font-weight:600;padding:10px">
             ${bankOpts}
           </select>
         </div>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700">Observations / Note de clôture</label>
-          <input type="text" id="cloture_note" class="input" style="width:100%" placeholder="Remarques éventuelles sur la journée...">
+          <label style="font-weight:700">${isAR ? 'ملاحظات / بيان الإغلاق' : 'Observations / Note de clôture'}</label>
+          <input type="text" id="cloture_note" class="input" style="width:100%" placeholder="${isAR ? 'أي ملاحظات حول معاملات اليوم...' : 'Remarques éventuelles sur la journée...'}">
         </div>
 
         <div class="alert alert-info mb-1" style="font-size:11px">
           <i class="fas fa-info-circle"></i>
-          La clôture génère l'État de Vente journalier avec la liste complète des BL et les retours déduits, crédite le compte bancaire et verrouille les opérations du jour.
+          ${isAR ? 'يقوم الإغلاق بتوليد كشف المبيعات اليومي مع القائمة الكاملة للسندات والمرتجعات المخصومة، ويقيد المبلغ في الحساب البنكي ويقفل عمليات اليوم.' : 'La clôture génère l\'État de Vente journalier avec la liste complète des BL et les retours déduits, crédite le compte bancaire et verrouille les opérations du jour.'}
         </div>
       </div>`;
 
     const ok = await Dialog.show({
-      title: `🌙 Clôture de Caisse — ${Utils.fmtDate(today)}`,
+      title: isAR ? `🌙 إغلاق الصندوق — ${Utils.fmtDate(today)}` : `🌙 Clôture de Caisse — ${Utils.fmtDate(today)}`,
       message: modalHTML,
       type: 'info',
-      confirmText: 'Confirmer la Clôture & Verser en Banque',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'تأكيد الإغلاق والتحويل للبنك' : 'Confirmer la Clôture & Verser en Banque',
+      cancelText: T.get('cancel')
     });
 
     if (!ok) return;
@@ -3714,16 +3743,17 @@ const CaisseModule = {
 
     try {
       const result = await SessionMgr.closeMiniCaisse(u.id, bankId, note);
-      Utils.notify(`✅ Caisse clôturée avec succès ! État de vente ${result?.etatDoc?.ref || ''} généré et fonds versés.`, 'success', 6000);
+      Utils.notify(isAR ? `✅ تم إغلاق الصندوق بنجاح! تم إنشاء كشف المبيعات ${result?.etatDoc?.ref || ''} وتحويل الأموال.` : `✅ Caisse clôturée avec succès ! État de vente ${result?.etatDoc?.ref || ''} généré et fonds versés.`, 'success', 6000);
       App.loadModule('caisse');
     } catch (e) {
       console.error(e);
-      Utils.notify("Erreur lors de la clôture : " + e.message, 'error');
+      Utils.notify((isAR ? "خطأ أثناء الإغلاق : " : "Erreur lors de la clôture : ") + e.message, 'error');
     }
   },
 
   viewEtatVente() {
     const u = Auth.getCurrentUser();
+    const isAR = T.isRTL();
     const today = Utils.today();
     const session = SessionMgr.getTodaySession(u.id);
     let etatDoc = null;
@@ -3734,7 +3764,7 @@ const CaisseModule = {
       etatDoc = DB.getAll('etat_vente_docs').find(d => (d.dateStart === today || d.date === today) && d.createdBy === u?.id);
     }
     if (!etatDoc) {
-      Utils.notify("Aucun État de Vente trouvé pour aujourd'hui.", 'warning');
+      Utils.notify(isAR ? "لا يوجد أي كشف مبيعات لهذا اليوم." : "Aucun État de Vente trouvé pour aujourd'hui.", 'warning');
       return;
     }
     if (window.PDFGen && PDFGen.exportEtatVente) {
@@ -3746,6 +3776,7 @@ const CaisseModule = {
 
   printDailyTicket() {
     const u = Auth.getCurrentUser();
+    const isAR = T.isRTL();
     const today = Utils.today();
     const session = SessionMgr.getTodaySession(u.id);
     const summary = SessionMgr.getUserDaySummary(u.id, today);
@@ -3753,19 +3784,19 @@ const CaisseModule = {
 
     const w = window.open('', '_blank', 'width=380,height=600');
     if (!w) {
-      Utils.notify("Veuillez autoriser les fenêtres contextuelles (popups) pour imprimer le ticket.", 'warning');
+      Utils.notify(isAR ? "يرجى السماح بالنوافذ المنبثقة لطباعة الوصل." : "Veuillez autoriser les fenêtres contextuelles (popups) pour imprimer le ticket.", 'warning');
       return;
     }
 
     const blsHtml = summary.bls.map(b => `
       <div style="display:flex;justify-content:space-between;margin:3px 0;font-size:11px">
-        <span>${Utils.escHTML(b.ref)} (${Utils.escHTML(b.clientName || 'Client').slice(0, 15)})</span>
+        <span>${Utils.escHTML(b.ref)} (${Utils.escHTML(b.clientName || (isAR ? 'زبون' : 'Client')).slice(0, 15)})</span>
         <span>+${Utils.fmtCurrency(b.totalTTC)}</span>
       </div>`).join('');
 
     const retoursHtml = summary.retours.length ? `
       <div style="border-top:1px dashed #000;margin-top:6px;padding-top:4px">
-        <div style="font-weight:700;font-size:11px;margin-bottom:4px">RETOURS MARCHANDISE :</div>
+        <div style="font-weight:700;font-size:11px;margin-bottom:4px">${isAR ? 'مرتجعات البضاعة :' : 'RETOURS MARCHANDISE :'}</div>
         ${summary.retours.map(r => `
           <div style="display:flex;justify-content:space-between;margin:2px 0;font-size:11px;color:#c00">
             <span>${Utils.escHTML(r.ref)} (${Utils.escHTML(r.blRef || 'BL')})</span>
@@ -3774,9 +3805,9 @@ const CaisseModule = {
       </div>` : '';
 
     w.document.write(`
-      <html>
+      <html ${isAR ? 'dir="rtl"' : ''}>
       <head>
-        <title>Ticket Récapitulatif - ${today}</title>
+        <title>${isAR ? 'وصل تلخيصي' : 'Ticket Récapitulatif'} - ${today}</title>
         <style>
           body { font-family: monospace, sans-serif; font-size: 12px; margin: 0; padding: 12px; color: #000; }
           .center { text-align: center; }
@@ -3787,22 +3818,22 @@ const CaisseModule = {
       </head>
       <body onload="window.print()">
         <div class="center bold" style="font-size:14px">${Utils.escHTML(settings.companyName || 'ERP LOGISTIQUE')}</div>
-        <div class="center" style="font-size:10px">TICKET RÉCAPITULATIF DE CAISSE</div>
+        <div class="center" style="font-size:10px">${isAR ? 'وصل الصندوق التلخيصي' : 'TICKET RÉCAPITULATIF DE CAISSE'}</div>
         <div class="line"></div>
-        <div class="flex"><span>Date :</span><span>${today}</span></div>
-        <div class="flex"><span>Caissier :</span><span>${Utils.escHTML(u.name)}</span></div>
-        <div class="flex"><span>Statut :</span><span>${session?.status === 'closed' ? 'CLÔTURÉ' : 'EN COURS'}</span></div>
+        <div class="flex"><span>${isAR ? 'التاريخ :' : 'Date :'}</span><span>${today}</span></div>
+        <div class="flex"><span>${isAR ? 'أمين الصندوق :' : 'Caissier :'}</span><span>${Utils.escHTML(u.name)}</span></div>
+        <div class="flex"><span>${isAR ? 'الحالة :' : 'Statut :'}</span><span>${session?.status === 'closed' ? (isAR ? 'مغلق' : 'CLÔTURÉ') : (isAR ? 'جاري' : 'EN COURS')}</span></div>
         <div class="line"></div>
-        <div class="bold" style="font-size:11px;margin-bottom:4px">VENTES DU JOUR (${summary.bls.length}) :</div>
-        ${blsHtml || '<div>Aucun BL</div>'}
+        <div class="bold" style="font-size:11px;margin-bottom:4px">${isAR ? `مبيعات اليوم (${summary.bls.length}) :` : `VENTES DU JOUR (${summary.bls.length}) :`}</div>
+        ${blsHtml || `<div>${isAR ? 'لا توجد سندات' : 'Aucun BL'}</div>`}
         ${retoursHtml}
         <div class="line"></div>
-        <div class="flex bold"><span>TOTAL VENTES :</span><span>+${Utils.fmtCurrency(summary.grossSales)}</span></div>
-        <div class="flex bold"><span>TOTAL RETOURS :</span><span>-${Utils.fmtCurrency(summary.totalReturns)}</span></div>
+        <div class="flex bold"><span>${isAR ? 'إجمالي المبيعات :' : 'TOTAL VENTES :'}</span><span>+${Utils.fmtCurrency(summary.grossSales)}</span></div>
+        <div class="flex bold"><span>${isAR ? 'إجمالي المرتجعات :' : 'TOTAL RETOURS :'}</span><span>-${Utils.fmtCurrency(summary.totalReturns)}</span></div>
         <div class="line"></div>
-        <div class="flex bold" style="font-size:14px"><span>NET CAISSE :</span><span>${Utils.fmtCurrency(summary.netAmount)}</span></div>
+        <div class="flex bold" style="font-size:14px"><span>${isAR ? 'صافي الصندوق :' : 'NET CAISSE :'}</span><span>${Utils.fmtCurrency(summary.netAmount)}</span></div>
         <div class="line"></div>
-        <div class="center" style="font-size:9px;margin-top:12px">Imprimé le ${new Date().toLocaleString('fr-FR')}</div>
+        <div class="center" style="font-size:9px;margin-top:12px">${isAR ? 'طبع في' : 'Imprimé le'} ${new Date().toLocaleString(isAR ? 'ar-DZ' : 'fr-FR')}</div>
       </body>
       </html>
     `);
@@ -3817,11 +3848,11 @@ const CaisseModule = {
       const isCl = s.status === 'closed';
       return `<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:8px 12px;font-weight:700">${Utils.fmtDate(s.date)}</td>
-        <td style="padding:8px 12px;text-align:center">${isCl ? `<span class="badge badge-success"><i class="fas fa-lock"></i> Clôturée</span>` : `<span class="badge badge-warning"><i class="fas fa-clock"></i> En cours</span>`}</td>
-        <td style="padding:8px 12px;text-align:right;color:var(--success);font-weight:700">+${Utils.fmtCurrency(s.totalSales || 0)}</td>
-        <td style="padding:8px 12px;text-align:right;color:var(--danger);font-weight:700">-${Utils.fmtCurrency(s.totalReturns || 0)}</td>
-        <td style="padding:8px 12px;text-align:right;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(s.closedNet !== null && s.closedNet !== undefined ? s.closedNet : (s.totalSales || 0) - (s.totalReturns || 0))}</td>
-        <td style="padding:8px 12px;color:var(--text3);font-size:11px">${Utils.escHTML(s.bankName || 'Banque')}</td>
+        <td style="padding:8px 12px;text-align:center">${isCl ? `<span class="badge badge-success"><i class="fas fa-lock"></i> ${isAR ? 'مغلقة' : 'Clôturée'}</span>` : `<span class="badge badge-warning"><i class="fas fa-clock"></i> ${isAR ? 'جارية' : 'En cours'}</span>`}</td>
+        <td style="padding:8px 12px;text-align:${isAR?'left':'right'};color:var(--success);font-weight:700">+${Utils.fmtCurrency(s.totalSales || 0)}</td>
+        <td style="padding:8px 12px;text-align:${isAR?'left':'right'};color:var(--danger);font-weight:700">-${Utils.fmtCurrency(s.totalReturns || 0)}</td>
+        <td style="padding:8px 12px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--primary)">${Utils.fmtCurrency(s.closedNet !== null && s.closedNet !== undefined ? s.closedNet : (s.totalSales || 0) - (s.totalReturns || 0))}</td>
+        <td style="padding:8px 12px;color:var(--text3);font-size:11px">${Utils.escHTML(s.bankName || (isAR ? 'بنك' : 'Banque'))}</td>
       </tr>`;
     }).join('');
 
@@ -3833,14 +3864,14 @@ const CaisseModule = {
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:var(--bg-inset);border-bottom:2px solid var(--border)">
-            <th style="padding:8px 12px;text-align:left;color:var(--text4)">Date</th>
-            <th style="padding:8px 12px;text-align:center;color:var(--text4)">Statut</th>
-            <th style="padding:8px 12px;text-align:right;color:var(--text4)">Ventes</th>
-            <th style="padding:8px 12px;text-align:right;color:var(--text4)">Retours</th>
-            <th style="padding:8px 12px;text-align:right;color:var(--text4)">Net Versé</th>
-            <th style="padding:8px 12px;text-align:left;color:var(--text4)">Banque</th>
+            <th style="padding:8px 12px;text-align:${isAR?'right':'left'};color:var(--text4)">${T.get('col_date')}</th>
+            <th style="padding:8px 12px;text-align:center;color:var(--text4)">${T.get('col_status')}</th>
+            <th style="padding:8px 12px;text-align:${isAR?'left':'right'};color:var(--text4)">${isAR ? 'المبيعات' : 'Ventes'}</th>
+            <th style="padding:8px 12px;text-align:${isAR?'left':'right'};color:var(--text4)">${isAR ? 'المرتجعات' : 'Retours'}</th>
+            <th style="padding:8px 12px;text-align:${isAR?'left':'right'};color:var(--text4)">${isAR ? 'الصافي المحول' : 'Net Versé'}</th>
+            <th style="padding:8px 12px;text-align:${isAR?'right':'left'};color:var(--text4)">${isAR ? 'البنك' : 'Banque'}</th>
           </tr></thead>
-          <tbody>${rows || `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted)">Aucun historique disponible</td></tr>`}</tbody>
+          <tbody>${rows || `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted)">${isAR ? 'لا يوجد سجل متوفر' : 'Aucun historique disponible'}</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
@@ -3849,13 +3880,14 @@ const CaisseModule = {
   async showMorningPrompt() {
     const u = Auth.getCurrentUser();
     if (!u) return;
+    const isAR = T.isRTL();
     
     const ok = await Dialog.show({
-      title: 'Démarrer votre journée de caisse?',
-      message: `<div class="form-group"><label>Montant en caisse au début (DA)</label><input type="number" id="morning_start_amount" class="input" style="font-size:20px;font-weight:800;text-align:center" value="0"></div>`,
+      title: isAR ? 'بدء يومية الصندوق الخاصة بك؟' : 'Démarrer votre journée de caisse?',
+      message: `<div class="form-group" ${isAR?'dir="rtl"':''}><label style="font-weight:600;margin-bottom:6px;display:block">${isAR ? 'المبلغ الافتتاحي في الصندوق (د.ج)' : 'Montant en caisse au début (DA)'}</label><input type="number" id="morning_start_amount" class="input" style="font-size:20px;font-weight:800;text-align:center" value="0"></div>`,
       type: 'info',
-      confirmText: 'Démarrer',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'بدء اليومية' : 'Démarrer',
+      cancelText: T.get('cancel')
     });
     
     if (!ok) return;
@@ -4389,19 +4421,19 @@ const AdminCaisseModule = {
           </div>
           <div>
             <strong style="color:var(--text);font-size:15px">${isAR ? 'مراقبة وإدارة صناديق المستخدمين' : 'Supervision des Mini Caisses Utilisateurs'}</strong>
-            <div style="font-size:11px;color:var(--text4);margin-top:2px">Contrôle des ventes journalières, retours, clôtures et versements bancaires</div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'مراقبة المبيعات اليومية، المرتجعات، الإغلاقات والتحويلات البنكية' : 'Contrôle des ventes journalières, retours, clôtures et versements bancaires'}</div>
           </div>
         </div>
 
         <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input type="date" value="${this._filters.dateFrom}" onchange="AdminCaisseModule._filters.dateFrom=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)" title="Date début">
+          <input type="date" value="${this._filters.dateFrom}" onchange="AdminCaisseModule._filters.dateFrom=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)" title="${isAR ? 'تاريخ البدء' : 'Date début'}">
           <span style="color:var(--text4)">→</span>
-          <input type="date" value="${this._filters.dateTo}" onchange="AdminCaisseModule._filters.dateTo=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)" title="Date fin">
+          <input type="date" value="${this._filters.dateTo}" onchange="AdminCaisseModule._filters.dateTo=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)" title="${isAR ? 'تاريخ النهاية' : 'Date fin'}">
           <select onchange="AdminCaisseModule._filters.userId=this.value;App.loadModule('admin_caisse')" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text)">
-            <option value="all">Tous les caissiers</option>
+            <option value="all">${isAR ? 'جميع أمناء الصندوق' : 'Tous les caissiers'}</option>
             ${users.map(u => `<option value="${u.id}" ${mcUserFilter === String(u.id) ? 'selected' : ''}>${Utils.escHTML(u.name || u.username)}</option>`).join('')}
           </select>
-          <button class="btn btn-outline" onclick="AdminCaisseModule._filters={dateFrom:'',dateTo:'',userId:'all'};App.loadModule('admin_caisse')" style="font-size:11px;padding:7px 12px" title="Réinitialiser filtres"><i class="fas fa-times"></i></button>
+          <button class="btn btn-outline" onclick="AdminCaisseModule._filters={dateFrom:'',dateTo:'',userId:'all'};App.loadModule('admin_caisse')" style="font-size:11px;padding:7px 12px" title="${isAR ? 'إعادة تعيين الفلاتر' : 'Réinitialiser filtres'}"><i class="fas fa-times"></i></button>
         </div>
       </div>
 
@@ -4411,7 +4443,7 @@ const AdminCaisseModule = {
           <div class="stat-icon-v2 blue"><i class="fas fa-truck"></i></div>
           <div class="stat-body-v2">
             <div class="stat-value-v2" style="font-size:18px;color:var(--success)">+${Utils.fmtCurrency(totalMCSales)}</div>
-            <div class="stat-label-v2">Total Ventes BCH</div>
+            <div class="stat-label-v2">${isAR ? 'إجمالي مبيعات الشحن' : 'Total Ventes BCH'}</div>
           </div>
         </div>
 
@@ -4419,7 +4451,7 @@ const AdminCaisseModule = {
           <div class="stat-icon-v2 orange"><i class="fas fa-undo"></i></div>
           <div class="stat-body-v2">
             <div class="stat-value-v2" style="font-size:18px;color:var(--danger)">-${Utils.fmtCurrency(totalMCReturns)}</div>
-            <div class="stat-label-v2">Total Retours Déduits</div>
+            <div class="stat-label-v2">${isAR ? 'إجمالي المرتجعات المخصومة' : 'Total Retours Déduits'}</div>
           </div>
         </div>
 
@@ -4427,7 +4459,7 @@ const AdminCaisseModule = {
           <div class="stat-icon-v2 green"><i class="fas fa-vault"></i></div>
           <div class="stat-body-v2">
             <div class="stat-value-v2" style="font-size:18px;color:var(--primary)">${Utils.fmtCurrency(totalMCNet)}</div>
-            <div class="stat-label-v2">Net Total Encaissé</div>
+            <div class="stat-label-v2">${isAR ? 'صافي المبالغ المحصلة' : 'Net Total Encaissé'}</div>
           </div>
         </div>
 
@@ -4435,7 +4467,7 @@ const AdminCaisseModule = {
           <div class="stat-icon-v2 purple"><i class="fas fa-door-closed"></i></div>
           <div class="stat-body-v2">
             <div class="stat-value-v2">${totalMCClosed} / ${filteredSessions.length}</div>
-            <div class="stat-label-v2">Sessions Clôturées</div>
+            <div class="stat-label-v2">${isAR ? 'الجلسات المغلقة' : 'Sessions Clôturées'}</div>
           </div>
         </div>
       </div>
@@ -4446,15 +4478,15 @@ const AdminCaisseModule = {
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>
               <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-                <th style="padding:12px 16px;text-align:left;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Caissier</th>
-                <th style="padding:12px 16px;text-align:left;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Date</th>
-                <th style="padding:12px 16px;text-align:center;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Statut</th>
-                <th style="padding:12px 16px;text-align:right;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Ventes BCH</th>
-                <th style="padding:12px 16px;text-align:right;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Retours (BR)</th>
-                <th style="padding:12px 16px;text-align:right;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Net Caisse</th>
-                <th style="padding:12px 16px;text-align:right;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Versé Banque</th>
-                <th style="padding:12px 16px;text-align:center;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Réf État Vente</th>
-                <th style="padding:12px 16px;text-align:right;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">Actions Admin</th>
+                <th style="padding:12px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'أمين الصندوق' : 'Caissier'}</th>
+                <th style="padding:12px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${T.get('col_date')}</th>
+                <th style="padding:12px 16px;text-align:center;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${T.get('col_status')}</th>
+                <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'مبيعات الشحن' : 'Ventes BCH'}</th>
+                <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'المرتجعات' : 'Retours (BR)'}</th>
+                <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'صافي الصندوق' : 'Net Caisse'}</th>
+                <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'المحول للبنك' : 'Versé Banque'}</th>
+                <th style="padding:12px 16px;text-align:center;color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'مرجع كشف المبيعات' : 'Réf État Vente'}</th>
+                <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-size:11px;font-weight:700;text-transform:uppercase">${isAR ? 'إجراءات الإدارة' : 'Actions Admin'}</th>
               </tr>
             </thead>
             <tbody>
@@ -4476,24 +4508,24 @@ const AdminCaisseModule = {
                   <td style="padding:12px 16px;color:var(--text2);font-weight:600">${Utils.fmtDate(s.date)}</td>
                   <td style="padding:12px 16px;text-align:center">
                     ${isCl
-                      ? `<span class="badge badge-success"><i class="fas fa-lock"></i> Clôturée</span>`
-                      : `<span class="badge badge-warning"><i class="fas fa-clock"></i> En cours</span>`
+                      ? `<span class="badge badge-success"><i class="fas fa-lock"></i> ${isAR ? 'مغلقة' : 'Clôturée'}</span>`
+                      : `<span class="badge badge-warning"><i class="fas fa-clock"></i> ${isAR ? 'جارية' : 'En cours'}</span>`
                     }
                   </td>
-                  <td style="padding:12px 16px;text-align:right;font-weight:700;color:var(--success)">+${Utils.fmtCurrency(sum.grossSales)}</td>
-                  <td style="padding:12px 16px;text-align:right;font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(sum.totalReturns)}</td>
-                  <td style="padding:12px 16px;text-align:right;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(sum.netAmount)}</td>
-                  <td style="padding:12px 16px;text-align:right;font-weight:900;color:var(--text)">${isCl ? Utils.fmtCurrency(netVal) : '<span style="color:var(--text4)">—</span>'}</td>
+                  <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--success)">+${Utils.fmtCurrency(sum.grossSales)}</td>
+                  <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(sum.totalReturns)}</td>
+                  <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--primary)">${Utils.fmtCurrency(sum.netAmount)}</td>
+                  <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--text)">${isCl ? Utils.fmtCurrency(netVal) : '<span style="color:var(--text4)">—</span>'}</td>
                   <td style="padding:12px 16px;text-align:center">
                     ${etatDoc ? `<button class="btn btn-xs btn-outline" onclick="PDFGen.exportEtatVente(DB.getById('etat_vente_docs', ${etatDoc.id}))" title="Voir PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> ${Utils.escHTML(etatDoc.ref)}</button>` : '<span style="color:var(--text4);font-size:11px">—</span>'}
                   </td>
-                  <td style="padding:12px 16px;text-align:right;white-space:nowrap">
-                    <button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;padding:5px 10px;font-weight:700" onclick="AdminCaisseModule.rectifyUserCloture('${s.id}')" title="Rectifier le montant clôturé / versé en cas d'erreur">
-                      <i class="fas fa-edit"></i> Rectifier
+                  <td style="padding:12px 16px;text-align:${isAR?'left':'right'};white-space:nowrap">
+                    <button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;padding:5px 10px;font-weight:700" onclick="AdminCaisseModule.rectifyUserCloture('${s.id}')" title="${isAR ? 'تصحيح المبلغ المغلق / المحول عند الخطأ' : 'Rectifier le montant clôturé / versé en cas d\'erreur'}">
+                      <i class="fas fa-edit"></i> ${isAR ? 'تصحيح' : 'Rectifier'}
                     </button>
                   </td>
                 </tr>`;
-              }).join('') : `<tr><td colspan="9" style="padding:40px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px;opacity:.3"></i>Aucune session trouvée pour ces filtres</td></tr>`}
+              }).join('') : `<tr><td colspan="9" style="padding:40px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px;opacity:.3"></i>${isAR ? 'لا توجد جلسات مطابقة لهذه الفلاتر' : 'Aucune session trouvée pour ces filtres'}</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -4531,47 +4563,48 @@ const AdminCaisseModule = {
   async rectifyUserCloture(sessionId) {
     const session = DB.getById('sessions', sessionId);
     if (!session) return;
+    const isAR = T.isRTL();
     const u = DB.getById('users', session.userId);
     const oldNet = session.closedNet || 0;
 
     const modalHTML = `
-      <div style="padding:4px 0">
+      <div style="padding:4px 0" ${isAR ? 'dir="rtl"' : ''}>
         <div class="alert alert-warning mb-2" style="font-size:12px">
           <i class="fas fa-exclamation-triangle"></i>
-          <strong>Correction Admin :</strong> Cette modification ajustera le versement déclaré de la mini caisse, mettra à jour l'entrée de caisse correspondante et le mouvement bancaire.
+          <strong>${isAR ? 'تصحيح الإدارة :' : 'Correction Admin :'}</strong> ${isAR ? 'سيقوم هذا التعديل بضبط تحويل الصندوق، وتحديث قيد الصندوق المقابل وحركة البنك.' : "Cette modification ajustera le versement déclaré de la mini caisse, mettra à jour l'entrée de caisse correspondante et le mouvement bancaire."}
         </div>
         <div style="background:var(--bg-inset);border-radius:10px;padding:12px;margin-bottom:14px">
           <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span style="color:var(--text3)">Caissier :</span>
-            <strong style="color:var(--text)">${Utils.escHTML(u?.name || 'Caissier')}</strong>
+            <span style="color:var(--text3)">${isAR ? 'أمين الصندوق :' : 'Caissier :'}</span>
+            <strong style="color:var(--text)">${Utils.escHTML(u?.name || (isAR ? 'أمين الصندوق' : 'Caissier'))}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span style="color:var(--text3)">Date session :</span>
+            <span style="color:var(--text3)">${isAR ? 'تاريخ الجلسة :' : 'Date session :'}</span>
             <strong>${Utils.fmtDate(session.date)}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:13px">
-            <span style="color:var(--text3)">Montant actuel versé :</span>
+            <span style="color:var(--text3)">${isAR ? 'المبلغ الحالي المحول :' : 'Montant actuel versé :'}</span>
             <strong style="color:var(--primary);font-size:15px">${Utils.fmtCurrency(oldNet)}</strong>
           </div>
         </div>
 
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Nouveau montant rectifié (DA)</label>
+          <label class="required" style="font-weight:700">${isAR ? 'المبلغ المصحح الجديد (د.ج)' : 'Nouveau montant rectifié (DA)'}</label>
           <input type="number" id="rect_new_net" class="input" style="width:100%;font-size:18px;font-weight:800;text-align:center" min="0" step="any" value="${oldNet}">
         </div>
 
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Motif de la rectification (obligatoire)</label>
-          <input type="text" id="rect_admin_motif" class="input" style="width:100%" placeholder="Ex: Erreur de saisie du caissier, ajustement monnaie...">
+          <label class="required" style="font-weight:700">${isAR ? 'سبب التصحيح (إلزامي)' : 'Motif de la rectification (obligatoire)'}</label>
+          <input type="text" id="rect_admin_motif" class="input" style="width:100%" placeholder="${isAR ? 'مثال: خطأ في إدخال أمين الصندوق، تسوية الفكة...' : 'Ex: Erreur de saisie du caissier, ajustement monnaie...'}">
         </div>
       </div>`;
 
     const ok = await Dialog.show({
-      title: `✏️ Rectifier Versement Mini Caisse — ${u?.name || ''}`,
+      title: isAR ? `✏️ تصحيح تحويل الصندوق — ${u?.name || ''}` : `✏️ Rectifier Versement Mini Caisse — ${u?.name || ''}`,
       message: modalHTML,
       type: 'warning',
-      confirmText: 'Enregistrer la Rectification',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'حفظ التصحيح' : 'Enregistrer la Rectification',
+      cancelText: T.get('cancel')
     });
 
     if (!ok) return;
@@ -4580,23 +4613,23 @@ const AdminCaisseModule = {
     const motif = document.getElementById('rect_admin_motif')?.value?.trim();
 
     if (isNaN(newNet) || newNet < 0) {
-      Utils.notify("Montant invalide.", "error");
+      Utils.notify(isAR ? "مبلغ غير صالح." : "Montant invalide.", "error");
       return;
     }
     if (!motif) {
-      Utils.notify("Veuillez indiquer le motif de la rectification.", "warning");
+      Utils.notify(isAR ? "يرجى تحديد سبب التصحيح." : "Veuillez indiquer le motif de la rectification.", "warning");
       return;
     }
 
     const conf = await Utils.confirm2(
-      `Confirmer la rectification du versement pour ${u?.name || 'le caissier'} ?`,
-      `Nouveau montant : ${Utils.fmtCurrency(newNet)} (Ancien : ${Utils.fmtCurrency(oldNet)})\nMotif : ${motif}`
+      isAR ? `تأكيد تصحيح التحويل للموظف ${u?.name || 'أمين الصندوق'}؟` : `Confirmer la rectification du versement pour ${u?.name || 'le caissier'} ?`,
+      isAR ? `المبلغ الجديد : ${Utils.fmtCurrency(newNet)} (السابق : ${Utils.fmtCurrency(oldNet)})\nالسبب : ${motif}` : `Nouveau montant : ${Utils.fmtCurrency(newNet)} (Ancien : ${Utils.fmtCurrency(oldNet)})\nMotif : ${motif}`
     );
     if (!conf) return;
 
     const updated = SessionMgr.updateCloture(sessionId, newNet, motif);
     if (updated) {
-      Utils.notify("✅ Versement mini caisse rectifié avec succès.", "success", 5000);
+      Utils.notify(isAR ? "✅ تم تصحيح تحويل الصندوق بنجاح." : "✅ Versement mini caisse rectifié avec succès.", "success", 5000);
       App.loadModule('admin_caisse');
     }
   },
@@ -4733,7 +4766,7 @@ const AdminCaisseModule = {
     const balance = ca.filter(t=>t.type==='deposit').reduce((s,t)=>s+t.amount,0) - ca.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+t.amount,0);
     const settings = DB.getSettings();
     const banks = settings.banks || [];
-    const bankOpts = `<option value="">-- Autre destination --</option>` + banks.map(b=>`<option value="${b.id}">${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
+    const bankOpts = `<option value="">${T.isRTL() ? '-- وجهة أخرى --' : '-- Autre destination --'}</option>` + banks.map(b=>`<option value="${b.id}">${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
     UI.showModal(`<i class="fas fa-arrow-up" style="color:var(--danger)"></i> ${T.get('adm_withdrawal')}`, `
     <div class="alert alert-warning mb-2">
       <i class="fas fa-exclamation-triangle"></i>
@@ -4746,7 +4779,7 @@ const AdminCaisseModule = {
     ${banks.length ? `
     <div class="form-group" style="margin-bottom:12px">
       <label style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;display:block">
-        <i class="fas fa-university" style="color:var(--primary);margin-right:6px"></i>Compte bancaire destinataire
+        <i class="fas fa-university" style="color:var(--primary);${T.isRTL()?'margin-left:6px':'margin-right:6px'}"></i>${T.isRTL() ? 'الحساب البنكي المستلم' : 'Compte bancaire destinataire'}
       </label>
       <select id="withBankId" style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:var(--bg3);color:var(--text)"
         onchange="(function(){ const bid=document.getElementById('withBankId').value; const s=DB.getSettings(); const bank=(s.banks||[]).find(b=>b.id===bid); const d=document.getElementById('withDest'); if(bank) d.value='Versement \u2192 '+bank.name+' ('+bank.bankName+')'; else if(d.value.indexOf('Versement')===0) d.value=''; })()"
@@ -4793,7 +4826,7 @@ const AdminCaisseModule = {
     // ── STRICT BALANCE CHECK — NEVER allow caisse to go negative ──
     const caisseBalance = DB.getAll('caisse_admin').reduce((s,t) => t.type==='deposit' ? s+t.amount : s-t.amount, 0);
     if (amount > caisseBalance) {
-      Utils.notify(`⛔ Solde caisse insuffisant ! Disponible: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}`, 'danger');
+      Utils.notify(T.isRTL() ? `⛔ رصيد الصندوق غير كافٍ! المتوفر: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}` : `⛔ Solde caisse insuffisant ! Disponible: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}`, 'danger');
       return;
     }
     const u = Auth.getCurrentUser();
@@ -4808,7 +4841,7 @@ const AdminCaisseModule = {
         note: `Versement depuis caisse${note?' — '+note:''}`,
         date: Utils.today(), by: u?.id, caisseRef: tx?.id
       });
-      Utils.notify(`✅ ${Utils.fmtCurrency(amount)} versé vers ${bank?.name||'banque'} — les deux registres mis à jour`, 'success', 5000);
+      Utils.notify(T.isRTL() ? `✅ تم تحويل ${Utils.fmtCurrency(amount)} إلى ${bank?.name||'البنك'} — تم تحديث السجلين` : `✅ ${Utils.fmtCurrency(amount)} versé vers ${bank?.name||'banque'} — les deux registres mis à jour`, 'success', 5000);
     } else {
       Utils.notify((T.isRTL()?'تم حفظ السحب':'Retrait enregistré'), 'success');
     }
@@ -4821,8 +4854,9 @@ const AdminCaisseModule = {
   showDetail(id) {
     const t = DB.getById('caisse_admin', id);
     if (!t) return;
+    const isAR = T.isRTL();
     const body = `<table class="detail-table">
-      <tr><th>Type</th><td><span class="badge ${t.type==='deposit'?'badge-success':'badge-danger'}">${t.type==='deposit'?T.get('adm_deposit'):T.get('adm_withdrawal')}</span></td></tr>
+      <tr><th>${isAR ? 'النوع' : 'Type'}</th><td><span class="badge ${t.type==='deposit'?'badge-success':'badge-danger'}">${t.type==='deposit'?T.get('adm_deposit'):T.get('adm_withdrawal')}</span></td></tr>
       <tr><th>${T.get('amount')}</th><td class="${t.type==='deposit'?'text-success':'text-danger'} fw-bold" style="font-size:18px">${t.type==='deposit'?'+':'-'}${Utils.fmtCurrency(t.amount)}</td></tr>
       <tr><th>${T.get('col_date')}</th><td>${Utils.fmtDateTime(t.createdAt)}</td></tr>
       <tr><th>${T.get('col_by')}</th><td>${Utils.escHTML(t.userName||'-')}</td></tr>
@@ -5008,20 +5042,22 @@ const SuppliersModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>${T.get('sup_name')}</th><th>${T.isRTL()?'اختصار':'Abrév.'}</th><th>${T.get('sup_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('sup_address')}</th><th>${T.get('sup_contact')}</th><th>${T.isRTL()?"عدد BR":"BR count"}</th><th>${T.get('col_actions')}</th></tr></thead>
+          <thead><tr><th>${T.get('sup_name')}</th><th>${T.isRTL()?'اختصار':'Abrév.'}</th><th>${T.get('sup_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('sup_address')}</th><th>${T.get('sup_contact')}</th><th>${T.isRTL()?"عدد سندات الاستلام":"Nombre de BR"}</th><th>${T.get('col_actions')}</th></tr></thead>
           <tbody>
             ${items.length ? items.map(s=>`<tr>
               <td><strong>${Utils.escHTML(s.name)}</strong></td>
+              <td><span style="font-family:monospace;font-weight:700;background:var(--bg2);padding:2px 6px;border-radius:4px">${Utils.escHTML(s.abbrev||'-')}</span></td>
               <td>${Utils.escHTML(s.phone||'-')}</td>
+              <td><span style="font-size:11px;background:var(--bg2);padding:2px 8px;border-radius:12px;font-weight:600">${Utils.escHTML(s.wilaya||'-')}</span></td>
               <td>${Utils.escHTML(s.address||'-')}</td>
               <td>${Utils.escHTML(s.contact||'-')}</td>
               <td><span class="badge badge-primary">${brMap[s.id]||0}</span></td>
               <td class="td-actions">
-                <button class="btn btn-xs btn-primary" onclick="PartnersModule._detailType='supplier';PartnersModule._detailId=${s.id};App.loadModule('partners')" title="Détails"><i class="fas fa-chart-line"></i></button>
-                <button class="btn btn-xs btn-outline" onclick="SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-xs btn-danger" onclick="SuppliersModule.deleteSup(${s.id})"><i class="fas fa-trash"></i></button>
+                <button class="btn btn-xs btn-primary" onclick="PartnersModule._detailType='supplier';PartnersModule._detailId=${s.id};App.loadModule('partners')" title="${T.isRTL()?'التفاصيل':'Détails'}"><i class="fas fa-chart-line"></i></button>
+                <button class="btn btn-xs btn-outline" onclick="SuppliersModule.showEdit(${s.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-xs btn-danger" onclick="SuppliersModule.deleteSup(${s.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>
               </td>
-            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -5035,15 +5071,15 @@ const SuppliersModule = {
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;margin-bottom:14px">
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
-        <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('sup_name')} / Raison Sociale</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم المورد أو الشركة...':'Nom ou raison sociale...'}" required></div>
-        <div class="form-group"><label style="font-weight:700;color:var(--primary)">Abréviation <small style="color:var(--text4)">(code court BR/BL)</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="MAX 5 LETTRES" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px" oninput="this.value=this.value.toUpperCase()"></div>
-        <div class="form-group"><label style="font-weight:600">NIF</label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">NIS</label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">RC</label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
-        <div class="form-group"><label style="font-weight:600">Art. Imposition (AI)</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
+        <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('sup_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم المورد أو الشركة...':'Nom ou raison sociale...'}" required></div>
+        <div class="form-group"><label style="font-weight:700;color:var(--primary)">${T.isRTL()?'الاسم المختصر':'Abréviation'} <small style="color:var(--text4)">(${T.isRTL()?'رمز مختصر في السندات':'code court BR/BL'})</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="${T.isRTL()?'أقصى 5 أحرف':'MAX 5 LETTRES'}" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(${T.isRTL()?'السجل التجاري':'Registre du Commerce'})</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
+        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'رقم المادة الضريبية (AI)':'Art. Imposition (AI)'}</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">${T.get('sup_phone')} / Fax</label><input id="sPhone" value="${Utils.escHTML(s.phone||'')}" placeholder="0X XX XX XX XX"></div>
         <div class="form-group"><label style="font-weight:600">Email</label><input id="sEmail" type="email" value="${Utils.escHTML(s.email||'')}" placeholder="contact@societe.dz"></div>
-        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'جهة الاتصال':'Contact / Représentant'}</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="${T.isRTL()?'اسم جهة الاتصال':'Nom du contact'}"></div>
+        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'جهة الاتصال / الممثل':'Contact / Représentant'}</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="${T.isRTL()?'اسم جهة الاتصال':'Nom du contact'}"></div>
         <div class="form-group span-full"><label style="font-weight:600">${T.get('sup_address')} <small style="color:var(--text4)">(${T.isRTL()?'عنوان الشركة الرئيسي':'adresse du siège'})</small></label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
       </div>
       ${_buildDeliveryAddrSection('sup', addrs, isAdmin)}
@@ -5065,7 +5101,7 @@ const SuppliersModule = {
     setTimeout(() => FormGuide.start(['sName','sAbbrev','sNif','sRc','sPhone','sAddress']), 100);
   },
   _save(id) {
-    if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify('⛔ Permission refusée','error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
     const name = (document.getElementById('sName')?.value||'').trim();
     if (!name) { Utils.notify(T.get('sup_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
@@ -5086,7 +5122,7 @@ const SuppliersModule = {
     UI.closeModal(); App.loadModule('suppliers');
   },
   async deleteSup(id) {
-    if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify('⛔ Permission refusée','error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
     const hasBRs = DB.getAll('brs').some(b=>b.supplierId===id);
     if (hasBRs) { Utils.notify((T.isRTL()?'غير ممكن: هذا المورد لديه وصولات مرتبطة.':'Impossible: ce fournisseur a des BR liés.'),'error'); return; }
     const ok = await Dialog.confirm(T.isRTL() ? 'حذف المورد' : 'Supprimer fournisseur', T.get('delete')+'?', 'danger');
@@ -5111,7 +5147,7 @@ const ClientsModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>${T.get('cli_name')}</th><th>${T.get('cli_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('cli_address')}</th><th>${T.get('cli_contact')}</th><th>${T.isRTL()?"BL count":"BL count"}</th><th>${T.get('col_actions')}</th></tr></thead>
+          <thead><tr><th>${T.get('cli_name')}</th><th>${T.get('cli_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('cli_address')}</th><th>${T.get('cli_contact')}</th><th>${T.isRTL()?"عدد سندات التسليم":"Nombre de BL"}</th><th>${T.get('col_actions')}</th></tr></thead>
           <tbody>
             ${items.length ? items.map(s=>`<tr>
               <td><strong>${Utils.escHTML(s.name)}</strong></td>
@@ -5121,11 +5157,11 @@ const ClientsModule = {
               <td>${Utils.escHTML(s.contact||'-')}</td>
               <td><span class="badge badge-primary">${DB.getAll('bls').filter(b=>String(b.clientId)===String(s.id)).length}</span></td>
               <td class="td-actions">
-                <button class="btn btn-xs btn-primary" onclick="PartnersModule._detailType='client';PartnersModule._detailId=${s.id};App.loadModule('partners')" title="Détails"><i class="fas fa-chart-line"></i></button>
-                <button class="btn btn-xs btn-outline" onclick="ClientsModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-xs btn-danger" onclick="ClientsModule.deleteCli(${s.id})"><i class="fas fa-trash"></i></button>
+                <button class="btn btn-xs btn-primary" onclick="PartnersModule._detailType='client';PartnersModule._detailId=${s.id};App.loadModule('partners')" title="${T.isRTL()?'التفاصيل':'Détails'}"><i class="fas fa-chart-line"></i></button>
+                <button class="btn btn-xs btn-outline" onclick="ClientsModule.showEdit(${s.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-xs btn-danger" onclick="ClientsModule.deleteCli(${s.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>
               </td>
-            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -5139,14 +5175,14 @@ const ClientsModule = {
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;margin-bottom:14px">
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
-        <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('cli_name')} / Raison Sociale</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="Nom ou raison sociale du client..." required></div>
-        <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(Numéro d'Identification Fiscale)</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(Identif. Statistique)</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(Registre du Commerce)</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
-        <div class="form-group"><label style="font-weight:600">Art. Imposition (AI)</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
+        <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('cli_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم الزبون أو الشركة...':'Nom ou raison sociale du client...'}" required></div>
+        <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(${T.isRTL()?'السجل التجاري':'Registre du Commerce'})</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
+        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'رقم المادة الضريبية (AI)':'Art. Imposition (AI)'}</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">${T.get('cli_phone')} / Fax</label><input id="sPhone" value="${Utils.escHTML(s.phone||'')}" placeholder="0X XX XX XX XX"></div>
         <div class="form-group"><label style="font-weight:600">Email</label><input id="sEmail" type="email" value="${Utils.escHTML(s.email||'')}" placeholder="contact@client.dz"></div>
-        <div class="form-group"><label style="font-weight:600">Contact / Représentant</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="Nom du contact"></div>
+        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'جهة الاتصال / الممثل':'Contact / Représentant'}</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="${T.isRTL()?'اسم جهة الاتصال':'Nom du contact'}"></div>
         <div class="form-group span-full"><label style="font-weight:600">${T.get('cli_address')} <small style="color:var(--text4)">(${T.isRTL()?'عنوان الشركة الرئيسي':'adresse du siège social'})</small></label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
       </div>
       ${_buildDeliveryAddrSection('cli', addrs, isAdmin)}
@@ -5168,7 +5204,7 @@ const ClientsModule = {
     setTimeout(() => FormGuide.start(['sName','sNif','sRc','sPhone','sAddress']), 100);
   },
   _save(id) {
-    if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify('⛔ Permission refusée','error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
     const name = (document.getElementById('sName')?.value||'').trim();
     if (!name) { Utils.notify(T.get('cli_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
@@ -5188,7 +5224,7 @@ const ClientsModule = {
     UI.closeModal(); App.loadModule('clients');
   },
   async deleteCli(id) {
-    if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify('⛔ Permission refusée','error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
     // Check BLs linked to this client (not BRs — clients are linked via BLs)
     const hasLinkedBLs = DB.getAll('bls').some(b => Number(b.clientId) === Number(id));
     if (hasLinkedBLs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات تسليم مرتبطة.':'Impossible: ce client a des BL liés — supprimez-les d\'abord.'),'error'); return; }
@@ -5906,11 +5942,11 @@ const EvalModule = {
           ${dayBRs.length ? `
           <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
             <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px">
-              <i class="fas fa-file-import" style="color:var(--primary)"></i> Bons de Réception (${dayBRs.length})
+              <i class="fas fa-file-import" style="color:var(--primary)"></i> ${T.isRTL() ? 'وصولات الاستلام' : 'Bons de Réception'} (${dayBRs.length})
             </div>
             <div class="table-wrap">
               <table class="data-table" style="font-size:12px">
-                <thead><tr><th>Référence</th><th>Fournisseur</th><th>HT</th><th>Timbre</th><th>TTC</th><th>Statut</th><th>BL</th></tr></thead>
+                <thead><tr><th>${T.isRTL() ? 'المرجع' : 'Référence'}</th><th>${T.isRTL() ? 'المورد' : 'Fournisseur'}</th><th>${T.isRTL() ? 'خ.ر' : 'HT'}</th><th>${T.isRTL() ? 'الطابع' : 'Timbre'}</th><th>${T.isRTL() ? 'م.ر' : 'TTC'}</th><th>${T.isRTL() ? 'الحالة' : 'Statut'}</th><th>BL</th></tr></thead>
                 <tbody>${brRows}</tbody>
                 <tfoot><tr>
                   <td colspan="4" style="padding:9px 14px;font-weight:700;text-align:right">TOTAL JOURNÉE</td>
@@ -5981,11 +6017,11 @@ const EvalModule = {
     const blSection = `
     <div class="card mb-2" style="overflow:hidden">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-        <h3><i class="fas fa-truck" style="color:var(--success)"></i> Historique BL <span class="badge badge-secondary">${userBLs.length}</span></h3>
+        <h3><i class="fas fa-truck" style="color:var(--success)"></i> ${T.isRTL() ? 'سجل وصولات التسليم' : 'Historique BL'} <span class="badge badge-secondary">${userBLs.length}</span></h3>
         <div style="display:flex;gap:8px;align-items:center">
-          <span style="font-size:12px;color:var(--text3)">Total Ventes: <strong style="color:var(--success)">${Utils.fmtCurrency(blTotal)}</strong></span>
+          <span style="font-size:12px;color:var(--text3)">${T.isRTL() ? 'إجمالي المبيعات:' : 'Total Ventes:'} <strong style="color:var(--success)">${Utils.fmtCurrency(blTotal)}</strong></span>
           <button class="btn btn-sm btn-outline" onclick="EvalModule._exportBLCSV(${u.id})" style="font-size:11px">
-            <i class="fas fa-file-csv"></i> Exporter CSV
+            <i class="fas fa-file-csv"></i> ${T.isRTL() ? 'تصدير CSV' : 'Exporter CSV'}
           </button>
         </div>
       </div>
@@ -5994,12 +6030,12 @@ const EvalModule = {
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
             <th style="padding:8px 14px;text-align:left;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">BL Réf</th>
-            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Client</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">${T.isRTL() ? 'الزبون' : 'Client'}</th>
             <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">BR lié</th>
-            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Date</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">${T.isRTL() ? 'التاريخ' : 'Date'}</th>
             <th style="padding:8px;text-align:right;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">TTC</th>
             <th style="padding:8px;text-align:center;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Retour</th>
-            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">Statut</th>
+            <th style="padding:8px;color:var(--text4);font-size:10px;font-weight:700;text-transform:uppercase">${T.isRTL() ? 'الحالة' : 'Statut'}</th>
           </tr></thead>
           <tbody>${blRows}</tbody>
           <tfoot><tr style="border-top:2px solid var(--border);background:var(--bg3)">
@@ -6112,7 +6148,7 @@ const EvalModule = {
     const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
     const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+(encodeURIComponent('\uFEFF'+csv));
     a.download=`BL_${u?.name||userId}_${Utils.today()}.csv`; a.click();
-    Utils.notify('CSV exporté','success');
+    Utils.notify(T.isRTL() ? 'تم تصدير CSV' : 'CSV exporté','success');
   }
 }; // ── end EvalModule ──
 
@@ -6128,6 +6164,7 @@ const CatalogueModule = {
   },
 
   _renderArticles() {
+    const isAR = T.isRTL();
     const q = this._q.toLowerCase();
     let items = DB.getAll('articles').filter(a => a && a.name).sort((a,b) => (a.name||'').localeCompare(b.name||''));
     if (q) items = items.filter(a => (a.name||'').toLowerCase().includes(q)||(a.unit||'').toLowerCase().includes(q));
@@ -6135,29 +6172,29 @@ const CatalogueModule = {
     return `<div style="padding:24px">
     <div class="card">
       <div class="card-header">
-        <h3><i class="fas fa-database"></i> ${T.isRTL()?"قاعدة البيانات — المواد والسائقين":"Base de données — Articles & Chauffeurs"}</h3>
+        <h3><i class="fas fa-database"></i> ${isAR ? "قاعدة البيانات — المواد والسائقين" : "Base de données — Articles & Chauffeurs"}</h3>
         <button class="btn btn-primary" onclick="CatalogueModule._showAddArticle()">
-          <i class="fas fa-plus"></i> Ajouter article
+          <i class="fas fa-plus"></i> ${isAR ? "إضافة مادة" : "Ajouter article"}
         </button>
       </div>
       <div style="display:flex;border-bottom:1px solid var(--border);background:var(--bg3)">
         <button class="settings-tab ${this._tab==='articles'?'active':''}" onclick="CatalogueModule._tab='articles';CatalogueModule._q='';App.loadModule('catalogue')">
-          <i class="fas fa-box"></i> Articles <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('articles').length}</span>
+          <i class="fas fa-box"></i> ${isAR ? "المواد" : "Articles"} <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('articles').length}</span>
         </button>
         <button class="settings-tab ${this._tab==='drivers'?'active':''}" onclick="CatalogueModule._tab='drivers';CatalogueModule._q='';App.loadModule('catalogue')">
-          <i class="fas fa-truck"></i> Chauffeurs <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('drivers').length}</span>
+          <i class="fas fa-truck"></i> ${isAR ? "السائقون" : "Chauffeurs"} <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('drivers').length}</span>
         </button>
       </div>
       <div class="filters-bar">
         <div class="filter-group" style="flex:1">
-          <label>${T.isRTL()?"بحث":"Rechercher"}</label>
-          <input type="text" id="cat-article-search" value="${Utils.escHTML(this._q)}" placeholder="Rechercher un article..."
+          <label>${isAR ? "بحث" : "Rechercher"}</label>
+          <input type="text" id="cat-article-search" value="${Utils.escHTML(this._q)}" placeholder="${isAR ? "بحث عن مادة..." : "Rechercher un article..."}"
             oninput="CatalogueModule._q=this.value;App.reloadDebounced('catalogue')">
         </div>
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>#</th><th>${T.isRTL()?"التسمية":"Désignation"}</th><th>${T.isRTL()?"الوحدة":"Unité"}</th><th>${T.isRTL()?"آخر سعر":"Dernier prix"}</th><th>${T.isRTL()?"مستخدم":"Utilisé"}</th><th>${T.isRTL()?"إجراءات":"Actions"}</th></tr></thead>
+          <thead><tr><th>#</th><th>${isAR ? "التسمية" : "Désignation"}</th><th>${isAR ? "الوحدة" : "Unité"}</th><th>${isAR ? "آخر سعر" : "Dernier prix"}</th><th>${isAR ? "مستخدم" : "Utilisé"}</th><th>${isAR ? "إجراءات" : "Actions"}</th></tr></thead>
           <tbody>
             ${items.length ? items.map((a,i) => {
               const usedCount = DB.getAll('brs').reduce((s,br) => s+(br.lines||[]).filter(l=>l.designation===a.name).length, 0);
@@ -6168,11 +6205,11 @@ const CatalogueModule = {
                 <td class="text-primary fw-bold">${Utils.fmtCurrency(a.price||0)}</td>
                 <td><span class="badge badge-secondary">${usedCount}x</span></td>
                 <td class="td-actions">
-                  <button class="btn btn-xs btn-outline" onclick="CatalogueModule._showEditArticle(${a.id})" title="${T.isRTL()?`تعديل`:`Modifier`}"><i class="fas fa-edit"></i></button>
-                  <button class="btn btn-xs btn-danger" onclick="CatalogueModule._deleteArticle(${a.id})" title="${T.isRTL()?`حذف`:`Supprimer`}"><i class="fas fa-trash"></i></button>
+                  <button class="btn btn-xs btn-outline" onclick="CatalogueModule._showEditArticle(${a.id})" title="${isAR ? 'تعديل' : 'Modifier'}"><i class="fas fa-edit"></i></button>
+                  <button class="btn btn-xs btn-danger" onclick="CatalogueModule._deleteArticle(${a.id})" title="${isAR ? 'حذف' : 'Supprimer'}"><i class="fas fa-trash"></i></button>
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-box-open"></i><h4>Aucun article</h4><p>Les articles s'ajoutent automatiquement lors des BR.</p></div></td></tr>`}
+            }).join('') : `<tr><td colspan="6"><div class="empty-state"><i class="fas fa-box-open"></i><h4>${isAR ? 'لا توجد مواد' : 'Aucun article'}</h4><p>${isAR ? 'تضاف المواد تلقائياً عند إنشاء وصولات الاستلام.' : "Les articles s'ajoutent automatiquement lors des BR."}</p></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -6180,6 +6217,7 @@ const CatalogueModule = {
   },
 
   _renderDrivers() {
+    const isAR = T.isRTL();
     const q = this._q.toLowerCase();
     let items = DB.getAll('drivers').sort((a,b) => (a.name||'').localeCompare(b.name||''));
     if (q) items = items.filter(d => (d.name||'').toLowerCase().includes(q)||(d.imm||'').toLowerCase().includes(q));
@@ -6187,29 +6225,29 @@ const CatalogueModule = {
     return `<div style="padding:24px">
     <div class="card">
       <div class="card-header">
-        <h3><i class="fas fa-database"></i> ${T.isRTL()?"قاعدة البيانات — المواد والسائقين":"Base de données — Articles & Chauffeurs"}</h3>
+        <h3><i class="fas fa-database"></i> ${isAR ? "قاعدة البيانات — المواد والسائقين" : "Base de données — Articles & Chauffeurs"}</h3>
         <button class="btn btn-primary" onclick="CatalogueModule._showAddDriver()">
-          <i class="fas fa-plus"></i> Ajouter chauffeur
+          <i class="fas fa-plus"></i> ${isAR ? "إضافة سائق" : "Ajouter chauffeur"}
         </button>
       </div>
       <div style="display:flex;border-bottom:1px solid var(--border);background:var(--bg3)">
         <button class="settings-tab ${this._tab==='articles'?'active':''}" onclick="CatalogueModule._tab='articles';CatalogueModule._q='';App.loadModule('catalogue')">
-          <i class="fas fa-box"></i> Articles <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('articles').length}</span>
+          <i class="fas fa-box"></i> ${isAR ? "المواد" : "Articles"} <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('articles').length}</span>
         </button>
         <button class="settings-tab ${this._tab==='drivers'?'active':''}" onclick="CatalogueModule._tab='drivers';CatalogueModule._q='';App.loadModule('catalogue')">
-          <i class="fas fa-truck"></i> Chauffeurs <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('drivers').length}</span>
+          <i class="fas fa-truck"></i> ${isAR ? "السائقون" : "Chauffeurs"} <span class="badge badge-secondary" style="margin-left:4px">${DB.getAll('drivers').length}</span>
         </button>
       </div>
       <div class="filters-bar">
         <div class="filter-group" style="flex:1">
-          <label>${T.isRTL()?"بحث":"Rechercher"}</label>
-          <input type="text" id="cat-driver-search" value="${Utils.escHTML(this._q)}" placeholder="Rechercher un chauffeur..."
+          <label>${isAR ? "بحث" : "Rechercher"}</label>
+          <input type="text" id="cat-driver-search" value="${Utils.escHTML(this._q)}" placeholder="${isAR ? "بحث عن سائق..." : "Rechercher un chauffeur..."}"
             oninput="CatalogueModule._q=this.value;App.reloadDebounced('catalogue')">
         </div>
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>#</th><th>${T.isRTL()?"اسم السائق":"Nom du chauffeur"}</th><th>${T.isRTL()?"لوحة التسجيل":"Immatriculation"}</th><th>${T.isRTL()?"التسليمات":"Livraisons"}</th><th>${T.isRTL()?"إجراءات":"Actions"}</th></tr></thead>
+          <thead><tr><th>#</th><th>${isAR ? "اسم السائق" : "Nom du chauffeur"}</th><th>${isAR ? "لوحة التسجيل" : "Immatriculation"}</th><th>${isAR ? "التسليمات" : "Livraisons"}</th><th>${isAR ? "إجراءات" : "Actions"}</th></tr></thead>
           <tbody>
             ${items.length ? items.map((d,i) => {
               const blCount = DB.getAll('bls').filter(bl => bl.driverName===d.name).length;
@@ -6219,11 +6257,11 @@ const CatalogueModule = {
                 <td><code>${Utils.escHTML(d.imm||'—')}</code></td>
                 <td><span class="badge badge-success">${blCount}</span></td>
                 <td class="td-actions">
-                  <button class="btn btn-xs btn-outline" onclick="CatalogueModule._showEditDriver(${d.id})" title="${T.isRTL()?`تعديل`:`Modifier`}"><i class="fas fa-edit"></i></button>
-                  <button class="btn btn-xs btn-danger" onclick="CatalogueModule._deleteDriver(${d.id})" title="${T.isRTL()?`حذف`:`Supprimer`}"><i class="fas fa-trash"></i></button>
+                  <button class="btn btn-xs btn-outline" onclick="CatalogueModule._showEditDriver(${d.id})" title="${isAR ? 'تعديل' : 'Modifier'}"><i class="fas fa-edit"></i></button>
+                  <button class="btn btn-xs btn-danger" onclick="CatalogueModule._deleteDriver(${d.id})" title="${isAR ? 'حذف' : 'Supprimer'}"><i class="fas fa-trash"></i></button>
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="5"><div class="empty-state"><i class="fas fa-truck"></i><h4>Aucun chauffeur</h4><p>Les chauffeurs s'ajoutent automatiquement lors des BL.</p></div></td></tr>`}
+            }).join('') : `<tr><td colspan="5"><div class="empty-state"><i class="fas fa-truck"></i><h4>${isAR ? 'لا يوجد سائقون' : 'Aucun chauffeur'}</h4><p>${isAR ? 'يضاف السائقون تلقائياً عند إنشاء وصولات التسليم.' : "Les chauffeurs s'ajoutent automatiquement lors des BL."}</p></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -6231,22 +6269,25 @@ const CatalogueModule = {
   },
 
   _articleForm(a={}) {
+    const isAR = T.isRTL();
     return `<div class="form-grid cols-2">
-      <div class="form-group span-full"><label class="required">${T.isRTL()?"التسمية":"Désignation"}</label><input id="cat-name" value="${Utils.escHTML(a.name||'')}" placeholder="Nom de l'article"></div>
-      <div class="form-group"><label>${T.isRTL()?"الوحدة":"Unité"}</label><input id="cat-unit" value="${Utils.escHTML(a.unit||'')}" placeholder="pcs, m², kg..."></div>
-      <div class="form-group"><label>Prix par défaut (DA)</label><input type="number" id="cat-price" value="${a.price||0}" min="0" step="any"></div>
+      <div class="form-group span-full"><label class="required">${isAR ? "التسمية" : "Désignation"}</label><input id="cat-name" value="${Utils.escHTML(a.name||'')}" placeholder="${isAR ? "اسم المادة" : "Nom de l'article"}"></div>
+      <div class="form-group"><label>${isAR ? "الوحدة" : "Unité"}</label><input id="cat-unit" value="${Utils.escHTML(a.unit||'')}" placeholder="pcs, m², kg..."></div>
+      <div class="form-group"><label>${isAR ? "السعر الافتراضي (د.ج)" : "Prix par défaut (DA)"}</label><input type="number" id="cat-price" value="${a.price||0}" min="0" step="any"></div>
     </div>`;
   },
   _showAddArticle() {
-    UI.showModal('<i class="fas fa-plus"></i> Nouvel Article', this._articleForm(), `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">Annuler</button>
-      <button class="btn btn-primary" onclick="CatalogueModule._saveArticle(null)"><i class="fas fa-save"></i> Enregistrer</button>`, 'md');
+    const isAR = T.isRTL();
+    UI.showModal(`<i class="fas fa-plus"></i> ${isAR ? 'مادة جديدة' : 'Nouvel Article'}`, this._articleForm(), `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-primary" onclick="CatalogueModule._saveArticle(null)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
   },
   _showEditArticle(id) {
+    const isAR = T.isRTL();
     const a = DB.getById('articles', id); if (!a) return;
-    UI.showModal('<i class="fas fa-edit"></i> Modifier Article', this._articleForm(a), `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">Annuler</button>
-      <button class="btn btn-warning" onclick="CatalogueModule._saveArticle(${id})"><i class="fas fa-save"></i> Enregistrer</button>`, 'md');
+    UI.showModal(`<i class="fas fa-edit"></i> ${isAR ? 'تعديل المادة' : 'Modifier Article'}`, this._articleForm(a), `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-warning" onclick="CatalogueModule._saveArticle(${id})"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
   },
   _saveArticle(id) {
     const name  = (document.getElementById('cat-name')?.value||'').trim();
@@ -6264,21 +6305,24 @@ const CatalogueModule = {
   },
 
   _driverForm(d={}) {
+    const isAR = T.isRTL();
     return `<div class="form-grid cols-2">
-      <div class="form-group"><label class="required">${T.isRTL()?"اسم السائق":"Nom du chauffeur"}</label><input id="drv-name" value="${Utils.escHTML(d.name||'')}" placeholder="Prénom Nom"></div>
-      <div class="form-group"><label>${T.isRTL()?"لوحة التسجيل":"Immatriculation"}</label><input id="drv-imm" value="${Utils.escHTML(d.imm||'')}" placeholder="17-123-16"></div>
+      <div class="form-group"><label class="required">${isAR ? "اسم السائق" : "Nom du chauffeur"}</label><input id="drv-name" value="${Utils.escHTML(d.name||'')}" placeholder="${isAR ? "الاسم واللقب" : "Prénom Nom"}"></div>
+      <div class="form-group"><label>${isAR ? "لوحة التسجيل" : "Immatriculation"}</label><input id="drv-imm" value="${Utils.escHTML(d.imm||'')}" placeholder="17-123-16"></div>
     </div>`;
   },
   _showAddDriver() {
-    UI.showModal('<i class="fas fa-plus"></i> Nouveau Chauffeur', this._driverForm(), `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">Annuler</button>
-      <button class="btn btn-primary" onclick="CatalogueModule._saveDriver(null)"><i class="fas fa-save"></i> Enregistrer</button>`, 'md');
+    const isAR = T.isRTL();
+    UI.showModal(`<i class="fas fa-plus"></i> ${isAR ? 'سائق جديد' : 'Nouveau Chauffeur'}`, this._driverForm(), `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-primary" onclick="CatalogueModule._saveDriver(null)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
   },
   _showEditDriver(id) {
+    const isAR = T.isRTL();
     const d = DB.getById('drivers', id); if (!d) return;
-    UI.showModal('<i class="fas fa-edit"></i> Modifier Chauffeur', this._driverForm(d), `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">Annuler</button>
-      <button class="btn btn-warning" onclick="CatalogueModule._saveDriver(${id})"><i class="fas fa-save"></i> Enregistrer</button>`, 'md');
+    UI.showModal(`<i class="fas fa-edit"></i> ${isAR ? 'تعديل السائق' : 'Modifier Chauffeur'}`, this._driverForm(d), `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-warning" onclick="CatalogueModule._saveDriver(${id})"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
   },
   _saveDriver(id) {
     const name = (document.getElementById('drv-name')?.value||'').trim();
@@ -6301,7 +6345,7 @@ const CatalogueModule = {
 // ═══════════════════════════════════════════════════════════════
 const UsersModule = {
   render() {
-    if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> Accès administrateur</div></div>`;
+    if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> ${T.isRTL() ? 'وصول المسؤول فقط' : 'Accès administrateur'}</div></div>`;
     const isAR = T.isRTL();
     const users = DB.getAll('users');
     const sessions = DB.getAll('sessions');
@@ -6309,8 +6353,8 @@ const UsersModule = {
     <div class="card">
       <div class="card-header" style="flex-wrap:wrap;gap:12px">
         <div>
-          <h3 style="margin:0"><i class="fas fa-users-cog"></i> ${T.get('usr_title')} & Ressources Humaines</h3>
-          <p style="font-size:12px;color:var(--text4);margin:4px 0 0">Gestion des profils employés, photos, départements, salaires et permissions</p>
+          <h3 style="margin:0"><i class="fas fa-users-cog"></i> ${T.get('usr_title')} ${isAR ? 'والموارد البشرية' : '& Ressources Humaines'}</h3>
+          <p style="font-size:12px;color:var(--text4);margin:4px 0 0">${isAR ? 'إدارة ملفات الموظفين، الصور، الأقسام، الرواتب والصلاحيات' : 'Gestion des profils employés, photos, départements, salaires et permissions'}</p>
         </div>
         <button class="btn btn-primary" onclick="UsersModule.showCreate()"><i class="fas fa-user-plus"></i> ${T.get('usr_new')}</button>
       </div>
@@ -6318,13 +6362,13 @@ const UsersModule = {
         <table class="data-table" style="font-size:13px">
           <thead>
             <tr>
-              <th>Collaborateur</th>
-              <th>Identifiant</th>
-              <th>Département</th>
-              <th>Poste / Rôle</th>
-              <th>Salaire Base</th>
-              <th>Statut</th>
-              <th>Dernière session</th>
+              <th>${isAR ? 'الموظف' : 'Collaborateur'}</th>
+              <th>${isAR ? 'اسم المستخدم' : 'Identifiant'}</th>
+              <th>${isAR ? 'القسم' : 'Département'}</th>
+              <th>${isAR ? 'المنصب / الدور' : 'Poste / Rôle'}</th>
+              <th>${isAR ? 'الراتب الأساسي' : 'Salaire Base'}</th>
+              <th>${isAR ? 'الحالة' : 'Statut'}</th>
+              <th>${isAR ? 'آخر جلسة' : 'Dernière session'}</th>
               <th>${T.get('col_actions')}</th>
             </tr>
           </thead>
@@ -6346,22 +6390,22 @@ const UsersModule = {
                   </div>
                 </td>
                 <td><code>${Utils.escHTML(u.username)}</code></td>
-                <td><span style="font-size:12px;color:var(--text2)">${Utils.escHTML(u.department || 'Général')}</span></td>
+                <td><span style="font-size:12px;color:var(--text2)">${Utils.escHTML(u.department || (isAR ? 'عام' : 'Général'))}</span></td>
                 <td>
                   <div style="font-weight:600;font-size:12px">${Utils.escHTML(u.jobTitle || '—')}</div>
                   ${u.role === 'supplier'
-                    ? `<span class="badge" style="background:#0d9488;color:#fff;font-size:10px;margin-top:2px"><i class="fas fa-industry"></i> ${T.get('role_supplier') || 'Usine / Fournisseur'}</span>`
+                    ? `<span class="badge" style="background:#0d9488;color:#fff;font-size:10px;margin-top:2px"><i class="fas fa-industry"></i> ${T.get('role_supplier') || (isAR ? 'مصنع / مورد' : 'Usine / Fournisseur')}</span>`
                     : `<span class="badge ${u.role==='admin'?'badge-danger':'badge-primary'}" style="font-size:10px;margin-top:2px">${T.get('role_'+u.role)}</span>`
                   }
-                  ${u.supplierId ? `<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-industry"></i> ${Utils.escHTML(DB.getById('suppliers', u.supplierId)?.name || 'Usine')}</div>` : ''}
+                  ${u.supplierId ? `<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-industry"></i> ${Utils.escHTML(DB.getById('suppliers', u.supplierId)?.name || (isAR ? 'المصنع' : 'Usine'))}</div>` : ''}
                 </td>
                 <td style="font-weight:700;color:var(--primary)">${u.baseSalary ? Utils.fmtCurrency(u.baseSalary) : '<span style="color:var(--text4)">—</span>'}</td>
                 <td><span class="badge ${u.active!==false?'badge-success':'badge-secondary'}">${u.active!==false?T.get('usr_active'):T.get('usr_inactive')}</span></td>
                 <td style="color:var(--text3);font-size:12px">${lastSess ? Utils.fmtDate(lastSess.date) : '<span class="text-muted">—</span>'}</td>
                 <td class="td-actions">
-                  <button class="btn btn-xs btn-outline" onclick="UsersModule.showEdit(${u.id})" title="Modifier"><i class="fas fa-edit"></i></button>
+                  <button class="btn btn-xs btn-outline" onclick="UsersModule.showEdit(${u.id})" title="${isAR ? 'تعديل' : 'Modifier'}"><i class="fas fa-edit"></i></button>
                   ${u.id !== Auth.getCurrentUser()?.id ? `
-                    <button class="btn btn-xs ${u.active!==false?'btn-warning':'btn-success'}" onclick="UsersModule.toggleActive(${u.id})" title="${u.active!==false?'Désactiver':'Activer'}">${u.active!==false?'<i class="fas fa-ban"></i>':'<i class="fas fa-check"></i>'}</button>
+                    <button class="btn btn-xs ${u.active!==false?'btn-warning':'btn-success'}" onclick="UsersModule.toggleActive(${u.id})" title="${u.active!==false?(isAR?'تعطيل':'Désactiver'):(isAR?'تفعيل':'Activer')}">${u.active!==false?'<i class="fas fa-ban"></i>':'<i class="fas fa-check"></i>'}</button>
                     <button class="btn btn-xs btn-danger" onclick="UsersModule.deleteUser(${u.id})" title="${isAR?'حذف':'Supprimer'}"><i class="fas fa-trash-alt"></i></button>
                   ` : ''}
                 </td>
@@ -6374,14 +6418,22 @@ const UsersModule = {
   },
 
   _form(u={}) {
+    const isAR = T.isRTL();
     const pl = {
-      canCreateBR:{label:'Créer des BR',icon:'fa-file-import'},canCreateBL:{label:'Créer des BL',icon:'fa-file-export'},
-      canViewBRs:{label:'Voir les BR',icon:'fa-eye'},canViewBLs:{label:'Voir les BL',icon:'fa-eye'},
-      canViewCaisse:{label:'Voir sa mini caisse',icon:'fa-cash-register'},canViewSuppliers:{label:'Voir fournisseurs',icon:'fa-building'},
-      canViewClients:{label:'Voir clients',icon:'fa-users'},canViewStats:{label:'Voir statistiques',icon:'fa-chart-bar'},
-      canViewCatalogue:{label:'Catalogue',icon:'fa-database'},canViewBank:{label:'Comptes banque',icon:'fa-university'},
-      canEditSuppliers:{label:'Modifier fournisseurs',icon:'fa-edit'},canEditClients:{label:'Modifier clients',icon:'fa-edit'},
-      canDeleteBR:{label:'Supprimer des BR',icon:'fa-trash'},canDeleteBL:{label:'Supprimer des BL',icon:'fa-trash'}
+      canCreateBR:{label: isAR ? 'إنشاء وصولات الاستلام (BR)' : 'Créer des BR', icon:'fa-file-import'},
+      canCreateBL:{label: isAR ? 'إنشاء وصولات التسليم (BL)' : 'Créer des BL', icon:'fa-file-export'},
+      canViewBRs:{label: isAR ? 'عرض وصولات الاستلام' : 'Voir les BR', icon:'fa-eye'},
+      canViewBLs:{label: isAR ? 'عرض وصولات التسليم' : 'Voir les BL', icon:'fa-eye'},
+      canViewCaisse:{label: isAR ? 'عرض الصندوق الخاص' : 'Voir sa mini caisse', icon:'fa-cash-register'},
+      canViewSuppliers:{label: isAR ? 'عرض الموردين' : 'Voir fournisseurs', icon:'fa-building'},
+      canViewClients:{label: isAR ? 'عرض الزبائن' : 'Voir clients', icon:'fa-users'},
+      canViewStats:{label: isAR ? 'عرض الإحصائيات' : 'Voir statistiques', icon:'fa-chart-bar'},
+      canViewCatalogue:{label: isAR ? 'قاعدة المواد والسائقين' : 'Catalogue', icon:'fa-database'},
+      canViewBank:{label: isAR ? 'حسابات البنك' : 'Comptes banque', icon:'fa-university'},
+      canEditSuppliers:{label: isAR ? 'تعديل الموردين' : 'Modifier fournisseurs', icon:'fa-edit'},
+      canEditClients:{label: isAR ? 'تعديل الزبائن' : 'Modifier clients', icon:'fa-edit'},
+      canDeleteBR:{label: isAR ? 'حذف وصولات الاستلام' : 'Supprimer des BR', icon:'fa-trash'},
+      canDeleteBL:{label: isAR ? 'حذف وصولات التسليم' : 'Supprimer des BL', icon:'fa-trash'}
     };
     const cp = u.id ? Auth.getUserPermissions(u) : Auth._defaultPermissions();
     const pg = Object.entries(pl).map(([k,m]) => {
@@ -6400,12 +6452,12 @@ const UsersModule = {
       <div style="position:relative;width:76px;height:76px;border-radius:16px;overflow:hidden;background:var(--bg2);border:2px dashed var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <img id="uAvatarPreview" src="${previewSrc}" style="width:100%;height:100%;object-fit:cover;${previewSrc?'':'display:none'}">
         <div id="uAvatarPlaceholder" style="${previewSrc?'display:none':''};text-align:center;color:var(--text4);font-size:11px">
-          <i class="fas fa-camera" style="font-size:22px;display:block;margin-bottom:4px;color:var(--primary)"></i> Photo
+          <i class="fas fa-camera" style="font-size:22px;display:block;margin-bottom:4px;color:var(--primary)"></i> ${isAR ? 'صورة' : 'Photo'}
         </div>
       </div>
       <div style="flex:1">
-        <label style="font-weight:700;font-size:13px;color:var(--text);display:block;margin-bottom:4px">Photo de profil / Avatar RH</label>
-        <p style="font-size:11px;color:var(--text4);margin:0 0 10px">Formats JPG, PNG ou WebP. Utilisé dans le pointage et l'application.</p>
+        <label style="font-weight:700;font-size:13px;color:var(--text);display:block;margin-bottom:4px">${isAR ? 'الصورة الشخصية / الصورة الرمزية' : 'Photo de profil / Avatar RH'}</label>
+        <p style="font-size:11px;color:var(--text4);margin:0 0 10px">${isAR ? 'صيغ JPG أو PNG أو WebP. تُستخدم في تسجيل الحضور والتطبيق.' : "Formats JPG, PNG ou WebP. Utilisé dans le pointage et l'application."}</p>
         <input type="file" id="uAvatarFileInput" accept="image/*" style="font-size:12px" onchange="
           const file = this.files[0];
           if (file) {
@@ -6426,9 +6478,9 @@ const UsersModule = {
 
     <!-- Identifiants & Rôle -->
     <div class="form-grid cols-2" style="margin-bottom:16px">
-      <div class="form-group"><label class="required">${T.get('usr_name')}</label><input id="uName" value="${Utils.escHTML(u.name||'')}" required placeholder="Nom et prénom"></div>
-      <div class="form-group"><label class="required">${T.get('usr_login')}</label><input id="uUsername" value="${Utils.escHTML(u.username||'')}" required autocomplete="off" placeholder="Nom d'utilisateur"></div>
-      <div class="form-group"><label ${!u.id?'class="required"':''}>${T.get('usr_pass')} ${u.id?'(vide = inchangé)':''}</label>
+      <div class="form-group"><label class="required">${T.get('usr_name')}</label><input id="uName" value="${Utils.escHTML(u.name||'')}" required placeholder="${isAR ? 'الاسم واللقب' : 'Nom et prénom'}"></div>
+      <div class="form-group"><label class="required">${T.get('usr_login')}</label><input id="uUsername" value="${Utils.escHTML(u.username||'')}" required autocomplete="off" placeholder="${isAR ? 'اسم المستخدم' : "Nom d'utilisateur"}"></div>
+      <div class="form-group"><label ${!u.id?'class="required"':''}>${T.get('usr_pass')} ${u.id?(isAR ? '(فارغ = بدون تغيير)' : '(vide = inchangé)'):''}</label>
         <input type="password" id="uPassword" ${!u.id?'required':''} autocomplete="new-password"></div>
       <div class="form-group"><label>${T.get('usr_role')}</label>
         <select id="uRole" onchange="
@@ -6439,15 +6491,15 @@ const UsersModule = {
           if (sg) sg.style.display = isSup ? 'block' : 'none';
         ">
           <option value="user" ${u.role!=='admin'&&u.role!=='supplier'&&u.role!=='supplier_agent'?'selected':''}>${T.get('role_user')}</option>
-          <option value="supplier" ${u.role==='supplier'?'selected':''}>🏭 Usine / Fournisseur (Portail Enlèvements)</option>
-          <option value="supplier_agent" ${u.role==='supplier_agent'?'selected':''}>👷 Agent Usine (Validation sur site uniquement)</option>
+          <option value="supplier" ${u.role==='supplier'?'selected':''}>${isAR ? '🏭 مصنع / مورد (بوابة عمليات السحب)' : '🏭 Usine / Fournisseur (Portail Enlèvements)'}</option>
+          <option value="supplier_agent" ${u.role==='supplier_agent'?'selected':''}>${isAR ? '👷 وكيل المصنع (تحقق فوري في الموقع)' : '👷 Agent Usine (Validation sur site uniquement)'}</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>${T.get('role_admin')}</option>
         </select>
       </div>
       <div class="form-group" id="uSupplierSelectGroup" style="display:${u.role==='supplier'||u.role==='supplier_agent'?'block':'none'}">
-        <label class="required"><i class="fas fa-industry"></i> Usine / Fournisseur associé</label>
+        <label class="required"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد المرتبط' : 'Usine / Fournisseur associé'}</label>
         <select id="uSupplierId">
-          <option value="">-- Sélectionner l'Usine --</option>
+          <option value="">${isAR ? '-- اختر المصنع --' : "-- Sélectionner l'Usine --"}</option>
           ${DB.getAll('suppliers').map(s => `<option value="${s.id}" ${String(u.supplierId)===String(s.id)?'selected':''}>${Utils.escHTML(s.name)}</option>`).join('')}
         </select>
       </div>
@@ -6456,31 +6508,31 @@ const UsersModule = {
     <!-- Informations RH (Ressources Humaines) -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
       <div style="font-weight:800;font-size:13px;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:6px">
-        <i class="fas fa-id-card-alt" style="color:var(--primary)"></i> Fiche Ressources Humaines (RH)
+        <i class="fas fa-id-card-alt" style="color:var(--primary)"></i> ${isAR ? 'بطاقة الموارد البشرية' : 'Fiche Ressources Humaines (RH)'}
       </div>
       <div class="form-grid cols-2">
-        <div class="form-group"><label>Poste / Fonction</label><input id="uJobTitle" value="${Utils.escHTML(u.jobTitle||'')}" placeholder="Ex: Caissier Vendeur, Responsable Dépôt..."></div>
-        <div class="form-group"><label>Département / Service</label>
+        <div class="form-group"><label>${isAR ? 'المنصب / الوظيفة' : 'Poste / Fonction'}</label><input id="uJobTitle" value="${Utils.escHTML(u.jobTitle||'')}" placeholder="${isAR ? 'مثال: أمين صندوق، مسؤول مستودع...' : 'Ex: Caissier Vendeur, Responsable Dépôt...'}"></div>
+        <div class="form-group"><label>${isAR ? 'القسم / المصلحة' : 'Département / Service'}</label>
           <select id="uDepartment">
-            <option value="Ventes & Caisse" ${(u.department||'')==='Ventes & Caisse'?'selected':''}>Ventes & Caisse</option>
-            <option value="Approvisionnement & Stock" ${(u.department||'')==='Approvisionnement & Stock'?'selected':''}>Approvisionnement & Stock</option>
-            <option value="Logistique & Livraison" ${(u.department||'')==='Logistique & Livraison'?'selected':''}>Logistique & Livraison</option>
-            <option value="Administration & Comptabilité" ${(u.department||'')==='Administration & Comptabilité'?'selected':''}>Administration & Comptabilité</option>
-            <option value="Direction Générale" ${(u.department||'')==='Direction Générale'?'selected':''}>Direction Générale</option>
+            <option value="Ventes & Caisse" ${(u.department||'')==='Ventes & Caisse'?'selected':''}>${isAR ? 'المبيعات والصندوق' : 'Ventes & Caisse'}</option>
+            <option value="Approvisionnement & Stock" ${(u.department||'')==='Approvisionnement & Stock'?'selected':''}>${isAR ? 'المشتريات والمخزون' : 'Approvisionnement & Stock'}</option>
+            <option value="Logistique & Livraison" ${(u.department||'')==='Logistique & Livraison'?'selected':''}>${isAR ? 'اللوجستيك والتسليم' : 'Logistique & Livraison'}</option>
+            <option value="Administration & Comptabilité" ${(u.department||'')==='Administration & Comptabilité'?'selected':''}>${isAR ? 'الإدارة والمحاسبة' : 'Administration & Comptabilité'}</option>
+            <option value="Direction Générale" ${(u.department||'')==='Direction Générale'?'selected':''}>${isAR ? 'الإدارة العامة' : 'Direction Générale'}</option>
           </select>
         </div>
-        <div class="form-group"><label>Salaire de base mensuel (DA)</label><input type="number" id="uBaseSalary" value="${u.baseSalary||''}" placeholder="Ex: 50000" min="0" step="any"></div>
-        <div class="form-group"><label>Taux horaire HS (DA/h)</label><input type="number" id="uTauxHoraire" value="${u.tauxHoraire||''}" placeholder="Ex: 300" min="0" step="any"></div>
-        <div class="form-group"><label>Solde congé annuel (jours)</label><input type="number" id="uCongeBalance" value="${u.congeBalance||30}" placeholder="30" min="0" step="1"></div>
-        <div class="form-group"><label>Date d'embauche</label><input type="date" id="uHireDate" value="${u.hireDate||''}"></div>
-        <div class="form-group"><label>N° Téléphone</label><input type="text" id="uPhone" value="${Utils.escHTML(u.phone||'')}" placeholder="Ex: 0550 12 34 56"></div>
-        <div class="form-group"><label>Remarques / Notes RH</label><input type="text" id="uRhNotes" value="${Utils.escHTML(u.rhNotes||'')}" placeholder="Notes internes..."></div>
+        <div class="form-group"><label>${isAR ? 'الراتب الأساسي الشهري (د.ج)' : 'Salaire de base mensuel (DA)'}</label><input type="number" id="uBaseSalary" value="${u.baseSalary||''}" placeholder="Ex: 50000" min="0" step="any"></div>
+        <div class="form-group"><label>${isAR ? 'أجر الساعات الإضافية (د.ج/س)' : 'Taux horaire HS (DA/h)'}</label><input type="number" id="uTauxHoraire" value="${u.tauxHoraire||''}" placeholder="Ex: 300" min="0" step="any"></div>
+        <div class="form-group"><label>${isAR ? 'رصيد العطل السنوية (أيام)' : 'Solde congé annuel (jours)'}</label><input type="number" id="uCongeBalance" value="${u.congeBalance||30}" placeholder="30" min="0" step="1"></div>
+        <div class="form-group"><label>${isAR ? 'تاريخ التوظيف' : "Date d'embauche"}</label><input type="date" id="uHireDate" value="${u.hireDate||''}"></div>
+        <div class="form-group"><label>${isAR ? 'رقم الهاتف' : 'N° Téléphone'}</label><input type="text" id="uPhone" value="${Utils.escHTML(u.phone||'')}" placeholder="Ex: 0550 12 34 56"></div>
+        <div class="form-group"><label>${isAR ? 'ملاحظات إدارية' : 'Remarques / Notes RH'}</label><input type="text" id="uRhNotes" value="${Utils.escHTML(u.rhNotes||'')}" placeholder="${isAR ? 'ملاحظات داخلية...' : 'Notes internes...'}"></div>
       </div>
     </div>
 
     <!-- Permissions Section -->
     <div id="permSection" style="display:${u.role==='admin'?'none':'block'};margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-      <div style="font-weight:700;font-size:13px;margin-bottom:10px"><i class="fas fa-shield-alt" style="color:var(--primary)"></i> Permissions d'accès à l'ERP</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px"><i class="fas fa-shield-alt" style="color:var(--primary)"></i> ${isAR ? 'صلاحيات الوصول إلى النظام' : "Permissions d'accès à l'ERP"}</div>
       <div class="perm-grid">${pg}</div>
     </div>`;
   },
@@ -6492,14 +6544,16 @@ const UsersModule = {
   },
 
   showEdit(id) {
+    const isAR = T.isRTL();
     const u = DB.getById('users', id);
     if (!u) return;
-    UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} Collaborateur`, this._form(u), `
+    UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} ${isAR ? 'الموظف' : 'Collaborateur'}`, this._form(u), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="UsersModule._save(${id})"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'lg');
   },
 
   _save(id) {
+    const isAR = T.isRTL();
     const name = (document.getElementById('uName')?.value||'').trim();
     const username = (document.getElementById('uUsername')?.value||'').trim().toLowerCase();
     const password = document.getElementById('uPassword')?.value||'';
@@ -6518,7 +6572,7 @@ const UsersModule = {
     if (!name||!username) { Utils.notify((T.isRTL()?'الحقول مطلوبة':'Champs requis'), 'error'); return; }
     if (!id && !password) { Utils.notify(T.get('usr_pass')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     if ((role === 'supplier' || role === 'supplier_agent') && !supplierId) {
-      Utils.notify("Veuillez sélectionner l'Usine / Fournisseur associé à ce compte", 'error');
+      Utils.notify(isAR ? "يرجى اختيار المصنع / المورد المرتبط بهذا الحساب" : "Veuillez sélectionner l'Usine / Fournisseur associé à ce compte", 'error');
       return;
     }
     const dup = DB.getAll('users').find(u => u.username===username && u.id!==id);
@@ -6537,69 +6591,71 @@ const UsersModule = {
 
     if (id) {
       DB.update('users', id, data);
-      Utils.notify('✅ Collaborateur modifié avec succès', 'success');
+      Utils.notify(isAR ? '✅ تم تعديل الموظف بنجاح' : '✅ Collaborateur modifié avec succès', 'success');
     } else {
       DB.insert('users', { ...data, active: true });
-      Utils.notify('✅ Collaborateur créé avec succès', 'success');
+      Utils.notify(isAR ? '✅ تم إنشاء حساب الموظف بنجاح' : '✅ Collaborateur créé avec succès', 'success');
     }
     UI.closeModal();
     App.loadModule('users');
   },
 
   toggleActive(id) {
+    const isAR = T.isRTL();
     const u = DB.getById('users', id);
     if (!u) return;
     if (u.role === 'admin' && u.active !== false) {
       const admins = DB.getAll('users').filter(x => x.role === 'admin' && x.active !== false);
       if (admins.length <= 1) {
-        Utils.notify('Impossible de désactiver le dernier admin', 'error');
+        Utils.notify(isAR ? 'لا يمكن تعطيل المسؤول الأخير' : 'Impossible de désactiver le dernier admin', 'error');
         return;
       }
     }
     DB.update('users', id, { active: u.active === false });
-    Utils.notify('Statut collaborateur mis à jour', 'success');
+    Utils.notify(isAR ? 'تم تحديث حالة الموظف' : 'Statut collaborateur mis à jour', 'success');
     App.loadModule('users');
   },
 
   async deleteUser(id) {
+    const isAR = T.isRTL();
     const u = DB.getById('users', id);
     if (!u) return;
     const me = Auth.getCurrentUser();
     if (u.id === me?.id) {
-      Utils.notify('Impossible de supprimer votre propre compte', 'error');
+      Utils.notify(isAR ? 'لا يمكنك حذف حسابك الخاص' : 'Impossible de supprimer votre propre compte', 'error');
       return;
     }
     if (u.role === 'admin') {
       const admins = DB.getAll('users').filter(x => x.role === 'admin');
       if (admins.length <= 1) {
-        Utils.notify('Impossible de supprimer le dernier administrateur', 'error');
+        Utils.notify(isAR ? 'لا يمكن حذف المسؤول الأخير' : 'Impossible de supprimer le dernier administrateur', 'error');
         return;
       }
     }
     const name = u.name || u.username;
     const ok = await Utils.confirm2(
-      'Supprimer ce collaborateur ?',
-      `Collaborateur : "${name}"\nCette action est irréversible.`
+      T.isRTL() ? 'حذف هذا الموظف؟' : 'Supprimer ce collaborateur ?',
+      T.isRTL() ? `الموظف : "${name}"\nهذا الإجراء لا يمكن التراجع عنه.` : `Collaborateur : "${name}"\nCette action est irréversible.`
     );
     if (!ok) return;
     DB.delete('users', id);
-    Utils.notify('✅ Collaborateur supprimé', 'success');
+    Utils.notify(T.isRTL() ? '✅ تم حذف الموظف' : '✅ Collaborateur supprimé', 'success');
     App.loadModule('users');
   }
 };
 const SettingsModule = {
   _tab: 'company',
   render() {
-    if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> Accès administrateur</div></div>`;
+    if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> ${T.isRTL() ? 'وصول المسؤول فقط' : 'Accès administrateur'}</div></div>`;
     const s = DB.getSettings();
     const isAR = T.isRTL();
     const TABS = [
       {id:'company', icon:'fa-building',   label:T.get('set_company'),  color:'#3b82f6'},
       {id:'timbre',  icon:'fa-stamp',       label:T.get('set_timbre'),   color:'#f59e0b'},
       {id:'appear',  icon:'fa-palette',     label:T.get('set_theme'),    color:'#8b5cf6'},
-      {id:'banks',   icon:'fa-university',  label:'Banques',             color:'#10b981'},
-      {id:'bank_fees', icon:'fa-money-check-alt', label:'Frais Bancaires', color:'#dc2626'},
-      {id:'rh',      icon:'fa-user-clock',  label:'RH / Paie',           color:'#6366f1'},
+      {id:'banks',   icon:'fa-university',  label:isAR?'البنوك':'Banques',             color:'#10b981'},
+      {id:'bank_fees', icon:'fa-money-check-alt', label:isAR?'الرسوم البنكية':'Frais Bancaires', color:'#dc2626'},
+      {id:'rh',      icon:'fa-user-clock',  label:isAR?'الموارد البشرية / الأجور':'RH / Paie',           color:'#6366f1'},
       {id:'etatvente',icon:'fa-file-invoice-dollar',label:T.get('nav_etat_vente'), color:'#0d9488'},
       {id:'users',   icon:'fa-users-cog',   label:T.get('nav_users'),    color:'#ef4444'},
       {id:'data',    icon:'fa-database',    label:T.get('set_data'),     color:'#6366f1'},
@@ -6649,6 +6705,7 @@ const SettingsModule = {
   },
 
   _tabRH(s) {
+    const isAR = T.isRTL();
     const rh = s.rh || {};
     const users = DB.getAll('users').filter(u => u.active !== false);
     return `
@@ -6658,59 +6715,59 @@ const SettingsModule = {
           <i class="fas fa-user-clock" style="color:#fff;font-size:16px"></i>
         </div>
         <div>
-          <h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text)">Configuration RH / Paie</h3>
-          <p style="margin:2px 0 0;font-size:12px;color:var(--text4)">Taux CNAS, IRG, salaire par defaut et configuration des employes</p>
+          <h3 style="margin:0;font-size:18px;font-weight:800;color:var(--text)">${isAR ? 'إعدادات الموارد البشرية / الأجور' : 'Configuration RH / Paie'}</h3>
+          <p style="margin:2px 0 0;font-size:12px;color:var(--text4)">${isAR ? 'نسب الضمان الاجتماعي CNAS، ضريبة الدخل IRG، الراتب الافتراضي وإعدادات الموظفين' : 'Taux CNAS, IRG, salaire par défaut et configuration des employés'}</p>
         </div>
       </div>
 
       <!-- Global RH Config -->
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
-        <h4 style="margin:0 0 14px;font-size:14px;font-weight:800;color:var(--text)"><i class="fas fa-cog" style="color:#6366f1;margin-right:6px"></i>Parametres Globaux de Paie</h4>
+        <h4 style="margin:0 0 14px;font-size:14px;font-weight:800;color:var(--text)"><i class="fas fa-cog" style="color:#6366f1;margin-right:6px"></i>${isAR ? 'المعايير العامة للأجور' : 'Paramètres Globaux de Paie'}</h4>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Taux CNAS Salarie (%)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'نسبة اشتراك الأجير CNAS (%)' : 'Taux CNAS Salarié (%)'}</label>
             <input type="number" id="rh_taux_cnas" class="input" style="width:100%" value="${rh.tauxCNAS || 9}" step="0.5" min="0" max="50">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Taux CNAS Employeur (%)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'نسبة اشتراك صاحب العمل CNAS (%)' : 'Taux CNAS Employeur (%)'}</label>
             <input type="number" id="rh_taux_cnas_emp" class="input" style="width:100%" value="${rh.tauxCNASEmployeur || 26}" step="0.5" min="0" max="50">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Salaire de Base par Defaut (DA)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'الراتب الأساسي الافتراضي (د.ج)' : 'Salaire de Base par Défaut (DA)'}</label>
             <input type="number" id="rh_salaire_defaut" class="input" style="width:100%" value="${rh.salaireDefaut || 45000}" step="1000">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Jours Reference / Mois</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'أيام العمل المرجعية / الشهر' : 'Jours Référence / Mois'}</label>
             <input type="number" id="rh_jours_ref" class="input" style="width:100%" value="${rh.joursRef || 30}" min="20" max="31">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Taux Horaire HS par Defaut (DA/h)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'أجر الساعات الإضافية الافتراضي (د.ج/س)' : 'Taux Horaire HS par Défaut (DA/h)'}</label>
             <input type="number" id="rh_taux_hs_defaut" class="input" style="width:100%" value="${rh.tauxHSDefaut || 260}" step="10">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Activer IRG (Impot)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'تفعيل ضريبة الدخل IRG' : 'Activer IRG (Impôt)'}</label>
             <select id="rh_irg_active" class="input" style="width:100%">
-              <option value="1" ${rh.irgActive !== false ? 'selected' : ''}>Oui - Calculer IRG</option>
-              <option value="0" ${rh.irgActive === false ? 'selected' : ''}>Non - Sans IRG</option>
+              <option value="1" ${rh.irgActive !== false ? 'selected' : ''}>${isAR ? 'نعم - احتساب ضريبة IRG' : 'Oui - Calculer IRG'}</option>
+              <option value="0" ${rh.irgActive === false ? 'selected' : ''}>${isAR ? 'لا - بدون IRG' : 'Non - Sans IRG'}</option>
             </select>
           </div>
         </div>
         <button class="btn btn-primary" onclick="SettingsModule._saveRH()" style="margin-top:16px;width:100%;padding:12px;font-weight:700">
-          <i class="fas fa-save"></i> Sauvegarder les Parametres RH
+          <i class="fas fa-save"></i> ${isAR ? 'حفظ إعدادات الموارد البشرية' : 'Sauvegarder les Paramètres RH'}
         </button>
       </div>
 
       <!-- Per-User Salary Overview -->
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px">
-        <h4 style="margin:0 0 14px;font-size:14px;font-weight:800;color:var(--text)"><i class="fas fa-users" style="color:#10b981;margin-right:6px"></i>Salaires par Employe (${users.length})</h4>
+        <h4 style="margin:0 0 14px;font-size:14px;font-weight:800;color:var(--text)"><i class="fas fa-users" style="color:#10b981;margin-right:6px"></i>${isAR ? 'أجور الموظفين' : 'Salaires par Employé'} (${users.length})</h4>
         <div class="table-shell" style="overflow-x:auto">
         <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-            <th style="padding:8px;text-align:left">Employe</th>
-            <th style="padding:8px;text-align:left">Poste</th>
-            <th style="padding:8px;text-align:right">Salaire Base (DA)</th>
-            <th style="padding:8px;text-align:right">Taux Horaire (DA/h)</th>
-            <th style="padding:8px;text-align:center">Conge (solde)</th>
+            <th style="padding:8px;text-align:left">${isAR ? 'الموظف' : 'Employé'}</th>
+            <th style="padding:8px;text-align:left">${isAR ? 'المنصب' : 'Poste'}</th>
+            <th style="padding:8px;text-align:right">${isAR ? 'الراتب الأساسي (د.ج)' : 'Salaire Base (DA)'}</th>
+            <th style="padding:8px;text-align:right">${isAR ? 'الأجر الساعي (د.ج/س)' : 'Taux Horaire (DA/h)'}</th>
+            <th style="padding:8px;text-align:center">${isAR ? 'رصيد العطل' : 'Congé (solde)'}</th>
           </tr></thead>
           <tbody>
             ${users.map(u => `<tr style="border-bottom:1px solid var(--border)">
@@ -6718,17 +6775,18 @@ const SettingsModule = {
               <td style="padding:6px 8px;color:var(--text3)">${Utils.escHTML(u.jobTitle||'-')}</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(u.baseSalary || rh.salaireDefaut || 45000)}</td>
               <td style="padding:6px 8px;text-align:right">${Utils.fmtCurrency(u.tauxHoraire || rh.tauxHSDefaut || 260)}</td>
-              <td style="padding:6px 8px;text-align:center">${u.congeBalance || 30} j</td>
+              <td style="padding:6px 8px;text-align:center">${u.congeBalance || 30} ${isAR ? 'يوم' : 'j'}</td>
             </tr>`).join('')}
           </tbody>
         </table>
         </div>
-        <p style="font-size:11px;color:var(--text4);margin:10px 0 0"><i class="fas fa-info-circle"></i> Modifiez le salaire et taux horaire de chaque employe dans l'onglet <strong>Utilisateurs</strong>.</p>
+        <p style="font-size:11px;color:var(--text4);margin:10px 0 0"><i class="fas fa-info-circle"></i> ${isAR ? 'يمكنك تعديل الراتب والأجر الساعي لكل موظف في تبويب <strong>المستخدمون</strong>.' : 'Modifiez le salaire et taux horaire de chaque employé dans l\'onglet <strong>Utilisateurs</strong>.'}</p>
       </div>
     </div>`;
   },
 
   _saveRH() {
+    const isAR = T.isRTL();
     const s = DB.getSettings();
     const rh = {
       tauxCNAS: parseFloat(document.getElementById('rh_taux_cnas')?.value || 9),
@@ -6739,7 +6797,7 @@ const SettingsModule = {
       irgActive: document.getElementById('rh_irg_active')?.value === '1',
     };
     DB.saveSettings({...s, rh});
-    Utils.notify('Parametres RH sauvegardes avec succes !', 'success');
+    Utils.notify(isAR ? 'تم حفظ إعدادات الموارد البشرية بنجاح!' : 'Paramètres RH sauvegardés avec succès !', 'success');
     App.loadModule('settings');
   },
 
@@ -6763,7 +6821,7 @@ const SettingsModule = {
     ];
 
     if (!banks.length) {
-      return `<div class="alert alert-info">Veuillez d'abord configurer des comptes bancaires dans l'onglet Banques.</div>`;
+      return `<div class="alert alert-info">${isAR ? 'يرجى أولاً تهيئة حسابات بنكية في تبويب البنوك.' : 'Veuillez d\'abord configurer des comptes bancaires dans l\'onglet Banques.'}</div>`;
     }
 
     window._saveBankFees = () => {
@@ -6780,7 +6838,7 @@ const SettingsModule = {
         };
       });
       DB.saveSettings({ bankFees: bFees });
-      Utils.notify(isAR ? 'تم الحفظ' : 'Enregistré', 'success');
+      Utils.notify(isAR ? 'تم حفظ الرسوم البنكية' : 'Frais bancaires enregistrés', 'success');
     };
 
     window._applyBankTemplate = (bankId, sel) => {
@@ -6795,7 +6853,7 @@ const SettingsModule = {
 
     let html = `<div style="max-width:800px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-        <div><div style="font-weight:800;font-size:16px">Frais Bancaires Automatiques</div></div>
+        <div><div style="font-weight:800;font-size:16px">${isAR ? 'الرسوم البنكية التلقائية' : 'Frais Bancaires Automatiques'}</div></div>
         <button class="btn btn-primary" onclick="_saveBankFees()"><i class="fas fa-save"></i> ${T.get('save')}</button>
       </div>`;
 
@@ -6805,38 +6863,38 @@ const SettingsModule = {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px">
           <div style="font-weight:700;color:var(--primary)"><i class="fas fa-university"></i> ${Utils.escHTML(b.name)}</div>
           <select class="input" style="width:200px;padding:4px" onchange="_applyBankTemplate('${b.id}', this)">
-            <option value="">-- Modèle de frais --</option>
+            <option value="">${isAR ? '-- نموذج الرسوم --' : '-- Modèle de frais --'}</option>
             ${ALGERIAN_BANKS.map(x => `<option value="${x.name}">${x.name}</option>`).join('')}
           </select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div>
-            <label class="label">Frais de versement fixe (DA)</label>
+            <label class="label">${isAR ? 'رسوم الإيداع الثابتة (د.ج)' : 'Frais de versement fixe (DA)'}</label>
             <input type="number" id="bf_dep_${b.id}" class="input" value="${f.depositFee||0}">
           </div>
           <div>
-            <label class="label">Frais de versement (%)</label>
+            <label class="label">${isAR ? 'رسوم الإيداع (%)' : 'Frais de versement (%)'}</label>
             <input type="number" step="0.01" id="bf_deppct_${b.id}" class="input" value="${f.depositFeePercent||0}">
           </div>
           <div>
-            <label class="label">Frais de retrait (DA)</label>
+            <label class="label">${isAR ? 'رسوم السحب (د.ج)' : 'Frais de retrait (DA)'}</label>
             <input type="number" id="bf_with_${b.id}" class="input" value="${f.withdrawalFee||0}">
           </div>
           <div>
-            <label class="label">Frais de virement (DA)</label>
+            <label class="label">${isAR ? 'رسوم التحويل (د.ج)' : 'Frais de virement (DA)'}</label>
             <input type="number" id="bf_trans_${b.id}" class="input" value="${f.transferFee||0}">
           </div>
           <div>
-            <label class="label">Frais de remise chèque (DA)</label>
+            <label class="label">${isAR ? 'رسوم تحصيل الشيك (د.ج)' : 'Frais de remise chèque (DA)'}</label>
             <input type="number" id="bf_check_${b.id}" class="input" value="${f.checkFee||0}">
           </div>
           <div style="display:flex;gap:8px">
             <div style="flex:2">
-              <label class="label">Pack Mensuel (DA)</label>
+              <label class="label">${isAR ? 'الاشتراك الشهري (د.ج)' : 'Pack Mensuel (DA)'}</label>
               <input type="number" id="bf_pack_${b.id}" class="input" value="${f.packFee||0}">
             </div>
             <div style="flex:1">
-              <label class="label">Jour</label>
+              <label class="label">${isAR ? 'اليوم' : 'Jour'}</label>
               <input type="number" id="bf_packday_${b.id}" class="input" value="${f.packFeeDay||1}" min="1" max="28">
             </div>
           </div>
@@ -6878,16 +6936,17 @@ const SettingsModule = {
   },
 
   _tabBanks(s) {
+    const isAR = T.isRTL();
     const banks = s.banks || [];
     return `<div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px">
         <div>
-          <div style="font-weight:800;font-size:16px;color:var(--text)">Comptes Bancaires & Coordonnées</div>
-          <div style="font-size:12px;color:var(--text4);margin-top:4px">Gérez vos comptes, RIB, IBAN, agences et paramètres de versement</div>
+          <div style="font-weight:800;font-size:16px;color:var(--text)">${isAR ? 'الحسابات البنكية ومعلومات الاتصال' : 'Comptes Bancaires & Coordonnées'}</div>
+          <div style="font-size:12px;color:var(--text4);margin-top:4px">${isAR ? 'إدارة الحسابات، RIB، IBAN، الوكالات ومعايير التحويل' : 'Gérez vos comptes, RIB, IBAN, agences et paramètres de versement'}</div>
         </div>
-        <button class="btn btn-primary" onclick="SettingsModule._addBank()"><i class="fas fa-plus"></i> Ajouter un compte</button>
+        <button class="btn btn-primary" onclick="SettingsModule._addBank()"><i class="fas fa-plus"></i> ${isAR ? 'إضافة حساب' : 'Ajouter un compte'}</button>
       </div>
-      ${banks.length===0?`<div class="empty-state"><i class="fas fa-university" style="font-size:40px;color:var(--text4)"></i><p>Aucun compte bancaire configuré</p></div>`:`
+      ${banks.length===0?`<div class="empty-state"><i class="fas fa-university" style="font-size:40px;color:var(--text4)"></i><p>${isAR ? 'لا يوجد أي حساب بنكي مهيأ' : 'Aucun compte bancaire configuré'}</p></div>`:`
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">
         ${banks.map(b => {
           const bal = (typeof BankModule !== 'undefined') ? BankModule._bankBalance(b.id).balance : 0;
@@ -6902,22 +6961,22 @@ const SettingsModule = {
                 ${b.agency ? `<div style="font-size:11px;color:var(--text3)">📍 ${Utils.escHTML(b.agency)}</div>` : ''}
               </div>
               <div style="display:flex;gap:6px">
-                <button class="btn btn-sm btn-outline" onclick="SettingsModule._editBank('${b.id}')" title="Modifier"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)" onclick="SettingsModule._deleteBank('${b.id}')" title="Supprimer"><i class="fas fa-trash"></i></button>
+                <button class="btn btn-sm btn-outline" onclick="SettingsModule._editBank('${b.id}')" title="${isAR?'تعديل':'Modifier'}"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)" onclick="SettingsModule._deleteBank('${b.id}')" title="${isAR?'حذف':'Supprimer'}"><i class="fas fa-trash"></i></button>
               </div>
             </div>
 
             <!-- Details grid -->
             <div style="background:var(--bg3);border-radius:10px;padding:10px 12px;font-size:11px;display:grid;gap:4px;margin-bottom:12px">
-              ${b.accountNum ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">N° Compte :</span><strong style="font-family:monospace;color:var(--text)">${Utils.escHTML(b.accountNum)}</strong></div>` : ''}
+              ${b.accountNum ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">${isAR?'رقم الحساب :':'N° Compte :'}</span><strong style="font-family:monospace;color:var(--text)">${Utils.escHTML(b.accountNum)}</strong></div>` : ''}
               ${b.rib ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">RIB :</span><strong style="font-family:monospace;color:var(--primary)">${Utils.escHTML(b.rib)}</strong></div>` : ''}
               ${b.iban ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">IBAN :</span><strong style="font-family:monospace;color:var(--text2)">${Utils.escHTML(b.iban)}</strong></div>` : ''}
               ${b.swift ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">SWIFT/BIC :</span><strong style="font-family:monospace;color:var(--text2)">${Utils.escHTML(b.swift)}</strong></div>` : ''}
-              ${b.initialBalance ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">Solde initial :</span><span style="color:var(--text3)">${Utils.fmtCurrency(b.initialBalance)}</span></div>` : ''}
+              ${b.initialBalance ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--text4)">${isAR?'الرصيد الافتتاحي :':'Solde initial :'}</span><span style="color:var(--text3)">${Utils.fmtCurrency(b.initialBalance)}</span></div>` : ''}
             </div>
 
             <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px dashed var(--border)">
-              <span style="font-size:12px;color:var(--text4)">Solde Actuel :</span>
+              <span style="font-size:12px;color:var(--text4)">${isAR?'الرصيد الحالي :':'Solde Actuel :'}</span>
               <strong style="font-size:16px;color:${bal>=0?'var(--text)':'var(--danger)'}">${Utils.fmtCurrency(bal)}</strong>
             </div>
           </div>`;
@@ -6927,6 +6986,7 @@ const SettingsModule = {
   },
 
   async _addBank() {
+    const isAR = T.isRTL();
     const dzBanks = [
       "Baraka Bank (Al Baraka)",
       "BNA (Banque Nationale d'Algérie)",
@@ -6945,28 +7005,28 @@ const SettingsModule = {
       "CNMA (Caisse Nationale de Mutualité Agricole)"
     ];
     const opts = dzBanks.map(b => `<option value="${b}">${b}</option>`).join('');
-    const selHtml = `<select id="bank_bname" class="input" style="width:100%" onchange="document.getElementById('bank_bname_custom').style.display=this.value==='Autre'?'block':'none'"><option value="">-- Sélectionner une banque --</option>${opts}<option value="Autre">Autre...</option></select><input type="text" id="bank_bname_custom" class="input" placeholder="Saisir le nom de la banque" style="width:100%;margin-top:6px;display:none;">`;
+    const selHtml = `<select id="bank_bname" class="input" style="width:100%" onchange="document.getElementById('bank_bname_custom').style.display=this.value==='Autre'?'block':'none'"><option value="">${isAR ? '-- اختر بنكاً --' : '-- Sélectionner une banque --'}</option>${opts}<option value="Autre">${isAR ? 'أخرى...' : 'Autre...'}</option></select><input type="text" id="bank_bname_custom" class="input" placeholder="${isAR ? 'أدخل اسم البنك' : 'Saisir le nom de la banque'}" style="width:100%;margin-top:6px;display:none;">`;
 
     const formHtml = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group" style="grid-column:1/-1">
-          <label class="required" style="font-weight:700">Nom du compte / Intitulé</label>
-          <input type="text" id="bank_name" class="input" placeholder="Ex: Compte Courant Principal, Compte Ventes...">
+          <label class="required" style="font-weight:700">${isAR ? 'اسم الحساب / التسمية' : 'Nom du compte / Intitulé'}</label>
+          <input type="text" id="bank_name" class="input" placeholder="${isAR ? 'مثال: الحساب الجاري الرئيسي، حساب المبيعات...' : 'Ex: Compte Courant Principal, Compte Ventes...'}">
         </div>
         <div class="form-group" style="grid-column:1/-1">
-          <label style="font-weight:700">Établissement bancaire</label>
+          <label style="font-weight:700">${isAR ? 'المؤسسة البنكية' : 'Établissement bancaire'}</label>
           ${selHtml}
         </div>
         <div class="form-group">
-          <label style="font-weight:700">Agence / Guichet</label>
+          <label style="font-weight:700">${isAR ? 'الوكالة / الفرع' : 'Agence / Guichet'}</label>
           <input type="text" id="bank_agency" class="input" placeholder="Ex: Agence Didouche Mourad 123">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">N° de compte</label>
+          <label style="font-weight:700">${isAR ? 'رقم الحساب' : 'N° de compte'}</label>
           <input type="text" id="bank_num" class="input" placeholder="Ex: 002 00012 3456789">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">RIB (20 chiffres)</label>
+          <label style="font-weight:700">RIB (${isAR ? '20 رقماً' : '20 chiffres'})</label>
           <input type="text" id="bank_rib" class="input" placeholder="00200012345678901234" maxlength="24">
         </div>
         <div class="form-group">
@@ -6974,26 +7034,26 @@ const SettingsModule = {
           <input type="text" id="bank_iban" class="input" placeholder="DZ50 0020 0012 3456 7890 1234">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">Code SWIFT / BIC</label>
+          <label style="font-weight:700">${isAR ? 'رمز SWIFT / BIC' : 'Code SWIFT / BIC'}</label>
           <input type="text" id="bank_swift" class="input" placeholder="Ex: BNAIDZAL">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">Solde initial de départ (DA)</label>
+          <label style="font-weight:700">${isAR ? 'الرصيد الافتتاحي الأولي (د.ج)' : 'Solde initial de départ (DA)'}</label>
           <input type="number" id="bank_init_bal" class="input" placeholder="0" min="0" step="any" value="0">
         </div>
       </div>`;
 
     const r = await Dialog.show({
-      title: '🏦 Ajouter un compte bancaire',
+      title: isAR ? '🏦 إضافة حساب بنكي' : '🏦 Ajouter un compte bancaire',
       message: formHtml,
       type: 'info',
-      confirmText: 'Ajouter le compte',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'إضافة الحساب' : 'Ajouter le compte',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!r) return;
     const name = document.getElementById('bank_name')?.value?.trim();
-    if (!name) { Utils.notify('Le nom du compte est requis', 'warning', 3000); return; }
+    if (!name) { Utils.notify(isAR ? 'اسم الحساب مطلوب' : 'Le nom du compte est requis', 'warning', 3000); return; }
 
     let bname = document.getElementById('bank_bname')?.value || '';
     if (bname === 'Autre') bname = document.getElementById('bank_bname_custom')?.value?.trim() || '';
@@ -7014,11 +7074,12 @@ const SettingsModule = {
     const banks = s.banks || [];
     banks.push(newBank);
     DB.saveSettings({ banks });
-    Utils.notify('✅ Compte bancaire ajouté avec succès', 'success');
+    Utils.notify(isAR ? '✅ تم إضافة الحساب البنكي بنجاح' : '✅ Compte bancaire ajouté avec succès', 'success');
     App.loadModule('settings');
   },
 
   async _editBank(bankId) {
+    const isAR = T.isRTL();
     const s = DB.getSettings();
     const banks = s.banks || [];
     const b = banks.find(x => x.id === bankId);
@@ -7043,28 +7104,28 @@ const SettingsModule = {
     ];
     const isOther = b.bankName && !dzBanks.includes(b.bankName);
     const opts = dzBanks.map(bk => `<option value="${bk}" ${b.bankName === bk ? 'selected' : ''}>${bk}</option>`).join('');
-    const selHtml = `<select id="bank_bname" class="input" style="width:100%" onchange="document.getElementById('bank_bname_custom').style.display=this.value==='Autre'?'block':'none'"><option value="">-- Sélectionner une banque --</option>${opts}<option value="Autre" ${isOther ? 'selected' : ''}>Autre...</option></select><input type="text" id="bank_bname_custom" class="input" placeholder="Saisir le nom de la banque" value="${isOther ? Utils.escHTML(b.bankName) : ''}" style="width:100%;margin-top:6px;display:${isOther ? 'block' : 'none'};">`;
+    const selHtml = `<select id="bank_bname" class="input" style="width:100%" onchange="document.getElementById('bank_bname_custom').style.display=this.value==='Autre'?'block':'none'"><option value="">${isAR ? '-- اختر بنكاً --' : '-- Sélectionner une banque --'}</option>${opts}<option value="Autre" ${isOther ? 'selected' : ''}>${isAR ? 'أخرى...' : 'Autre...'}</option></select><input type="text" id="bank_bname_custom" class="input" placeholder="${isAR ? 'أدخل اسم البنك' : 'Saisir le nom de la banque'}" value="${isOther ? Utils.escHTML(b.bankName) : ''}" style="width:100%;margin-top:6px;display:${isOther ? 'block' : 'none'};">`;
 
     const formHtml = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group" style="grid-column:1/-1">
-          <label class="required" style="font-weight:700">Nom du compte / Intitulé</label>
+          <label class="required" style="font-weight:700">${isAR ? 'اسم الحساب / التسمية' : 'Nom du compte / Intitulé'}</label>
           <input type="text" id="bank_name" class="input" value="${Utils.escHTML(b.name)}">
         </div>
         <div class="form-group" style="grid-column:1/-1">
-          <label style="font-weight:700">Établissement bancaire</label>
+          <label style="font-weight:700">${isAR ? 'المؤسسة البنكية' : 'Établissement bancaire'}</label>
           ${selHtml}
         </div>
         <div class="form-group">
-          <label style="font-weight:700">Agence / Guichet</label>
+          <label style="font-weight:700">${isAR ? 'الوكالة / الفرع' : 'Agence / Guichet'}</label>
           <input type="text" id="bank_agency" class="input" value="${Utils.escHTML(b.agency || '')}" placeholder="Ex: Agence Didouche Mourad 123">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">N° de compte</label>
+          <label style="font-weight:700">${isAR ? 'رقم الحساب' : 'N° de compte'}</label>
           <input type="text" id="bank_num" class="input" value="${Utils.escHTML(b.accountNum || '')}" placeholder="Ex: 002 00012 3456789">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">RIB (20 chiffres)</label>
+          <label style="font-weight:700">RIB (${isAR ? '20 رقماً' : '20 chiffres'})</label>
           <input type="text" id="bank_rib" class="input" value="${Utils.escHTML(b.rib || '')}" placeholder="00200012345678901234">
         </div>
         <div class="form-group">
@@ -7072,21 +7133,21 @@ const SettingsModule = {
           <input type="text" id="bank_iban" class="input" value="${Utils.escHTML(b.iban || '')}" placeholder="DZ50 0020 0012 3456 7890 1234">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">Code SWIFT / BIC</label>
+          <label style="font-weight:700">${isAR ? 'رمز SWIFT / BIC' : 'Code SWIFT / BIC'}</label>
           <input type="text" id="bank_swift" class="input" value="${Utils.escHTML(b.swift || '')}" placeholder="Ex: BNAIDZAL">
         </div>
         <div class="form-group">
-          <label style="font-weight:700">Solde initial de départ (DA)</label>
+          <label style="font-weight:700">${isAR ? 'الرصيد الافتتاحي الأولي (د.ج)' : 'Solde initial de départ (DA)'}</label>
           <input type="number" id="bank_init_bal" class="input" value="${b.initialBalance || 0}" min="0" step="any">
         </div>
       </div>`;
 
     const r = await Dialog.show({
-      title: '✏️ Modifier le compte bancaire',
+      title: isAR ? '✏️ تعديل الحساب البنكي' : '✏️ Modifier le compte bancaire',
       message: formHtml,
       type: 'info',
-      confirmText: 'Enregistrer les modifications',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'حفظ التعديلات' : 'Enregistrer les modifications',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!r) return;
@@ -7102,17 +7163,18 @@ const SettingsModule = {
     b.initialBalance = parseFloat(document.getElementById('bank_init_bal')?.value || 0) || 0;
 
     DB.saveSettings({ banks });
-    Utils.notify('✅ Compte bancaire mis à jour', 'success');
+    Utils.notify(isAR ? '✅ تم تحديث الحساب البنكي' : '✅ Compte bancaire mis à jour', 'success');
     App.loadModule('settings');
   },
 
   async _deleteBank(bankId) {
-    const ok = await Utils.confirm2('Supprimer ce compte bancaire ?', 'Les transactions passées associées seront conservées pour l\'audit.');
+    const isAR = T.isRTL();
+    const ok = await Utils.confirm2(isAR ? 'حذف هذا الحساب البنكي؟' : 'Supprimer ce compte bancaire ?', isAR ? 'سيتم الاحتفاظ بالمعاملات السابقة لأغراض التدقيق.' : 'Les transactions passées associées seront conservées pour l\'audit.');
     if (!ok) return;
     const s = DB.getSettings();
     const banks = (s.banks || []).filter(b => b.id !== bankId);
     DB.saveSettings({ banks });
-    Utils.notify('Compte bancaire supprimé', 'info');
+    Utils.notify(isAR ? 'تم حذف الحساب البنكي' : 'Compte bancaire supprimé', 'info');
     App.loadModule('settings');
   },
 
@@ -7275,11 +7337,11 @@ const SettingsModule = {
 
     return `
     <div style="background:linear-gradient(135deg,rgba(13,148,136,.1),rgba(20,184,166,.05));border-radius:12px;padding:16px;margin-bottom:20px;border:1px solid rgba(13,148,136,.2)">
-      <div style="font-weight:800;color:#0f766e;margin-bottom:4px"><i class="fas fa-info-circle"></i> Entête de l'État de Vente</div>
-      <div style="font-size:12px;color:var(--text3)">Ces informations seront utilisées exclusivement pour générer l'entête du document d'État de Vente.</div>
+      <div style="font-weight:800;color:#0f766e;margin-bottom:4px"><i class="fas fa-info-circle"></i> ${isAR ? 'ترويسة كشف المبيعات' : "Entête de l'État de Vente"}</div>
+      <div style="font-size:12px;color:var(--text3)">${isAR ? 'تُستخدم هذه المعلومات حصرياً لإنشاء ترويسة وثيقة كشف المبيعات.' : "Ces informations seront utilisées exclusivement pour générer l'entête du document d'État de Vente."}</div>
     </div>
 
-    ${sectionBox('building','#0d9488','rgba(13,148,136,.1)',isAR?'هوية الشركة':'Identité de la société (État de Vente)',`
+    ${sectionBox('building','#0d9488','rgba(13,148,136,.1)',isAR?'هوية الشركة (كشف المبيعات)':'Identité de la société (État de Vente)',`
       <div style="display:grid;grid-template-columns:1fr;gap:0">
         ${field('evCompName', isAR?'اسم الشركة':'Raison sociale', s.evCompanyName, 'style="font-size:16px;font-weight:800" placeholder="SPA ..."', 'fa-building')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -7310,8 +7372,8 @@ const SettingsModule = {
           <input id="evAi" value="${Utils.escHTML(s.evAi||'')}" placeholder="00000000000000" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
         </div>
         <div style="grid-column:1/-1">
-          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">Capital social</div>
-          <input id="evCapital" value="${Utils.escHTML(s.evCapital||'')}" placeholder="Ex: 1 000 000 DA" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">${isAR ? 'رأس المال الاجتماعي' : 'Capital social'}</div>
+          <input id="evCapital" value="${Utils.escHTML(s.evCapital||'')}" placeholder="${isAR ? 'مثال: 1 000 000 د.ج' : 'Ex: 1 000 000 DA'}" style="font-family:'Courier New',monospace;font-size:13px;font-weight:700;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);width:100%" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
         </div>
       </div>
     `)}
@@ -7322,7 +7384,7 @@ const SettingsModule = {
     </div>
 
     <button class="btn btn-primary" onclick="SettingsModule._saveEtatVente()" style="width:100%;padding:12px;font-size:14px;font-weight:800;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6)">
-      <i class="fas fa-save"></i> Enregistrer les paramètres de l'État de Vente
+      <i class="fas fa-save"></i> ${isAR ? 'حفظ إعدادات كشف المبيعات' : "Enregistrer les paramètres de l'État de Vente"}
     </button>`;
   },
 
@@ -7339,7 +7401,7 @@ const SettingsModule = {
       evAi: document.getElementById('evAi')?.value||'',
       evCapital: document.getElementById('evCapital')?.value||'',
     });
-    Utils.notify('Paramètres de l\'État de Vente enregistrés', 'success');
+    Utils.notify(T.isRTL() ? 'تم حفظ إعدادات كشف المبيعات' : 'Paramètres de l\'État de Vente enregistrés', 'success');
   },
 
 
@@ -7560,7 +7622,7 @@ const SettingsModule = {
         Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع ✓' : 'Tranches timbre sauvegardées ✓'), 'success');
       }).catch(e => {
         console.error('[timbreSlabs] cloud save FAILED:', e.message);
-        Utils.notify('❌ Erreur sauvegarde tranches: ' + e.message, 'danger', 6000);
+        Utils.notify((T.isRTL() ? '❌ خطأ في حفظ الشرائح: ' : '❌ Erreur sauvegarde tranches: ') + e.message, 'danger', 6000);
       });
     } else {
       Utils.notify((T.isRTL() ? 'تم حفظ إعدادات الطابع' : 'Paramètres timbre enregistrés'), 'success');
@@ -7580,17 +7642,18 @@ const SettingsModule = {
 
 
   _tabAppear(s) {
+    const isAR = T.isRTL();
     const cur = s.themeColor || "#006078";
     const dm  = s.themeMode  || "light";
     const presets = [
-      {c:"#006078",n:"Teal Profond (défaut)"},{c:"#0ea5e9",n:"Bleu Ciel"},{c:"#2563eb",n:"Bleu Royal"},
-      {c:"#7c3aed",n:"Violet"},{c:"#059669",n:"Émeraude"},{c:"#0f766e",n:"Sarcelle"},
-      {c:"#d97706",n:"Ambre"},{c:"#dc2626",n:"Rouge"},{c:"#db2777",n:"Rose"},{c:"#475569",n:"Ardoise"},
+      {c:"#006078",n:isAR?"أزرق مخضر داكن (افتراضي)":"Teal Profond (défaut)"},{c:"#0ea5e9",n:isAR?"أزرق سماوي":"Bleu Ciel"},{c:"#2563eb",n:isAR?"أزرق ملكي":"Bleu Royal"},
+      {c:"#7c3aed",n:isAR?"بنفسجي":"Violet"},{c:"#059669",n:isAR?"زمردي":"Émeraude"},{c:"#0f766e",n:isAR?"أزرق بطيّ":"Sarcelle"},
+      {c:"#d97706",n:isAR?"كهرماني":"Ambre"},{c:"#dc2626",n:isAR?"أحمر":"Rouge"},{c:"#db2777",n:isAR?"وردي":"Rose"},{c:"#475569",n:isAR?"رمادي أردوازي":"Ardoise"},
     ];
     return `<div>
       <div class="form-group" style="margin-bottom:22px">
         <label style="font-size:13px;font-weight:700;display:block;margin-bottom:12px">
-          <i class="fas fa-palette" style="color:var(--primary);margin-right:6px"></i>Couleur principale
+          <i class="fas fa-palette" style="color:var(--primary);margin-inline-end:6px"></i>${isAR ? 'اللون الرئيسي' : 'Couleur principale'}
         </label>
         <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px">
           ${presets.map(p=>`<div title="${p.n}" onclick="SettingsModule._applyColor('${p.c}')"
@@ -7606,12 +7669,12 @@ const SettingsModule = {
           <input type="color" id="sColor" value="${cur}"
             style="width:46px;height:40px;cursor:pointer;border-radius:8px;border:1px solid var(--border)"
             oninput="SettingsModule._applyColor(this.value)">
-          <span style="font-size:12px;color:var(--text-muted)">Couleur personnalisée</span>
+          <span style="font-size:12px;color:var(--text-muted)">${isAR ? 'لون مخصص' : 'Couleur personnalisée'}</span>
         </div>
       </div>
       <div class="form-group" style="margin-bottom:22px">
         <label style="font-size:13px;font-weight:700;display:block;margin-bottom:12px">
-          <i class="fas fa-adjust" style="color:var(--primary);margin-right:6px"></i>Mode d&apos;affichage
+          <i class="fas fa-adjust" style="color:var(--primary);margin-inline-end:6px"></i>${isAR ? 'وضع العرض' : 'Mode d&apos;affichage'}
         </label>
         <div style="display:flex;gap:10px">
           <div onclick="SettingsModule._applyMode('light')"
@@ -7619,20 +7682,20 @@ const SettingsModule = {
                    border:2px solid ${dm==='light'?'var(--primary)':'var(--border)'};
                    background:${dm==='light'?'var(--primary-light)':'var(--surface)'}">
             <div style="font-size:26px;margin-bottom:6px">☀️</div>
-            <div style="font-weight:700;color:${dm==='light'?'var(--primary)':'var(--text)'}">Clair</div>
+            <div style="font-weight:700;color:${dm==='light'?'var(--primary)':'var(--text)'}">${isAR ? 'فاتح' : 'Clair'}</div>
           </div>
           <div onclick="SettingsModule._applyMode('dark')"
             style="flex:1;padding:16px;border-radius:12px;text-align:center;cursor:pointer;transition:.2s;
                    border:2px solid ${dm==='dark'?'var(--primary)':'var(--border)'};
                    background:${dm==='dark'?'var(--primary-light)':'var(--surface)'}">
             <div style="font-size:26px;margin-bottom:6px">🌙</div>
-            <div style="font-weight:700;color:${dm==='dark'?'var(--primary)':'var(--text)'}">Sombre</div>
+            <div style="font-weight:700;color:${dm==='dark'?'var(--primary)':'var(--text)'}">${isAR ? 'داكن' : 'Sombre'}</div>
           </div>
         </div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-outline" onclick="SettingsModule._resetAppear()">
-          <i class="fas fa-undo"></i> Réinitialiser
+          <i class="fas fa-undo"></i> ${isAR ? 'إعادة تعيين' : 'Réinitialiser'}
         </button>
       </div>
     </div>`;
@@ -7842,9 +7905,9 @@ const SettingsModule = {
       a.download = `erp-export-${new Date().toISOString().slice(0,10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      Utils.notify('✅ Données exportées avec succès', 'success');
+      Utils.notify((T.isRTL() ? '✅ تم تصدير البيانات بنجاح' : '✅ Données exportées avec succès'), 'success');
     } catch(e) {
-      Utils.notify('❌ Erreur: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? '❌ خطأ: ' : '❌ Erreur: ') + e.message, 'error');
     }
   },
 
@@ -7855,10 +7918,10 @@ const SettingsModule = {
       const text = await fileInput.files[0].text();
       const data = JSON.parse(text);
       DB.importAll(data);
-      Utils.notify('✅ Données importées avec succès. Rechargement...', 'success');
+      Utils.notify((T.isRTL() ? '✅ تم استيراد البيانات بنجاح. جارٍ إعادة التحميل...' : '✅ Données importées avec succès. Rechargement...'), 'success');
       setTimeout(() => location.reload(), 1500);
     } catch(e) {
-      Utils.notify('❌ Erreur d\'import: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? '❌ خطأ في الاستيراد: ' : '❌ Erreur d\'import: ') + e.message, 'error');
     }
   },
 
@@ -7877,7 +7940,7 @@ const SettingsModule = {
       Utils.notify(T.isRTL() ? '✅ تم إنشاء النسخة الاحتياطية' : '✅ Sauvegarde créée avec succès', 'success');
       this._loadBackups();
     } catch (e) {
-      Utils.notify('Erreur: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? 'خطأ: ' : 'Erreur: ') + e.message, 'error');
     }
   },
 
@@ -7898,7 +7961,7 @@ const SettingsModule = {
       Utils.notify('✅ ' + (result.message || 'Restauration réussie'), 'success');
       setTimeout(() => location.reload(), 1500);
     } catch (e) {
-      Utils.notify('Erreur restauration: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? 'خطأ في الاستعادة: ' : 'Erreur restauration: ') + e.message, 'error');
     }
   },
 
@@ -7916,7 +7979,7 @@ const SettingsModule = {
       Utils.notify(T.isRTL() ? 'تم الحذف' : 'Sauvegarde supprimée', 'success');
       this._loadBackups();
     } catch (e) {
-      Utils.notify('Erreur: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? 'خطأ: ' : 'Erreur: ') + e.message, 'error');
     }
   },
 
@@ -7946,7 +8009,7 @@ const SettingsModule = {
       await API.saveSettings(settings);
       Utils.notify(`✅ Migration terminée — ${total} documents envoyés`, 'success');
     } catch (e) {
-      Utils.notify('Erreur migration: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? 'خطأ في الترحيل: ' : 'Erreur migration: ') + e.message, 'error');
     }
   },
 
@@ -8034,11 +8097,11 @@ const SettingsModule = {
         );
         location.reload();
       } else {
-        Utils.notify('❌ ' + (result.error || 'Erreur inconnue'), 'error');
+        Utils.notify('❌ ' + (result.error || (T.isRTL() ? 'خطأ غير معروف' : 'Erreur inconnue')), 'error');
       }
     } catch(e) {
       console.error('[RESET] Error:', e);
-      Utils.notify('❌ Erreur: ' + e.message, 'error');
+      Utils.notify((T.isRTL() ? '❌ خطأ: ' : '❌ Erreur: ') + e.message, 'error');
     }
   },
 
@@ -8556,8 +8619,9 @@ const BankModule = {
   },
 
   render() {
+    const isAR = T.isRTL();
     if (!Auth.isAdmin() && !Auth.can('canViewBank'))
-      return `<div class="empty-state"><i class="fas fa-lock" style="font-size:40px;color:var(--text4)"></i><p>Accès non autorisé</p></div>`;
+      return `<div class="empty-state"><i class="fas fa-lock" style="font-size:40px;color:var(--text4)"></i><p>${isAR ? 'غير مصرح بالوصول' : 'Accès non autorisé'}</p></div>`;
 
     if (BankModule._activeBank) return BankModule._renderAccountDetail(BankModule._activeBank);
 
@@ -8615,20 +8679,20 @@ const BankModule = {
         <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#1e40af,#3b82f6);display:flex;align-items:center;justify-content:center">
           <i class="fas fa-university" style="color:#fff;font-size:18px"></i>
         </div>
-        Comptes Bancaires
+        ${isAR ? 'الحسابات البنكية' : 'Comptes Bancaires'}
       </h2>
-      <p style="font-size:13px;color:var(--text4);margin:6px 0 0 50px">Gérez vos dépôts, virements et paiements fournisseurs</p>
+      <p style="font-size:13px;color:var(--text4);margin:6px 0 0 50px">${isAR ? 'إدارة الإيداعات، التحويلات، ومدفوعات الموردين' : 'Gérez vos dépôts, virements et paiements fournisseurs'}</p>
     </div>
     ${isAdmin ? `<div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;gap:6px" onclick="BankModule.showExtraitModal()"><i class="fas fa-file-invoice"></i> Extrait de Compte</button>
+      <button class="btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;gap:6px" onclick="BankModule.showExtraitModal()"><i class="fas fa-file-invoice"></i> ${isAR ? 'كشف الحساب' : 'Extrait de Compte'}</button>
       <button class="btn" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;gap:6px" onclick="BankModule._depositExternal()">
-        <i class="fas fa-plus-circle"></i> Dépôt Externe
+        <i class="fas fa-plus-circle"></i> ${isAR ? 'إيداع خارجي' : 'Dépôt Externe'}
       </button>
       <button class="btn" style="background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;border:none;gap:6px" onclick="BankModule._transferFromCaisse()">
-        <i class="fas fa-exchange-alt"></i> Virement Caisse→Banque
+        <i class="fas fa-exchange-alt"></i> ${isAR ? 'تحويل من الصندوق' : 'Virement Caisse→Banque'}
       </button>
       <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;border:none;gap:6px" onclick="BankModule.paySupplierModal()">
-        <i class="fas fa-hand-holding-usd"></i> Payer Fournisseur
+        <i class="fas fa-hand-holding-usd"></i> ${isAR ? 'دفع للمورد' : 'Payer Fournisseur'}
       </button>
     </div>` : ''}
   </div>
@@ -8636,11 +8700,11 @@ const BankModule = {
   <!-- ── Global KPI strip ── -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px">
     ${[
-      {label:'Solde Total Banque', val:Utils.fmtCurrency(grandTotal), icon:'fa-wallet', color:'#3b82f6', bg:'rgba(59,130,246,.1)'},
-      {label:'Total Entrants',     val:Utils.fmtCurrency(grandIn),    icon:'fa-arrow-circle-down', color:'#10b981', bg:'rgba(16,185,129,.1)'},
-      {label:'Total Sortants',     val:Utils.fmtCurrency(grandOut),   icon:'fa-arrow-circle-up',   color:'#ef4444', bg:'rgba(239,68,68,.1)'},
-      {label:'Payé Fournisseurs',  val:Utils.fmtCurrency(totalSupPaid),icon:'fa-building',         color:'#f59e0b', bg:'rgba(245,158,11,.1)'},
-      {label:'Reste à Payer',      val:Utils.fmtCurrency(totalDue),   icon:'fa-exclamation-circle', color:'#e11d48', bg:'rgba(225,29,72,.1)'},
+      {label:isAR?'إجمالي الرصيد البنكي':'Solde Total Banque', val:Utils.fmtCurrency(grandTotal), icon:'fa-wallet', color:'#3b82f6', bg:'rgba(59,130,246,.1)'},
+      {label:isAR?'إجمالي الإيداعات':'Total Entrants',     val:Utils.fmtCurrency(grandIn),    icon:'fa-arrow-circle-down', color:'#10b981', bg:'rgba(16,185,129,.1)'},
+      {label:isAR?'إجمالي السحوبات':'Total Sortants',     val:Utils.fmtCurrency(grandOut),   icon:'fa-arrow-circle-up',   color:'#ef4444', bg:'rgba(239,68,68,.1)'},
+      {label:isAR?'المدفوع للموردين':'Payé Fournisseurs',  val:Utils.fmtCurrency(totalSupPaid),icon:'fa-building',         color:'#f59e0b', bg:'rgba(245,158,11,.1)'},
+      {label:isAR?'المتبقي للدفع':'Reste à Payer',      val:Utils.fmtCurrency(totalDue),   icon:'fa-exclamation-circle', color:'#e11d48', bg:'rgba(225,29,72,.1)'},
     ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px">${k.label}</span>
@@ -8656,8 +8720,8 @@ const BankModule = {
   ${banks.length === 0
     ? `<div class="empty-state" style="margin-bottom:24px">
         <i class="fas fa-university" style="font-size:40px;color:var(--text4)"></i>
-        <p>Aucun compte bancaire configuré</p>
-        ${isAdmin ? `<button class="btn btn-primary" onclick="SettingsModule._tab='banks';App.loadModule('settings')"><i class="fas fa-cog"></i> Configurer</button>` : ''}
+        <p>${isAR ? 'لا توجد حسابات بنكية مهيأة' : 'Aucun compte bancaire configuré'}</p>
+        ${isAdmin ? `<button class="btn btn-primary" onclick="SettingsModule._tab='banks';App.loadModule('settings')"><i class="fas fa-cog"></i> ${isAR ? 'تهيئة' : 'Configurer'}</button>` : ''}
       </div>`
     : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-bottom:24px">
     ${banks.map(b => {
@@ -8669,7 +8733,7 @@ const BankModule = {
         onmouseenter="this.style.transform='translateY(-3px)';this.style.borderColor='#3b82f6';this.style.boxShadow='0 8px 24px rgba(59,130,246,.15)'"
         onmouseleave="this.style.transform='';this.style.borderColor='var(--border)';this.style.boxShadow='none'">
         <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:rgba(59,130,246,.05)"></div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3b82f6;margin-bottom:4px">${Utils.escHTML(b.bankName||'Banque')}</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#3b82f6;margin-bottom:4px">${Utils.escHTML(b.bankName||(isAR?'بنك':'Banque'))}</div>
         <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:2px">${Utils.escHTML(b.name)}</div>
         ${b.accountNum ? `<div style="font-size:11px;color:var(--text4);font-family:monospace;margin-bottom:12px">${Utils.escHTML(b.accountNum)}</div>` : '<div style="margin-bottom:12px"></div>'}
         <div style="font-size:28px;font-weight:900;color:${st.balance>=0?'var(--text)':'#ef4444'};margin-bottom:16px">${Utils.fmtCurrency(st.balance)}</div>
@@ -8680,17 +8744,17 @@ const BankModule = {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">
           <div style="text-align:center;background:rgba(16,185,129,.08);border-radius:8px;padding:6px">
             <div style="color:#10b981;font-weight:700">${Utils.fmtCurrency(st.totalIn)}</div>
-            <div style="color:var(--text4);margin-top:2px">Déposé</div>
+            <div style="color:var(--text4);margin-top:2px">${isAR ? 'تم إيداعه' : 'Déposé'}</div>
           </div>
           <div style="text-align:center;background:rgba(239,68,68,.08);border-radius:8px;padding:6px">
             <div style="color:#ef4444;font-weight:700">${Utils.fmtCurrency(st.totalOut)}</div>
-            <div style="color:var(--text4);margin-top:2px">Sorti</div>
+            <div style="color:var(--text4);margin-top:2px">${isAR ? 'تم صرفه' : 'Sorti'}</div>
           </div>
         </div>
         ${isAdmin ? `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);display:flex;gap:6px">
-          <button class="btn btn-xs" style="flex:1;background:rgba(2,132,199,.1);color:#0284c7;border:1px solid rgba(2,132,199,.2)" onclick="event.stopPropagation();BankModule.showExtraitModal('${b.id}')"><i class="fas fa-file-invoice"></i> Extrait</button>
-          <button class="btn btn-xs" style="flex:1;background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="event.stopPropagation();BankModule._depositExternal('${b.id}')"><i class="fas fa-plus"></i> Dépôt</button>
-          <button class="btn btn-xs" style="flex:1;background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)" onclick="event.stopPropagation();BankModule.paySupplierModal('${b.id}')"><i class="fas fa-hand-holding-usd"></i> Payer</button>
+          <button class="btn btn-xs" style="flex:1;background:rgba(2,132,199,.1);color:#0284c7;border:1px solid rgba(2,132,199,.2)" onclick="event.stopPropagation();BankModule.showExtraitModal('${b.id}')"><i class="fas fa-file-invoice"></i> ${isAR ? 'كشف' : 'Extrait'}</button>
+          <button class="btn btn-xs" style="flex:1;background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="event.stopPropagation();BankModule._depositExternal('${b.id}')"><i class="fas fa-plus"></i> ${isAR ? 'إيداع' : 'Dépôt'}</button>
+          <button class="btn btn-xs" style="flex:1;background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)" onclick="event.stopPropagation();BankModule.paySupplierModal('${b.id}')"><i class="fas fa-hand-holding-usd"></i> ${isAR ? 'دفع' : 'Payer'}</button>
         </div>` : ''}
       </div>`;
     }).join('')}
@@ -8699,20 +8763,20 @@ const BankModule = {
   <!-- ── Transaction history ── -->
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div style="font-weight:800;font-size:15px;color:var(--text)">Toutes les transactions <span style="font-size:12px;color:var(--text4);font-weight:400">(${totalTxs})</span></div>
+      <div style="font-weight:800;font-size:15px;color:var(--text)">${isAR ? 'جميع العمليات' : 'Toutes les transactions'} <span style="font-size:12px;color:var(--text4);font-weight:400">(${totalTxs})</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input type="date" value="${f.dateFrom}" onchange="updateBankFilter('dateFrom',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
         <input type="date" value="${f.dateTo}" onchange="updateBankFilter('dateTo',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
         <select onchange="updateBankFilter('bankId',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
-          <option value="all">Tous comptes</option>
+          <option value="all">${isAR ? 'كل الحسابات' : 'Tous comptes'}</option>
           ${banks.map(b=>`<option value="${b.id}" ${f.bankId===b.id?'selected':''}>${Utils.escHTML(b.name)}</option>`).join('')}
         </select>
         <select onchange="updateBankFilter('type',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
-          <option value="all">Tous types</option>
-          <option value="deposit" ${f.type==='deposit'?'selected':''}>Entrants (+)</option>
-          <option value="payment" ${f.type==='payment'?'selected':''}>Sortants (−)</option>
+          <option value="all">${isAR ? 'كل الأنواع' : 'Tous types'}</option>
+          <option value="deposit" ${f.type==='deposit'?'selected':''}>${isAR ? 'واردات (+)' : 'Entrants (+)'}</option>
+          <option value="payment" ${f.type==='payment'?'selected':''}>${isAR ? 'صادرات (−)' : 'Sortants (−)'}</option>
         </select>
-        <input type="text" placeholder="🔍 Recherche..." value="${Utils.escHTML(f.q)}" onkeyup="if(event.key==='Enter')updateBankFilter('q',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:150px">
+        <input type="text" placeholder="${isAR ? '🔍 بحث...' : '🔍 Recherche...'}" value="${Utils.escHTML(f.q)}" onkeyup="if(event.key==='Enter')updateBankFilter('q',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:150px">
         <button class="btn btn-xs" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="BankModule.exportExcel()">
           <i class="fas fa-file-excel"></i> Excel
         </button>
@@ -8720,18 +8784,18 @@ const BankModule = {
     </div>
 
     ${totalTxs === 0
-      ? `<div style="padding:60px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:36px;margin-bottom:12px;display:block"></i>Aucune transaction trouvée</div>`
+      ? `<div style="padding:60px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:36px;margin-bottom:12px;display:block"></i>${isAR ? 'لا توجد عمليات' : 'Aucune transaction trouvée'}</div>`
       : `<div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
-          <tr style="background:var(--bg3)">
-            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Réf</th>
-            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Date</th>
-            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Compte</th>
-            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Type</th>
-            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Fournisseur</th>
-            <th style="padding:12px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Note</th>
-            <th style="padding:12px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">Montant</th>
+          <tr style="background:var(--bg3);text-align:${isAR?'right':'left'}">
+            <th style="padding:12px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'المرجع' : 'Réf'}</th>
+            <th style="padding:12px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'التاريخ' : 'Date'}</th>
+            <th style="padding:12px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'الحساب' : 'Compte'}</th>
+            <th style="padding:12px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'النوع' : 'Type'}</th>
+            <th style="padding:12px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'المورد' : 'Fournisseur'}</th>
+            <th style="padding:12px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'ملاحظة' : 'Note'}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'left':'right'};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4)">${isAR ? 'المبلغ' : 'Montant'}</th>
             <th style="padding:12px 16px;width:80px"></th>
           </tr>
         </thead>
@@ -8741,11 +8805,11 @@ const BankModule = {
             const sup  = t.supplierId ? supMap[t.supplierId] : null;
             const isD  = t.type === 'deposit';
             const subtypeLabel = {
-              transfer_from_caisse: '🔄 Virement Caisse',
-              external_deposit:     '💵 Dépôt Externe',
-              supplier_payment:     '🏭 Paiement Fournisseur',
-              correction:           '✏️ Correction',
-            }[t.subtype] || (isD ? '➕ Entrée' : '➖ Sortie');
+              transfer_from_caisse: isAR ? '🔄 تحويل من الصندوق' : '🔄 Virement Caisse',
+              external_deposit:     isAR ? '💵 إيداع خارجي' : '💵 Dépôt Externe',
+              supplier_payment:     isAR ? '🏭 دفع للمورد' : '🏭 Paiement Fournisseur',
+              correction:           isAR ? '✏️ تصحيح' : '✏️ Correction',
+            }[t.subtype] || (isD ? (isAR ? '➕ وارد' : '➕ Entrée') : (isAR ? '➖ صادر' : '➖ Sortie'));
             return `<tr style="border-bottom:1px solid var(--border);transition:background .15s" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
               <td style="padding:11px 16px;font-family:monospace;font-size:11px;color:var(--text4)">${Utils.escHTML(t.ref||'—')}</td>
               <td style="padding:11px 16px;color:var(--text2)">${t.date||'—'}</td>
@@ -8753,10 +8817,10 @@ const BankModule = {
               <td style="padding:11px 16px"><span style="padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;background:${isD?'rgba(16,185,129,.12)':'rgba(239,68,68,.12)'};color:${isD?'#10b981':'#ef4444'}">${subtypeLabel}</span></td>
               <td style="padding:11px 16px;color:var(--text2)">${sup ? Utils.escHTML(sup.name) : '—'}</td>
               <td style="padding:11px 16px;color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${Utils.escHTML(t.note||'')}">${Utils.escHTML(t.note||'—')}</td>
-              <td style="padding:11px 16px;text-align:right;font-weight:800;font-size:14px;color:${isD?'#10b981':'#ef4444'}">${isD?'+':'−'}${Utils.fmtCurrency(t.amount||0)}</td>
-              <td style="padding:11px 16px;text-align:right">
-                <button title="Décharge PDF" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;transition:all .15s" onclick="BankModule._printDecharge(${t.id})" onmouseenter="this.style.background='rgba(59,130,246,.1)';this.style.color='#3b82f6'" onmouseleave="this.style.background='transparent';this.style.color='var(--text4)'"><i class="fas fa-file-pdf"></i></button>
-                ${isAdmin ? `<button title="Corriger" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;transition:all .15s" onclick="BankModule._correctTx(${t.id})" onmouseenter="this.style.background='rgba(245,158,11,.1)';this.style.color='#f59e0b'" onmouseleave="this.style.background='transparent';this.style.color='var(--text4)'"><i class="fas fa-edit"></i></button>` : ''}
+              <td style="padding:11px 16px;text-align:${isAR?'left':'right'};font-weight:800;font-size:14px;color:${isD?'#10b981':'#ef4444'}">${isD?'+':'−'}${Utils.fmtCurrency(t.amount||0)}</td>
+              <td style="padding:11px 16px;text-align:${isAR?'left':'right'}">
+                <button title="${isAR ? 'وصل إبراء PDF' : 'Décharge PDF'}" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;transition:all .15s" onclick="BankModule._printDecharge(${t.id})" onmouseenter="this.style.background='rgba(59,130,246,.1)';this.style.color='#3b82f6'" onmouseleave="this.style.background='transparent';this.style.color='var(--text4)'"><i class="fas fa-file-pdf"></i></button>
+                ${isAdmin ? `<button title="${isAR ? 'تصحيح' : 'Corriger'}" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;transition:all .15s" onclick="BankModule._correctTx(${t.id})" onmouseenter="this.style.background='rgba(245,158,11,.1)';this.style.color='#f59e0b'" onmouseleave="this.style.background='transparent';this.style.color='var(--text4)'"><i class="fas fa-edit"></i></button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -8764,10 +8828,10 @@ const BankModule = {
       </table>
     </div>
     ${pages > 1 ? `<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:12px;color:var(--text4)">Page ${BankModule._page+1} / ${pages} — ${totalTxs} transaction(s)</div>
+      <div style="font-size:12px;color:var(--text4)">${isAR ? 'صفحة' : 'Page'} ${BankModule._page+1} / ${pages} — ${totalTxs} ${isAR ? 'عملية' : 'transaction(s)'}</div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-xs" onclick="setBankPage(${BankModule._page-1})" ${BankModule._page===0?'disabled':''}>‹ Préc.</button>
-        <button class="btn btn-xs" onclick="setBankPage(${BankModule._page+1})" ${BankModule._page>=pages-1?'disabled':''}>Suiv. ›</button>
+        <button class="btn btn-xs" onclick="setBankPage(${BankModule._page-1})" ${BankModule._page===0?'disabled':''}>${isAR ? '‹ السابق' : '‹ Préc.'}</button>
+        <button class="btn btn-xs" onclick="setBankPage(${BankModule._page+1})" ${BankModule._page>=pages-1?'disabled':''}>${isAR ? 'التالي ›' : 'Suiv. ›'}</button>
       </div>
     </div>` : ''}
     `}
@@ -8777,6 +8841,7 @@ const BankModule = {
 
   // ── Per-account detail view ───────────────────────────────────
   _renderAccountDetail(bankId) {
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const settings = DB.getSettings();
     const bank = (settings.banks||[]).find(b=>b.id===bankId);
     if (!bank) { BankModule._activeBank=null; App.loadModule('bank'); return ''; }
@@ -8793,7 +8858,7 @@ const BankModule = {
     return `<div style="padding:24px;max-width:1100px;margin:0 auto">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
     <button class="btn btn-xs" style="background:var(--bg2);border:1px solid var(--border);color:var(--text)" onclick="BankModule._activeBank=null;App.loadModule('bank')">
-      <i class="fas fa-arrow-left"></i> Retour
+      <i class="fas fa-arrow-left"></i> ${isAR ? 'رجوع' : 'Retour'}
     </button>
     <h2 style="font-size:20px;font-weight:900;margin:0;color:var(--text)">${Utils.escHTML(bank.bankName||'Banque')} — ${Utils.escHTML(bank.name)}</h2>
     ${bank.accountNum?`<span style="font-family:monospace;font-size:12px;background:var(--bg3);padding:4px 10px;border-radius:8px;color:var(--text4)">${Utils.escHTML(bank.accountNum)}</span>`:''}
@@ -8802,11 +8867,11 @@ const BankModule = {
   <!-- KPIs -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px">
     ${[
-      {label:'Solde Actuel',   val:Utils.fmtCurrency(st.balance),  color:st.balance>=0?'#3b82f6':'#ef4444', icon:'fa-scale-balanced'},
-      {label:'Total Entrants', val:Utils.fmtCurrency(st.totalIn),  color:'#10b981', icon:'fa-arrow-circle-down'},
-      {label:'Total Sortants', val:Utils.fmtCurrency(st.totalOut), color:'#ef4444', icon:'fa-arrow-circle-up'},
-      {label:'Payé Fournisseurs', val:Utils.fmtCurrency(supPaysForBank.reduce((s,p)=>s+p.amount,0)), color:'#f59e0b', icon:'fa-building'},
-      {label:'Transactions',   val:st.txCount, color:'#8b5cf6', icon:'fa-list'},
+      {label:isAR ? 'الرصيد الحالي' : 'Solde Actuel',   val:Utils.fmtCurrency(st.balance),  color:st.balance>=0?'#3b82f6':'#ef4444', icon:'fa-scale-balanced'},
+      {label:isAR ? 'إجمالي المقبوضات' : 'Total Entrants', val:Utils.fmtCurrency(st.totalIn),  color:'#10b981', icon:'fa-arrow-circle-down'},
+      {label:isAR ? 'إجمالي المدفوعات' : 'Total Sortants', val:Utils.fmtCurrency(st.totalOut), color:'#ef4444', icon:'fa-arrow-circle-up'},
+      {label:isAR ? 'المدفوع للموردين' : 'Payé Fournisseurs', val:Utils.fmtCurrency(supPaysForBank.reduce((s,p)=>s+p.amount,0)), color:'#f59e0b', icon:'fa-building'},
+      {label:isAR ? 'العمليات' : 'Transactions',   val:st.txCount, color:'#8b5cf6', icon:'fa-list'},
     ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px">
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:6px">${k.label}</div>
       <div style="font-size:20px;font-weight:900;color:${k.color}">${k.val}</div>
@@ -8814,32 +8879,37 @@ const BankModule = {
   </div>
 
   ${isAdmin ? `<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-    <button class="btn" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.3)" onclick="BankModule._depositExternal('${bankId}')"><i class="fas fa-plus"></i> Dépôt Externe</button>
-    <button class="btn" style="background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.3)" onclick="BankModule._transferFromCaisse('${bankId}')"><i class="fas fa-exchange-alt"></i> Virement Caisse</button>
-    <button class="btn" style="background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.3)" onclick="BankModule.paySupplierModal('${bankId}')"><i class="fas fa-hand-holding-usd"></i> Payer Fournisseur</button>
+    <button class="btn" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.3)" onclick="BankModule._depositExternal('${bankId}')"><i class="fas fa-plus"></i> ${isAR ? 'إيداع خارجي' : 'Dépôt Externe'}</button>
+    <button class="btn" style="background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.3)" onclick="BankModule._transferFromCaisse('${bankId}')"><i class="fas fa-exchange-alt"></i> ${isAR ? 'تحويل من الصندوق' : 'Virement Caisse'}</button>
+    <button class="btn" style="background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.3)" onclick="BankModule.paySupplierModal('${bankId}')"><i class="fas fa-hand-holding-usd"></i> ${isAR ? 'دفع للمورد' : 'Payer Fournisseur'}</button>
   </div>` : ''}
 
   <!-- Transaction list -->
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden">
     <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-weight:800;font-size:14px;color:var(--text)">
-      Historique des transactions (${txs.length})
+      ${isAR ? 'سجل العمليات' : 'Historique des transactions'} (${txs.length})
     </div>
     ${txs.length===0
-      ? `<div style="padding:60px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>Aucune transaction</div>`
+      ? `<div style="padding:60px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>${isAR ? 'لا توجد معاملات' : 'Aucune transaction'}</div>`
       : `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--bg3)">
-          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Réf</th>
-          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Date</th>
-          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Type</th>
-          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Fournisseur / Note</th>
-          <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">Montant</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR ? 'المرجع' : 'Réf'}</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR ? 'التاريخ' : 'Date'}</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR ? 'النوع' : 'Type'}</th>
+          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR ? 'المورد / ملاحظة' : 'Fournisseur / Note'}</th>
+          <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR ? 'المبلغ' : 'Montant'}</th>
           <th style="padding:10px 16px;width:70px"></th>
         </tr></thead>
         <tbody>
         ${txs.map(t=>{
           const sup = t.supplierId ? supMap[t.supplierId] : null;
           const isD = t.type==='deposit';
-          const stl = {transfer_from_caisse:'🔄 Virement Caisse',external_deposit:'💵 Dépôt Externe',supplier_payment:'🏭 Paiement Fournisseur',correction:'✏️ Correction'}[t.subtype]||(isD?'➕ Entrée':'➖ Sortie');
+          const stl = {
+            transfer_from_caisse: isAR ? '🔄 تحويل من الصندوق' : '🔄 Virement Caisse',
+            external_deposit: isAR ? '💵 إيداع خارجي' : '💵 Dépôt Externe',
+            supplier_payment: isAR ? '🏭 دفع للمورد' : '🏭 Paiement Fournisseur',
+            correction: isAR ? '✏️ تصحيح' : '✏️ Correction'
+          }[t.subtype] || (isD ? (isAR ? '➕ وارد' : '➕ Entrée') : (isAR ? '➖ صادر' : '➖ Sortie'));
           return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
             <td style="padding:10px 16px;font-family:monospace;font-size:11px;color:var(--text4)">${Utils.escHTML(t.ref||'—')}</td>
             <td style="padding:10px 16px;color:var(--text2)">${t.date||'—'}</td>
@@ -8860,30 +8930,31 @@ const BankModule = {
   // ── External Deposit ──────────────────────────────────────────
   async _depositExternal(prefillBankId) {
     if (!Auth.isAdmin()) return;
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const banks = DB.getSettings().banks || [];
-    if (!banks.length) { Utils.notify('Configurez un compte dans Paramètres → Banques','warning'); return; }
+    if (!banks.length) { Utils.notify(isAR ? 'يرجى تهيئة حساب في الإعدادات ← البنوك' : 'Configurez un compte dans Paramètres → Banques','warning'); return; }
     const opts = banks.map(b=>`<option value="${b.id}" ${b.id===prefillBankId?'selected':''}>${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
     const r = await Dialog.show({
-      title: '💵 Dépôt Externe — Banque',
-      message: `<div style="margin-bottom:14px;padding:10px 14px;background:var(--bg3);border-radius:10px;border-left:3px solid #10b981;font-size:12px;color:var(--text2);border:1px solid var(--border)">Dépôt direct sur le compte bancaire (hors caisse — ex: dépôt personnel, crédit bancaire)</div><div class="form-group"><label>Compte bancaire</label><select id="dep_bank">${opts}</select></div><div class="form-group"><label>Montant (DA)</label><input type="number" id="dep_amt" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0"></div><div class="form-group"><label>Date</label><input type="date" id="dep_date" value="${Utils.today()}"></div><div class="form-group"><label>Note / Référence</label><input type="text" id="dep_note" placeholder="Dépôt bordereau n°..."></div>`,
-      type: 'info', confirmText: '✅ Enregistrer le dépôt', cancelText: 'Annuler'
+      title: isAR ? '💵 إيداع خارجي — البنك' : '💵 Dépôt Externe — Banque',
+      message: `<div style="margin-bottom:14px;padding:10px 14px;background:var(--bg3);border-radius:10px;border-left:3px solid #10b981;font-size:12px;color:var(--text2);border:1px solid var(--border)">${isAR ? 'إيداع مباشر في الحساب البنكي (خارج الصندوق — مثال: إيداع شخصي، قرض بنكي)' : 'Dépôt direct sur le compte bancaire (hors caisse — ex: dépôt personnel, crédit bancaire)'}</div><div class="form-group"><label>${isAR ? 'الحساب البنكي' : 'Compte bancaire'}</label><select id="dep_bank">${opts}</select></div><div class="form-group"><label>${isAR ? 'المبلغ (د.ج)' : 'Montant (DA)'}</label><input type="number" id="dep_amt" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0"></div><div class="form-group"><label>${isAR ? 'التاريخ' : 'Date'}</label><input type="date" id="dep_date" value="${Utils.today()}"></div><div class="form-group"><label>${isAR ? 'ملاحظة / المرجع' : 'Note / Référence'}</label><input type="text" id="dep_note" placeholder="${isAR ? 'إيداع وصل رقم...' : 'Dépôt bordereau n°...'}"></div>`,
+      type: 'info', confirmText: isAR ? '✅ تسجيل الإيداع' : '✅ Enregistrer le dépôt', cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
     if (!r) return;
     const bankId = document.getElementById('dep_bank')?.value;
     const amount = parseFloat(document.getElementById('dep_amt')?.value||0);
     const date   = document.getElementById('dep_date')?.value || Utils.today();
     const note   = document.getElementById('dep_note')?.value || '';
-    if (!amount || amount <= 0) { Utils.notify('Montant invalide','warning'); return; }
+    if (!amount || amount <= 0) { Utils.notify(isAR ? 'المبلغ غير صالح' : 'Montant invalide','warning'); return; }
     const bank = (DB.getSettings().banks||[]).find(b=>b.id===bankId);
     const conf = await Utils.confirm2(
-      'Confirmer le dépôt bancaire externe ?',
-      `Compte bancaire : ${bank?.name || 'Banque'}\nMontant : ${Utils.fmtCurrency(amount)}\nDate : ${date}\nNote : ${note || '—'}`
+      isAR ? 'تأكيد الإيداع البنكي الخارجي؟' : 'Confirmer le dépôt bancaire externe ?',
+      `${isAR ? 'الحساب البنكي' : 'Compte bancaire'} : ${bank?.name || 'Banque'}\n${isAR ? 'المبلغ' : 'Montant'} : ${Utils.fmtCurrency(amount)}\n${isAR ? 'التاريخ' : 'Date'} : ${date}\n${isAR ? 'ملاحظة' : 'Note'} : ${note || '—'}`
     );
     if (!conf) return;
     const u   = Auth.getCurrentUser();
     const ref = BankModule._ref('DEP');
     const tx  = DB.insert('bank_transactions', { bankId, type:'deposit', subtype:'external_deposit', amount, note, date, ref, by:u?.id, byName:u?.name });
-    Utils.notify(`✅ Dépôt de ${Utils.fmtCurrency(amount)} enregistré`, 'success');
+    Utils.notify(isAR ? `✅ تم تسجيل إيداع ${Utils.fmtCurrency(amount)}` : `✅ Dépôt de ${Utils.fmtCurrency(amount)} enregistré`, 'success');
     App.loadModule('bank');
     setTimeout(() => PDFGen.exportBankDecharge(tx.id), 500);
   },
@@ -8891,27 +8962,28 @@ const BankModule = {
   // ── Transfer Caisse → Banque ──────────────────────────────────
   async _transferFromCaisse(prefillBankId) {
     if (!Auth.isAdmin()) return;
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const banks = DB.getSettings().banks || [];
-    if (!banks.length) { Utils.notify('Configurez un compte dans Paramètres → Banques','warning'); return; }
+    if (!banks.length) { Utils.notify(isAR ? 'يرجى تهيئة حساب في الإعدادات ← البنوك' : 'Configurez un compte dans Paramètres → Banques','warning'); return; }
     const cBal = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
     const opts = banks.map(b=>`<option value="${b.id}" ${b.id===prefillBankId?'selected':''}>${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName||'')}</option>`).join('');
     const r = await Dialog.show({
-      title: '🔄 Virement Caisse → Banque',
-      message: `<div style="margin-bottom:14px;padding:10px 14px;background:var(--bg3);border-radius:10px;border-left:3px solid #3b82f6;font-size:12px;color:var(--text2);border:1px solid var(--border)">Solde caisse disponible : <strong style="color:var(--text)">${Utils.fmtCurrency(cBal)}</strong></div><div class="form-group"><label>Compte bancaire destinataire</label><select id="dlg_bank">${opts}</select></div><div class="form-group"><label>Montant (DA)</label><input type="number" id="dlg_amount" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0" max="${cBal}"></div><div class="form-group"><label>Date</label><input type="date" id="dlg_date" value="${Utils.today()}"></div><div class="form-group"><label>Note</label><input type="text" id="dlg_note" placeholder="Virement mensuel..."></div>`,
-      type: 'info', confirmText: '✅ Effectuer le virement', cancelText: 'Annuler'
+      title: isAR ? '🔄 تحويل من الصندوق إلى البنك' : '🔄 Virement Caisse → Banque',
+      message: `<div style="margin-bottom:14px;padding:10px 14px;background:var(--bg3);border-radius:10px;border-left:3px solid #3b82f6;font-size:12px;color:var(--text2);border:1px solid var(--border)">${isAR ? 'الرصيد المتاح في الصندوق :' : 'Solde caisse disponible :'} <strong style="color:var(--text)">${Utils.fmtCurrency(cBal)}</strong></div><div class="form-group"><label>${isAR ? 'الحساب البنكي المستلم' : 'Compte bancaire destinataire'}</label><select id="dlg_bank">${opts}</select></div><div class="form-group"><label>${isAR ? 'المبلغ (د.ج)' : 'Montant (DA)'}</label><input type="number" id="dlg_amount" placeholder="0" style="font-size:22px;font-weight:800;text-align:center" min="0" max="${cBal}"></div><div class="form-group"><label>${isAR ? 'التاريخ' : 'Date'}</label><input type="date" id="dlg_date" value="${Utils.today()}"></div><div class="form-group"><label>${isAR ? 'ملاحظة' : 'Note'}</label><input type="text" id="dlg_note" placeholder="${isAR ? 'تحويل شهري...' : 'Virement mensuel...'}"></div>`,
+      type: 'info', confirmText: isAR ? '✅ إجراء التحويل' : '✅ Effectuer le virement', cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
     if (!r) return;
     const bankId = document.getElementById('dlg_bank')?.value;
     const amount = parseFloat(document.getElementById('dlg_amount')?.value||0);
     const date   = document.getElementById('dlg_date')?.value || Utils.today();
     const note   = document.getElementById('dlg_note')?.value || '';
-    if (!amount || amount <= 0) { Utils.notify('Montant invalide','warning'); return; }
-    if (amount > cBal) { Utils.notify(`Solde caisse insuffisant (${Utils.fmtCurrency(cBal)})`, 'danger'); return; }
+    if (!amount || amount <= 0) { Utils.notify(isAR ? 'المبلغ غير صالح' : 'Montant invalide','warning'); return; }
+    if (amount > cBal) { Utils.notify(isAR ? `رصيد الصندوق غير كافٍ (${Utils.fmtCurrency(cBal)})` : `Solde caisse insuffisant (${Utils.fmtCurrency(cBal)})`, 'danger'); return; }
     const u    = Auth.getCurrentUser();
     const bank = (DB.getSettings().banks||[]).find(b=>b.id===bankId);
     const conf = await Utils.confirm2(
-      'Confirmer le virement Caisse → Banque ?',
-      `De : Caisse Principale\nVers : ${bank?.name || 'Banque'}\nMontant : ${Utils.fmtCurrency(amount)}\nDate : ${date}`
+      isAR ? 'تأكيد التحويل من الصندوق إلى البنك؟' : 'Confirmer le virement Caisse → Banque ?',
+      `${isAR ? 'من' : 'De'} : ${isAR ? 'الصندوق الرئيسي' : 'Caisse Principale'}\n${isAR ? 'إلى' : 'Vers'} : ${bank?.name || 'Banque'}\n${isAR ? 'المبلغ' : 'Montant'} : ${Utils.fmtCurrency(amount)}\n${isAR ? 'التاريخ' : 'Date'} : ${date}`
     );
     if (!conf) return;
     const ref  = BankModule._ref('VIR');
@@ -8919,7 +8991,7 @@ const BankModule = {
     DB.insert('caisse_admin', { type:'withdrawal', source:'bank_transfer', amount, note:`Virement → ${bank?.name||bankId}: ${note}`, ref, userId:u?.id, userName:u?.name, date });
     // Add to bank
     const tx = DB.insert('bank_transactions', { bankId, type:'deposit', subtype:'transfer_from_caisse', amount, note:`Depuis caisse: ${note}`, date, ref, by:u?.id, byName:u?.name });
-    Utils.notify(`✅ Virement de ${Utils.fmtCurrency(amount)} vers ${bank?.name}`, 'success');
+    Utils.notify(isAR ? `✅ تم تحويل ${Utils.fmtCurrency(amount)} إلى ${bank?.name || ''}` : `✅ Virement de ${Utils.fmtCurrency(amount)} vers ${bank?.name}`, 'success');
     App.loadModule('bank');
     setTimeout(() => PDFGen.exportBankDecharge(tx.id), 500);
   },
@@ -8927,8 +8999,9 @@ const BankModule = {
   // ── Unified Supplier Payment Modal (from bank OR supplier module) ──
   async paySupplierModal(prefillBankId, prefillSupplierId) {
     if (!Auth.isAdmin()) return;
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const suppliers = DB.getAll('suppliers');
-    if (!suppliers.length) { Utils.notify('Aucun fournisseur configuré','warning'); return; }
+    if (!suppliers.length) { Utils.notify(isAR ? 'لا يوجد أي مورد مهيأ' : 'Aucun fournisseur configuré','warning'); return; }
     const banks   = DB.getSettings().banks || [];
 
     const supOpts  = suppliers.map(s=>`<option value="${s.id}" ${String(s.id)===String(prefillSupplierId)?'selected':''}>${Utils.escHTML(s.name)}</option>`).join('');
@@ -8941,37 +9014,37 @@ const BankModule = {
     setTimeout(() => { BankModule._onSupChange(); BankModule._onSourceChange(); BankModule._validatePayAmt(); }, 120);
 
     const r = await Dialog.show({
-      title: '🏭 Paiement Fournisseur',
+      title: isAR ? '🏭 دفع للمورد' : '🏭 Paiement Fournisseur',
       message: `
-<div class="form-group mb-2"><label style="font-weight:700">Fournisseur</label><select id="pay_sup" class="input" onchange="BankModule._onSupChange();BankModule._validatePayAmt()" style="width:100%">${supOpts}</select></div>
+<div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'المورد' : 'Fournisseur'}</label><select id="pay_sup" class="input" onchange="BankModule._onSupChange();BankModule._validatePayAmt()" style="width:100%">${supOpts}</select></div>
 
 <!-- Supplier info panel -->
-<div id="pay_sup_info" style="margin-bottom:14px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);font-size:12px;color:var(--text2)">Chargement...</div>
+<div id="pay_sup_info" style="margin-bottom:14px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);font-size:12px;color:var(--text2)">${isAR ? 'جاري التحميل...' : 'Chargement...'}</div>
 
-<div class="form-group mb-2"><label style="font-weight:700">Source du paiement</label><select id="pay_source" class="input" onchange="BankModule._onSourceChange();BankModule._validatePayAmt()" style="width:100%"><option value="bank">🏦 Banque</option><option value="caisse">💵 Caisse (espèces)</option></select></div>
+<div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'مصدر الدفع' : 'Source du paiement'}</label><select id="pay_source" class="input" onchange="BankModule._onSourceChange();BankModule._validatePayAmt()" style="width:100%"><option value="bank">${isAR ? '🏦 البنك' : '🏦 Banque'}</option><option value="caisse">${isAR ? '💵 الصندوق (نقداً)' : '💵 Caisse (espèces)'}</option></select></div>
 
-<div id="pay_bank_row" class="form-group mb-2"><label style="font-weight:700">Compte bancaire</label><select id="pay_bank" class="input" onchange="BankModule._onSourceChange();BankModule._validatePayAmt()" style="width:100%">${bankOpts||'<option value="">Aucun compte</option>'}</select></div>
+<div id="pay_bank_row" class="form-group mb-2"><label style="font-weight:700">${isAR ? 'الحساب البنكي' : 'Compte bancaire'}</label><select id="pay_bank" class="input" onchange="BankModule._onSourceChange();BankModule._validatePayAmt()" style="width:100%">${bankOpts||`<option value="">${isAR ? 'لا يوجد حساب' : 'Aucun compte'}</option>`}</select></div>
 
 <!-- Available balance bar -->
 <div id="pay_bal_info" style="margin-bottom:14px;padding:10px 14px;background:var(--bg3);border-radius:10px;border-left:4px solid #3b82f6;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-  <span style="font-size:12px;color:var(--text3)">💰 Solde disponible :</span>
+  <span style="font-size:12px;color:var(--text3)">${isAR ? '💰 الرصيد المتاح :' : '💰 Solde disponible :'}</span>
   <strong id="pay_avail_lbl" style="font-size:16px;color:#10b981">—</strong>
 </div>
 
-<div class="form-group mb-2"><label style="font-weight:700">Montant à payer (DA)</label><input type="number" id="pay_amt" class="input" placeholder="0" oninput="BankModule._validatePayAmt()" style="font-size:22px;font-weight:800;text-align:center;width:100%" min="0" step="1"></div>
+<div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'المبلغ المراد دفعه (د.ج)' : 'Montant à payer (DA)'}</label><input type="number" id="pay_amt" class="input" placeholder="0" oninput="BankModule._validatePayAmt()" style="font-size:22px;font-weight:800;text-align:center;width:100%" min="0" step="1"></div>
 
 <!-- Live validation / preview panel -->
 <div id="pay_validation" style="margin-bottom:10px;padding:10px 14px;border-radius:10px;font-size:12px;display:none"></div>
 
 <!-- After-payment preview -->
 <div id="pay_preview" style="margin-bottom:14px;padding:12px 14px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);display:none">
-  <div style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:1px;color:var(--text4);margin-bottom:8px">📊 APERÇU APRÈS PAIEMENT</div>
+  <div style="font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:1px;color:var(--text4);margin-bottom:8px">${isAR ? '📊 معاينة ما بعد الدفع' : '📊 APERÇU APRÈS PAIEMENT'}</div>
   <div id="pay_preview_content" style="font-size:12px;color:var(--text2)"></div>
 </div>
 
-<div class="form-group mb-2"><label style="font-weight:700">Date</label><input type="date" id="pay_date" class="input" value="${Utils.today()}" style="width:100%"></div>
-<div class="form-group mb-2"><label style="font-weight:700">Note / Référence</label><input type="text" id="pay_note" class="input" placeholder="Paiement BR n°..." style="width:100%"></div>`,
-      type: 'info', confirmText: '✅ Enregistrer & Décharge', cancelText: 'Annuler'
+<div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'التاريخ' : 'Date'}</label><input type="date" id="pay_date" class="input" value="${Utils.today()}" style="width:100%"></div>
+<div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'ملاحظة / المرجع' : 'Note / Référence'}</label><input type="text" id="pay_note" class="input" placeholder="${isAR ? 'دفع وصل رقم...' : 'Paiement BR n°...'}" style="width:100%"></div>`,
+      type: 'info', confirmText: isAR ? '✅ تسجيل وسند صرف' : '✅ Enregistrer & Décharge', cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!r) return;
@@ -8983,28 +9056,28 @@ const BankModule = {
     const date       = document.getElementById('pay_date')?.value || Utils.today();
     const note       = document.getElementById('pay_note')?.value || '';
 
-    if (!supplierId) { Utils.notify('Sélectionnez un fournisseur','warning'); return; }
-    if (!amount || amount <= 0) { Utils.notify('Montant invalide','warning'); return; }
+    if (!supplierId) { Utils.notify(isAR ? 'اختر مورداً' : 'Sélectionnez un fournisseur','warning'); return; }
+    if (!amount || amount <= 0) { Utils.notify(isAR ? 'المبلغ غير صالح' : 'Montant invalide','warning'); return; }
 
     // ── STRICT BALANCE ENFORCEMENT ──
     if (source === 'bank') {
-      if (!bankId) { Utils.notify('Sélectionnez un compte bancaire','warning'); return; }
+      if (!bankId) { Utils.notify(isAR ? 'اختر حساباً بنكياً' : 'Sélectionnez un compte bancaire','warning'); return; }
       const bankBal = BankModule._bankBalance(bankId).balance;
-      if (amount > bankBal) { Utils.notify(`⛔ Solde insuffisant — disponible: ${Utils.fmtCurrency(bankBal)}`, 'danger'); return; }
+      if (amount > bankBal) { Utils.notify(isAR ? `⛔ الرصيد غير كافٍ — المتاح: ${Utils.fmtCurrency(bankBal)}` : `⛔ Solde insuffisant — disponible: ${Utils.fmtCurrency(bankBal)}`, 'danger'); return; }
     } else {
       const caisseBalance = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
-      if (amount > caisseBalance) { Utils.notify(`⛔ Solde caisse insuffisant — disponible: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}`, 'danger'); return; }
+      if (amount > caisseBalance) { Utils.notify(isAR ? `⛔ رصيد الصندوق غير كافٍ — المتاح: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}` : `⛔ Solde caisse insuffisant — disponible: ${Utils.fmtCurrency(Math.max(0,caisseBalance))}`, 'danger'); return; }
     }
 
     const u   = Auth.getCurrentUser();
     const targetBank = bankId ? (DB.getSettings().banks||[]).find(b=>b.id===bankId) : null;
+    const sup = DB.getById('suppliers', supplierId);
     const conf = await Utils.confirm2(
-      'Confirmer le règlement fournisseur ?',
-      `Fournisseur : ${sup?.name || 'Fournisseur'}\nMontant : ${Utils.fmtCurrency(amount)}\nSource : ${source==='bank' ? ('Banque ' + (targetBank?.name || '')) : 'Caisse Principale (Espèces)'}\nDate : ${date}`
+      isAR ? 'تأكيد دفع مستحقات المورد؟' : 'Confirmer le règlement fournisseur ?',
+      `${isAR ? 'المورد' : 'Fournisseur'} : ${sup?.name || 'Fournisseur'}\n${isAR ? 'المبلغ' : 'Montant'} : ${Utils.fmtCurrency(amount)}\n${isAR ? 'المصدر' : 'Source'} : ${source==='bank' ? ((isAR ? 'البنك ' : 'Banque ') + (targetBank?.name || '')) : (isAR ? 'الصندوق الرئيسي (نقداً)' : 'Caisse Principale (Espèces)')}\n${isAR ? 'التاريخ' : 'Date'} : ${date}`
     );
     if (!conf) return;
 
-    const sup = DB.getById('suppliers', supplierId);
     const ref = BankModule._ref('PAY');
 
     const pay = DB.insert('supplier_payments', {
@@ -9061,13 +9134,14 @@ const BankModule = {
       });
     }
 
-    Utils.notify(`✅ Paiement de ${Utils.fmtCurrency(amount)} à ${sup?.name} — Réf: ${ref}`, 'success');
+    Utils.notify(isAR ? `✅ تم تسجيل دفع ${Utils.fmtCurrency(amount)} للمورد ${sup?.name || ''} — المرجع: ${ref}` : `✅ Paiement de ${Utils.fmtCurrency(amount)} à ${sup?.name} — Réf: ${ref}`, 'success');
     App.loadModule('bank');
     setTimeout(() => PDFGen.exportSupplierPayDecharge(pay.id), 600);
   },
 
   // ── Helper: update supplier info panel ────────────────────────
   _onSupChange() {
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const supId = parseInt(document.getElementById('pay_sup')?.value);
     const el = document.getElementById('pay_sup_info');
     if (!el || !supId) return;
@@ -9084,27 +9158,27 @@ const BankModule = {
         <div style="width:32px;height:32px;border-radius:8px;background:rgba(139,92,246,.2);display:flex;align-items:center;justify-content:center;color:#a78bfa;font-weight:900;font-size:14px">${(sup?.name||'?')[0].toUpperCase()}</div>
         <div>
           <div style="font-weight:700;color:#e2e8f0;font-size:13px">${Utils.escHTML(sup?.name||'?')}</div>
-          <div style="font-size:10px;color:#64748b">${nbBR} BR · ${nbPays} paiements</div>
+          <div style="font-size:10px;color:#64748b">${nbBR} ${isAR ? 'سند استلام' : 'BR'} · ${nbPays} ${isAR ? 'دفعات' : 'paiements'}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
         <div style="background:rgba(139,92,246,.1);border-radius:8px;padding:6px">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">Total BR</div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">${isAR ? 'إجمالي السندات' : 'Total BR'}</div>
           <div style="font-weight:800;color:#a78bfa;font-size:13px">${Utils.fmtCurrency(totalBR)}</div>
         </div>
         <div style="background:rgba(16,185,129,.1);border-radius:8px;padding:6px">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">Déjà payé</div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">${isAR ? 'المدفوع' : 'Déjà payé'}</div>
           <div style="font-weight:800;color:#10b981;font-size:13px">${Utils.fmtCurrency(totalPaid)}</div>
         </div>
         <div style="background:${due>0?'rgba(239,68,68,.12)':'rgba(16,185,129,.12)'};border-radius:8px;padding:6px">
-          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">Reste dû</div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">${isAR ? 'المتبقي' : 'Reste dû'}</div>
           <div style="font-weight:800;color:${due>0?'#ef4444':'#10b981'};font-size:13px">${Utils.fmtCurrency(Math.max(0,due))}</div>
         </div>
       </div>
       <div style="background:rgba(255,255,255,.06);border-radius:4px;height:5px;margin-top:8px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#10b981,${pct>=100?'#059669':'#a78bfa'});border-radius:4px;transition:width .3s"></div>
       </div>
-      <div style="text-align:right;font-size:10px;color:#64748b;margin-top:3px">${pct}% payé</div>`;
+      <div style="text-align:right;font-size:10px;color:#64748b;margin-top:3px">${pct}% ${isAR ? 'مدفوع' : 'payé'}</div>`;
 
     // Pre-fill amount with remaining due
     const amtEl = document.getElementById('pay_amt');
@@ -9138,6 +9212,7 @@ const BankModule = {
 
   // ── Live validation: check amount vs balance + show preview ───
   _validatePayAmt() {
+    const isAR     = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const amt      = parseFloat(document.getElementById('pay_amt')?.value || 0);
     const source   = document.getElementById('pay_source')?.value || 'bank';
     const bankId   = document.getElementById('pay_bank')?.value;
@@ -9155,10 +9230,10 @@ const BankModule = {
     if (source === 'bank' && bankId) {
       available = BankModule._bankBalance(bankId).balance;
       const bank = (DB.getSettings().banks||[]).find(b=>b.id===bankId);
-      sourceName = bank?.name || 'Banque';
+      sourceName = bank?.name || (isAR ? 'البنك' : 'Banque');
     } else if (source === 'caisse') {
       available = DB.getAll('caisse_admin').reduce((s,t)=>t.type==='deposit'?s+t.amount:s-t.amount, 0);
-      sourceName = 'Caisse';
+      sourceName = isAR ? 'الصندوق' : 'Caisse';
     }
 
     const overBudget = amt > 0 && amt > available;
@@ -9169,7 +9244,7 @@ const BankModule = {
       valEl.style.background = 'rgba(239,68,68,.15)';
       valEl.style.border = '1px solid rgba(239,68,68,.4)';
       valEl.style.color = '#fca5a5';
-      valEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><i class="fas fa-exclamation-triangle" style="font-size:16px;color:#ef4444"></i><div><strong style="color:#ef4444">⛔ Solde insuffisant !</strong><br>Vous voulez payer <strong>${Utils.fmtCurrency(amt)}</strong> mais ${sourceName} n'a que <strong>${Utils.fmtCurrency(Math.max(0,available))}</strong></div></div>`;
+      valEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><i class="fas fa-exclamation-triangle" style="font-size:16px;color:#ef4444"></i><div><strong style="color:#ef4444">${isAR ? '⛔ الرصيد غير كافٍ!' : '⛔ Solde insuffisant !'}</strong><br>${isAR ? `تريد دفع <strong>${Utils.fmtCurrency(amt)}</strong> لكن رصيد ${sourceName} هو <strong>${Utils.fmtCurrency(Math.max(0,available))}</strong> فقط` : `Vous voulez payer <strong>${Utils.fmtCurrency(amt)}</strong> mais ${sourceName} n'a que <strong>${Utils.fmtCurrency(Math.max(0,available))}</strong>`}</div></div>`;
       // Disable confirm button
       if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.4'; confirmBtn.style.pointerEvents = 'none'; }
     } else if (amt <= 0) {
@@ -9192,12 +9267,12 @@ const BankModule = {
       prevEl.style.display = 'block';
       prevC.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div style="background:rgba(59,130,246,.08);border-radius:8px;padding:8px;text-align:center">
-          <div style="font-size:10px;color:#64748b;margin-bottom:3px">Solde ${sourceName} après</div>
+          <div style="font-size:10px;color:#64748b;margin-bottom:3px">${isAR ? `رصيد ${sourceName} بعد الدفع` : `Solde ${sourceName} après`}</div>
           <div style="font-weight:800;color:#3b82f6;font-size:14px">${Utils.fmtCurrency(Math.max(0,balAfter))}</div>
         </div>
         <div style="background:${dueAfter<=0?'rgba(16,185,129,.08)':'rgba(245,158,11,.08)'};border-radius:8px;padding:8px;text-align:center">
-          <div style="font-size:10px;color:#64748b;margin-bottom:3px">Reste fournisseur après</div>
-          <div style="font-weight:800;color:${dueAfter<=0?'#10b981':'#f59e0b'};font-size:14px">${dueAfter<=0?'✅ Soldé':Utils.fmtCurrency(dueAfter)}</div>
+          <div style="font-size:10px;color:#64748b;margin-bottom:3px">${isAR ? 'المتبقي للمورد بعد الدفع' : 'Reste fournisseur après'}</div>
+          <div style="font-weight:800;color:${dueAfter<=0?'#10b981':'#f59e0b'};font-size:14px">${dueAfter<=0 ? (isAR ? '✅ تم السداد' : '✅ Soldé') : Utils.fmtCurrency(dueAfter)}</div>
         </div>
       </div>`;
     } else if (prevEl) {
@@ -9212,25 +9287,26 @@ const BankModule = {
   // ── Correct a transaction (admin only) ───────────────────────
   async _correctTx(txId) {
     if (!Auth.isAdmin()) return;
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const tx = DB.getById('bank_transactions', txId);
     if (!tx) return;
     const r = await Dialog.show({
-      title: '✏️ Corriger transaction',
-      message: `<div class="form-group"><label>Nouveau montant</label><input type="number" id="dlg_ca" value="${tx.amount}" style="font-size:20px;font-weight:800;text-align:center"></div><div class="form-group"><label>Motif de correction</label><input type="text" id="dlg_cn" placeholder="Erreur de saisie..."></div>`,
-      type: 'warning', confirmText: 'Corriger', cancelText: 'Annuler'
+      title: isAR ? '✏️ تصحيح العملية' : '✏️ Corriger transaction',
+      message: `<div class="form-group"><label>${isAR ? 'المبلغ الجديد' : 'Nouveau montant'}</label><input type="number" id="dlg_ca" value="${tx.amount}" style="font-size:20px;font-weight:800;text-align:center"></div><div class="form-group"><label>${isAR ? 'سبب التصحيح' : 'Motif de correction'}</label><input type="text" id="dlg_cn" placeholder="${isAR ? 'خطأ في الإدخال...' : 'Erreur de saisie...'}"></div>`,
+      type: 'warning', confirmText: isAR ? 'تصحيح' : 'Corriger', cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
     if (!r) return;
     const newAmt = parseFloat(document.getElementById('dlg_ca')?.value||tx.amount);
+    const cn     = document.getElementById('dlg_cn')?.value || '';
     const conf = await Utils.confirm2(
-      'Confirmer la correction de la transaction ?',
-      `Réf : ${tx.ref || tx.id}\nAncien montant : ${Utils.fmtCurrency(tx.amount)}\nNouveau montant : ${Utils.fmtCurrency(newAmt)}\nMotif : ${cn || 'Correction'}`
+      isAR ? 'تأكيد تصحيح العملية البنكية؟' : 'Confirmer la correction de la transaction ?',
+      `${isAR ? 'المرجع' : 'Réf'} : ${tx.ref || tx.id}\n${isAR ? 'المبلغ القديم' : 'Ancien montant'} : ${Utils.fmtCurrency(tx.amount)}\n${isAR ? 'المبلغ الجديد' : 'Nouveau montant'} : ${Utils.fmtCurrency(newAmt)}\n${isAR ? 'السبب' : 'Motif'} : ${cn || (isAR ? 'تصحيح' : 'Correction')}`
     );
     if (!conf) return;
 
-    const cn     = document.getElementById('dlg_cn')?.value || '';
     const u = Auth.getCurrentUser();
     DB.update('bank_transactions', txId, { amount:newAmt, subtype:'correction', note:(tx.note||'')+` [Corrigé ${u?.name}: ${cn}]`, correctedBy:u?.id, correctedAt:new Date().toISOString() });
-    Utils.notify('Transaction corrigée','success');
+    Utils.notify(isAR ? 'تم تصحيح العملية' : 'Transaction corrigée','success');
     App.loadModule('bank');
   },
 
@@ -9273,8 +9349,9 @@ const BankModule = {
   _paySupplier(bankId) { BankModule.paySupplierModal(bankId); },
 
   showExtraitModal(bankId = null) {
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const banks = DB.getSettings().banks || [];
-    if (!banks.length) { Utils.notify('Configurez un compte bancaire d\'abord','warning'); return; }
+    if (!banks.length) { Utils.notify(isAR ? 'يرجى تهيئة حساب بنكي أولاً' : 'Configurez un compte bancaire d\'abord','warning'); return; }
     
     const bankOpts = banks.map(b=>`<option value="${b.id}" ${b.id===bankId?'selected':''}>${Utils.escHTML(b.name)}</option>`).join('');
     
@@ -9288,25 +9365,25 @@ const BankModule = {
         <select id="ex_bank_id" class="input" style="flex:1">${bankOpts}</select>
         <input type="date" id="ex_date_from" class="input" value="${firstDay}">
         <input type="date" id="ex_date_to" class="input" value="${today}">
-        <button class="btn btn-primary" onclick="BankModule._updateExtraitPreview()"><i class="fas fa-sync"></i> Filtrer</button>
+        <button class="btn btn-primary" onclick="BankModule._updateExtraitPreview()"><i class="fas fa-sync"></i> ${isAR ? 'تصفية' : 'Filtrer'}</button>
       </div>
       <div id="ex_preview_content" style="min-height:300px;background:#fff;padding:20px;border:1px solid #ddd;border-radius:4px;color:#000;font-family:Arial,sans-serif">
-        <div style="text-align:center;color:#666;margin-top:40px"><i class="fas fa-spinner fa-spin"></i> Chargement...</div>
+        <div style="text-align:center;color:#666;margin-top:40px"><i class="fas fa-spinner fa-spin"></i> ${isAR ? 'جاري التحميل...' : 'Chargement...'}</div>
       </div>
     `;
 
     Dialog.show({
-      title: 'Extrait de Compte',
+      title: isAR ? 'كشف الحساب البنكي' : 'Extrait de Compte',
       message: html,
       type: 'info',
-      confirmText: '🖨️ Imprimer',
-      cancelText: 'Fermer',
+      confirmText: isAR ? '🖨️ طباعة' : '🖨️ Imprimer',
+      cancelText: isAR ? 'إغلاق' : 'Fermer',
       width: '800px'
     }).then(ok => {
       if (ok) {
         const content = document.getElementById('ex_preview_content').innerHTML;
         const w = window.open('','_blank');
-        w.document.write(`<html><head><title>Extrait de Compte</title><style>table{width:100%;border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;}th,td{border:1px solid #000;padding:6px;text-align:left;}th{background:#eee;} .text-right{text-align:right;} h2,h3{text-align:center;margin:5px 0;} @media print { @page { size: A4 portrait; margin: 15mm; } body { -webkit-print-color-adjust: exact; } button { display: none; } }</style></head><body onload="window.print()">` + content + '</body></html>');
+        w.document.write(`<html><head><title>${isAR ? 'كشف الحساب البنكي' : 'Extrait de Compte'}</title><style>table{width:100%;border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;}th,td{border:1px solid #000;padding:6px;text-align:left;}th{background:#eee;} .text-right{text-align:right;} h2,h3{text-align:center;margin:5px 0;} @media print { @page { size: A4 portrait; margin: 15mm; } body { -webkit-print-color-adjust: exact; } button { display: none; } }</style></head><body onload="window.print()">` + content + '</body></html>');
         w.document.close();
       }
     });
@@ -9315,6 +9392,7 @@ const BankModule = {
   },
 
   _updateExtraitPreview() {
+    const isAR = (typeof I18n !== 'undefined' && I18n.getLang && I18n.getLang() === 'ar');
     const bankId = document.getElementById('ex_bank_id')?.value;
     const dateFrom = document.getElementById('ex_date_from')?.value;
     const dateTo = document.getElementById('ex_date_to')?.value;
@@ -9344,24 +9422,24 @@ const BankModule = {
 
     let currentSolde = soldeInitial;
     let html = `
-      <h2>EXTRAIT DE COMPTE</h2>
+      <h2>${isAR ? 'كشف الحساب البنكي' : 'EXTRAIT DE COMPTE'}</h2>
       <h3>${Utils.escHTML(bank?.name || '')} - ${Utils.escHTML(bank?.accountNum || '')}</h3>
-      <div style="margin-bottom:15px;font-size:12px">Période du <strong>${dateFrom}</strong> au <strong>${dateTo}</strong></div>
+      <div style="margin-bottom:15px;font-size:12px">${isAR ? 'الفترة من' : 'Période du'} <strong>${dateFrom}</strong> ${isAR ? 'إلى' : 'au'} <strong>${dateTo}</strong></div>
       
       <table>
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Libellé</th>
-            <th>Réf / Pièce</th>
-            <th class="text-right">Débit</th>
-            <th class="text-right">Crédit</th>
-            <th class="text-right">Solde</th>
+            <th>${isAR ? 'التاريخ' : 'Date'}</th>
+            <th>${isAR ? 'البيان' : 'Libellé'}</th>
+            <th>${isAR ? 'المرجع / الوصل' : 'Réf / Pièce'}</th>
+            <th class="text-right">${isAR ? 'مدين (سحب)' : 'Débit'}</th>
+            <th class="text-right">${isAR ? 'دائن (إيداع)' : 'Crédit'}</th>
+            <th class="text-right">${isAR ? 'الرصيد' : 'Solde'}</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td colspan="3"><strong>SOLDE INITIAL</strong></td>
+            <td colspan="3"><strong>${isAR ? 'الرصيد الافتتاحي' : 'SOLDE INITIAL'}</strong></td>
             <td></td>
             <td></td>
             <td class="text-right"><strong>${Utils.fmtCurrency(soldeInitial)}</strong></td>
@@ -9390,7 +9468,7 @@ const BankModule = {
 
     html += `
           <tr>
-            <td colspan="3"><strong>SOLDE FINAL</strong></td>
+            <td colspan="3"><strong>${isAR ? 'الرصيد النهائي' : 'SOLDE FINAL'}</strong></td>
             <td></td>
             <td></td>
             <td class="text-right"><strong>${Utils.fmtCurrency(currentSolde)}</strong></td>
@@ -9632,8 +9710,8 @@ const PartnersModule = {
         
         <div>
           <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:10px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:0.5px">
-            <span>Paiements (${Math.round(pct)}%)</span>
-            <span style="color:${s.remaining>0?'#f59e0b':'#10b981'}">${s.remaining>0?'Reste '+Utils.fmtCurrency(s.remaining):'✅ Soldé'}</span>
+            <span>${isAR ? 'المدفوعات' : 'Paiements'} (${Math.round(pct)}%)</span>
+            <span style="color:${s.remaining>0?'#f59e0b':'#10b981'}">${s.remaining>0 ? ((isAR ? 'المتبقي ' : 'Reste ') + Utils.fmtCurrency(s.remaining)) : (isAR ? '✅ تم السداد' : '✅ Soldé')}</span>
           </div>
           <div style="background:var(--bg3);border-radius:20px;height:6px;overflow:hidden;width:100%"><div style="height:100%;border-radius:20px;background:${pct>=100?'#10b981':'linear-gradient(90deg,#8b5cf6,#7c3aed)'};width:${Math.min(pct,100)}%;transition:width .5s"></div></div>
         </div>
@@ -9643,7 +9721,7 @@ const PartnersModule = {
           <div style="text-align:right"><div style="font-size:10px;color:var(--text4);text-transform:uppercase;font-weight:700;letter-spacing:0.5px">${isAR?'سندات الاستلام':'Bons de Réception'}</div><div style="font-size:13px;font-weight:700;color:var(--text2);margin-top:4px">${s.brCount} BR</div></div>
         </div>
       </div>`;
-      }).join('') : `<div style="grid-column:1/-1;padding:40px;text-align:center;background:var(--bg2);border-radius:12px;border:1px dashed var(--border)"><i class="fas fa-building" style="font-size:48px;color:var(--text4);margin-bottom:16px"></i><div style="font-size:15px;font-weight:700;color:var(--text)">${T.get('no_data')}</div><div style="font-size:13px;color:var(--text4);margin-top:8px">Aucun fournisseur trouvé</div></div>`}
+      }).join('') : `<div style="grid-column:1/-1;padding:40px;text-align:center;background:var(--bg2);border-radius:12px;border:1px dashed var(--border)"><i class="fas fa-building" style="font-size:48px;color:var(--text4);margin-bottom:16px"></i><div style="font-size:15px;font-weight:700;color:var(--text)">${T.get('no_data')}</div><div style="font-size:13px;color:var(--text4);margin-top:8px">${isAR ? 'لم يتم العثور على أي مورد' : 'Aucun fournisseur trouvé'}</div></div>`}
     </div>`;
   },
 
@@ -9703,15 +9781,15 @@ const PartnersModule = {
 
     <!-- KPI Stats -->
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">
-      <div class="stat-card-v2"><div class="stat-icon-v2 blue"><i class="fas fa-file-export"></i></div><div class="stat-body-v2"><div class="stat-value-v2">${delivered.length}</div><div class="stat-label-v2">BL livrés</div></div></div>
-      <div class="stat-card-v2"><div class="stat-icon-v2 green"><i class="fas fa-coins"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(totalRevenue)}</div><div class="stat-label-v2">CA total</div></div></div>
-      <div class="stat-card-v2"><div class="stat-icon-v2 purple"><i class="fas fa-chart-line"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(avgBL)}</div><div class="stat-label-v2">Moy. / BL</div></div></div>
-      <div class="stat-card-v2"><div class="stat-icon-v2 orange"><i class="fas fa-hourglass-half"></i></div><div class="stat-body-v2"><div class="stat-value-v2">${pending.length}</div><div class="stat-label-v2">En attente</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 blue"><i class="fas fa-file-export"></i></div><div class="stat-body-v2"><div class="stat-value-v2">${delivered.length}</div><div class="stat-label-v2">${isAR?'سندات مسلّمة':'BL livrés'}</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 green"><i class="fas fa-coins"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(totalRevenue)}</div><div class="stat-label-v2">${isAR?'إجمالي المبيعات':'CA total'}</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 purple"><i class="fas fa-chart-line"></i></div><div class="stat-body-v2"><div class="stat-value-v2" style="font-size:16px">${Utils.fmtCurrency(avgBL)}</div><div class="stat-label-v2">${isAR?'متوسط السند':'Moy. / BL'}</div></div></div>
+      <div class="stat-card-v2"><div class="stat-icon-v2 orange"><i class="fas fa-hourglass-half"></i></div><div class="stat-body-v2"><div class="stat-value-v2">${pending.length}</div><div class="stat-label-v2">${isAR?'في الانتظار':'En attente'}</div></div></div>
     </div>
 
     <!-- Monthly Revenue Chart -->
     ${months.length>0 ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:14px"><i class="fas fa-chart-bar" style="color:var(--primary)"></i> CA mensuel</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:14px"><i class="fas fa-chart-bar" style="color:var(--primary)"></i> ${isAR?'المبيعات الشهرية':'CA mensuel'}</div>
       <div style="display:flex;align-items:flex-end;gap:8px;height:100px">
         ${months.map(m => { const h = (byMonth[m]/maxMonth)*100; return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:10px;font-weight:700;color:var(--primary)">${Utils.fmtCurrency(byMonth[m])}</div><div style="width:100%;background:linear-gradient(180deg,#0ea5e9,#0284c7);border-radius:6px 6px 0 0;height:${Math.max(h,8)}%;transition:height .5s"></div><div style="font-size:9px;color:var(--text4);font-weight:600">${m.substring(5)}</div></div>`; }).join('')}
       </div>
@@ -9728,22 +9806,22 @@ const PartnersModule = {
     <!-- BL History -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">
-        <span><i class="fas fa-file-export" style="color:#0ea5e9"></i> ${isAR?'سجل الفواتير':'Historique des livraisons'}</span>
+        <span><i class="fas fa-file-export" style="color:#0ea5e9"></i> ${isAR?'سجل الفواتير والتسليمات':'Historique des livraisons'}</span>
         <div style="display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:var(--text4)">${bls.length} BL</span><button class="btn btn-sm btn-outline" onclick="CSVExport.exportBLs(${clientId})" title="Export CSV"><i class="fas fa-download"></i></button></div>
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="border-bottom:2px solid var(--border)"><th style="padding:10px 14px;text-align:left">Réf</th><th style="padding:10px;text-align:left">Date</th><th style="padding:10px;text-align:left">Statut</th><th style="padding:10px;text-align:left">Articles</th><th style="padding:10px;text-align:right">HT</th><th style="padding:10px;text-align:right">TTC</th></tr></thead>
+        <thead><tr style="border-bottom:2px solid var(--border)"><th style="padding:10px 14px;text-align:left">${isAR?'المرجع':'Réf'}</th><th style="padding:10px;text-align:left">${isAR?'التاريخ':'Date'}</th><th style="padding:10px;text-align:left">${isAR?'الحالة':'Statut'}</th><th style="padding:10px;text-align:left">${isAR?'المواد':'Articles'}</th><th style="padding:10px;text-align:right">${isAR?'المبلغ الصافي':'HT'}</th><th style="padding:10px;text-align:right">${isAR?'الإجمالي':'TTC'}</th></tr></thead>
         <tbody>${bls.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(bl => {
           const items = (bl.items||[]).length;
           return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
             <td style="padding:10px 14px;font-weight:600">${Utils.escHTML(bl.ref||'')}</td>
             <td style="padding:10px;color:var(--text2)">${bl.date||''}</td>
-            <td style="padding:10px"><span class="badge ${bl.status==='delivered'?'badge-success':'badge-warning'}" style="font-size:10px">${bl.status==='delivered'?'✅ Livré':'⏳ En cours'}</span></td>
-            <td style="padding:10px;color:var(--text4)">${items} article${items>1?'s':''}</td>
+            <td style="padding:10px"><span class="badge ${bl.status==='delivered'?'badge-success':'badge-warning'}" style="font-size:10px">${bl.status==='delivered'?(isAR?'✅ مسلّم':'✅ Livré'):(isAR?'⏳ قيد المعالجة':'⏳ En cours')}</span></td>
+            <td style="padding:10px;color:var(--text4)">${items} ${isAR?'مادة':'article'+(items>1?'s':'')}</td>
             <td style="padding:10px;text-align:right;font-weight:600">${Utils.fmtCurrency(bl.totalHT||0)}</td>
             <td style="padding:10px;text-align:right;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(bl.totalTTC||0)}</td>
           </tr>`;
-        }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text4);padding:30px">Aucun BL</td></tr>'}
+        }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text4);padding:30px">${isAR?'لا توجد سندات تسليم':'Aucun BL'}</td></tr>`}
         </tbody>
       </table></div>
     </div>
@@ -9785,8 +9863,8 @@ const PartnersModule = {
           ${s.nif?`<div style="font-size:11px;opacity:.6;margin-top:2px">NIF: ${Utils.escHTML(s.nif)}</div>`:''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:none" onclick="SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i> Modifier</button>
-          ${isAdmin?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none;font-weight:700" onclick="BankModule.paySupplierModal(null,${s.id})"><i class="fas fa-hand-holding-usd"></i> Payer ce fournisseur</button>`:''}
+          <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:none" onclick="SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i> ${isAR?'تعديل':'Modifier'}</button>
+          ${isAdmin?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none;font-weight:700" onclick="BankModule.paySupplierModal(null,${s.id})"><i class="fas fa-hand-holding-usd"></i> ${isAR?'دفع لهذا المورد':'Payer ce fournisseur'}</button>`:''}
         </div>
       </div>
     </div>
@@ -9794,11 +9872,11 @@ const PartnersModule = {
     <!-- KPI Cards -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px">
       ${[
-        {label:'Total Achats (BR)', val:Utils.fmtCurrency(totalBR), color:'#8b5cf6', icon:'fa-file-import'},
-        {label:'Total Payé',        val:Utils.fmtCurrency(totalPaid), color:'#10b981', icon:'fa-check-circle'},
-        {label:'Reste à Payer',     val:Utils.fmtCurrency(remaining), color:remaining>0?'#ef4444':'#10b981', icon:'fa-exclamation-circle'},
-        {label:'Paiements',         val:payments.length, color:'#3b82f6', icon:'fa-credit-card'},
-        {label:'BRs',               val:brs.length, color:'#f59e0b', icon:'fa-file'},
+        {label:isAR?'إجمالي المشتريات':'Total Achats (BR)', val:Utils.fmtCurrency(totalBR), color:'#8b5cf6', icon:'fa-file-import'},
+        {label:isAR?'إجمالي المدفوع':'Total Payé',        val:Utils.fmtCurrency(totalPaid), color:'#10b981', icon:'fa-check-circle'},
+        {label:isAR?'المتبقي للدفع':'Reste à Payer',     val:Utils.fmtCurrency(remaining), color:remaining>0?'#ef4444':'#10b981', icon:'fa-exclamation-circle'},
+        {label:isAR?'الدفعات':'Paiements',         val:payments.length, color:'#3b82f6', icon:'fa-credit-card'},
+        {label:isAR?'سندات الاستلام':'BRs',               val:brs.length, color:'#f59e0b', icon:'fa-file'},
       ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:6px">${k.label}</div>
         <div style="font-size:18px;font-weight:900;color:${k.color}">${k.val}</div>
@@ -9808,35 +9886,35 @@ const PartnersModule = {
     <!-- Progress bar -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:8px">
-        <span style="color:var(--text4)">Progression des paiements</span>
+        <span style="color:var(--text4)">${isAR?'نسبة سداد المستحقات':'Progression des paiements'}</span>
         <span style="color:${pct>=100?'#10b981':'#f59e0b'}">${Math.round(pct)}%</span>
       </div>
       <div style="background:var(--bg3);border-radius:8px;height:10px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${pct>=100?'#10b981':'#8b5cf6'},${pct>=100?'#059669':'#a78bfa'});border-radius:8px;transition:width .5s"></div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text4);margin-top:6px">
-        <span>Payé: ${Utils.fmtCurrency(totalPaid)}</span>
-        <span>Total: ${Utils.fmtCurrency(totalBR)}</span>
+        <span>${isAR?'المدفوع: ':'Payé: '}${Utils.fmtCurrency(totalPaid)}</span>
+        <span>${isAR?'الإجمالي: ':'Total: '}${Utils.fmtCurrency(totalBR)}</span>
       </div>
     </div>
 
     <!-- BR History with payment status -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">
-        <span><i class="fas fa-file-import" style="color:#8b5cf6"></i> Bons de Réception (${brs.length})</span>
-        <button class="btn btn-sm btn-outline" onclick="CSVExport.exportBRs(${supplierId})"><i class="fas fa-download"></i> Export</button>
+        <span><i class="fas fa-file-import" style="color:#8b5cf6"></i> ${isAR?'سندات الاستلام':'Bons de Réception'} (${brs.length})</span>
+        <button class="btn btn-sm btn-outline" onclick="CSVExport.exportBRs(${supplierId})"><i class="fas fa-download"></i> ${isAR?'تصدير':'Export'}</button>
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--bg3)">
-          <th style="padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Réf</th>
-          <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Date</th>
-          <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Statut</th>
-          <th style="padding:10px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">Total TTC</th>
+          <th style="padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'المرجع':'Réf'}</th>
+          <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'التاريخ':'Date'}</th>
+          <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'الحالة':'Statut'}</th>
+          <th style="padding:10px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'الإجمالي':'Total TTC'}</th>
           <th style="padding:10px;width:80px"></th>
         </tr></thead>
         <tbody>${brs.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(br=>{
           const statusColor = br.status==='delivered'?'#10b981':'#f59e0b';
-          const statusLabel = br.status==='delivered'?'✅ Reçu':'📋 Ouvert';
+          const statusLabel = br.status==='delivered'?(isAR?'✅ مستلم':'✅ Reçu'):(isAR?'📋 قيد الانتظار':'📋 Ouvert');
           return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
             <td style="padding:10px 14px;font-weight:700;color:var(--text)">${Utils.escHTML(br.ref||'')}</td>
             <td style="padding:10px;color:var(--text2)">${br.date||''}</td>
@@ -9846,7 +9924,7 @@ const PartnersModule = {
               <button title="PDF" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PDFGen.exportBR(${br.id})"><i class="fas fa-file-pdf"></i></button>
             </td>
           </tr>`;
-        }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text4);padding:24px">Aucun BR</td></tr>'}
+        }).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text4);padding:24px">${isAR?'لا توجد سندات استلام':'Aucun BR'}</td></tr>`}
         </tbody>
       </table></div>
     </div>
@@ -9854,26 +9932,26 @@ const PartnersModule = {
     <!-- Payment History -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <span style="font-weight:700;font-size:14px"><i class="fas fa-credit-card" style="color:#10b981"></i> Historique Paiements (${payments.length})</span>
+        <span style="font-weight:700;font-size:14px"><i class="fas fa-credit-card" style="color:#10b981"></i> ${isAR?'سجل المدفوعات':'Historique Paiements'} (${payments.length})</span>
         <div style="display:flex;gap:8px">
-          ${isAdmin?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none" onclick="BankModule.paySupplierModal(null,${s.id})"><i class="fas fa-plus"></i> Payer</button>`:''}
-          <button class="btn btn-sm btn-outline" onclick="CSVExport.exportPayments(${supplierId})"><i class="fas fa-download"></i> Export</button>
+          ${isAdmin?`<button class="btn btn-sm" style="background:#10b981;color:#fff;border:none" onclick="BankModule.paySupplierModal(null,${s.id})"><i class="fas fa-plus"></i> ${isAR?'دفع':'Payer'}</button>`:''}
+          <button class="btn btn-sm btn-outline" onclick="CSVExport.exportPayments(${supplierId})"><i class="fas fa-download"></i> ${isAR?'تصدير':'Export'}</button>
         </div>
       </div>
       ${payments.length===0
-        ? `<div style="padding:40px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>Aucun paiement enregistré</div>`
+        ? `<div style="padding:40px;text-align:center;color:var(--text4)"><i class="fas fa-inbox" style="font-size:32px;display:block;margin-bottom:10px"></i>${isAR?'لا توجد مدفوعات مسجلة':'Aucun paiement enregistré'}</div>`
         : `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:var(--bg3)">
-            <th style="padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Réf</th>
-            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Date</th>
-            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Source</th>
-            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">Note</th>
-            <th style="padding:10px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">Montant</th>
+            <th style="padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'المرجع':'Réf'}</th>
+            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'التاريخ':'Date'}</th>
+            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'المصدر':'Source'}</th>
+            <th style="padding:10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'ملاحظة':'Note'}</th>
+            <th style="padding:10px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text4)">${isAR?'المبلغ':'Montant'}</th>
             <th style="padding:10px;width:80px"></th>
           </tr></thead>
           <tbody>${payments.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(p=>{
             const bank = p.bankId ? bankMap[p.bankId] : null;
-            const srcLabel = p.source==='caisse' ? '💵 Caisse' : (bank?`🏦 ${Utils.escHTML(bank.name)}`:'🏦 Banque');
+            const srcLabel = p.source==='caisse' ? (isAR ? '💵 الصندوق' : '💵 Caisse') : (bank?`🏦 ${Utils.escHTML(bank.name)}`:(isAR ? '🏦 البنك' : '🏦 Banque'));
             return `<tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
               <td style="padding:10px 14px;font-family:monospace;font-size:11px;color:var(--text4)">${Utils.escHTML(p.ref||'—')}</td>
               <td style="padding:10px;color:var(--text2)">${p.date||'—'}</td>
@@ -9882,7 +9960,7 @@ const PartnersModule = {
               <td style="padding:10px;text-align:right;font-weight:900;color:#10b981;font-size:15px">−${Utils.fmtCurrency(p.amount||0)}</td>
               <td style="padding:10px;text-align:right;display:flex;gap:4px;justify-content:flex-end">
                 <button title="Décharge PDF" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PDFGen.exportSupplierPayDecharge(${p.id})"><i class="fas fa-file-pdf"></i></button>
-                ${isAdmin?`<button title="Corriger" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PartnersModule._correctPay(${p.id})"><i class="fas fa-edit"></i></button>`:''}
+                ${isAdmin?`<button title="${isAR?'تصحيح':'Corriger'}" style="background:transparent;border:none;color:var(--text4);cursor:pointer;padding:4px" onclick="PartnersModule._correctPay(${p.id})"><i class="fas fa-edit"></i></button>`:''}
               </td>
             </tr>`;
           }).join('')}
@@ -9895,10 +9973,11 @@ const PartnersModule = {
 
   async _correctPay(payId) {
     if(!Auth.isAdmin())return;const pay=DB.getById('supplier_payments',payId);if(!pay)return;
-    const r=await Dialog.show({title:'Corriger paiement',message:`<div class="form-group" style="margin-bottom:10px"><label>Nouveau montant</label><input type="number" id="dlg_cp_a" value="${pay.amount}" style="width:100%"></div><div class="form-group"><label>Note</label><input type="text" id="dlg_cp_n" placeholder="Motif" style="width:100%"></div>`,type:'warning',confirmText:'Corriger',cancelText:'Annuler'});
+    const isAR = T.isRTL();
+    const r=await Dialog.show({title:isAR?'تصحيح الدفعة':'Corriger paiement',message:`<div class="form-group" style="margin-bottom:10px"><label>${isAR?'المبلغ الجديد':'Nouveau montant'}</label><input type="number" id="dlg_cp_a" value="${pay.amount}" style="width:100%"></div><div class="form-group"><label>${isAR?'ملاحظة':'Note'}</label><input type="text" id="dlg_cp_n" placeholder="${isAR?'السبب':'Motif'}" style="width:100%"></div>`,type:'warning',confirmText:isAR?'تصحيح':'Corriger',cancelText:isAR?'إلغاء':'Annuler'});
     if(!r)return;const newAmt=parseFloat(document.getElementById('dlg_cp_a')?.value||pay.amount);const cn=document.getElementById('dlg_cp_n')?.value||'';const u=Auth.getCurrentUser();
-    DB.update('supplier_payments',payId,{amount:newAmt,note:(pay.note||'')+` [Corrigé par ${u?.name}: ${cn}]`,correctedBy:u?.id,correctedAt:new Date().toISOString()});
-    Utils.notify('Paiement corrigé','success');
+    DB.update('supplier_payments',payId,{amount:newAmt,note:(pay.note||'')+` [${isAR?'مصحح من قبل':'Corrigé par'} ${u?.name}: ${cn}]`,correctedBy:u?.id,correctedAt:new Date().toISOString()});
+    Utils.notify(isAR?'تم تصحيح الدفعة':'Paiement corrigé','success');
     this._detailType='supplier';this._detailId=pay.supplierId;App.loadModule('partners');
   }
 };
@@ -9920,7 +9999,7 @@ const EtatVenteModule = {
   render() {
     const isAR = T.isRTL();
     return `
-    <div style="padding:24px 28px;max-width:1300px;margin:0 auto">
+    <div style="padding:24px 28px;max-width:1300px;margin:0 auto" ${isAR?'dir="rtl"':''}>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:14px">
         <div style="display:flex;align-items:center;gap:14px">
           <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;box-shadow:0 4px 12px rgba(13,148,136,.3)">
@@ -9928,16 +10007,16 @@ const EtatVenteModule = {
           </div>
           <div>
             <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_etat_vente') || 'État de Vente'}</h2>
-            <div style="font-size:13px;color:var(--text4);margin-top:2px">Bilan officiel des livraisons, retours marchandise déduits et dépôts bancaires</div>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">${isAR ? 'الحصيلة الرسمية للمبيعات بعد خصم المرتجعات وتجهيز الإيداع البنكي' : 'Bilan officiel des livraisons, retours marchandise déduits et dépôts bancaires'}</div>
           </div>
         </div>
         
         <div style="display:flex;background:var(--bg2);padding:4px;border-radius:10px;border:1px solid var(--border)">
           <button class="btn" style="border:none;background:${this._view==='generate'?'var(--primary)':'transparent'};color:${this._view==='generate'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('generate')">
-            <i class="fas fa-plus-circle" style="margin-right:6px"></i> Générer
+            <i class="fas fa-plus-circle" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'توليد' : 'Générer'}
           </button>
           <button class="btn" style="border:none;background:${this._view==='history'?'var(--primary)':'transparent'};color:${this._view==='history'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('history')">
-            <i class="fas fa-history" style="margin-right:6px"></i> Historique
+            <i class="fas fa-history" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'السجل الأرشيفي' : 'Historique'}
           </button>
         </div>
       </div>
@@ -10033,6 +10112,7 @@ const EtatVenteModule = {
   },
   
   _renderGenerateView() {
+    const isAR = T.isRTL();
     const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC } = this._getFilteredData();
     const settings = DB.getSettings();
     const tvaRate = Number(settings.tvaRate) || 19;
@@ -10048,23 +10128,23 @@ const EtatVenteModule = {
     <div style="display:flex;justify-content:space-between;margin-bottom:20px;gap:12px;align-items:center;flex-wrap:wrap;background:var(--bg2);padding:14px 18px;border-radius:12px;border:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);padding:6px 12px;border-radius:8px;border:1px solid var(--border)">
-          <span style="font-size:11px;color:var(--text4);font-weight:700">Du</span>
+          <span style="font-size:11px;color:var(--text4);font-weight:700">${isAR ? 'من' : 'Du'}</span>
           <input type="date" id="evDateStart" value="${this._getDateStart()}" style="border:none;background:transparent;outline:none;font-weight:700;color:var(--text);font-size:12px" onchange="EtatVenteModule._updateDates()">
-          <span style="font-size:11px;color:var(--text4);font-weight:700">Au</span>
+          <span style="font-size:11px;color:var(--text4);font-weight:700">${isAR ? 'إلى' : 'Au'}</span>
           <input type="date" id="evDateEnd" value="${this._getDateEnd()}" style="border:none;background:transparent;outline:none;font-weight:700;color:var(--text);font-size:12px" onchange="EtatVenteModule._updateDates()">
         </div>
         <select id="evUserFilter" onchange="EtatVenteModule._updateDates()" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg3);color:var(--text);font-weight:600">
-          <option value="all">Tous les caissiers / vendeurs</option>
+          <option value="all">${isAR ? 'جميع أمناء الصندوق / البائعين' : 'Tous les caissiers / vendeurs'}</option>
           ${allUsers.map(u => `<option value="${u.id}" ${this._userFilter === String(u.id) ? 'selected' : ''}>${Utils.escHTML(u.name || u.username)}</option>`).join('')}
         </select>
         <button class="btn btn-outline" onclick="EtatVenteModule._setToday()" style="font-size:12px;padding:7px 14px;font-weight:700;border-radius:8px">
-          <i class="fas fa-calendar-day"></i> Aujourd'hui
+          <i class="fas fa-calendar-day"></i> ${isAR ? 'اليوم' : 'Aujourd\'hui'}
         </button>
       </div>
 
       <div>
         <button class="btn btn-primary" onclick="EtatVenteModule._saveAndGenerate()" style="background:linear-gradient(135deg,#0d9488,#14b8a6);border:none;box-shadow:0 4px 14px rgba(13,148,136,.35);padding:9px 18px;font-size:13px;font-weight:700">
-          <i class="fas fa-file-invoice-dollar" style="margin-right:6px"></i> Générer État & Verser en Banque
+          <i class="fas fa-file-invoice-dollar" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'توليد الكشف وإيداع بالبنك' : 'Générer État & Verser en Banque'}
         </button>
       </div>
     </div>
@@ -10072,19 +10152,19 @@ const EtatVenteModule = {
     <!-- Summary KPI cards -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0ea5e9;margin-bottom:4px">Bons de Livraison Inclus</div>
-        <div style="font-size:24px;font-weight:900;color:#0ea5e9">${bls.length} BL</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0ea5e9;margin-bottom:4px">${isAR ? 'سندات التسليم المشمولة' : 'Bons de Livraison Inclus'}</div>
+        <div style="font-size:24px;font-weight:900;color:#0ea5e9">${bls.length} ${isAR ? 'سند' : 'BL'}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--success);margin-bottom:4px">Total Brut Ventes (+)</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--success);margin-bottom:4px">${isAR ? 'إجمالي المبيعات الخام (+)' : 'Total Brut Ventes (+)'}</div>
         <div style="font-size:20px;font-weight:900;color:var(--success)">+${Utils.fmtCurrency(grossTotalTTC)}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--danger);margin-bottom:4px">Retours Déduits (−)</div>
-        <div style="font-size:20px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(returnsTotalTTC)} <span style="font-size:12px;font-weight:600;color:var(--text4)">(${retours.length} BR)</span></div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--danger);margin-bottom:4px">${isAR ? 'المرتجعات المخصومة (−)' : 'Retours Déduits (−)'}</div>
+        <div style="font-size:20px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(returnsTotalTTC)} <span style="font-size:12px;font-weight:600;color:var(--text4)">(${retours.length} ${isAR ? 'سند إرجاع' : 'BR'})</span></div>
       </div>
       <div style="background:linear-gradient(135deg,rgba(13,148,136,.12),rgba(20,184,166,.05));border:1px solid rgba(13,148,136,.25);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d9488;margin-bottom:4px">Net à Déposer en Banque</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d9488;margin-bottom:4px">${isAR ? 'الصافي للإيداع بالبنك' : 'Net à Déposer en Banque'}</div>
         <div style="font-size:22px;font-weight:900;color:#0d9488">${Utils.fmtCurrency(netTotalTTC)}</div>
       </div>
     </div>
@@ -10092,18 +10172,18 @@ const EtatVenteModule = {
     <!-- Section 1: Aggregated Products Table -->
     <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;margin-bottom:24px;box-shadow:0 4px 15px rgba(0,0,0,.02)">
       <div style="padding:14px 20px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:var(--text);font-size:14px"><i class="fas fa-boxes" style="color:var(--primary);margin-right:8px"></i> I. Récapitulatif Cumulé des Articles Vendus (${items.length} références)</strong>
+        <strong style="color:var(--text);font-size:14px"><i class="fas fa-boxes" style="color:var(--primary);${isAR?'margin-left:8px':'margin-right:8px'}"></i> ${isAR ? `أولاً: ملخص تراكمي للمواد المباعة (${items.length} مادة)` : `I. Récapitulatif Cumulé des Articles Vendus (${items.length} références)`}</strong>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-              <th style="padding:10px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:50px">N°</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Désignation</th>
-              <th style="padding:10px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:100px">Unité</th>
-              <th style="padding:10px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:120px">Qté</th>
-              <th style="padding:10px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:150px">P.U HT</th>
-              <th style="padding:10px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:150px">Total HT</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:50px">${isAR ? 'رقم' : 'N°'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'تعيين المادة' : 'Désignation'}</th>
+              <th style="padding:10px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:100px">${isAR ? 'الوحدة' : 'Unité'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:120px">${isAR ? 'الكمية' : 'Qté'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:150px">${isAR ? 'سعر الوحدة خ.ض' : 'P.U HT'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px;width:150px">${isAR ? 'الإجمالي خ.ض' : 'Total HT'}</th>
             </tr>
           </thead>
           <tbody>
@@ -10112,10 +10192,10 @@ const EtatVenteModule = {
               <td style="padding:10px 16px;color:var(--text4);font-weight:600">${idx+1}</td>
               <td style="padding:10px 16px;font-weight:700;color:var(--text)">${Utils.escHTML(item.designation)}</td>
               <td style="padding:10px 16px;text-align:center;color:var(--text3)">${Utils.escHTML(item.unit)}</td>
-              <td style="padding:10px 16px;text-align:right;font-weight:700;color:#0ea5e9">${Number(item.qty).toLocaleString('fr-FR')}</td>
-              <td style="padding:10px 16px;text-align:right;color:var(--text2)">${Utils.fmtCurrency(item.unitPrice)}</td>
-              <td style="padding:10px 16px;text-align:right;font-weight:800;color:var(--text)">${Utils.fmtCurrency(item.qty * item.unitPrice)}</td>
-            </tr>`).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text4)">Aucun article vendu pour cette période</td></tr>`}
+              <td style="padding:10px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:#0ea5e9">${Number(item.qty).toLocaleString(isAR?'ar-DZ':'fr-FR')}</td>
+              <td style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text2)">${Utils.fmtCurrency(item.unitPrice)}</td>
+              <td style="padding:10px 16px;text-align:${isAR?'left':'right'};font-weight:800;color:var(--text)">${Utils.fmtCurrency(item.qty * item.unitPrice)}</td>
+            </tr>`).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد مواد مباعة خلال هذه الفترة' : 'Aucun article vendu pour cette période'}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -10124,19 +10204,19 @@ const EtatVenteModule = {
     <!-- Section 2: Bottom Table 1 - Bons de Livraison inclus -->
     <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;margin-bottom:24px;box-shadow:0 4px 15px rgba(0,0,0,.02)">
       <div style="padding:14px 20px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:var(--text);font-size:14px"><i class="fas fa-truck" style="color:#0ea5e9;margin-right:8px"></i> II. Bons de Livraison Inclus dans l'État (${bls.length} BLs)</strong>
-        <span style="font-weight:800;color:var(--success);font-size:14px">Total Brut : +${Utils.fmtCurrency(grossTotalTTC)}</span>
+        <strong style="color:var(--text);font-size:14px"><i class="fas fa-truck" style="color:#0ea5e9;${isAR?'margin-left:8px':'margin-right:8px'}"></i> ${isAR ? `ثانياً: سندات التسليم المدرجة في الكشف (${bls.length} سند)` : `II. Bons de Livraison Inclus dans l'État (${bls.length} BLs)`}</strong>
+        <span style="font-weight:800;color:var(--success);font-size:14px">${isAR ? 'المجموع الخام :' : 'Total Brut :'} +${Utils.fmtCurrency(grossTotalTTC)}</span>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px;width:50px">N°</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Réf BL</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Date</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Caissier / Vendeur</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Client</th>
-              <th style="padding:10px 16px;text-align:right;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Montant TTC</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px;width:50px">${isAR ? 'رقم' : 'N°'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'مرجع السند' : 'Réf BL'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'التاريخ' : 'Date'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'أمين الصندوق / البائع' : 'Caissier / Vendeur'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'الزبون' : 'Client'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'المبلغ الإجمالي' : 'Montant TTC'}</th>
             </tr>
           </thead>
           <tbody>
@@ -10147,16 +10227,16 @@ const EtatVenteModule = {
                 <td style="padding:9px 16px;font-family:monospace;font-weight:700;color:var(--primary)">${Utils.escHTML(b.ref || '—')}</td>
                 <td style="padding:9px 16px;color:var(--text2)">${Utils.fmtDate(b.date)}</td>
                 <td style="padding:9px 16px;color:var(--text)">${Utils.escHTML(u?.name || '—')}</td>
-                <td style="padding:9px 16px;color:var(--text2)">${Utils.escHTML(b.clientName || 'Client Comptoir')}</td>
-                <td style="padding:9px 16px;text-align:right;font-weight:800;color:var(--success)">+${Utils.fmtCurrency(b.totalTTC || 0)}</td>
+                <td style="padding:9px 16px;color:var(--text2)">${Utils.escHTML(b.clientName || (isAR ? 'زبون عام' : 'Client Comptoir'))}</td>
+                <td style="padding:9px 16px;text-align:${isAR?'left':'right'};font-weight:800;color:var(--success)">+${Utils.fmtCurrency(b.totalTTC || 0)}</td>
               </tr>`;
-            }).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4)">Aucun bon de livraison pour cette sélection</td></tr>`}
+            }).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4)">${isAR ? 'لا يوجد أي سند تسليم ضمن هذا التحديد' : 'Aucun bon de livraison pour cette sélection'}</td></tr>`}
           </tbody>
           ${bls.length ? `
           <tfoot>
             <tr style="background:var(--bg3);font-weight:900;border-top:2px solid var(--border)">
-              <td colspan="5" style="padding:12px 16px;text-align:right;text-transform:uppercase;font-size:11px;color:var(--text2)">TOTAL BRUT DES VENTES BL :</td>
-              <td style="padding:12px 16px;text-align:right;font-size:14px;color:var(--success)">+${Utils.fmtCurrency(grossTotalTTC)}</td>
+              <td colspan="5" style="padding:12px 16px;text-align:${isAR?'left':'right'};text-transform:uppercase;font-size:11px;color:var(--text2)">${isAR ? 'إجمالي مبيعات سندات التسليم الخام :' : 'TOTAL BRUT DES VENTES BL :'}</td>
+              <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-size:14px;color:var(--success)">+${Utils.fmtCurrency(grossTotalTTC)}</td>
             </tr>
           </tfoot>` : ''}
         </table>
@@ -10166,19 +10246,19 @@ const EtatVenteModule = {
     <!-- Section 3: Bottom Table 2 - Retours Marchandise déduits -->
     <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;margin-bottom:24px;box-shadow:0 4px 15px rgba(0,0,0,.02)">
       <div style="padding:14px 20px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:var(--danger);font-size:14px"><i class="fas fa-undo" style="margin-right:8px"></i> III. Retours Marchandise Déduits de l'État (${retours.length} Bons de Retour)</strong>
-        <span style="font-weight:800;color:var(--danger);font-size:14px">Total Déduit : -${Utils.fmtCurrency(returnsTotalTTC)}</span>
+        <strong style="color:var(--danger);font-size:14px"><i class="fas fa-undo" style="${isAR?'margin-left:8px':'margin-right:8px'}"></i> ${isAR ? `ثالثاً: مرتجعات السلع المخصومة (${retours.length} سند إرجاع)` : `III. Retours Marchandise Déduits de l'État (${retours.length} Bons de Retour)`}</strong>
+        <span style="font-weight:800;color:var(--danger);font-size:14px">${isAR ? 'المجموع المخصوم :' : 'Total Déduit :'} -${Utils.fmtCurrency(returnsTotalTTC)}</span>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px;width:50px">N°</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Réf Bon Retour</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">BL Origine</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Date</th>
-              <th style="padding:10px 16px;text-align:left;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Client & Motif</th>
-              <th style="padding:10px 16px;text-align:right;color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">Déduction TTC</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px;width:50px">${isAR ? 'رقم' : 'N°'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'مرجع سند الإرجاع' : 'Réf Bon Retour'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'سند التسليم الأصلي' : 'BL Origine'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'التاريخ' : 'Date'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'right':'left'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'الزبون والسبب' : 'Client & Motif'}</th>
+              <th style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text4);font-weight:700;text-transform:uppercase;font-size:10px">${isAR ? 'الخصم الإجمالي' : 'Déduction TTC'}</th>
             </tr>
           </thead>
           <tbody>
@@ -10189,17 +10269,17 @@ const EtatVenteModule = {
               <td style="padding:9px 16px;font-family:monospace;color:var(--text2)">${Utils.escHTML(r.blRef || '—')}</td>
               <td style="padding:9px 16px;color:var(--text2)">${Utils.fmtDate(r.date)}</td>
               <td style="padding:9px 16px;color:var(--text)">
-                <div>${Utils.escHTML(r.clientName || 'Client')}</div>
-                ${r.motif ? `<div style="font-size:10px;color:var(--danger)">Motif: ${Utils.escHTML(r.motif)}</div>` : ''}
+                <div>${Utils.escHTML(r.clientName || (isAR ? 'زبون' : 'Client'))}</div>
+                ${r.motif ? `<div style="font-size:10px;color:var(--danger)">${isAR ? 'السبب: ' : 'Motif: '}${Utils.escHTML(r.motif)}</div>` : ''}
               </td>
-              <td style="padding:9px 16px;text-align:right;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(r.totalTTC || 0)}</td>
-            </tr>`).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4)"><i class="fas fa-check-circle" style="color:var(--success);margin-right:6px"></i> Aucun retour de marchandise pour cette période (Déduction: 0 DA)</td></tr>`}
+              <td style="padding:9px 16px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(r.totalTTC || 0)}</td>
+            </tr>`).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4)"><i class="fas fa-check-circle" style="color:var(--success);${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'لا توجد مرتجعات بضاعة خلال هذه الفترة (الخصم: 0 د.ج)' : 'Aucun retour de marchandise pour cette période (Déduction: 0 DA)'}</td></tr>`}
           </tbody>
           ${retours.length ? `
           <tfoot>
             <tr style="background:var(--bg3);font-weight:900;border-top:2px solid var(--border)">
-              <td colspan="5" style="padding:12px 16px;text-align:right;text-transform:uppercase;font-size:11px;color:var(--text2)">TOTAL DÉDUCTIONS RETOURS :</td>
-              <td style="padding:12px 16px;text-align:right;font-size:14px;color:var(--danger)">-${Utils.fmtCurrency(returnsTotalTTC)}</td>
+              <td colspan="5" style="padding:12px 16px;text-align:${isAR?'left':'right'};text-transform:uppercase;font-size:11px;color:var(--text2)">${isAR ? 'إجمالي خصومات المرتجعات :' : 'TOTAL DÉDUCTIONS RETOURS :'}</td>
+              <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-size:14px;color:var(--danger)">-${Utils.fmtCurrency(returnsTotalTTC)}</td>
             </tr>
           </tfoot>` : ''}
         </table>
@@ -10209,25 +10289,25 @@ const EtatVenteModule = {
     <!-- Section 4: Final Recap & Bank Transfer Confirmation -->
     <div style="background:var(--bg2);border-radius:14px;border:2px solid var(--primary);padding:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px">
       <div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:800;color:var(--text4);margin-bottom:6px">BILAN OFFICIEL DU VERSEMENT BANCAIRE</div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:800;color:var(--text4);margin-bottom:6px">${isAR ? 'الحصيلة الرسمية للإيداع البنكي' : 'BILAN OFFICIEL DU VERSEMENT BANCAIRE'}</div>
         <div style="display:flex;gap:20px;align-items:baseline;flex-wrap:wrap">
           <div>
-            <span style="font-size:12px;color:var(--text3)">Ventes Brut :</span>
-            <strong style="color:var(--success);font-size:14px;margin-left:4px">+${Utils.fmtCurrency(grossTotalTTC)}</strong>
+            <span style="font-size:12px;color:var(--text3)">${isAR ? 'المبيعات الخام :' : 'Ventes Brut :'}</span>
+            <strong style="color:var(--success);font-size:14px;${isAR?'margin-right:4px':'margin-left:4px'}">+${Utils.fmtCurrency(grossTotalTTC)}</strong>
           </div>
           <div>
-            <span style="font-size:12px;color:var(--text3)">Retours :</span>
-            <strong style="color:var(--danger);font-size:14px;margin-left:4px">-${Utils.fmtCurrency(returnsTotalTTC)}</strong>
+            <span style="font-size:12px;color:var(--text3)">${isAR ? 'المرتجعات :' : 'Retours :'}</span>
+            <strong style="color:var(--danger);font-size:14px;${isAR?'margin-right:4px':'margin-left:4px'}">-${Utils.fmtCurrency(returnsTotalTTC)}</strong>
           </div>
-          <div style="border-left:2px solid var(--border);padding-left:16px">
-            <span style="font-size:13px;color:var(--text);font-weight:700">NET ENCAISSÉ À VERSER :</span>
-            <span style="font-size:26px;font-weight:900;color:var(--primary);margin-left:8px">${Utils.fmtCurrency(netTotalTTC)}</span>
+          <div style="${isAR?'border-right:2px solid var(--border);padding-right:16px':'border-left:2px solid var(--border);padding-left:16px'}">
+            <span style="font-size:13px;color:var(--text);font-weight:700">${isAR ? 'الصافي المقبوض للإيداع :' : 'NET ENCAISSÉ À VERSER :'}</span>
+            <span style="font-size:26px;font-weight:900;color:var(--primary);${isAR?'margin-right:8px':'margin-left:8px'}">${Utils.fmtCurrency(netTotalTTC)}</span>
           </div>
         </div>
       </div>
 
       <button class="btn btn-primary" onclick="EtatVenteModule._saveAndGenerate()" style="background:linear-gradient(135deg,#0d9488,#14b8a6);border:none;box-shadow:0 4px 14px rgba(13,148,136,.35);padding:12px 24px;font-size:14px;font-weight:800;border-radius:10px">
-        <i class="fas fa-file-pdf" style="margin-right:8px"></i> Confirmer & Éditer le PDF
+        <i class="fas fa-file-pdf" style="${isAR?'margin-left:8px':'margin-right:8px'}"></i> ${isAR ? 'تأكيد وإصدار PDF' : 'Confirmer & Éditer le PDF'}
       </button>
     </div>
     `;
@@ -10238,39 +10318,40 @@ const EtatVenteModule = {
   _renderHistoryView() {
     let docs = DB.getAll('etat_vente_docs').sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
     const isAdmin = Auth.isAdmin();
+    const isAR = T.isRTL();
     
     let html = `
     <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-            <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Réf État</th>
-            <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Période</th>
-            <th style="padding:12px 16px;text-align:left;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Établi par</th>
-            <th style="padding:12px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">BLs / Retours</th>
-            <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Total Brut</th>
-            <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Retours</th>
-            <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Net TTC</th>
-            <th style="padding:12px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Statut</th>
-            <th style="padding:12px 16px;text-align:right;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">Actions</th>
+            <th style="padding:12px 16px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'مرجع الكشف' : 'Réf État'}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'الفترة' : 'Période'}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'حرر بواسطة' : 'Établi par'}</th>
+            <th style="padding:12px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'سندات / مرتجعات' : 'BLs / Retours'}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'الإجمالي الخام' : 'Total Brut'}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'المرتجعات' : 'Retours'}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${isAR ? 'الصافي الإجمالي' : 'Net TTC'}</th>
+            <th style="padding:12px 16px;text-align:center;color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${T.get('col_status')}</th>
+            <th style="padding:12px 16px;text-align:${isAR?'left':'right'};color:var(--text3);font-weight:700;text-transform:uppercase;font-size:11px">${T.get('col_actions')}</th>
           </tr>
         </thead>
         <tbody>
     `;
     
     if (docs.length === 0) {
-      html += `<tr><td colspan="9" style="padding:40px;text-align:center;color:var(--text4)">Aucun état de vente archivé</td></tr>`;
+      html += `<tr><td colspan="9" style="padding:40px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد كشوف مبيعات مؤرشفة' : 'Aucun état de vente archivé'}</td></tr>`;
     } else {
       docs.forEach(doc => {
-        const periodStr = doc.dateStart === doc.dateEnd ? Utils.fmtDate(doc.dateStart) : `Du ${Utils.fmtDate(doc.dateStart)} au ${Utils.fmtDate(doc.dateEnd)}`;
+        const periodStr = doc.dateStart === doc.dateEnd ? Utils.fmtDate(doc.dateStart) : (isAR ? `من ${Utils.fmtDate(doc.dateStart)} إلى ${Utils.fmtDate(doc.dateEnd)}` : `Du ${Utils.fmtDate(doc.dateStart)} au ${Utils.fmtDate(doc.dateEnd)}`);
         
         let stBadge = '';
         if (doc.status === 'pending_admin') {
-          stBadge = `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700"><i class="fas fa-clock"></i> En attente</span>`;
+          stBadge = `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700"><i class="fas fa-clock"></i> ${isAR ? 'قيد الانتظار' : 'En attente'}</span>`;
         } else if (doc.status === 'validated' || doc.status === 'deposited') {
-          stBadge = `<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700"><i class="fas fa-check"></i> Validé</span>`;
+          stBadge = `<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700"><i class="fas fa-check"></i> ${isAR ? 'مؤكد' : 'Validé'}</span>`;
         } else {
-          stBadge = `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700">Généré</span>`;
+          stBadge = `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700">${isAR ? 'تم الإنشاء' : 'Généré'}</span>`;
         }
         
         const nbBL = (doc.blList || []).length;
@@ -10285,22 +10366,22 @@ const EtatVenteModule = {
           <td style="padding:12px 16px;color:var(--text2)">${periodStr}</td>
           <td style="padding:12px 16px;color:var(--text)">${Utils.escHTML(doc.createdByName || doc.userName || '—')}</td>
           <td style="padding:12px 16px;text-align:center">
-            <span class="badge" style="background:rgba(14,165,233,.1);color:#0ea5e9">${nbBL} BL</span>
-            ${nbRet > 0 ? `<span class="badge" style="background:rgba(239,68,68,.1);color:#ef4444;margin-left:4px">${nbRet} BR</span>` : ''}
+            <span class="badge" style="background:rgba(14,165,233,.1);color:#0ea5e9">${nbBL} ${isAR ? 'سند' : 'BL'}</span>
+            ${nbRet > 0 ? `<span class="badge" style="background:rgba(239,68,68,.1);color:#ef4444;${isAR?'margin-right:4px':'margin-left:4px'}">${nbRet} ${isAR ? 'إرجاع' : 'BR'}</span>` : ''}
           </td>
-          <td style="padding:12px 16px;text-align:right;font-weight:700;color:var(--success)">+${Utils.fmtCurrency(gross)}</td>
-          <td style="padding:12px 16px;text-align:right;font-weight:700;color:var(--danger)">${retVal > 0 ? '-' + Utils.fmtCurrency(retVal) : '—'}</td>
-          <td style="padding:12px 16px;text-align:right;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(netVal)}</td>
+          <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--success)">+${Utils.fmtCurrency(gross)}</td>
+          <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--danger)">${retVal > 0 ? '-' + Utils.fmtCurrency(retVal) : '—'}</td>
+          <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--primary)">${Utils.fmtCurrency(netVal)}</td>
           <td style="padding:12px 16px;text-align:center">${stBadge}</td>
-          <td style="padding:12px 16px;text-align:right;white-space:nowrap">`;
+          <td style="padding:12px 16px;text-align:${isAR?'left':'right'};white-space:nowrap">`;
           
           if (doc.status === 'pending_admin' && isAdmin) {
-            html += `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._adminValidate('${doc.id}')" title="Valider" style="margin-right:4px;color:var(--success)"><i class="fas fa-check"></i> Valider</button>`;
-            html += `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._adminEdit('${doc.id}')" title="Modifier" style="margin-right:4px;color:var(--primary)"><i class="fas fa-edit"></i> Modifier</button>`;
+            html += `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._adminValidate('${doc.id}')" title="${isAR ? 'تأكيد' : 'Valider'}" style="${isAR?'margin-left:4px':'margin-right:4px'};color:var(--success)"><i class="fas fa-check"></i> ${isAR ? 'تأكيد' : 'Valider'}</button>`;
+            html += `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._adminEdit('${doc.id}')" title="${isAR ? 'تعديل' : 'Modifier'}" style="${isAR?'margin-left:4px':'margin-right:4px'};color:var(--primary)"><i class="fas fa-edit"></i> ${isAR ? 'تعديل' : 'Modifier'}</button>`;
           }
           
           html += `
-            <button class="btn btn-xs btn-outline" onclick="EtatVenteModule._reprint('${doc.id}')" title="Imprimer / Télécharger PDF">
+            <button class="btn btn-xs btn-outline" onclick="EtatVenteModule._reprint('${doc.id}')" title="${isAR ? 'طباعة / تحميل PDF' : 'Imprimer / Télécharger PDF'}">
               <i class="fas fa-file-pdf" style="color:var(--primary)"></i> PDF
             </button>
           </td>
@@ -10315,9 +10396,10 @@ const EtatVenteModule = {
   async _adminValidate(docId) {
     const doc = DB.getById('etat_vente_docs', docId);
     if (!doc) return;
+    const isAR = T.isRTL();
     // Guard: prevent double-validation (duplicate bank deposit)
     if (doc.status === 'validated') {
-      Utils.notify('Cet état de vente a déjà été validé.', 'warning');
+      Utils.notify(isAR ? 'تم تأكيد هذا الكشف مسبقاً.' : 'Cet état de vente a déjà été validé.', 'warning');
       return;
     }
     const gross = doc.grossTotalTTC || doc.totalBLsTTC || doc.totalTTC || 0;
@@ -10325,23 +10407,23 @@ const EtatVenteModule = {
     const net = doc.netTotalTTC || doc.totalTTC || 0;
     
     const res = await Dialog.show({
-      title: 'Valider l\'État de Vente',
+      title: isAR ? 'تأكيد كشف المبيعات' : 'Valider l\'État de Vente',
       message: `
-        <div style="text-align:left">
-          <p>Veuillez confirmer les montants avant de valider et de verser en banque :</p>
+        <div style="text-align:${isAR?'right':'left'}" ${isAR?'dir="rtl"':''}>
+          <p>${isAR ? 'يرجى مراجعة وتأكيد المبالغ قبل الإيداع البنكي:' : 'Veuillez confirmer les montants avant de valider et de verser en banque :'}</p>
           <div style="margin-top:10px">
-            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">Total Brut Ventes TTC</label>
+            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">${isAR ? 'إجمالي المبيعات الخام ش.ض' : 'Total Brut Ventes TTC'}</label>
             <input type="number" step="0.01" id="v_gross" class="input" value="${gross}" style="width:100%;margin-bottom:10px">
-            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">Retours TTC</label>
+            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">${isAR ? 'المرتجعات ش.ض' : 'Retours TTC'}</label>
             <input type="number" step="0.01" id="v_ret" class="input" value="${ret}" style="width:100%;margin-bottom:10px">
-            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">Net à verser</label>
+            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">${isAR ? 'الصافي للإيداع' : 'Net à verser'}</label>
             <input type="number" step="0.01" id="v_net" class="input" value="${net}" style="width:100%">
           </div>
         </div>
       `,
       type: 'info',
-      confirmText: 'Valider et Verser',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'تأكيد وإيداع' : 'Valider et Verser',
+      cancelText: T.get('cancel')
     });
     
     if (!res) return;
@@ -10384,9 +10466,9 @@ const EtatVenteModule = {
       };
       const savedDeposit = await DB.insert('bank_transactions', depositData);
       await DB.update('etat_vente_docs', doc.id, { bankDepositId: savedDeposit.id });
-      Utils.notify(`État validé. Dépôt de ${Utils.fmtCurrency(nNet)} enregistré.`, 'success', 5000);
+      Utils.notify(isAR ? `✅ تم تأكيد الكشف. تم تسجيل إيداع بمبلغ ${Utils.fmtCurrency(nNet)}.` : `État validé. Dépôt de ${Utils.fmtCurrency(nNet)} enregistré.`, 'success', 5000);
     } else {
-      Utils.notify('État validé sans dépôt bancaire.', 'success');
+      Utils.notify(isAR ? 'تم تأكيد الكشف بدون إيداع بنكي.' : 'État validé sans dépôt bancaire.', 'success');
     }
     
     App.loadModule('etat_vente');
@@ -10395,27 +10477,28 @@ const EtatVenteModule = {
   async _adminEdit(docId) {
     const doc = DB.getById('etat_vente_docs', docId);
     if (!doc) return;
+    const isAR = T.isRTL();
     const gross = doc.grossTotalTTC || doc.totalBLsTTC || doc.totalTTC || 0;
     const ret = doc.returnsTotalTTC || doc.totalReturnsTTC || 0;
     const net = doc.netTotalTTC || doc.totalTTC || 0;
     
     const res = await Dialog.show({
-      title: 'Modifier l\'État de Vente',
+      title: isAR ? 'تعديل كشف المبيعات' : 'Modifier l\'État de Vente',
       message: `
-        <div style="text-align:left">
+        <div style="text-align:${isAR?'right':'left'}" ${isAR?'dir="rtl"':''}>
           <div style="margin-top:10px">
-            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">Total Brut Ventes TTC</label>
+            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">${isAR ? 'إجمالي المبيعات الخام ش.ض' : 'Total Brut Ventes TTC'}</label>
             <input type="number" step="0.01" id="e_gross" class="input" value="${gross}" style="width:100%;margin-bottom:10px">
-            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">Retours TTC</label>
+            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">${isAR ? 'المرتجعات ش.ض' : 'Retours TTC'}</label>
             <input type="number" step="0.01" id="e_ret" class="input" value="${ret}" style="width:100%;margin-bottom:10px">
-            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">Net à verser</label>
+            <label style="display:block;margin-bottom:4px;font-weight:bold;font-size:12px">${isAR ? 'الصافي للإيداع' : 'Net à verser'}</label>
             <input type="number" step="0.01" id="e_net" class="input" value="${net}" style="width:100%">
           </div>
         </div>
       `,
       type: 'info',
-      confirmText: 'Enregistrer',
-      cancelText: 'Annuler'
+      confirmText: T.get('save'),
+      cancelText: T.get('cancel')
     });
     
     if (!res) return;
@@ -10433,14 +10516,15 @@ const EtatVenteModule = {
       totalTTC: nNet
     });
     
-    Utils.notify('État de vente modifié avec succès.', 'success');
+    Utils.notify(isAR ? 'تم تعديل كشف المبيعات بنجاح.' : 'État de vente modifié avec succès.', 'success');
     App.loadModule('etat_vente');
   },
 
   async _saveAndGenerate() {
+    const isAR = T.isRTL();
     const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC } = this._getFilteredData();
     if (!bls.length && !retours.length) {
-      Utils.notify('Aucun bon de livraison ni retour pour cette sélection.', 'warning');
+      Utils.notify(isAR ? 'لا توجد سندات تسليم أو مرتجعات ضمن هذا التحديد.' : 'Aucun bon de livraison ni retour pour cette sélection.', 'warning');
       return;
     }
     
@@ -10450,17 +10534,17 @@ const EtatVenteModule = {
     let selectedBankId = null;
     
     if (banks.length > 1) {
-      let optionsHtml = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)} (${b.bankName || 'Banque'})</option>`).join('');
+      let optionsHtml = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)} (${b.bankName || (isAR ? 'بنك' : 'Banque')})</option>`).join('');
       const r = await Dialog.show({
-        title: 'Sélectionner la banque de dépôt',
+        title: isAR ? 'اختيار بنك الإيداع' : 'Sélectionner la banque de dépôt',
         message: `
-        <div style="padding:6px 0">
-          <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Choisissez le compte bancaire vers lequel verser le montant net :</p>
-          <div class="form-group"><label style="font-weight:700">Compte Bancaire</label><select id="ev_bank_select" class="input" style="width:100%">${optionsHtml}</select></div>
+        <div style="padding:6px 0;text-align:${isAR?'right':'left'}" ${isAR?'dir="rtl"':''}>
+          <p style="font-size:13px;color:var(--text2);margin-bottom:12px">${isAR ? 'اختر الحساب البنكي لتحويل المبلغ الصافي إليه:' : 'Choisissez le compte bancaire vers lequel verser le montant net :'}</p>
+          <div class="form-group"><label style="font-weight:700">${isAR ? 'الحساب البنكي' : 'Compte Bancaire'}</label><select id="ev_bank_select" class="input" style="width:100%">${optionsHtml}</select></div>
         </div>`,
         type: 'info',
-        confirmText: 'Confirmer la banque',
-        cancelText: 'Annuler'
+        confirmText: isAR ? 'تأكيد البنك' : 'Confirmer la banque',
+        cancelText: T.get('cancel')
       });
       if (!r) return;
       selectedBankId = document.getElementById('ev_bank_select')?.value;
@@ -10472,8 +10556,10 @@ const EtatVenteModule = {
 
     // Double confirmation to avoid miss clicks
     const confirmed = await Utils.confirm2(
-      `Valider et enregistrer l'État de Vente ?`,
-      `Montant Brut des BLs : +${Utils.fmtCurrency(grossTotalTTC)}\nRetours Marchandise : -${Utils.fmtCurrency(returnsTotalTTC)}\nNet Versé en Banque : ${Utils.fmtCurrency(netTotalTTC)}${selectedBank ? '\nBanque cible : ' + selectedBank.name : ''}`
+      isAR ? 'تأكيد وحفظ كشف المبيعات؟' : `Valider et enregistrer l'État de Vente ?`,
+      isAR
+        ? `المجموع الخام لسندات التسليم : +${Utils.fmtCurrency(grossTotalTTC)}\nمرتجعات السلع : -${Utils.fmtCurrency(returnsTotalTTC)}\nالصافي المودع بالبنك : ${Utils.fmtCurrency(netTotalTTC)}${selectedBank ? '\nالبنك المختار : ' + selectedBank.name : ''}`
+        : `Montant Brut des BLs : +${Utils.fmtCurrency(grossTotalTTC)}\nRetours Marchandise : -${Utils.fmtCurrency(returnsTotalTTC)}\nNet Versé en Banque : ${Utils.fmtCurrency(netTotalTTC)}${selectedBank ? '\nBanque cible : ' + selectedBank.name : ''}`
     );
     if (!confirmed) return;
     
@@ -10508,8 +10594,8 @@ const EtatVenteModule = {
       dateStart: this._getDateStart(),
       dateEnd: this._getDateEnd(),
       items: items,
-      blList: bls.map(b => ({ id: b.id, ref: b.ref, date: b.date, clientName: b.clientName || 'Client Comptoir', totalTTC: Number(b.totalTTC)||0, createdBy: b.createdBy })),
-      returnList: retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, date: r.date, clientName: r.clientName || 'Client', motif: r.motif || 'Retour marchandise', totalTTC: Number(r.totalTTC)||0, userId: r.userId })),
+      blList: bls.map(b => ({ id: b.id, ref: b.ref, date: b.date, clientName: b.clientName || (isAR ? 'زبون عام' : 'Client Comptoir'), totalTTC: Number(b.totalTTC)||0, createdBy: b.createdBy })),
+      returnList: retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, date: r.date, clientName: r.clientName || (isAR ? 'زبون' : 'Client'), motif: r.motif || (isAR ? 'إرجاع بضاعة' : 'Retour marchandise'), totalTTC: Number(r.totalTTC)||0, userId: r.userId })),
       totalBLsTTC: grossTotalTTC,
       grossTotalTTC: grossTotalTTC,
       totalReturnsTTC: returnsTotalTTC,
@@ -10534,7 +10620,7 @@ const EtatVenteModule = {
       savedDoc = await DB.insert('etat_vente_docs', etatData);
     } catch(e) {
       console.error(e);
-      Utils.notify("Erreur lors de la sauvegarde de l'état de vente", 'error');
+      Utils.notify(isAR ? 'حدث خطأ أثناء حفظ كشف المبيعات' : "Erreur lors de la sauvegarde de l'état de vente", 'error');
       return;
     }
     
@@ -10561,9 +10647,9 @@ const EtatVenteModule = {
        });
        savedDoc.bankDepositId = savedDeposit.id;
        
-       Utils.notify(`✅ Dépôt de ${Utils.fmtCurrency(netTotalTTC)} vers ${selectedBank ? selectedBank.name : 'Banque'} validé.`, 'success', 5000);
+       Utils.notify(isAR ? `✅ تم تأكيد إيداع ${Utils.fmtCurrency(netTotalTTC)} في حساب ${selectedBank ? selectedBank.name : 'البنك'}.` : `✅ Dépôt de ${Utils.fmtCurrency(netTotalTTC)} vers ${selectedBank ? selectedBank.name : 'Banque'} validé.`, 'success', 5000);
     } else if (!isAdmin) {
-       Utils.notify(`✅ État de vente généré avec succès. En attente de validation admin.`, 'success', 5000);
+       Utils.notify(isAR ? '✅ تم إنشاء كشف المبيعات بنجاح. في انتظار تأكيد الإدارة.' : `✅ État de vente généré avec succès. En attente de validation admin.`, 'success', 5000);
     }
     
     this._doPDF(savedDoc, settings);
@@ -10622,9 +10708,9 @@ const PointageModule = {
     const logs = DB.getAll('work_log');
     const rects = DB.getAll('rh_rectifications') || [];
     const daysInMonth = new Date(this._year, this._month + 1, 0).getDate();
-    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-    const todayStr = Utils.today();
     const isAR = T.isRTL();
+    const monthNames = isAR ? ['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'] : ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const todayStr = Utils.today();
     const isAdmin = Auth.isAdmin();
     const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
     const pvs = DB.getAll('pointage_validations') || [];
@@ -10667,7 +10753,7 @@ const PointageModule = {
           days[day] = {
             status: rect.status || 'present',
             hours: Number(rect.hours) || 0,
-            motif: rect.motif || 'Rectifié par admin',
+            motif: rect.motif || (isAR ? 'تصحيح إداري' : 'Rectifié par admin'),
             isRectified: true
           };
           if (rect.status === 'present') { totalHours += (rect.hours || 8); totalDays++; }
@@ -10691,16 +10777,16 @@ const PointageModule = {
             }
           });
           hours = Math.min(Math.round(hours * 10) / 10, 24);
-          days[day] = { status: 'present', hours, motif: 'Pointage normal', isRectified: false };
+          days[day] = { status: 'present', hours, motif: isAR ? 'تسجيل حضور عادي' : 'Pointage normal', isRectified: false };
           totalHours += hours;
           totalDays++;
         } else {
           if (!isPastOrToday) {
             days[day] = { status: 'future', hours: null, motif: '', isRectified: false };
           } else if (isWeekend) {
-            days[day] = { status: 'weekend', hours: null, motif: 'Repos hebdomadaire', isRectified: false };
+            days[day] = { status: 'weekend', hours: null, motif: isAR ? 'عطلة أسبوعية' : 'Repos hebdomadaire', isRectified: false };
           } else {
-            days[day] = { status: 'absent_unjustified', hours: 0, motif: 'Absence non enregistrée', isRectified: false };
+            days[day] = { status: 'absent_unjustified', hours: 0, motif: isAR ? 'غياب غير مسجل' : 'Absence non enregistrée', isRectified: false };
             countAbsentUnjust++;
           }
         }
@@ -10737,29 +10823,29 @@ const PointageModule = {
             <i class="fas fa-user-clock"></i>
           </div>
           <div>
-            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_pointage') || 'Pointage & Présences RH'}</h2>
-            <div style="font-size:13px;color:var(--text4);margin-top:2px">Suivi de présence, heures travaillées, retards et rectification administrateur</div>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${T.get('nav_pointage') || (isAR ? 'تسجيل الحضور والغياب RH' : 'Pointage & Présences RH')}</h2>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">${isAR ? 'متابعة الحضور، ساعات العمل، التأخرات والتصحيح الإداري' : 'Suivi de présence, heures travaillées, retards et rectification administrateur'}</div>
           </div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <button class="btn" onclick="PointageModule._prevMonth()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px"><i class="fas fa-chevron-left"></i></button>
+          <button class="btn" onclick="PointageModule._prevMonth()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px"><i class="fas ${isAR ? 'fa-chevron-right' : 'fa-chevron-left'}"></i></button>
           <span style="font-weight:800;font-size:16px;min-width:180px;text-align:center;color:var(--text)">${monthNames[this._month]} ${this._year}</span>
-          <button class="btn" onclick="PointageModule._nextMonth()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px"><i class="fas fa-chevron-right"></i></button>
-          <button class="btn btn-outline" onclick="PointageModule._setThisMonth()" style="font-weight:700">Mois en cours</button>
+          <button class="btn" onclick="PointageModule._nextMonth()" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px"><i class="fas ${isAR ? 'fa-chevron-left' : 'fa-chevron-right'}"></i></button>
+          <button class="btn btn-outline" onclick="PointageModule._setThisMonth()" style="font-weight:700">${isAR ? 'الشهر الحالي' : 'Mois en cours'}</button>
           <button class="btn" onclick="PointageModule._showFicheSelection()" style="background:linear-gradient(135deg,#10b981,#34d399);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
-            <i class="fas fa-file-invoice-dollar"></i> Générer Fiche de Paie
+            <i class="fas fa-file-invoice-dollar"></i> ${isAR ? 'كشف الراتب' : 'Générer Fiche de Paie'}
           </button>
           <button class="btn" onclick="PointageModule._showPayHistory()" style="background:linear-gradient(135deg,#6366f1,#818cf8);color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
-            <i class="fas fa-history"></i> Historique Paie
+            <i class="fas fa-history"></i> ${isAR ? 'سجل الرواتب' : 'Historique Paie'}
           </button>
           <button class="btn btn-primary" onclick="PointageModule._exportExcel()" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none">
-            <i class="fas fa-file-excel"></i> Export Excel
+            <i class="fas fa-file-excel"></i> ${isAR ? 'تصدير إكسل' : 'Export Excel'}
           </button>
           <button class="btn" onclick="PointageModule.validatePointage()" style="background:linear-gradient(135deg,${isPointageValidated ? '#f59e0b,#d97706' : '#10b981,#059669'});color:white;border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
-            <i class="fas ${isPointageValidated ? 'fa-lock-open' : 'fa-check-circle'}"></i> ${isPointageValidated ? 'Validé ✓ (cliquer pour modifier)' : 'Valider le Pointage'}
+            <i class="fas ${isPointageValidated ? 'fa-lock-open' : 'fa-check-circle'}"></i> ${isPointageValidated ? (isAR ? 'تم التحقق ✓ (انقر للتعديل)' : 'Validé ✓ (cliquer pour modifier)') : (isAR ? 'التحقق من الحضور' : 'Valider le Pointage')}
           </button>
           ${isPointageValidated ? `<button class="btn btn-primary" onclick="PointageModule.showPayrollCloture()" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none;border-radius:8px;padding:8px 12px;font-weight:700;">
-            <i class="fas fa-money-check-alt"></i> Clôturer les Paies
+            <i class="fas fa-money-check-alt"></i> ${isAR ? 'إغلاق الرواتب' : 'Clôturer les Paies'}
           </button>` : ''}
         </div>
       </div>
@@ -10767,59 +10853,59 @@ const PointageModule = {
       <!-- KPIs Strip -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6366f1;margin-bottom:4px">Collaborateurs Actifs</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6366f1;margin-bottom:4px">${isAR ? 'الموظفون النشطون' : 'Collaborateurs Actifs'}</div>
           <div style="font-size:22px;font-weight:900;color:#6366f1">${totalUsers}</div>
         </div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#10b981;margin-bottom:4px">Moyenne Heures / Mois</div>
-          <div style="font-size:22px;font-weight:900;color:#10b981">${avgHours}h</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#10b981;margin-bottom:4px">${isAR ? 'متوسط الساعات / الشهر' : 'Moyenne Heures / Mois'}</div>
+          <div style="font-size:22px;font-weight:900;color:#10b981">${avgHours}${isAR ? ' س' : 'h'}</div>
         </div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#f59e0b;margin-bottom:4px">Top Présence</div>
-          <div style="font-size:16px;font-weight:900;color:#f59e0b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mostActive ? Utils.escHTML(mostActive.user.name) + ' (' + mostActive.totalHours + 'h)' : '-'}</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#f59e0b;margin-bottom:4px">${isAR ? 'أعلى حضور' : 'Top Présence'}</div>
+          <div style="font-size:16px;font-weight:900;color:#f59e0b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mostActive ? Utils.escHTML(mostActive.user.name) + ' (' + mostActive.totalHours + (isAR ? ' س' : 'h') + ')' : '-'}</div>
         </div>
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#ef4444;margin-bottom:4px">Total Absences Signalées</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#ef4444;margin-bottom:4px">${isAR ? 'إجمالي الغيابات المسجلة' : 'Total Absences Signalées'}</div>
           <div style="font-size:22px;font-weight:900;color:#ef4444">${totalAbsences}</div>
         </div>
       </div>
 
       <!-- Legend bar -->
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--bg2);padding:10px 16px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px;font-size:11px">
-        <span style="font-weight:700;color:var(--text3)">Légende :</span>
-        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(16,185,129,.2);border:1px solid #10b981"></span> Présent (h)</span>
-        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(245,158,11,.2);border:1px solid #f59e0b"></span> Retard (RET)</span>
-        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(239,68,68,.2);border:1px solid #ef4444"></span> Absent Injustifié (ABS)</span>
-        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(217,119,6,.2);border:1px solid #d97706"></span> Absent Justifié (JUST)</span>
-        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(14,165,233,.2);border:1px solid #0ea5e9"></span> Congé (CG)</span>
-        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(139,92,246,.2);border:1px solid #8b5cf6"></span> Mission (MIS)</span>
-        ${isAdmin ? `<span style="margin-left:auto;color:var(--primary);font-weight:700"><i class="fas fa-mouse-pointer"></i> Cliquez sur une case pour rectifier</span>` : ''}
+        <span style="font-weight:700;color:var(--text3)">${isAR ? 'دليل الرموز :' : 'Légende :'}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(16,185,129,.2);border:1px solid #10b981"></span> ${isAR ? 'حاضر (س)' : 'Présent (h)'}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(245,158,11,.2);border:1px solid #f59e0b"></span> ${isAR ? 'تأخر (تأخ)' : 'Retard (RET)'}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(239,68,68,.2);border:1px solid #ef4444"></span> ${isAR ? 'غير مبرر (غ.م)' : 'Absent Injustifié (ABS)'}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(217,119,6,.2);border:1px solid #d97706"></span> ${isAR ? 'مبرر (غ.ب)' : 'Absent Justifié (JUST)'}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(14,165,233,.2);border:1px solid #0ea5e9"></span> ${isAR ? 'إجازة (إج)' : 'Congé (CG)'}</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(139,92,246,.2);border:1px solid #8b5cf6"></span> ${isAR ? 'مهمة (مهم)' : 'Mission (MIS)'}</span>
+        ${isAdmin ? `<span style="margin-inline-start:auto;color:var(--primary);font-weight:700"><i class="fas fa-mouse-pointer"></i> ${isAR ? 'انقر على خانة لتعديل الحضور' : 'Cliquez sur une case pour rectifier'}</span>` : ''}
       </div>
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
-        <input type="text" class="input" style="padding:6px 12px;font-size:12px;max-width:300px" value="${Utils.escHTML(this._searchQ||'')}" onchange="PointageModule._searchQ=this.value;PointageModule._page=0;App.loadModule('pointage')" placeholder="🔍 Rechercher un collaborateur...">
+        <input type="text" class="input" style="padding:6px 12px;font-size:12px;max-width:300px" value="${Utils.escHTML(this._searchQ||'')}" onchange="PointageModule._searchQ=this.value;PointageModule._page=0;App.loadModule('pointage')" placeholder="${isAR ? '🔍 البحث عن موظف...' : '🔍 Rechercher un collaborateur...'}">
         <div style="display:flex;gap:6px;align-items:center;font-size:12px">
-          <span style="color:var(--text4)">${filteredData.length} employé(s) · Page ${this._page+1}/${totalPages}</span>
-          <button class="btn btn-outline btn-sm" ${this._page<=0?'disabled':''} onclick="PointageModule._page--;App.loadModule('pointage')"><i class="fas fa-chevron-left"></i></button>
-          <button class="btn btn-outline btn-sm" ${this._page>=totalPages-1?'disabled':''} onclick="PointageModule._page++;App.loadModule('pointage')"><i class="fas fa-chevron-right"></i></button>
+          <span style="color:var(--text4)">${filteredData.length} ${isAR ? 'موظف · صفحة' : 'employé(s) · Page'} ${this._page+1}/${totalPages}</span>
+          <button class="btn btn-outline btn-sm" ${this._page<=0?'disabled':''} onclick="PointageModule._page--;App.loadModule('pointage')"><i class="fas ${isAR ? 'fa-chevron-right' : 'fa-chevron-left'}"></i></button>
+          <button class="btn btn-outline btn-sm" ${this._page>=totalPages-1?'disabled':''} onclick="PointageModule._page++;App.loadModule('pointage')"><i class="fas ${isAR ? 'fa-chevron-left' : 'fa-chevron-right'}"></i></button>
         </div>
       </div>
       
       <!-- Attendance Grid -->
       <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03);width:100%;max-width:100%;box-sizing:border-box">
         <div class="table-shell" style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;max-width:100%">
-          <table style="width:100%;border-collapse:collapse;font-size:10px;min-width:850px">
+          <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:10px;min-width:850px;direction:ltr">
             <thead>
               <tr style="background:var(--bg3);border-bottom:2px solid var(--border)">
-                <th class="pointage-sticky-col" style="padding:10px 12px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;min-width:130px">${isAR ? 'الموظف' : 'Collaborateur'}</th>
+                <th class="pointage-sticky-col" style="padding:10px 12px;text-align:${isAR?'right':'left'};color:var(--text3);font-weight:700;min-width:130px;border-bottom:2px solid var(--border);${isAR?'direction:rtl;':''}">${isAR ? 'الموظف' : 'Collaborateur'}</th>
                 ${Array.from({length: daysInMonth}, (_, i) => {
                   const dayDate = new Date(this._year, this._month, i + 1);
                   const isWeekend = dayDate.getDay() === 5 || dayDate.getDay() === 6;
-                  return `<th style="padding:4px 1px;text-align:center;color:${isWeekend ? 'var(--text4)' : 'var(--text3)'};font-weight:700;font-size:9px;min-width:24px;${isWeekend ? 'background:rgba(0,0,0,.03);' : ''}">${i+1}</th>`;
+                  return `<th style="padding:4px 1px;text-align:center;color:${isWeekend ? 'var(--text4)' : 'var(--text3)'};font-weight:700;font-size:9px;min-width:24px;border-bottom:2px solid var(--border);border-right:1px solid var(--border);${isWeekend ? 'background:rgba(0,0,0,.03);' : ''}">${i+1}</th>`;
                 }).join('')}
-                <th style="padding:10px 8px;text-align:center;color:var(--text);font-weight:800;background:var(--bg3)">Heures</th>
-                <th style="padding:10px 8px;text-align:center;color:var(--text);font-weight:800;background:var(--bg3)">Présences</th>
-                <th style="padding:10px 8px;text-align:center;color:var(--danger);font-weight:800;background:var(--bg3)">Absences</th>
+                <th style="padding:10px 8px;text-align:center;color:var(--text);font-weight:800;background:var(--bg3);border-bottom:2px solid var(--border);border-right:1px solid var(--border);">${isAR ? 'الساعات' : 'Heures'}</th>
+                <th style="padding:10px 8px;text-align:center;color:var(--text);font-weight:800;background:var(--bg3);border-bottom:2px solid var(--border);border-right:1px solid var(--border);">${isAR ? 'الحضور' : 'Présences'}</th>
+                <th style="padding:10px 8px;text-align:center;color:var(--danger);font-weight:800;background:var(--bg3);border-bottom:2px solid var(--border)">${isAR ? 'الغيابات' : 'Absences'}</th>
               </tr>
             </thead>
             <tbody>
@@ -10832,7 +10918,7 @@ const PointageModule = {
         : `<div class="avatar" style="width:24px;height:24px;font-size:10px;border-radius:6px">${(u.name||'?').charAt(0).toUpperCase()}</div>`;
 
       html += `<tr style="border-bottom:1px solid var(--border)">`;
-      html += `<td class="pointage-sticky-col" style="padding:8px 12px;font-weight:700;color:var(--text);text-align:${isAR?'right':'left'}">
+      html += `<td class="pointage-sticky-col" style="padding:8px 12px;font-weight:700;color:var(--text);text-align:${isAR?'right':'left'};border-bottom:1px solid var(--border);${isAR?'direction:rtl;':''}">
         <div style="display:flex;align-items:center;gap:8px">
           ${avatarHTML}
           <div>
@@ -10855,37 +10941,37 @@ const PointageModule = {
 
         switch(cell.status) {
           case 'present':
-            badge = (cell.hours || 8) + 'h';
+            badge = (cell.hours || 8) + (isAR ? 'س' : 'h');
             bg = 'rgba(16,185,129,.15)';
             color = '#059669';
             break;
           case 'late':
-            badge = `RET(${cell.hours||4}h)`;
+            badge = `${isAR ? 'تأخ' : 'RET'}(${cell.hours||4}${isAR ? 'س' : 'h'})`;
             bg = 'rgba(245,158,11,.15)';
             color = '#d97706';
             break;
           case 'absent_unjustified':
-            badge = 'ABS';
+            badge = isAR ? 'غ.م' : 'ABS';
             bg = 'rgba(239,68,68,.15)';
             color = '#dc2626';
             break;
           case 'absent_justified':
-            badge = 'JUST';
+            badge = isAR ? 'غ.ب' : 'JUST';
             bg = 'rgba(217,119,6,.15)';
             color = '#b45309';
             break;
           case 'conge':
-            badge = 'CG';
+            badge = isAR ? 'إج' : 'CG';
             bg = 'rgba(14,165,233,.15)';
             color = '#0284c7';
             break;
           case 'mission':
-            badge = 'MIS';
+            badge = isAR ? 'مهم' : 'MIS';
             bg = 'rgba(139,92,246,.15)';
             color = '#7c3aed';
             break;
           case 'weekend':
-            badge = 'WE';
+            badge = isAR ? 'ع' : 'WE';
             color = 'var(--text4)';
             bg = 'rgba(0,0,0,.03)';
             break;
@@ -10894,19 +10980,20 @@ const PointageModule = {
             color = 'var(--text4)';
         }
 
+        const borderStyle = `border-right:1px solid var(--border);border-bottom:1px solid var(--border);`;
         const clickAttr = isAdmin
-          ? `onclick="PointageModule.showRectifyModal('${u.id}','${dateStr}')" style="padding:2px 1px;font-size:9px;text-align:center;cursor:pointer;background:${bg};color:${color};font-weight:700;border-right:1px solid var(--border);position:relative"`
-          : `style="padding:2px 1px;font-size:9px;text-align:center;background:${bg};color:${color};font-weight:700;border-right:1px solid var(--border)"`;
+          ? `onclick="PointageModule.showRectifyModal('${u.id}','${dateStr}')" style="padding:2px 1px;font-size:9px;text-align:center;cursor:pointer;background:${bg};color:${color};font-weight:700;${borderStyle}position:relative"`
+          : `style="padding:2px 1px;font-size:9px;text-align:center;background:${bg};color:${color};font-weight:700;${borderStyle}"`;
 
-        html += `<td ${clickAttr} title="${Utils.escHTML(title || (isAdmin ? 'Cliquer pour rectifier' : ''))}">
-          ${cell.isRectified ? '<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#f59e0b">★</span>' : ''}
+        html += `<td ${clickAttr} title="${Utils.escHTML(title || (isAdmin ? (isAR ? 'انقر للتصحيح' : 'Cliquer pour rectifier') : ''))}">
+          ${cell.isRectified ? `<span style="position:absolute;top:1px;${isAR?'left:2px':'right:2px'};font-size:7px;color:#f59e0b">★</span>` : ''}
           ${badge}
         </td>`;
       }
       
-      html += `<td style="padding:8px;text-align:center;font-weight:900;color:var(--primary)">${d.totalHours}h</td>`;
-      html += `<td style="padding:8px;text-align:center;font-weight:800;color:var(--success)">${d.totalDays} j</td>`;
-      html += `<td style="padding:8px;text-align:center;font-weight:800;color:var(--danger)">${d.countAbsentUnjust + d.countAbsentJust} j</td>`;
+      html += `<td style="padding:8px;text-align:center;font-weight:900;color:var(--primary);border-bottom:1px solid var(--border);border-right:1px solid var(--border);">${d.totalHours}${isAR ? ' س' : 'h'}</td>`;
+      html += `<td style="padding:8px;text-align:center;font-weight:800;color:var(--success);border-bottom:1px solid var(--border);border-right:1px solid var(--border);">${d.totalDays} ${isAR ? 'ي' : 'j'}</td>`;
+      html += `<td style="padding:8px;text-align:center;font-weight:800;color:var(--danger);border-bottom:1px solid var(--border)">${d.countAbsentUnjust + d.countAbsentJust} ${isAR ? 'ي' : 'j'}</td>`;
       html += `</tr>`;
     });
     
@@ -10934,8 +11021,9 @@ const PointageModule = {
 
   // ── Admin Attendance Rectification Modal ──────────────────────
   async showRectifyModal(userId, dateStr) {
+    const isAR = T.isRTL();
     if (!Auth.isAdmin()) {
-      Utils.notify("Seul l'administrateur peut modifier le pointage RH.", "warning");
+      Utils.notify(isAR ? "المسؤول فقط يمكنه تعديل الحضور." : "Seul l'administrateur peut modifier le pointage RH.", "warning");
       return;
     }
     
@@ -10946,15 +11034,15 @@ const PointageModule = {
       // Check if paie was clôturée too
       const paieVals = DB.getAll('paie_validations') || [];
       if (paieVals.find(p => p.month === rectMonth)) {
-        Utils.notify("Modification impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge.", "error");
+        Utils.notify(isAR ? "لا يمكن التعديل: رواتب هذا الشهر مغلقة بالفعل. احذف التكلفة أولاً." : "Modification impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge.", "error");
       } else {
-        Utils.notify("Ce mois est déjà validé. Annulez d'abord la validation du pointage pour modifier.", "warning");
+        Utils.notify(isAR ? "هذا الشهر مؤكد بالفعل. قم بإلغاء تأكيد الحضور أولاً للتعديل." : "Ce mois est déjà validé. Annulez d'abord la validation du pointage pour modifier.", "warning");
       }
       return;
     }
     const u = DB.getById('users', userId) || DB.getAll('users').find(x => String(x.id) === String(userId));
     if (!u) {
-      Utils.notify("Collaborateur introuvable (ID: " + userId + ")", "error");
+      Utils.notify((isAR ? "الموظف غير موجود (معرف: " : "Collaborateur introuvable (ID: ") + userId + ")", "error");
       return;
     }
 
@@ -10962,12 +11050,12 @@ const PointageModule = {
     const currentRect = allRects.find(r => String(r.userId) === String(u.id) && r.date === dateStr);
 
     const statuses = [
-      { id: 'present', label: '✅ Présent (Journée normale - 8h)', hours: 8 },
-      { id: 'late', label: '⏱️ Retard / Présence partielle', hours: 4 },
-      { id: 'absent_unjustified', label: '❌ Absent non justifié (0h)', hours: 0 },
-      { id: 'absent_justified', label: '📋 Absence justifiée / Maladie / Urgence', hours: 0 },
-      { id: 'conge', label: '🏖️ Congé payé / Récupération', hours: 0 },
-      { id: 'mission', label: '🚗 Mission extérieure / Déplacement', hours: 8 }
+      { id: 'present', label: isAR ? '✅ حاضر (يوم عمل عادي - 8 ساعات)' : '✅ Présent (Journée normale - 8h)', hours: 8 },
+      { id: 'late', label: isAR ? '⏱️ تأخر / دوام جزئي' : '⏱️ Retard / Présence partielle', hours: 4 },
+      { id: 'absent_unjustified', label: isAR ? '❌ غياب غير مبرر (0 س)' : '❌ Absent non justifié (0h)', hours: 0 },
+      { id: 'absent_justified', label: isAR ? '📋 غياب مبرر / مرض / طارئ' : '📋 Absence justifiée / Maladie / Urgence', hours: 0 },
+      { id: 'conge', label: isAR ? '🏖️ إجازة مدفوعة / تعويض' : '🏖️ Congé payé / Récupération', hours: 0 },
+      { id: 'mission', label: isAR ? '🚗 مهمة خارجية / تنقل' : '🚗 Mission extérieure / Déplacement', hours: 8 }
     ];
 
     const curStatus = currentRect ? currentRect.status : 'present';
@@ -10980,17 +11068,17 @@ const PointageModule = {
       <div style="padding:6px 0">
         <div style="background:var(--bg3);border-radius:10px;padding:12px 16px;margin-bottom:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="color:var(--text4)">Collaborateur :</span>
-            <strong style="color:var(--text)">${Utils.escHTML(u.name)} (${Utils.escHTML(u.jobTitle || 'Employé')})</strong>
+            <span style="color:var(--text4)">${isAR ? 'الموظف :' : 'Collaborateur :'}</span>
+            <strong style="color:var(--text)">${Utils.escHTML(u.name)} (${Utils.escHTML(u.jobTitle || (isAR ? 'موظف' : 'Employé'))})</strong>
           </div>
           <div style="display:flex;justify-content:space-between">
-            <span style="color:var(--text4)">Date concernée :</span>
+            <span style="color:var(--text4)">${isAR ? 'التاريخ المعني :' : 'Date concernée :'}</span>
             <strong style="color:var(--primary)">${Utils.fmtDate(dateStr)}</strong>
           </div>
         </div>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700">Statut de présence RH</label>
+          <label style="font-weight:700">${isAR ? 'حالة الحضور' : 'Statut de présence RH'}</label>
           <select id="rect_rh_status" class="input" style="width:100%" onchange="
             const sel = this.options[this.selectedIndex];
             const h = sel.getAttribute('data-hours');
@@ -10999,22 +11087,22 @@ const PointageModule = {
         </div>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700">Heures comptabilisées</label>
+          <label style="font-weight:700">${isAR ? 'الساعات المحتسبة' : 'Heures comptabilisées'}</label>
           <input type="number" id="rect_rh_hours" class="input" style="width:100%" min="0" max="24" step="0.5" value="${curHours}">
         </div>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700">Motif & Justification RH</label>
-          <input type="text" id="rect_rh_motif" class="input" style="width:100%" placeholder="Ex: Présent, Certificat médical, Mission..." value="${Utils.escHTML(curMotif)}">
+          <label style="font-weight:700">${isAR ? 'السبب والتبرير' : 'Motif & Justification RH'}</label>
+          <input type="text" id="rect_rh_motif" class="input" style="width:100%" placeholder="${isAR ? 'مثال: حاضر، شهادة طبية، مهمة...' : 'Ex: Présent, Certificat médical, Mission...'}" value="${Utils.escHTML(curMotif)}">
         </div>
       </div>`;
 
     const r = await Dialog.show({
-      title: `📋 Rectification Pointage — ${u.name}`,
+      title: `${isAR ? '📋 تعديل الحضور — ' : '📋 Rectification Pointage — '}${u.name}`,
       message: modalHTML,
       type: 'warning',
-      confirmText: 'Enregistrer la Rectification',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'حفظ التعديل' : 'Enregistrer la Rectification',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!r) return;
@@ -11022,7 +11110,7 @@ const PointageModule = {
     const st = document.getElementById('rect_rh_status')?.value || 'present';
     const hrs = parseFloat(document.getElementById('rect_rh_hours')?.value || 0);
     const motifInput = document.getElementById('rect_rh_motif')?.value?.trim();
-    const finalMotif = motifInput || 'Rectification manuelle administrateur';
+    const finalMotif = motifInput || (isAR ? 'تصحيح يدوي من المشرف' : 'Rectification manuelle administrateur');
 
     const admin = Auth.getCurrentUser();
 
@@ -11048,54 +11136,55 @@ const PointageModule = {
       });
     }
 
-    Utils.notify(`✅ Pointage de ${u.name} pour le ${Utils.fmtDate(dateStr)} mis à jour.`, 'success');
+    Utils.notify(isAR ? `✅ تم تحديث حضور ${u.name} لتاريخ ${Utils.fmtDate(dateStr)} بنجاح.` : `✅ Pointage de ${u.name} pour le ${Utils.fmtDate(dateStr)} mis à jour.`, 'success');
     App.loadModule('pointage');
   },
   _openRectifModal(userId, dateStr) { return this.showRectifyModal(userId, dateStr); },
 
   async _closePaieMonth() {
+    const isAR = T.isRTL();
     const m = this._month + 1;
     const y = this._year;
     const label = `${String(m).padStart(2,'0')}/${y}`;
     const fiches = DB.getAll('fiches_paie').filter(f => f.month === m && f.year === y);
-    if (!fiches.length) { Utils.notify('Aucune fiche de paie pour ' + label, 'warning'); return; }
+    if (!fiches.length) { Utils.notify(isAR ? ('لا توجد كشوف رواتب لـ ' + label) : ('Aucune fiche de paie pour ' + label), 'warning'); return; }
 
     // Check if already closed
     const existing = DB.getAll('bank_charges').find(c => c.subtype === 'Salaires & Primes RH' && c.label && c.label.includes(label));
-    if (existing) { Utils.notify('La paie du mois ' + label + ' est deja cloturee dans les charges.', 'warning'); return; }
+    if (existing) { Utils.notify(isAR ? ('رواتب شهر ' + label + ' مغلقة بالفعل في التكاليف.') : ('La paie du mois ' + label + ' est deja cloturee dans les charges.'), 'warning'); return; }
 
     const totalNet = Math.round(fiches.reduce((s, f) => s + (f.netPayer || 0), 0) * 100) / 100;
     const totalBrut = Math.round(fiches.reduce((s, f) => s + (f.salaireBrut || 0), 0) * 100) / 100;
     const totalCNAS = Math.round(fiches.reduce((s, f) => s + (f.cotisationCNAS || 0), 0) * 100) / 100;
 
     const banks = DB.getSettings().banks || [];
-    const bankOpts = banks.map(b => `<option value="${b.id}">Banque : ${Utils.escHTML(b.name)}</option>`).join('');
+    const bankOpts = banks.map(b => `<option value="${b.id}">${isAR ? 'بنك :' : 'Banque :'} ${Utils.escHTML(b.name)}</option>`).join('');
 
     const detailHtml = fiches.map(f => 
-      `<tr><td style="padding:4px 8px">${Utils.escHTML(f.userName)}</td><td style="padding:4px 8px;text-align:right">${Utils.fmtCurrency(f.netPayer||0)}</td></tr>`
+      `<tr><td style="padding:4px 8px;text-align:${isAR?'right':'left'}">${Utils.escHTML(f.userName)}</td><td style="padding:4px 8px;text-align:right">${Utils.fmtCurrency(f.netPayer||0)}</td></tr>`
     ).join('');
 
     const r = await Dialog.show({
-      title: 'Cloturer la Paie du Mois ' + label,
+      title: (isAR ? 'إغلاق رواتب شهر ' : 'Cloturer la Paie du Mois ') + label,
       message: `
         <div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:12px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Fiches generees :</span><strong>${fiches.length}</strong></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Total Brut :</span><strong>${Utils.fmtCurrency(totalBrut)}</strong></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Total CNAS :</span><strong style="color:#ef4444">-${Utils.fmtCurrency(totalCNAS)}</strong></div>
-          <div style="display:flex;justify-content:space-between;border-top:2px solid var(--primary);padding-top:6px;margin-top:6px"><span style="font-weight:800;font-size:16px">Total Net a Payer :</span><strong style="font-size:18px;color:#10b981">${Utils.fmtCurrency(totalNet)}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>${isAR ? 'كشوف الرواتب المُنشأة :' : 'Fiches generees :'}</span><strong>${fiches.length}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>${isAR ? 'إجمالي الراتب الخام :' : 'Total Brut :'}</span><strong>${Utils.fmtCurrency(totalBrut)}</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>${isAR ? 'إجمالي الضمان الاجتماعي :' : 'Total CNAS :'}</span><strong style="color:#ef4444">-${Utils.fmtCurrency(totalCNAS)}</strong></div>
+          <div style="display:flex;justify-content:space-between;border-top:2px solid var(--primary);padding-top:6px;margin-top:6px"><span style="font-weight:800;font-size:16px">${isAR ? 'صافي الراتب للدفع :' : 'Total Net a Payer :'}</span><strong style="font-size:18px;color:#10b981">${Utils.fmtCurrency(totalNet)}</strong></div>
         </div>
         <div style="max-height:120px;overflow-y:auto;margin-bottom:12px">
-          <table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:var(--bg3)"><th style="padding:4px 8px;text-align:left">Employe</th><th style="padding:4px 8px;text-align:right">Net</th></tr></thead><tbody>${detailHtml}</tbody></table>
+          <table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:var(--bg3)"><th style="padding:4px 8px;text-align:${isAR?'right':'left'}">${isAR ? 'الموظف' : 'Employe'}</th><th style="padding:4px 8px;text-align:right">${isAR ? 'الصافي' : 'Net'}</th></tr></thead><tbody>${detailHtml}</tbody></table>
         </div>
-        <div class="form-group"><label style="font-weight:700">Source de paiement</label>
+        <div class="form-group"><label style="font-weight:700">${isAR ? 'مصدر الدفع' : 'Source de paiement'}</label>
           <select id="paie_source" class="input" style="width:100%">
-            <option value="caisse">Caisse Principale (Especes)</option>
+            <option value="caisse">${isAR ? 'الصندوق الرئيسي (نقداً)' : 'Caisse Principale (Especes)'}</option>
             ${bankOpts}
           </select>
         </div>`,
       type: 'info',
-      confirmText: 'Cloturer et Enregistrer la Charge',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'إغلاق وتسجيل التكلفة' : 'Cloturer et Enregistrer la Charge',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
     if (!r) return;
 
@@ -11117,7 +11206,7 @@ const PointageModule = {
     DB.insert('bank_charges', {
       type: 'auto',
       subtype: 'Salaires & Primes RH',
-      label: `Masse salariale ${label} (${fiches.length} employes)`,
+      label: `${isAR ? 'كتلة الرواتب' : 'Masse salariale'} ${label} (${fiches.length} ${isAR ? 'موظف' : 'employes'})`,
       category: 'Salaires & Primes RH',
       bankId: source,
       amount: totalNet,
@@ -11137,7 +11226,7 @@ const PointageModule = {
       DB.insert('caisse_admin', {
         type: 'withdrawal', source: 'charge',
         amount: totalNet,
-        note: `Paie mois ${label} - ${fiches.length} employes`,
+        note: `${isAR ? 'رواتب شهر' : 'Paie mois'} ${label} - ${fiches.length} ${isAR ? 'موظف' : 'employes'}`,
         userId: u?.id, userName: u?.name,
         date: Utils.today()
       });
@@ -11145,22 +11234,23 @@ const PointageModule = {
       DB.insert('bank_transactions', {
         bankId: source, type: 'payment', subtype: 'charge',
         amount: totalNet,
-        note: `Paie mois ${label} - ${fiches.length} employes`,
+        note: `${isAR ? 'رواتب شهر' : 'Paie mois'} ${label} - ${fiches.length} ${isAR ? 'موظف' : 'employes'}`,
         date: Utils.today(),
         by: u?.id, byName: u?.name,
         createdAt: new Date().toISOString()
       });
     }
 
-    Utils.notify(`Paie du mois ${label} cloturee : ${Utils.fmtCurrency(totalNet)} debite de ${source === 'caisse' ? 'la caisse' : 'la banque'}`, 'success');
+    Utils.notify(isAR ? `✅ تم إغلاق رواتب شهر ${label} بنجاح وتم تسجيل تكلفة قدرها ${Utils.fmtCurrency(totalNet)}.` : `✅ Paie du mois ${label} clôturée : ${Utils.fmtCurrency(totalNet)} débité de ${source === 'caisse' ? 'la caisse' : 'la banque'}`, 'success');
     App.loadModule('pointage');
   },
 
   _exportExcel() {
-    Utils.notify("Génération de l'export Excel des présences...", "info");
+    const isAR = T.isRTL();
+    Utils.notify(isAR ? "جاري إنشاء ملف إكسل للحضور..." : "Génération de l'export Excel des présences...", "info");
     // Simple table to CSV/XLS export
     const rows = [
-      ['Collaborateur', 'Poste', 'Heures Travaillées', 'Jours Présents', 'Retards', 'Absences Justifiées', 'Absences Injustifiées']
+      [isAR ? 'الموظف' : 'Collaborateur', isAR ? 'المنصب' : 'Poste', isAR ? 'ساعات العمل' : 'Heures Travaillées', isAR ? 'أيام الحضور' : 'Jours Présents', isAR ? 'التأخرات' : 'Retards', isAR ? 'غياب مبرر' : 'Absences Justifiées', isAR ? 'غياب غير مبرر' : 'Absences Injustifiées']
     ];
     const users = DB.getAll('users').filter(u => u.active !== false);
     const logs = DB.getAll('work_log');
@@ -11193,24 +11283,25 @@ const PointageModule = {
   },
 
   async _showPayHistory() {
+    const isAR = T.isRTL();
     const fiches = DB.getAll('fiches_paie').sort((a,b) => (b.year*100+b.month) - (a.year*100+a.month));
-    if (!fiches.length) { Utils.notify('Aucune fiche de paie enregistrée.', 'warning'); return; }
+    if (!fiches.length) { Utils.notify(isAR ? 'لا توجد كشوف رواتب مسجلة.' : 'Aucune fiche de paie enregistrée.', 'warning'); return; }
     
     let html = '<div style="max-height:60vh;overflow-y:auto">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
     html += '<thead><tr style="background:var(--bg3);border-bottom:2px solid var(--border)">';
-    html += '<th style="padding:8px;text-align:left">Employé</th>';
-    html += '<th style="padding:8px;text-align:center">Période</th>';
-    html += '<th style="padding:8px;text-align:right">Brut</th>';
+    html += `<th style="padding:8px;text-align:${isAR?'right':'left'}">${isAR ? 'الموظف' : 'Employé'}</th>`;
+    html += `<th style="padding:8px;text-align:center">${isAR ? 'الفترة' : 'Période'}</th>`;
+    html += `<th style="padding:8px;text-align:right">${isAR ? 'الخام' : 'Brut'}</th>`;
     html += '<th style="padding:8px;text-align:right">CNAS</th>';
     html += '<th style="padding:8px;text-align:right">IRG</th>';
-    html += '<th style="padding:8px;text-align:right;color:#10b981;font-weight:800">Net</th>';
+    html += `<th style="padding:8px;text-align:right;color:#10b981;font-weight:800">${isAR ? 'الصافي' : 'Net'}</th>`;
     html += '<th style="padding:8px;text-align:center">PDF</th>';
     html += '</tr></thead><tbody>';
     
     fiches.forEach(f => {
       html += `<tr style="border-bottom:1px solid var(--border)">`;
-      html += `<td style="padding:6px 8px;font-weight:600">${Utils.escHTML(f.userName||'—')}</td>`;
+      html += `<td style="padding:6px 8px;font-weight:600;text-align:${isAR?'right':'left'}">${Utils.escHTML(f.userName||'—')}</td>`;
       html += `<td style="padding:6px 8px;text-align:center">${String(f.month).padStart(2,'0')}/${f.year}</td>`;
       html += `<td style="padding:6px 8px;text-align:right">${Utils.fmtCurrency(f.salaireBrut||0)}</td>`;
       html += `<td style="padding:6px 8px;text-align:right;color:#ef4444">−${Utils.fmtCurrency(f.cotisationCNAS||0)}</td>`;
@@ -11221,12 +11312,13 @@ const PointageModule = {
     });
     
     html += '</tbody></table></div>';
-    Dialog.alert('📋 Historique des Fiches de Paie', html);
+    Dialog.alert(isAR ? '📋 سجل كشوف الرواتب' : '📋 Historique des Fiches de Paie', html);
   },
 
   _reprintFiche(ficheId) {
+    const isAR = T.isRTL();
     const f = DB.getAll('fiches_paie').find(x => String(x.id) === String(ficheId));
-    if (!f) { Utils.notify('Fiche introuvable', 'warning'); return; }
+    if (!f) { Utils.notify(isAR ? 'الكشف غير موجود' : 'Fiche introuvable', 'warning'); return; }
     if (typeof PDFGen !== 'undefined' && PDFGen.exportFicheDePayeSimple) {
       PDFGen.exportFicheDePayeSimple({
         employeeName: f.userName, department: f.department||'-', jobTitle: f.jobTitle||'-',
@@ -11240,9 +11332,9 @@ const PointageModule = {
         baseSalary: f.salaireBase, prorata: f.prorata, overtime: f.montantHS, bonuses: f.primes,
         grossTotal: f.salaireBrut,
         deductions: [
-          ...(f.cotisationCNAS > 0 ? [{ label: `CNAS (${f.tauxCNAS}%)`, amount: f.cotisationCNAS }] : []),
-          ...(f.irg > 0 ? [{ label: 'IRG', amount: f.irg }] : []),
-          ...(f.retenues > 0 ? [{ label: 'Retenues', amount: f.retenues }] : []),
+          ...(f.cotisationCNAS > 0 ? [{ label: isAR ? `الضمان الاجتماعي (${f.tauxCNAS}%)` : `CNAS (${f.tauxCNAS}%)`, amount: f.cotisationCNAS }] : []),
+          ...(f.irg > 0 ? [{ label: isAR ? 'ضريبة الدخل (IRG)' : 'IRG', amount: f.irg }] : []),
+          ...(f.retenues > 0 ? [{ label: isAR ? 'اقتطاعات أخرى' : 'Retenues', amount: f.retenues }] : []),
         ],
         totalDeductions: Math.round((f.cotisationCNAS+f.irg+(f.retenues||0))*100)/100,
         netPay: f.netPayer,
@@ -11252,34 +11344,35 @@ const PointageModule = {
 
   async _showFicheSelection() {
     const users = DB.getAll('users').filter(u => u.active !== false);
-    if (!users.length) return Utils.notify("Aucun utilisateur actif.", "error");
+    const isAR = T.isRTL();
+    if (!users.length) return Utils.notify(isAR ? "لا يوجد مستخدمون نشطون." : "Aucun utilisateur actif.", "error");
 
-    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-    const optsHtml = users.map(u => `<option value="${u.id}">${Utils.escHTML(u.name)} (${Utils.escHTML(u.jobTitle || 'Employé')})</option>`).join('');
+    const monthNames = isAR ? ['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'] : ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const optsHtml = users.map(u => `<option value="${u.id}">${Utils.escHTML(u.name)} (${Utils.escHTML(u.jobTitle || (isAR ? 'موظف' : 'Employé'))})</option>`).join('');
     const monthOpts = monthNames.map((m, i) => `<option value="${i}" ${i === this._month ? 'selected' : ''}>${m}</option>`).join('');
     const curYear = new Date().getFullYear();
     const yearOpts = [curYear-1, curYear, curYear+1].map(y => `<option value="${y}" ${y === this._year ? 'selected' : ''}>${y}</option>`).join('');
     
     const r = await Dialog.show({
-      title: '📄 Générer Fiche de Paie',
+      title: isAR ? '📄 إنشاء كشف الراتب' : '📄 Générer Fiche de Paie',
       message: `
         <div class="form-group mb-2">
-          <label style="font-weight:700">Sélectionner l'employé</label>
+          <label style="font-weight:700">${isAR ? "اختيار الموظف" : "Sélectionner l'employé"}</label>
           <select id="fiche_user_id" class="input" style="width:100%">${optsHtml}</select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
           <div class="form-group">
-            <label style="font-weight:700">Mois</label>
+            <label style="font-weight:700">${isAR ? "الشهر" : "Mois"}</label>
             <select id="fiche_month" class="input" style="width:100%">${monthOpts}</select>
           </div>
           <div class="form-group">
-            <label style="font-weight:700">Année</label>
+            <label style="font-weight:700">${isAR ? "السنة" : "Année"}</label>
             <select id="fiche_year" class="input" style="width:100%">${yearOpts}</select>
           </div>
         </div>`,
       type: 'info',
-      confirmText: 'Suivant',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'التالي' : 'Suivant',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (r) {
@@ -11332,8 +11425,9 @@ const PointageModule = {
   },
 
   async _submitFiche(action) {
+    const isAR = T.isRTL();
     const u = this._currentFicheUser;
-    if (!u) return Utils.notify("Données employé manquantes.", "error");
+    if (!u) return Utils.notify(isAR ? "بيانات الموظف مفقودة." : "Données employé manquantes.", "error");
 
     const sb = parseFloat(document.getElementById('fiche_salaire_base')?.value || 0);
     const jt = parseFloat(document.getElementById('fiche_jours_trav')?.value || 0);
@@ -11366,8 +11460,8 @@ const PointageModule = {
     const data = {
       userId: u.id,
       userName: u.name,
-      jobTitle: u.jobTitle || 'Employé',
-      department: u.department || 'Général',
+      jobTitle: u.jobTitle || (isAR ? 'موظف' : 'Employé'),
+      department: u.department || (isAR ? 'عام' : 'Général'),
       month: (this._currentFicheMonth !== undefined ? this._currentFicheMonth : this._month) + 1,
       year: this._currentFicheYear || this._year,
       salaireBase: sb,
@@ -11417,29 +11511,30 @@ const PointageModule = {
           bonuses: data.primes,
           grossTotal: data.salaireBrut,
           deductions: [
-            ...(data.cotisationCNAS > 0 ? [{ label: `CNAS Salarie (${data.tauxCNAS}%)`, amount: data.cotisationCNAS }] : []),
-            ...(data.irg > 0 ? [{ label: 'IRG (Impot sur revenu)', amount: data.irg }] : []),
-            ...(data.retenues > 0 ? [{ label: 'Autres retenues', amount: data.retenues }] : []),
+            ...(data.cotisationCNAS > 0 ? [{ label: isAR ? `الضمان الاجتماعي (${data.tauxCNAS}%)` : `CNAS Salarié (${data.tauxCNAS}%)`, amount: data.cotisationCNAS }] : []),
+            ...(data.irg > 0 ? [{ label: isAR ? 'ضريبة الدخل (IRG)' : 'IRG (Impôt sur revenu)', amount: data.irg }] : []),
+            ...(data.retenues > 0 ? [{ label: isAR ? 'اقتطاعات أخرى' : 'Autres retenues', amount: data.retenues }] : []),
           ],
           totalDeductions: Math.round((data.cotisationCNAS + data.irg + data.retenues) * 100) / 100,
           netPay: data.netPayer,
         };
         PDFGen.exportFicheDePayeSimple(pdfData);
-        Utils.notify("Fiche de paie generee et exportee en PDF !", "success");
+        Utils.notify(isAR ? "تم إنشاء وتصدير كشف الراتب بنجاح بصيغة PDF !" : "Fiche de paie générée et exportée en PDF !", "success");
       } else {
-        Utils.notify("Fiche enregistrée (générateur PDF en cours de chargement).", "info");
+        Utils.notify(isAR ? "تم حفظ كشف الراتب (جاري تحميل مصدّر PDF)." : "Fiche enregistrée (générateur PDF en cours de chargement).", "info");
       }
     } else {
-      Utils.notify("✅ Fiche de paie enregistrée avec succès !", "success");
+      Utils.notify(isAR ? "✅ تم حفظ كشف الراتب بنجاح !" : "✅ Fiche de paie enregistrée avec succès !", "success");
     }
 
     if (Dialog._resolve) Dialog._resolve(true);
   },
 
   async _generateFicheDePayeModal(userId) {
+    const isAR = T.isRTL();
     const u = DB.getById('users', userId) || DB.getAll('users').find(x => String(x.id) === String(userId));
     if (!u) {
-      Utils.notify("Collaborateur introuvable.", "error");
+      Utils.notify(isAR ? "الموظف غير موجود." : "Collaborateur introuvable.", "error");
       return;
     }
     this._currentFicheUser = u;
@@ -11500,83 +11595,83 @@ const PointageModule = {
     const defaultJoursRef = rhSettings.joursRef || 30;
     const irgActive = rhSettings.irgActive !== false;
     const congeDays = rects.filter(r => r.status === 'conge' && r.date && r.date.startsWith(`${ficheYear}-${String(ficheMonth+1).padStart(2,'0')}`)).length;
-    const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const monthNames = isAR ? ['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'] : ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
     const modalHTML = `
       <div style="padding:4px 0">
         <!-- Employee Info Header -->
         <div style="background:var(--bg3);border-radius:10px;padding:12px 16px;margin-bottom:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="color:var(--text4)">Employé :</span>
+            <span style="color:var(--text4)">${isAR ? 'الموظف :' : 'Employé :'}</span>
             <strong style="color:var(--text)">${Utils.escHTML(u.name)}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="color:var(--text4)">Département/Poste :</span>
+            <span style="color:var(--text4)">${isAR ? 'القسم / المنصب :' : 'Département/Poste :'}</span>
             <strong style="color:var(--text)">${Utils.escHTML(u.department || '-')} / ${Utils.escHTML(u.jobTitle || '-')}</strong>
           </div>
           <div style="display:flex;justify-content:space-between">
-            <span style="color:var(--text4)">Période :</span>
+            <span style="color:var(--text4)">${isAR ? 'الفترة :' : 'Période :'}</span>
             <strong style="color:var(--primary)">${monthNames[ficheMonth]} ${ficheYear}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;margin-top:4px">
-            <span style="color:var(--text4)">Congé ce mois / Solde annuel :</span>
-            <strong style="color:${congeDays > 0 ? '#f59e0b' : 'var(--text)'}">${congeDays} jour(s) pris / ${u.congeBalance || 30} jours</strong>
+            <span style="color:var(--text4)">${isAR ? 'إجازة هذا الشهر / الرصيد السنوي :' : 'Congé ce mois / Solde annuel :'}</span>
+            <strong style="color:${congeDays > 0 ? '#f59e0b' : 'var(--text)'}">${congeDays} ${isAR ? 'يوم مأخوذ' : 'jour(s) pris'} / ${u.congeBalance || 30} ${isAR ? 'يوم' : 'jours'}</strong>
           </div>
         </div>
 
         <!-- Section 1: Base & Présence -->
         <div style="font-weight:800;font-size:12px;color:var(--text);margin-bottom:8px;border-bottom:2px solid var(--primary);padding-bottom:4px">
-          <i class="fas fa-coins" style="color:var(--primary)"></i> SALAIRE & PRÉSENCE
+          <i class="fas fa-coins" style="color:var(--primary)"></i> ${isAR ? 'الراتب والحضور' : 'SALAIRE & PRÉSENCE'}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Salaire de Base (DA)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'الراتب الأساسي (د.ج)' : 'Salaire de Base (DA)'}</label>
             <input type="number" id="fiche_salaire_base" class="input" style="width:100%" value="${salaireBase}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Jours Référence (mois)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'أيام المرجع (الشهر)' : 'Jours Référence (mois)'}</label>
             <input type="number" id="fiche_jours_total" class="input" style="width:100%" value="${defaultJoursRef}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Jours Travaillés</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'أيام العمل' : 'Jours Travaillés'}</label>
             <input type="number" id="fiche_jours_trav" class="input" style="width:100%" value="${joursTravailles}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Jours Absence</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'أيام الغياب' : 'Jours Absence'}</label>
             <input type="number" id="fiche_jours_abs" class="input" style="width:100%;background:var(--bg3)" value="${joursAbsence}" readonly>
           </div>
         </div>
 
         <!-- Section 2: Heures Sup & Primes -->
         <div style="font-weight:800;font-size:12px;color:var(--text);margin-bottom:8px;border-bottom:2px solid #f59e0b;padding-bottom:4px">
-          <i class="fas fa-plus-circle" style="color:#f59e0b"></i> COMPLÉMENTS DE RÉMUNÉRATION
+          <i class="fas fa-plus-circle" style="color:#f59e0b"></i> ${isAR ? 'مكملات الأجر' : 'COMPLÉMENTS DE RÉMUNÉRATION'}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Taux Horaire HS (DA/h)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'سعر الساعة الإضافية (د.ج/س)' : 'Taux Horaire HS (DA/h)'}</label>
             <input type="number" id="fiche_taux_hs" class="input" style="width:100%" value="${tauxHoraireDefault}" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Nb Heures Sup</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'عدد الساعات الإضافية' : 'Nb Heures Sup'}</label>
             <input type="number" id="fiche_nb_hs" class="input" style="width:100%" value="0" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Primes (DA)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'العلاوات (د.ج)' : 'Primes (DA)'}</label>
             <input type="number" id="fiche_primes" class="input" style="width:100%" value="0" oninput="PointageModule._updateFicheCalc()">
           </div>
         </div>
 
         <!-- Section 3: Cotisations & Retenues -->
         <div style="font-weight:800;font-size:12px;color:var(--text);margin-bottom:8px;border-bottom:2px solid #ef4444;padding-bottom:4px">
-          <i class="fas fa-minus-circle" style="color:#ef4444"></i> COTISATIONS & RETENUES
+          <i class="fas fa-minus-circle" style="color:#ef4444"></i> ${isAR ? 'الاشتراكات والاقتطاعات' : 'COTISATIONS & RETENUES'}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Taux CNAS Salarié (%)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'نسبة الضمان الاجتماعي (%)' : 'Taux CNAS Salarié (%)'}</label>
             <input type="number" id="fiche_taux_cnas" class="input" style="width:100%" value="${defaultCNAS}" step="0.5" oninput="PointageModule._updateFicheCalc()">
           </div>
           <div class="form-group">
-            <label style="font-size:11px;font-weight:700">Autres Retenues (DA)</label>
+            <label style="font-size:11px;font-weight:700">${isAR ? 'اقتطاعات أخرى (د.ج)' : 'Autres Retenues (DA)'}</label>
             <input type="number" id="fiche_retenues" class="input" style="width:100%" value="0" oninput="PointageModule._updateFicheCalc()">
           </div>
         </div>
@@ -11585,23 +11680,23 @@ const PointageModule = {
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px">
           <table style="width:100%;font-size:12px;border-collapse:collapse">
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:4px 0;color:var(--text3)">Salaire prorata</td>
+              <td style="padding:4px 0;color:var(--text3)">${isAR ? 'الراتب النسبي' : 'Salaire prorata'}</td>
               <td id="fiche_d_prorata" style="text-align:right;font-weight:600;color:var(--text)">--</td>
             </tr>
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:4px 0;color:var(--text3)">Heures Supplémentaires</td>
+              <td style="padding:4px 0;color:var(--text3)">${isAR ? 'الساعات الإضافية' : 'Heures Supplémentaires'}</td>
               <td id="fiche_d_hs" style="text-align:right;font-weight:600;color:var(--text)">--</td>
             </tr>
             <tr style="border-bottom:2px solid var(--primary)">
-              <td style="padding:4px 0;font-weight:800;color:var(--primary)">Salaire Brut</td>
+              <td style="padding:4px 0;font-weight:800;color:var(--primary)">${isAR ? 'الراتب الخام' : 'Salaire Brut'}</td>
               <td id="fiche_d_brut" style="text-align:right;font-weight:800;color:var(--primary)">--</td>
             </tr>
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:4px 0;color:#ef4444">− CNAS Salarié</td>
+              <td style="padding:4px 0;color:#ef4444">${isAR ? '− الضمان الاجتماعي' : '− CNAS Salarié'}</td>
               <td id="fiche_d_cnas" style="text-align:right;font-weight:600;color:#ef4444">--</td>
             </tr>
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:4px 0;color:#ef4444">− IRG (Impôt)</td>
+              <td style="padding:4px 0;color:#ef4444">${isAR ? '− ضريبة الدخل (IRG)' : '− IRG (Impôt)'}</td>
               <td id="fiche_d_irg" style="text-align:right;font-weight:600;color:#ef4444">--</td>
             </tr>
           </table>
@@ -11609,18 +11704,18 @@ const PointageModule = {
 
         <!-- NET à Payer -->
         <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(52,211,153,0.1));border:2px solid #10b981;border-radius:12px;padding:14px;text-align:center">
-          <div style="font-size:12px;font-weight:800;color:#059669;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Net à Payer</div>
+          <div style="font-size:12px;font-weight:800;color:#059669;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">${isAR ? 'صافي الدفع' : 'Net à Payer'}</div>
           <div id="fiche_net_display" style="font-size:28px;font-weight:900;color:#10b981">--</div>
         </div>
 
         <!-- Custom Action Buttons -->
-        <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
-          <button class="btn btn-outline" type="button" onclick="if(Dialog._resolve) Dialog._resolve(false)">Annuler</button>
+        <div style="display:flex;gap:10px;margin-top:16px;justify-content:${isAR?'flex-start':'flex-end'}">
+          <button class="btn btn-outline" type="button" onclick="if(Dialog._resolve) Dialog._resolve(false)">${isAR ? 'إلغاء' : 'Annuler'}</button>
           <button class="btn" type="button" style="background:#6366f1;color:white;border:none;font-weight:700" onclick="PointageModule._submitFiche('pdf')">
-            <i class="fas fa-file-pdf"></i> Générer PDF
+            <i class="fas fa-file-pdf"></i> ${isAR ? 'تصدير PDF' : 'Générer PDF'}
           </button>
           <button class="btn btn-primary" type="button" style="font-weight:700" onclick="PointageModule._submitFiche('save')">
-            <i class="fas fa-save"></i> Sauvegarder
+            <i class="fas fa-save"></i> ${isAR ? 'حفظ' : 'Sauvegarder'}
           </button>
         </div>
       </div>`;
@@ -11628,15 +11723,16 @@ const PointageModule = {
     setTimeout(() => { this._updateFicheCalc(); }, 60);
 
     await Dialog.show({
-      title: `📄 Fiche de Paie — ${u.name}`,
+      title: `${isAR ? '📄 كشف الراتب — ' : '📄 Fiche de Paie — '}${u.name}`,
       message: modalHTML,
       hideButtons: true
     });
   },
 
   async validatePointage() {
+    const isAR = T.isRTL();
     if (!Auth.isAdmin()) {
-      Utils.notify("Seul l'administrateur peut valider le pointage.", "error");
+      Utils.notify(isAR ? "المسؤول فقط يمكنه التحقق من الحضور." : "Seul l'administrateur peut valider le pointage.", "error");
       return;
     }
     const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
@@ -11645,23 +11741,23 @@ const PointageModule = {
     if (existing) {
       // Already validated — offer to UN-validate
       const r = await Dialog.show({
-        title: 'Pointage déjà validé',
-        message: `<p>Le pointage de <strong>${targetYM}</strong> est déjà validé.</p>
-          <p>Voulez-vous <strong>annuler la validation</strong> pour permettre les modifications ?</p>
-          <p style="color:var(--danger);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Ceci ne sera possible que si les paies n'ont pas encore été clôturées.</p>`,
-        confirmText: 'Annuler la Validation',
-        cancelText: 'Fermer',
+        title: isAR ? 'التحقق من الحضور مؤكد مسبقاً' : 'Pointage déjà validé',
+        message: `<p>${isAR ? `حضور شهر <strong>${targetYM}</strong> تم تأكيده بالفعل.` : `Le pointage de <strong>${targetYM}</strong> est déjà validé.`}</p>
+          <p>${isAR ? 'هل تريد <strong>إلغاء التأكيد</strong> للسماح بالتعديلات؟' : 'Voulez-vous <strong>annuler la validation</strong> pour permettre les modifications ?'}</p>
+          <p style="color:var(--danger);font-size:12px"><i class="fas fa-exclamation-triangle"></i> ${isAR ? 'هذا ممكن فقط إذا لم يتم إغلاق الرواتب بعد.' : "Ceci ne sera possible que si les paies n'ont pas encore été clôturées."}</p>`,
+        confirmText: isAR ? 'إلغاء التأكيد' : 'Annuler la Validation',
+        cancelText: isAR ? 'إغلاق' : 'Fermer',
         type: 'warning'
       });
       if (r) {
         // Check if paie was already clôturée
         const paieVals = DB.getAll('paie_validations') || [];
         if (paieVals.find(p => p.month === targetYM)) {
-          Utils.notify("Impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge correspondante.", "error");
+          Utils.notify(isAR ? "لا يمكن: رواتب هذا الشهر تم إغلاقها بالفعل. احذف التكلفة المطابقة أولاً." : "Impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge correspondante.", "error");
           return;
         }
         DB.delete('pointage_validations', existing.id);
-        Utils.notify("Validation du pointage annulée. Vous pouvez modifier les présences.", "success");
+        Utils.notify(isAR ? "تم إلغاء تأكيد الحضور. يمكنك الآن تعديل الحضور." : "Validation du pointage annulée. Vous pouvez modifier les présences.", "success");
         App.loadModule('pointage');
       }
       return;
@@ -11680,26 +11776,27 @@ const PointageModule = {
     const temp = document.createElement('div');
     temp.innerHTML = fullHtml;
     const tableDiv = temp.querySelector('.table-shell');
-    const tableHtml = tableDiv ? tableDiv.outerHTML : '<p>Table introuvable</p>';
+    const tableHtml = tableDiv ? tableDiv.outerHTML : `<p>${isAR ? 'الجدول غير موجود' : 'Table introuvable'}</p>`;
     
     const modalHTML = `
       <div style="padding:10px;">
-        <p style="margin-top:0">Veuillez vérifier les présences avant de valider. Une fois validé, vous pourrez clôturer les paies.</p>
+        <p style="margin-top:0">${isAR ? 'يرجى مراجعة سجل الحضور قبل التأكيد النهائي. بعد التأكيد، يمكنك إغلاق الرواتب.' : 'Veuillez vérifier les présences avant de valider. Une fois validé, vous pourrez clôturer les paies.'}</p>
         <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:12px;margin-bottom:20px;box-shadow:0 4px 15px rgba(0,0,0,.03);">
           ${tableHtml}
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:10px">
-          <button class="btn btn-outline" onclick="UI.closeModal()">Annuler</button>
+        <div style="display:flex;justify-content:${isAR?'flex-start':'flex-end'};gap:10px">
+          <button class="btn btn-outline" onclick="UI.closeModal()">${isAR ? 'إلغاء' : 'Annuler'}</button>
           <button class="btn btn-success" style="background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;font-weight:700" onclick="PointageModule.confirmValidatePointage()">
-            <i class="fas fa-check"></i> Valider définitivement le Pointage
+            <i class="fas fa-check"></i> ${isAR ? 'تأكيد الحضور نهائياً' : 'Valider définitivement le Pointage'}
           </button>
         </div>
       </div>
     `;
-    UI.showModal(`Valider le Pointage - ${String(this._month+1).padStart(2,'0')}/${this._year}`, modalHTML, "", "xl");
+    UI.showModal(`${isAR ? 'التحقق من الحضور' : 'Valider le Pointage'} - ${String(this._month+1).padStart(2,'0')}/${this._year}`, modalHTML, "", "xl");
   },
 
   confirmValidatePointage() {
+    const isAR = T.isRTL();
     const targetYM = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
     DB.insert('pointage_validations', {
       month: targetYM,
@@ -11707,33 +11804,34 @@ const PointageModule = {
       validatedAt: new Date().toISOString()
     });
     UI.closeModal();
-    Utils.notify("Pointage validé avec succès", "success");
+    Utils.notify(isAR ? "تم التحقق من الحضور بنجاح" : "Pointage validé avec succès", "success");
     App.loadModule('pointage');
   },
 
   async showPayrollCloture() {
+    const isAR = T.isRTL();
     if (!Auth.isAdmin()) {
-      Utils.notify("Seul l'administrateur peut clôturer les paies.", "error");
+      Utils.notify(isAR ? "المسؤول فقط يمكنه إغلاق الرواتب." : "Seul l'administrateur peut clôturer les paies.", "error");
       return;
     }
     const monthKey = `${this._year}-${String(this._month+1).padStart(2,'0')}`;
     
     const pvs = DB.getAll('pointage_validations') || [];
     if (!pvs.some(v => v.month === monthKey)) {
-      Utils.notify("Veuillez d'abord valider le pointage de ce mois.", "error");
+      Utils.notify(isAR ? "يرجى أولاً التحقق من الحضور لهذا الشهر." : "Veuillez d'abord valider le pointage de ce mois.", "error");
       return;
     }
     
     const validations = DB.getAll('paie_validations') || [];
     if (validations.find(v => v.month === monthKey)) {
-      Utils.notify("Les paies de ce mois ont déjà été clôturées.", "warning");
+      Utils.notify(isAR ? "تم إغلاق رواتب هذا الشهر بالفعل." : "Les paies de ce mois ont déjà été clôturées.", "warning");
       return;
     }
     
     // Check if charges were already created for this month to be extra safe
     const charges = DB.getAll('bank_charges');
     if (charges.find(c => c.paieValidation === true && c.month === monthKey)) {
-      Utils.notify("Les charges de paie de ce mois existent déjà.", "warning");
+      Utils.notify(isAR ? "تكاليف رواتب هذا الشهر موجودة بالفعل." : "Les charges de paie de ce mois existent déjà.", "warning");
       return;
     }
 
@@ -11749,14 +11847,14 @@ const PointageModule = {
     }
 
     const banks = (DB.getSettings().banks || []);
-    const bankOpts = banks.map(b => `<option value="${b.id}">Banque : ${Utils.escHTML(b.name)}</option>`).join('');
+    const bankOpts = banks.map(b => `<option value="${b.id}">${isAR ? 'بنك :' : 'Banque :'} ${Utils.escHTML(b.name)}</option>`).join('');
 
     let html = `<div style="padding:10px 0;">
-      <p style="margin-top:0;">Validation et intégration des salaires pour <strong>${String(this._month+1).padStart(2,'0')}/${this._year}</strong> (Jours ouvrables théoriques: ${totalWorkingDays})</p>
+      <p style="margin-top:0;">${isAR ? `تأكيد وإدراج الرواتب لشهر <strong>${String(this._month+1).padStart(2,'0')}/${this._year}</strong> (أيام العمل النظرية: ${totalWorkingDays})` : `Validation et intégration des salaires pour <strong>${String(this._month+1).padStart(2,'0')}/${this._year}</strong> (Jours ouvrables théoriques: ${totalWorkingDays})`}</p>
       <div class="form-group mb-2">
-        <label style="font-weight:bold;">Imputer les charges à :</label>
+        <label style="font-weight:bold;">${isAR ? 'تحميل التكاليف على :' : 'Imputer les charges à :'}</label>
         <select id="paie_bank_source" class="input" style="width:100%;padding:8px;">
-          <option value="caisse">Caisse Principale (Espèces)</option>
+          <option value="caisse">${isAR ? 'الصندوق الرئيسي (نقداً)' : 'Caisse Principale (Espèces)'}</option>
           ${bankOpts}
         </select>
       </div>
@@ -11764,11 +11862,11 @@ const PointageModule = {
       <table style="width:100%;font-size:12px;border-collapse:collapse;">
         <thead style="position:sticky;top:0;background:var(--bg3);z-index:1;">
           <tr style="border-bottom:2px solid var(--border)">
-            <th style="padding:8px;text-align:left">Employé</th>
-            <th style="padding:8px;text-align:center">Base (DA)</th>
-            <th style="padding:8px;text-align:center">Présences</th>
-            <th style="padding:8px;text-align:center">Absences</th>
-            <th style="padding:8px;text-align:right">Net à Payer</th>
+            <th style="padding:8px;text-align:${isAR?'right':'left'}">${isAR ? 'الموظف' : 'Employé'}</th>
+            <th style="padding:8px;text-align:center">${isAR ? 'الأساسي (د.ج)' : 'Base (DA)'}</th>
+            <th style="padding:8px;text-align:center">${isAR ? 'الحضور' : 'Présences'}</th>
+            <th style="padding:8px;text-align:center">${isAR ? 'الغياب' : 'Absences'}</th>
+            <th style="padding:8px;text-align:${isAR?'left':'right'}">${isAR ? 'صافي الدفع' : 'Net à Payer'}</th>
           </tr>
         </thead>
         <tbody>`;
@@ -11803,11 +11901,11 @@ const PointageModule = {
       payrollData.push({ employee: u, daysPresent, absences, baseSalary, netPay });
       
       html += `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:8px"><strong>${Utils.escHTML(u.name)}</strong></td>
+        <td style="padding:8px;text-align:${isAR?'right':'left'}"><strong>${Utils.escHTML(u.name)}</strong></td>
         <td style="padding:8px;text-align:center">${Utils.fmtCurrency(baseSalary)}</td>
         <td style="padding:8px;text-align:center;color:var(--success)">${daysPresent}</td>
         <td style="padding:8px;text-align:center;color:var(--danger)">${absences}</td>
-        <td style="padding:8px;text-align:right;font-weight:bold;color:var(--primary)">${Utils.fmtCurrency(netPay)}</td>
+        <td style="padding:8px;text-align:${isAR?'left':'right'};font-weight:bold;color:var(--primary)">${Utils.fmtCurrency(netPay)}</td>
       </tr>`;
     });
     
@@ -11817,19 +11915,19 @@ const PointageModule = {
     html += `</tbody>
       <tfoot>
         <tr style="background:var(--bg3);border-top:2px solid var(--primary)">
-          <td style="padding:10px 8px;font-weight:900;font-size:13px" colspan="2">TOTAL (${totalEmployees} employés)</td>
+          <td style="padding:10px 8px;font-weight:900;font-size:13px;text-align:${isAR?'right':'left'}" colspan="2">${isAR ? `المجموع (${totalEmployees} موظف)` : `TOTAL (${totalEmployees} employés)`}</td>
           <td style="padding:10px 8px;text-align:center;font-weight:700;color:var(--success)">${payrollData.reduce((s,d)=>s+d.daysPresent,0)}</td>
           <td style="padding:10px 8px;text-align:center;font-weight:700;color:var(--danger)">${payrollData.reduce((s,d)=>s+d.absences,0)}</td>
-          <td style="padding:10px 8px;text-align:right;font-weight:900;font-size:14px;color:var(--primary)">${Utils.fmtCurrency(grandTotal)}</td>
+          <td style="padding:10px 8px;text-align:${isAR?'left':'right'};font-weight:900;font-size:14px;color:var(--primary)">${Utils.fmtCurrency(grandTotal)}</td>
         </tr>
       </tfoot>
     </table></div></div>`;
 
     const r = await Dialog.show({
-      title: 'Clôturer les Paies',
+      title: isAR ? 'إغلاق الرواتب' : 'Clôturer les Paies',
       message: html,
-      confirmText: 'Clôturer & Créer les Charges',
-      cancelText: 'Annuler',
+      confirmText: isAR ? 'إغلاق وإنشاء التكاليف' : 'Clôturer & Créer les Charges',
+      cancelText: isAR ? 'إلغاء' : 'Annuler',
       type: 'warning'
     });
 
@@ -11855,7 +11953,7 @@ const PointageModule = {
       const chg = {
         type: 'manual',
         subtype: 'Salaires & Primes RH',
-        label: `Masse salariale ${String(this._month+1).padStart(2,'0')}/${this._year} (${employeeDetails.length} employés)`,
+        label: `${isAR ? 'كتلة الرواتب' : 'Masse salariale'} ${String(this._month+1).padStart(2,'0')}/${this._year} (${employeeDetails.length} ${isAR ? 'موظف' : 'employés'})`,
         category: 'Salaires & Primes RH',
         bankId: bankId,
         amount: grandTotal,
@@ -11885,7 +11983,7 @@ const PointageModule = {
       }
       
       DB.insert('paie_validations', { month: monthKey, validatedAt: new Date().toISOString(), validatedBy: admin.id });
-      Utils.notify("Paies clôturées — 1 charge totale de " + Utils.fmtCurrency(grandTotal) + " créée.", "success");
+      Utils.notify(isAR ? `✅ تم إغلاق الرواتب — تم إنشاء تكلفة إجمالية قدرها ${Utils.fmtCurrency(grandTotal)} بنجاح.` : `Paies clôturées — 1 charge totale de ${Utils.fmtCurrency(grandTotal)} créée.`, "success");
       App.loadModule('charges');
     }
   }
@@ -11902,7 +12000,8 @@ const ChargesModule = {
   _displayLimit: 50,
   
   render() {
-    if (!Auth.isAdmin()) return "<div style='padding:40px;text-align:center;color:var(--text3)'><i class='fas fa-lock' style='font-size:48px;opacity:.2;display:block;margin-bottom:12px'></i>Accès administrateur uniquement</div>";
+    const isAR = T.isRTL();
+    if (!Auth.isAdmin()) return `<div style='padding:40px;text-align:center;color:var(--text3)'><i class='fas fa-lock' style='font-size:48px;opacity:.2;display:block;margin-bottom:12px'></i>${isAR ? 'وصول للمسؤول فقط' : 'Accès administrateur uniquement'}</div>`;
     
     return `
     <div style="padding:24px;max-width:1300px;margin:0 auto">
@@ -11913,23 +12012,23 @@ const ChargesModule = {
             <i class="fas fa-file-invoice-dollar"></i>
           </div>
           <div>
-            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">Charges & Frais d'Exploitation</h2>
-            <div style="font-size:13px;color:var(--text4);margin-top:2px">Gestion des frais bancaires, loyers, factures et charges récurrentes planifiées</div>
+            <h2 style="font-size:22px;font-weight:900;margin:0;color:var(--text)">${isAR ? 'التكاليف ومصاريف الاستغلال' : "Charges & Frais d'Exploitation"}</h2>
+            <div style="font-size:13px;color:var(--text4);margin-top:2px">${isAR ? 'إدارة الرسوم البنكية، الإيجارات، الفواتير والتكاليف الدورية المجدولة' : 'Gestion des frais bancaires, loyers, factures et charges récurrentes planifiées'}</div>
           </div>
         </div>
 
         <div style="display:flex;gap:10px;align-items:center">
           <div style="display:flex;background:var(--bg2);padding:4px;border-radius:10px;border:1px solid var(--border)">
             <button class="btn" style="border:none;background:${this._tab==='journal'?'var(--primary)':'transparent'};color:${this._tab==='journal'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:700;font-size:12px" onclick="ChargesModule._tab='journal';App.loadModule('charges')">
-              <i class="fas fa-book"></i> Journal des Charges
+              <i class="fas fa-book"></i> ${isAR ? 'سجل التكاليف' : 'Journal des Charges'}
             </button>
             <button class="btn" style="border:none;background:${this._tab==='recurring'?'var(--primary)':'transparent'};color:${this._tab==='recurring'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:700;font-size:12px" onclick="ChargesModule._tab='recurring';App.loadModule('charges')">
-              <i class="fas fa-redo"></i> Charges Récurrentes (${(DB.getAll('recurring_charges')||[]).length})
+              <i class="fas fa-redo"></i> ${isAR ? 'التكاليف الدورية' : 'Charges Récurrentes'} (${(DB.getAll('recurring_charges')||[]).length})
             </button>
           </div>
           ${this._tab === 'journal'
-            ? `<button class="btn btn-primary" onclick="ChargesModule._addCharge()" style="background:linear-gradient(135deg,#dc2626,#ef4444);border:none"><i class="fas fa-plus"></i> Saisir une charge</button>`
-            : `<button class="btn btn-primary" onclick="ChargesModule._addRecurringCharge()" style="background:linear-gradient(135deg,#0284c7,#0ea5e9);border:none"><i class="fas fa-plus"></i> Nouvelle charge récurrente</button>`
+            ? `<button class="btn btn-primary" onclick="ChargesModule._addCharge()" style="background:linear-gradient(135deg,#dc2626,#ef4444);border:none"><i class="fas fa-plus"></i> ${isAR ? 'تسجيل تكلفة' : 'Saisir une charge'}</button>`
+            : `<button class="btn btn-primary" onclick="ChargesModule._addRecurringCharge()" style="background:linear-gradient(135deg,#0284c7,#0ea5e9);border:none"><i class="fas fa-plus"></i> ${isAR ? 'تكلفة دورية جديدة' : 'Nouvelle charge récurrente'}</button>`
           }
         </div>
       </div>
@@ -11939,6 +12038,7 @@ const ChargesModule = {
   },
 
   _renderJournal() {
+    const isAR = T.isRTL();
     let charges = DB.getAll('bank_charges').sort((a, b) => (b.date||'').localeCompare(a.date||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
     const ds = this._dateStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
     const de = this._dateEnd || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
@@ -11955,15 +12055,15 @@ const ChargesModule = {
       <!-- KPIs -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:24px">
         <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
-          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">Total Charges Période</div>
+          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">${isAR ? 'إجمالي تكاليف الفترة' : 'Total Charges Période'}</div>
           <div style="font-size:24px;font-weight:900;color:var(--danger)">${Utils.fmtCurrency(total)}</div>
         </div>
         <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
-          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">Frais Automatiques</div>
+          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">${isAR ? 'المصاريف التلقائية' : 'Frais Automatiques'}</div>
           <div style="font-size:24px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(totalAuto)}</div>
         </div>
         <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
-          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">Charges Fixes & Manuelles</div>
+          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">${isAR ? 'التكاليف الثابتة واليدوية' : 'Charges Fixes & Manuelles'}</div>
           <div style="font-size:24px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(totalManual)}</div>
         </div>
       </div>
@@ -11971,13 +12071,13 @@ const ChargesModule = {
       <!-- Filters Bar -->
       <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:12px 16px;border-radius:12px;border:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <div style="display:flex;gap:8px">
-          <button class="btn btn-sm ${this._filter==='all'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='all';App.loadModule('charges')">Toutes</button>
-          <button class="btn btn-sm ${this._filter==='auto'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='auto';App.loadModule('charges')">Automatiques</button>
-          <button class="btn btn-sm ${this._filter==='manual'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='manual';App.loadModule('charges')">Manuelles</button>
+          <button class="btn btn-sm ${this._filter==='all'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='all';App.loadModule('charges')">${isAR ? 'الكل' : 'Toutes'}</button>
+          <button class="btn btn-sm ${this._filter==='auto'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='auto';App.loadModule('charges')">${isAR ? 'تلقائية' : 'Automatiques'}</button>
+          <button class="btn btn-sm ${this._filter==='manual'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='manual';App.loadModule('charges')">${isAR ? 'يدوية' : 'Manuelles'}</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${ds}" onchange="ChargesModule._dateStart=this.value;App.loadModule('charges')">
-          <span style="color:var(--text4)">à</span>
+          <span style="color:var(--text4)">${isAR ? 'إلى' : 'à'}</span>
           <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${de}" onchange="ChargesModule._dateEnd=this.value;App.loadModule('charges')">
         </div>
       </div>
@@ -11986,18 +12086,18 @@ const ChargesModule = {
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
-            <tr style="background:var(--bg3);text-align:left;font-size:11px;color:var(--text3);text-transform:uppercase">
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Date</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Source / Compte</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Désignation & Catégorie</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:right">Montant</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Auteur</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:right">Actions</th>
+            <tr style="background:var(--bg3);text-align:${isAR?'right':'left'};font-size:11px;color:var(--text3);text-transform:uppercase">
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'التاريخ' : 'Date'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'المصدر / الحساب' : 'Source / Compte'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'التعيين والفئة' : 'Désignation & Catégorie'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:${isAR?'left':'right'}">${isAR ? 'المبلغ' : 'Montant'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'المسؤول' : 'Auteur'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:${isAR?'left':'right'}">${isAR ? 'الإجراءات' : 'Actions'}</th>
             </tr>
           </thead>
           <tbody>
             ${charges.length ? charges.slice(0, this._displayLimit).map(c => {
-              const b = banks.find(x => x.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
+              const b = banks.find(x => x.id === c.bankId) || { name: c.bankId === 'caisse' ? (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale') : (isAR ? 'بنك' : 'Banque') };
               return `
               <tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
                 <td style="padding:12px 16px;font-weight:600;color:var(--text2)">${Utils.fmtDate(c.date)}</td>
@@ -12008,39 +12108,40 @@ const ChargesModule = {
                   <div style="font-weight:700;font-size:13px;color:var(--text)">${Utils.escHTML(c.label || c.subtype)}</div>
                   <div style="font-size:11px;margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                     ${c.type === 'auto'
-                      ? `<span style="background:rgba(16,185,129,.12);color:#059669;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-robot"></i> Auto</span>`
-                      : `<span style="background:rgba(139,92,246,.12);color:#7c3aed;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-user-edit"></i> Manuel</span>`
+                      ? `<span style="background:rgba(16,185,129,.12);color:#059669;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-robot"></i> ${isAR ? 'آلي' : 'Auto'}</span>`
+                      : `<span style="background:rgba(139,92,246,.12);color:#7c3aed;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-user-edit"></i> ${isAR ? 'يدوي' : 'Manuel'}</span>`
                     }
-                    ${c.recurring ? `<span style="background:rgba(245,158,11,.12);color:#d97706;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-redo"></i> Récurrent</span>` : ''}
-                    ${c.paieValidation ? `<span style="background:rgba(99,102,241,.12);color:#6366f1;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-id-badge"></i> Paie RH</span>` : ''}
+                    ${c.recurring ? `<span style="background:rgba(245,158,11,.12);color:#d97706;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-redo"></i> ${isAR ? 'دوري' : 'Récurrent'}</span>` : ''}
+                    ${c.paieValidation ? `<span style="background:rgba(99,102,241,.12);color:#6366f1;padding:2px 6px;border-radius:4px;font-weight:700"><i class="fas fa-id-badge"></i> ${isAR ? 'رواتب RH' : 'Paie RH'}</span>` : ''}
                     ${c.category ? `<span style="color:var(--text4)">· ${Utils.escHTML(c.category)}</span>` : ''}
-                    ${c.paieDetails && Array.isArray(c.paieDetails) ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.length} employés</span>` : (c.paieDetails ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.daysPresent}j/${c.paieDetails.totalWorkingDays}j</span>` : '')}
+                    ${c.paieDetails && Array.isArray(c.paieDetails) ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.length} ${isAR ? 'موظف' : 'employés'}</span>` : (c.paieDetails ? `<span style="color:var(--text4);font-size:10px">· ${c.paieDetails.daysPresent}j/${c.paieDetails.totalWorkingDays}j</span>` : '')}
                   </div>
                 </td>
-                <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:right">-${Utils.fmtCurrency(c.amount)}</td>
+                <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:${isAR?'left':'right'}">-${Utils.fmtCurrency(c.amount)}</td>
                 <td style="padding:12px 16px;font-size:12px;color:var(--text4)">${Utils.escHTML(c.createdByName || '—')}</td>
-                <td style="padding:12px 16px;text-align:right;white-space:nowrap">
-                  ${c.paieValidation ? `<button class="btn btn-xs" onclick="ChargesModule._showPayrollDetail('${c.id}')" title="Détails Paie" style="color:#6366f1;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2)"><i class="fas fa-info-circle"></i></button>` : ''}
+                <td style="padding:12px 16px;text-align:${isAR?'left':'right'};white-space:nowrap">
+                  ${c.paieValidation ? `<button class="btn btn-xs" onclick="ChargesModule._showPayrollDetail('${c.id}')" title="${isAR ? 'تفاصيل الرواتب' : 'Détails Paie'}" style="color:#6366f1;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2)"><i class="fas fa-info-circle"></i></button>` : ''}
                   <button class="btn btn-xs" onclick="ChargesModule._exportChargePDF('${c.id}')" title="PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15)"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs" onclick="ChargesModule._editCharge('${c.id}')" title="Modifier" style="color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2)"><i class="fas fa-edit"></i></button>
-                  <button class="btn btn-xs" onclick="ChargesModule._deleteCharge('${c.id}')" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>
+                  <button class="btn btn-xs" onclick="ChargesModule._editCharge('${c.id}')" title="${isAR ? 'تعديل' : 'Modifier'}" style="color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2)"><i class="fas fa-edit"></i></button>
+                  <button class="btn btn-xs" onclick="ChargesModule._deleteCharge('${c.id}')" title="${isAR ? 'حذف' : 'Supprimer'}" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text4)">Aucune charge enregistrée pour cette période</td></tr>`}
+            }).join('') : `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد تكاليف مسجلة لهذه الفترة' : 'Aucune charge enregistrée pour cette période'}</td></tr>`}
           </tbody>
         </table>
       </div>
       ${charges.length > this._displayLimit ? `
         <div style="text-align:center;padding:16px;display:flex;align-items:center;justify-content:center;gap:12px">
-          <span style="font-size:12px;color:var(--text4)">Affiché ${Math.min(this._displayLimit, charges.length)} / ${charges.length}</span>
+          <span style="font-size:12px;color:var(--text4)">${isAR ? 'المعروض' : 'Affiché'} ${Math.min(this._displayLimit, charges.length)} / ${charges.length}</span>
           <button class="btn" onclick="ChargesModule._displayLimit+=50;App.loadModule('charges')" style="background:linear-gradient(135deg,#6366f1,#818cf8);color:white;border:none;border-radius:8px;padding:8px 20px;font-weight:700;font-size:13px">
-            <i class="fas fa-arrow-down"></i> Charger plus (+50)
+            <i class="fas fa-arrow-down"></i> ${isAR ? 'تحميل المزيد (+50)' : 'Charger plus (+50)'}
           </button>
         </div>` : ''}
     `;
   },
 
   _renderRecurring() {
+    const isAR = T.isRTL();
     const list = DB.getAll('recurring_charges') || [];
     const banks = DB.getSettings().banks || [];
     const today = Utils.today();
@@ -12060,15 +12161,15 @@ const ChargesModule = {
       <!-- KPIs -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:14px;margin-bottom:24px">
         <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
-          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">Modèles Récurrents</div>
-          <div style="font-size:24px;font-weight:900;color:var(--primary)">${list.length} charges</div>
+          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">${isAR ? 'النماذج الدورية' : 'Modèles Récurrents'}</div>
+          <div style="font-size:24px;font-weight:900;color:var(--primary)">${list.length} ${isAR ? 'تكلفة' : 'charges'}</div>
         </div>
         <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
-          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">Estimation Mensuelle</div>
+          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">${isAR ? 'التقدير الشهري' : 'Estimation Mensuelle'}</div>
           <div style="font-size:24px;font-weight:900;color:var(--danger)">${Utils.fmtCurrency(Math.round(totalMonthlyEst))}</div>
         </div>
         <div style="background:var(--bg2);padding:16px;border-radius:12px;border:1px solid var(--border)">
-          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">Charges Échues à Traiter</div>
+          <div style="font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;margin-bottom:4px">${isAR ? 'تكاليف مستحقة للمعالجة' : 'Charges Échues à Traiter'}</div>
           <div style="font-size:24px;font-weight:900;color:#f59e0b">${list.filter(r => r.active !== false && (r.nextDueDate||'') <= today).length}</div>
         </div>
       </div>
@@ -12077,57 +12178,65 @@ const ChargesModule = {
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
-            <tr style="background:var(--bg3);text-align:left;font-size:11px;color:var(--text3);text-transform:uppercase">
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Désignation & Catégorie</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Fréquence</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">Compte Débité</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:right">Montant Prévu</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:center">Prochaine Échéance</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:center">Mode</th>
-              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:right">Actions</th>
+            <tr style="background:var(--bg3);text-align:${isAR?'right':'left'};font-size:11px;color:var(--text3);text-transform:uppercase">
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'التعيين والفئة' : 'Désignation & Catégorie'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'التكرار' : 'Fréquence'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border)">${isAR ? 'الحساب المخصوم' : 'Compte Débité'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:${isAR?'left':'right'}">${isAR ? 'المبلغ المتوقع' : 'Montant Prévu'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:center">${isAR ? 'الاستحقاق القادم' : 'Prochaine Échéance'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:center">${isAR ? 'النوع' : 'Mode'}</th>
+              <th style="padding:12px 16px;border-bottom:1px solid var(--border);text-align:${isAR?'left':'right'}">${isAR ? 'الإجراءات' : 'Actions'}</th>
             </tr>
           </thead>
           <tbody>
             ${list.length ? list.map(r => {
-              const b = banks.find(x => x.id === r.bankId) || { name: r.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
+              const b = banks.find(x => x.id === r.bankId) || { name: r.bankId === 'caisse' ? (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale') : (isAR ? 'بنك' : 'Banque') };
               const isOverdue = r.active !== false && (r.nextDueDate || '') <= today;
+              const freqLabels = {
+                mensuelle: isAR ? 'شهري' : 'Mensuelle',
+                hebdomadaire: isAR ? 'أسبوعي' : 'Hebdomadaire',
+                trimestrielle: isAR ? 'فصلي' : 'Trimestrielle',
+                semestrielle: isAR ? 'سداسي' : 'Semestrielle',
+                annuelle: isAR ? 'سنوي' : 'Annuelle'
+              };
+              const freqText = freqLabels[r.frequency] || r.frequency;
               return `
               <tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
                 <td style="padding:12px 16px">
                   <strong style="color:var(--text)">${Utils.escHTML(r.label)}</strong>
-                  <div style="font-size:11px;color:var(--text4);margin-top:2px">${Utils.escHTML(r.category || 'Charge d\'exploitation')}</div>
+                  <div style="font-size:11px;color:var(--text4);margin-top:2px">${Utils.escHTML(r.category || (isAR ? 'مصاريف استغلال' : "Charge d'exploitation"))}</div>
                 </td>
                 <td style="padding:12px 16px">
-                  <span class="badge" style="background:rgba(2,132,199,.1);color:#0284c7;text-transform:capitalize">${r.frequency}</span>
+                  <span class="badge" style="background:rgba(2,132,199,.1);color:#0284c7;text-transform:capitalize">${freqText}</span>
                 </td>
                 <td style="padding:12px 16px;font-weight:600;color:var(--text2)">
                   <i class="fas ${r.bankId==='caisse'?'fa-cash-register':'fa-university'}"></i> ${Utils.escHTML(b.name)}
                 </td>
-                <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:right">
+                <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:${isAR?'left':'right'}">
                   ${Utils.fmtCurrency(r.amount)}
                 </td>
                 <td style="padding:12px 16px;text-align:center">
                   ${isOverdue
-                    ? `<span class="badge badge-danger" style="animation:pulse 2s infinite"><i class="fas fa-exclamation-circle"></i> ${Utils.fmtDate(r.nextDueDate)} (À échéance)</span>`
+                    ? `<span class="badge badge-danger" style="animation:pulse 2s infinite"><i class="fas fa-exclamation-circle"></i> ${Utils.fmtDate(r.nextDueDate)} ${isAR ? '(مستحق الآن)' : '(À échéance)'}</span>`
                     : `<span class="badge badge-success"><i class="fas fa-calendar-check"></i> ${Utils.fmtDate(r.nextDueDate)}</span>`
                   }
                 </td>
                 <td style="padding:12px 16px;text-align:center">
                   ${r.autoDebit
-                    ? `<span style="background:rgba(16,185,129,.12);color:#059669;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700"><i class="fas fa-robot"></i> Auto-décaissement</span>`
-                    : `<span style="background:rgba(139,92,246,.12);color:#7c3aed;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700"><i class="fas fa-hand-pointer"></i> Manuel</span>`
+                    ? `<span style="background:rgba(16,185,129,.12);color:#059669;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700"><i class="fas fa-robot"></i> ${isAR ? 'صرف آلي' : 'Auto-décaissement'}</span>`
+                    : `<span style="background:rgba(139,92,246,.12);color:#7c3aed;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700"><i class="fas fa-hand-pointer"></i> ${isAR ? 'يدوي' : 'Manuel'}</span>`
                   }
                 </td>
-                <td style="padding:12px 16px;text-align:right;white-space:nowrap">
-                  <button class="btn btn-xs btn-primary" onclick="ChargesModule.executeRecurring('${r.id}')" title="Exécuter et débiter maintenant">
-                    <i class="fas fa-play"></i> Exécuter
+                <td style="padding:12px 16px;text-align:${isAR?'left':'right'};white-space:nowrap">
+                  <button class="btn btn-xs btn-primary" onclick="ChargesModule.executeRecurring('${r.id}')" title="${isAR ? 'تنفيذ وخصم الآن' : 'Exécuter et débiter maintenant'}">
+                    <i class="fas fa-play"></i> ${isAR ? 'تنفيذ' : 'Exécuter'}
                   </button>
-                  <button class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger);margin-left:4px" onclick="ChargesModule.deleteRecurring('${r.id}')" title="Supprimer">
+                  <button class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger);margin-inline-start:4px" onclick="ChargesModule.deleteRecurring('${r.id}')" title="${isAR ? 'حذف' : 'Supprimer'}">
                     <i class="fas fa-trash"></i>
                   </button>
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text4)">Aucun modèle de charge récurrente configuré</td></tr>`}
+            }).join('') : `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد نماذج تكاليف دورية مهيأة' : 'Aucun modèle de charge récurrente configuré'}</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -12135,57 +12244,58 @@ const ChargesModule = {
   },
 
   async _addCharge() {
+    const isAR = T.isRTL();
     const banks = DB.getSettings().banks || [];
     const categories = [
-      'Loyer & Bail commercial',
-      'Électricité & Gaz (Sonelgaz)',
-      'Eau (Algérienne des Eaux)',
-      'Télécom & Internet (Algérie Télécom)',
-      'Salaires & Primes RH',
-      'Assurances professionnelles',
-      'Logiciels & Cloud',
-      'Entretien & Maintenance',
-      'Impôts & Taxes',
-      'Frais de tenue de compte & Pack bancaire',
-      'Autre charge'
+      { id: 'Loyer & Bail commercial', fr: 'Loyer & Bail commercial', ar: 'إيجار المحل أو المستودع' },
+      { id: 'Électricité & Gaz (Sonelgaz)', fr: 'Électricité & Gaz (Sonelgaz)', ar: 'الكهرباء والغاز (سونلغاز)' },
+      { id: 'Eau (Algérienne des Eaux)', fr: 'Eau (Algérienne des Eaux)', ar: 'المياه (الجزائرية للمياه)' },
+      { id: 'Télécom & Internet (Algérie Télécom)', fr: 'Télécom & Internet (Algérie Télécom)', ar: 'الهاتف والإنترنت (اتصالات الجزائر)' },
+      { id: 'Salaires & Primes RH', fr: 'Salaires & Primes RH', ar: 'الرواتب والعلاوات RH' },
+      { id: 'Assurances professionnelles', fr: 'Assurances professionnelles', ar: 'التأمينات المهنية' },
+      { id: 'Logiciels & Cloud', fr: 'Logiciels & Cloud', ar: 'البرمجيات والاشتراكات السحابية' },
+      { id: 'Entretien & Maintenance', fr: 'Entretien & Maintenance', ar: 'الصيانة والترميم' },
+      { id: 'Impôts & Taxes', fr: 'Impôts & Taxes', ar: 'الضرائب والرسوم' },
+      { id: 'Frais de tenue de compte & Pack bancaire', fr: 'Frais de tenue de compte & Pack bancaire', ar: 'رسوم الحساب والخدمات البنكية' },
+      { id: 'Autre charge', fr: 'Autre charge', ar: 'تكاليف ومصاريف أخرى' }
     ];
 
-    const bankOpts = banks.map(b => `<option value="${b.id}">Banque : ${Utils.escHTML(b.name)}</option>`).join('');
-    const catOpts = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    const bankOpts = banks.map(b => `<option value="${b.id}">${isAR ? 'بنك :' : 'Banque :'} ${Utils.escHTML(b.name)}</option>`).join('');
+    const catOpts = categories.map(c => `<option value="${c.id}">${isAR ? c.ar : c.fr}</option>`).join('');
 
     const modalHTML = `
       <div style="padding:4px 0">
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Désignation de la charge</label>
-          <input type="text" id="chg_label" class="input" style="width:100%" placeholder="Ex: Facture Sonelgaz 3ème trimestre, Loyer dépôt...">
+          <label class="required" style="font-weight:700">${isAR ? 'بيان / تعيين التكلفة' : 'Désignation de la charge'}</label>
+          <input type="text" id="chg_label" class="input" style="width:100%" placeholder="${isAR ? 'مثال: فاتورة سونلغاز، إيجار المستودع...' : 'Ex: Facture Sonelgaz 3ème trimestre, Loyer dépôt...'}">
         </div>
         <div class="form-group mb-2">
-          <label style="font-weight:700">Catégorie</label>
+          <label style="font-weight:700">${isAR ? 'الفئة' : 'Catégorie'}</label>
           <select id="chg_cat" class="input" style="width:100%">${catOpts}</select>
         </div>
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Montant (DA)</label>
+          <label class="required" style="font-weight:700">${isAR ? 'المبلغ (د.ج)' : 'Montant (DA)'}</label>
           <input type="number" id="chg_amount" class="input" style="width:100%;font-size:18px;font-weight:800;text-align:center" min="0" step="any" placeholder="0">
         </div>
         <div class="form-group mb-2">
-          <label style="font-weight:700">Source de paiement (Compte débité)</label>
+          <label style="font-weight:700">${isAR ? 'مصدر الدفع (الحساب المخصوم)' : 'Source de paiement (Compte débité)'}</label>
           <select id="chg_source" class="input" style="width:100%">
-            <option value="caisse">💵 Caisse Principale (Espèces)</option>
+            <option value="caisse">${isAR ? '💵 الصندوق الرئيسي (نقداً)' : '💵 Caisse Principale (Espèces)'}</option>
             ${bankOpts}
           </select>
         </div>
         <div class="form-group mb-2">
-          <label style="font-weight:700">Date de la charge</label>
+          <label style="font-weight:700">${isAR ? 'تاريخ التكلفة' : 'Date de la charge'}</label>
           <input type="date" id="chg_date" class="input" style="width:100%" value="${Utils.today()}">
         </div>
       </div>`;
 
     const r = await Dialog.show({
-      title: '💵 Saisir une Charge d\'Exploitation',
+      title: isAR ? '💵 تسجيل تكلفة استغلال' : '💵 Saisir une Charge d\'Exploitation',
       message: modalHTML,
       type: 'info',
-      confirmText: 'Enregistrer la Charge',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'تسجيل التكلفة' : 'Enregistrer la Charge',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!r) return;
@@ -12196,12 +12306,12 @@ const ChargesModule = {
     const source = document.getElementById('chg_source')?.value || 'caisse';
     const date = document.getElementById('chg_date')?.value || Utils.today();
 
-    if (!label) { Utils.notify('La désignation est obligatoire', 'warning'); return; }
-    if (!amount || amount <= 0) { Utils.notify('Montant invalide', 'warning'); return; }
+    if (!label) { Utils.notify(isAR ? 'البيان إلزامي' : 'La désignation est obligatoire', 'warning'); return; }
+    if (!amount || amount <= 0) { Utils.notify(isAR ? 'المبلغ غير صالح' : 'Montant invalide', 'warning'); return; }
 
     const conf = await Utils.confirm2(
-      'Confirmer l\'enregistrement de la charge ?',
-      `Désignation : ${label}\nMontant : ${Utils.fmtCurrency(amount)}\nDébit : ${source === 'caisse' ? 'Caisse Principale' : 'Compte bancaire'}`
+      isAR ? 'تأكيد تسجيل التكلفة؟' : 'Confirmer l\'enregistrement de la charge ?',
+      `${isAR ? 'البيان' : 'Désignation'} : ${label}\n${isAR ? 'المبلغ' : 'Montant'} : ${Utils.fmtCurrency(amount)}\n${isAR ? 'الخصم من' : 'Débit'} : ${source === 'caisse' ? (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale') : (isAR ? 'حساب بنكي' : 'Compte bancaire')}`
     );
     if (!conf) return;
 
@@ -12229,7 +12339,7 @@ const ChargesModule = {
         type: 'withdrawal',
         source: 'charge',
         amount,
-        note: `Charge: ${label} (${category})`,
+        note: `${isAR ? 'تكلفة:' : 'Charge:'} ${label} (${category})`,
         userId: u?.id,
         userName: u?.name,
         date
@@ -12240,7 +12350,7 @@ const ChargesModule = {
         type: 'payment',
         subtype: 'charge',
         amount,
-        note: `Charge: ${label} (${category})`,
+        note: `${isAR ? 'تكلفة:' : 'Charge:'} ${label} (${category})`,
         date,
         by: u?.id,
         byName: u?.name,
@@ -12248,80 +12358,81 @@ const ChargesModule = {
       });
     }
 
-    Utils.notify(`✅ Charge de ${Utils.fmtCurrency(amount)} enregistrée avec succès`, 'success');
+    Utils.notify(isAR ? `✅ تم تسجيل تكلفة قدرها ${Utils.fmtCurrency(amount)} بنجاح.` : `✅ Charge de ${Utils.fmtCurrency(amount)} enregistrée avec succès`, 'success');
     App.loadModule('charges');
   },
 
   async _addRecurringCharge() {
+    const isAR = T.isRTL();
     const banks = DB.getSettings().banks || [];
     const categories = [
-      'Loyer & Bail commercial',
-      'Électricité & Gaz (Sonelgaz)',
-      'Eau (Algérienne des Eaux)',
-      'Télécom & Internet (Algérie Télécom)',
-      'Salaires & Primes RH',
-      'Assurances professionnelles',
-      'Logiciels & Cloud',
-      'Entretien & Maintenance',
-      'Impôts & Taxes',
-      'Frais de tenue de compte & Pack bancaire',
-      'Autre charge'
+      { id: 'Loyer & Bail commercial', fr: 'Loyer & Bail commercial', ar: 'إيجار المحل أو المستودع' },
+      { id: 'Électricité & Gaz (Sonelgaz)', fr: 'Électricité & Gaz (Sonelgaz)', ar: 'الكهرباء والغاز (سونلغاز)' },
+      { id: 'Eau (Algérienne des Eaux)', fr: 'Eau (Algérienne des Eaux)', ar: 'المياه (الجزائرية للمياه)' },
+      { id: 'Télécom & Internet (Algérie Télécom)', fr: 'Télécom & Internet (Algérie Télécom)', ar: 'الهاتف والإنترنت (اتصالات الجزائر)' },
+      { id: 'Salaires & Primes RH', fr: 'Salaires & Primes RH', ar: 'الرواتب والعلاوات RH' },
+      { id: 'Assurances professionnelles', fr: 'Assurances professionnelles', ar: 'التأمينات المهنية' },
+      { id: 'Logiciels & Cloud', fr: 'Logiciels & Cloud', ar: 'البرمجيات والاشتراكات السحابية' },
+      { id: 'Entretien & Maintenance', fr: 'Entretien & Maintenance', ar: 'الصيانة والترميم' },
+      { id: 'Impôts & Taxes', fr: 'Impôts & Taxes', ar: 'الضرائب والرسوم' },
+      { id: 'Frais de tenue de compte & Pack bancaire', fr: 'Frais de tenue de compte & Pack bancaire', ar: 'رسوم الحساب والخدمات البنكية' },
+      { id: 'Autre charge', fr: 'Autre charge', ar: 'تكاليف ومصاريف أخرى' }
     ];
 
-    const bankOpts = banks.map(b => `<option value="${b.id}">Banque : ${Utils.escHTML(b.name)}</option>`).join('');
-    const catOpts = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    const bankOpts = banks.map(b => `<option value="${b.id}">${isAR ? 'بنك :' : 'Banque :'} ${Utils.escHTML(b.name)}</option>`).join('');
+    const catOpts = categories.map(c => `<option value="${c.id}">${isAR ? c.ar : c.fr}</option>`).join('');
 
     const modalHTML = `
       <div style="padding:4px 0">
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Désignation de la charge récurrente</label>
-          <input type="text" id="rc_label" class="input" style="width:100%" placeholder="Ex: Loyer Mensuel Local, Abonnement Internet Fibre...">
+          <label class="required" style="font-weight:700">${isAR ? 'تعيين التكلفة الدورية' : 'Désignation de la charge récurrente'}</label>
+          <input type="text" id="rc_label" class="input" style="width:100%" placeholder="${isAR ? 'مثال: إيجار شهري للمحل، اشتراك ألياف بصرية...' : 'Ex: Loyer Mensuel Local, Abonnement Internet Fibre...'}">
         </div>
         <div class="form-group mb-2">
-          <label style="font-weight:700">Catégorie</label>
+          <label style="font-weight:700">${isAR ? 'الفئة' : 'Catégorie'}</label>
           <select id="rc_cat" class="input" style="width:100%">${catOpts}</select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="mb-2">
           <div class="form-group">
-            <label class="required" style="font-weight:700">Montant périodique (DA)</label>
+            <label class="required" style="font-weight:700">${isAR ? 'المبلغ الدوري (د.ج)' : 'Montant périodique (DA)'}</label>
             <input type="number" id="rc_amount" class="input" style="width:100%" min="0" step="any" placeholder="0">
           </div>
           <div class="form-group">
-            <label style="font-weight:700">Fréquence</label>
+            <label style="font-weight:700">${isAR ? 'الدورية والتكرار' : 'Fréquence'}</label>
             <select id="rc_freq" class="input" style="width:100%">
-              <option value="mensuelle">Mensuelle (Chaque mois)</option>
-              <option value="hebdomadaire">Hebdomadaire (Chaque semaine)</option>
-              <option value="trimestrielle">Trimestrielle (Tous les 3 mois)</option>
-              <option value="semestrielle">Semestrielle (Tous les 6 mois)</option>
-              <option value="annuelle">Annuelle (Tous les ans)</option>
+              <option value="mensuelle">${isAR ? 'شهرياً (كل شهر)' : 'Mensuelle (Chaque mois)'}</option>
+              <option value="hebdomadaire">${isAR ? 'أسبوعياً (كل أسبوع)' : 'Hebdomadaire (Chaque semaine)'}</option>
+              <option value="trimestrielle">${isAR ? 'فصلياً (كل 3 أشهر)' : 'Trimestrielle (Tous les 3 mois)'}</option>
+              <option value="semestrielle">${isAR ? 'سداسياً (كل 6 أشهر)' : 'Semestrielle (Tous les 6 mois)'}</option>
+              <option value="annuelle">${isAR ? 'سنوياً (كل سنة)' : 'Annuelle (Tous les ans)'}</option>
             </select>
           </div>
         </div>
         <div class="form-group mb-2">
-          <label style="font-weight:700">Compte débité</label>
+          <label style="font-weight:700">${isAR ? 'الحساب المخصوم' : 'Compte débité'}</label>
           <select id="rc_bank" class="input" style="width:100%">
-            <option value="caisse">💵 Caisse Principale (Espèces)</option>
+            <option value="caisse">${isAR ? '💵 الصندوق الرئيسي (نقداً)' : '💵 Caisse Principale (Espèces)'}</option>
             ${bankOpts}
           </select>
         </div>
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Date de première / prochaine échéance</label>
+          <label class="required" style="font-weight:700">${isAR ? 'تاريخ أول استحقاق قادم' : 'Date de première / prochaine échéance'}</label>
           <input type="date" id="rc_next_date" class="input" style="width:100%" value="${Utils.today()}">
         </div>
         <div class="form-group mb-2" style="background:var(--bg3);padding:10px;border-radius:8px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" id="rc_auto_debit" checked>
-            <span><strong>Activer l'auto-décaissement automatique</strong> (débit automatique surveillé par le système)</span>
+            <span><strong>${isAR ? 'تفعيل الصرف الآلي التلقائي' : 'Activer l\'auto-décaissement automatique'}</strong> (${isAR ? 'خصم مباشر يراقبه النظام' : 'débit automatique surveillé par le système'})</span>
           </label>
         </div>
       </div>`;
 
     const r = await Dialog.show({
-      title: '🔄 Configurer une Charge Récurrente',
+      title: isAR ? '🔄 إعداد تكلفة دورية مجدولة' : '🔄 Configurer une Charge Récurrente',
       message: modalHTML,
       type: 'info',
-      confirmText: 'Créer le Modèle Récurrent',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'إنشاء النموذج الدوري' : 'Créer le Modèle Récurrent',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!r) return;
@@ -12334,8 +12445,8 @@ const ChargesModule = {
     const nextDueDate = document.getElementById('rc_next_date')?.value || Utils.today();
     const autoDebit = document.getElementById('rc_auto_debit')?.checked === true;
 
-    if (!label) { Utils.notify('La désignation est requise', 'warning'); return; }
-    if (!amount || amount <= 0) { Utils.notify('Montant invalide', 'warning'); return; }
+    if (!label) { Utils.notify(isAR ? 'البيان إلزامي' : 'La désignation est requise', 'warning'); return; }
+    if (!amount || amount <= 0) { Utils.notify(isAR ? 'المبلغ غير صالح' : 'Montant invalide', 'warning'); return; }
 
     DB.insert('recurring_charges', {
       id: 'rc_' + Date.now(),
@@ -12351,18 +12462,19 @@ const ChargesModule = {
       createdAt: new Date().toISOString()
     });
 
-    Utils.notify(`✅ Charge récurrente "${label}" programmée avec succès`, 'success');
+    Utils.notify(isAR ? `✅ تمت جدولة التكلفة الدورية "${label}" بنجاح` : `✅ Charge récurrente "${label}" programmée avec succès`, 'success');
     ChargesModule._tab = 'recurring';
     App.loadModule('charges');
   },
 
   async executeRecurring(rcId) {
+    const isAR = T.isRTL();
     const r = (DB.getAll('recurring_charges') || []).find(x => x.id === rcId);
     if (!r) return;
 
     const conf = await Utils.confirm2(
-      `Exécuter la charge récurrente "${r.label}" ?`,
-      `Montant : ${Utils.fmtCurrency(r.amount)}\nDébit : ${r.bankId === 'caisse' ? 'Caisse Principale' : 'Compte bancaire'}\nDate : ${Utils.today()}`
+      isAR ? `تنفيذ التكلفة الدورية "${r.label}"؟` : `Exécuter la charge récurrente "${r.label}" ?`,
+      `${isAR ? 'المبلغ' : 'Montant'} : ${Utils.fmtCurrency(r.amount)}\n${isAR ? 'الخصم من' : 'Débit'} : ${r.bankId === 'caisse' ? (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale') : (isAR ? 'حساب بنكي' : 'Compte bancaire')}\n${isAR ? 'التاريخ' : 'Date'} : ${Utils.today()}`
     );
     if (!conf) return;
 
@@ -12373,8 +12485,8 @@ const ChargesModule = {
     // 1. Record charge
     DB.insert('bank_charges', {
       type: 'manual',
-      subtype: r.category || 'Charge récurrente',
-      label: `[Récurrent] ${r.label}`,
+      subtype: r.category || (isAR ? 'تكلفة دورية' : 'Charge récurrente'),
+      label: `[${isAR ? 'دوري' : 'Récurrent'}] ${r.label}`,
       category: r.category,
       bankId: r.bankId,
       amount: r.amount,
@@ -12392,7 +12504,7 @@ const ChargesModule = {
         type: 'withdrawal',
         source: 'charge',
         amount: r.amount,
-        note: `Charge récurrente: ${r.label}`,
+        note: `${isAR ? 'تكلفة دورية:' : 'Charge récurrente:'} ${r.label}`,
         userId: u?.id,
         userName: u?.name,
         date: today
@@ -12403,7 +12515,7 @@ const ChargesModule = {
         type: 'payment',
         subtype: 'charge',
         amount: r.amount,
-        note: `Charge récurrente: ${r.label}`,
+        note: `${isAR ? 'تكلفة دورية:' : 'Charge récurrente:'} ${r.label}`,
         date: today,
         by: u?.id,
         byName: u?.name,
@@ -12427,22 +12539,27 @@ const ChargesModule = {
       lastExecuted: today
     });
 
-    Utils.notify(`✅ Charge récurrente exécutée. Prochaine échéance : ${Utils.fmtDate(newDueDateStr)}`, 'success', 5000);
+    Utils.notify(isAR ? `✅ تم تنفيذ التكلفة الدورية. الاستحقاق القادم : ${Utils.fmtDate(newDueDateStr)}` : `✅ Charge récurrente exécutée. Prochaine échéance : ${Utils.fmtDate(newDueDateStr)}`, 'success', 5000);
     App.loadModule('charges');
   },
 
   async deleteRecurring(rcId) {
-    const ok = await Utils.confirm2('Supprimer cette charge récurrente ?', 'Le modèle programmé sera supprimé. Les charges passées restent enregistrées.');
+    const isAR = T.isRTL();
+    const ok = await Utils.confirm2(
+      isAR ? 'حذف هذا النموذج للتكلفة الدورية؟' : 'Supprimer cette charge récurrente ?',
+      isAR ? 'سيتم حذف النموذج المبرمج، مع الاحتفاظ بالتكاليف السابقة المسجلة.' : 'Le modèle programmé sera supprimé. Les charges passées restent enregistrées.'
+    );
     if (!ok) return;
     DB.delete('recurring_charges', rcId);
-    Utils.notify('Charge récurrente supprimée', 'info');
+    Utils.notify(isAR ? 'تم حذف التكلفة الدورية' : 'Charge récurrente supprimée', 'info');
     App.loadModule('charges');
   },
 
   _showPayrollDetail(id) {
+    const isAR = T.isRTL();
     const charges = DB.getAll('bank_charges');
     const c = charges.find(x => String(x.id) === String(id));
-    if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
+    if (!c) { Utils.notify(isAR ? 'التكلفة غير موجودة' : 'Charge introuvable', 'warning'); return; }
     
     let details = c.paieDetails || [];
     const isArray = Array.isArray(details);
@@ -12484,19 +12601,19 @@ const ChargesModule = {
     }
     
     const banks = DB.getSettings().banks || [];
-    const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
+    const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale') : (isAR ? 'بنك' : 'Banque') };
     const totalNet = employees.length > 0 ? employees.reduce((s, e) => s + (e.netPay || 0), 0) : c.amount;
     const totalPresent = employees.reduce((s, e) => s + (e.daysPresent || 0), 0);
     const totalAbsent = employees.reduce((s, e) => s + (e.absences || 0), 0);
     
     let empRows = employees.map(e => `
       <tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:6px 10px;font-weight:600">${Utils.escHTML(e.employeeName || '-')}</td>
-        <td style="padding:6px 10px;font-size:11px;color:var(--text4)">${Utils.escHTML(e.poste || e.role || '-')}</td>
+        <td style="padding:6px 10px;font-weight:600;text-align:${isAR?'right':'left'}">${Utils.escHTML(e.employeeName || '-')}</td>
+        <td style="padding:6px 10px;font-size:11px;color:var(--text4);text-align:${isAR?'right':'left'}">${Utils.escHTML(e.poste || e.role || '-')}</td>
         <td style="padding:6px 10px;text-align:center">${Utils.fmtCurrency(e.baseSalary || 0)}</td>
         <td style="padding:6px 10px;text-align:center;color:var(--success);font-weight:700">${e.daysPresent || 0}/${e.totalWorkingDays || 0}</td>
         <td style="padding:6px 10px;text-align:center;color:var(--danger);font-weight:700">${e.absences || 0}</td>
-        <td style="padding:6px 10px;text-align:right;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(e.netPay || 0)}</td>
+        <td style="padding:6px 10px;text-align:${isAR?'left':'right'};font-weight:800;color:var(--primary)">${Utils.fmtCurrency(e.netPay || 0)}</td>
       </tr>`).join('');
     
     const html = `
@@ -12504,26 +12621,26 @@ const ChargesModule = {
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:14px;background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border-radius:10px">
         <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:900"><i class="fas fa-users"></i></div>
         <div>
-          <div style="font-weight:800;font-size:16px;color:var(--text)">Masse Salariale — ${Utils.escHTML(c.month || '')}</div>
-          <div style="font-size:12px;color:var(--text4)">${employees.length} employés · ${Utils.escHTML(bank.name)}</div>
+          <div style="font-weight:800;font-size:16px;color:var(--text)">${isAR ? 'كتلة الرواتب — ' : 'Masse Salariale — '}${Utils.escHTML(c.month || '')}</div>
+          <div style="font-size:12px;color:var(--text4)">${employees.length} ${isAR ? 'موظف' : 'employés'} · ${Utils.escHTML(bank.name)}</div>
         </div>
-        <div style="margin-left:auto;text-align:right">
-          <div style="font-size:11px;color:var(--text4)">Total</div>
+        <div style="margin-inline-start:auto;text-align:${isAR?'left':'right'}">
+          <div style="font-size:11px;color:var(--text4)">${isAR ? 'المجموع' : 'Total'}</div>
           <div style="font-weight:900;font-size:18px;color:var(--primary)">${Utils.fmtCurrency(totalNet)}</div>
         </div>
       </div>
       
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
         <div style="background:rgba(16,185,129,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(16,185,129,.15)">
-          <div style="font-size:11px;color:#059669;margin-bottom:3px">Total Présences</div>
-          <div style="font-weight:800;font-size:18px;color:#10b981">${totalPresent} j</div>
+          <div style="font-size:11px;color:#059669;margin-bottom:3px">${isAR ? 'إجمالي الحضور' : 'Total Présences'}</div>
+          <div style="font-weight:800;font-size:18px;color:#10b981">${totalPresent} ${isAR ? 'ي' : 'j'}</div>
         </div>
         <div style="background:rgba(239,68,68,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(239,68,68,.15)">
-          <div style="font-size:11px;color:#dc2626;margin-bottom:3px">Total Absences</div>
-          <div style="font-weight:800;font-size:18px;color:#ef4444">${totalAbsent} j</div>
+          <div style="font-size:11px;color:#dc2626;margin-bottom:3px">${isAR ? 'إجمالي الغياب' : 'Total Absences'}</div>
+          <div style="font-weight:800;font-size:18px;color:#ef4444">${totalAbsent} ${isAR ? 'ي' : 'j'}</div>
         </div>
         <div style="background:rgba(14,165,233,.06);padding:10px;border-radius:8px;text-align:center;border:1px solid rgba(14,165,233,.15)">
-          <div style="font-size:11px;color:#0284c7;margin-bottom:3px">Date / Par</div>
+          <div style="font-size:11px;color:#0284c7;margin-bottom:3px">${isAR ? 'التاريخ / بواسطة' : 'Date / Par'}</div>
           <div style="font-weight:700;font-size:12px;color:#0ea5e9">${Utils.fmtDate(c.date)}<br>${Utils.escHTML(c.createdByName || '-')}</div>
         </div>
       </div>
@@ -12532,21 +12649,21 @@ const ChargesModule = {
         <table style="width:100%;font-size:12px;border-collapse:collapse">
           <thead style="position:sticky;top:0;background:var(--bg3);z-index:1">
             <tr style="border-bottom:2px solid var(--border)">
-              <th style="padding:8px 10px;text-align:left">Employé</th>
-              <th style="padding:8px 10px;text-align:left">Poste</th>
-              <th style="padding:8px 10px;text-align:center">Base</th>
-              <th style="padding:8px 10px;text-align:center">Prés.</th>
-              <th style="padding:8px 10px;text-align:center">Abs.</th>
-              <th style="padding:8px 10px;text-align:right">Net</th>
+              <th style="padding:8px 10px;text-align:${isAR?'right':'left'}">${isAR ? 'الموظف' : 'Employé'}</th>
+              <th style="padding:8px 10px;text-align:${isAR?'right':'left'}">${isAR ? 'المنصب' : 'Poste'}</th>
+              <th style="padding:8px 10px;text-align:center">${isAR ? 'الأساسي' : 'Base'}</th>
+              <th style="padding:8px 10px;text-align:center">${isAR ? 'حضور' : 'Prés.'}</th>
+              <th style="padding:8px 10px;text-align:center">${isAR ? 'غياب' : 'Abs.'}</th>
+              <th style="padding:8px 10px;text-align:${isAR?'left':'right'}">${isAR ? 'الصافي' : 'Net'}</th>
             </tr>
           </thead>
           <tbody>${empRows}</tbody>
           <tfoot>
             <tr style="background:var(--bg3);border-top:2px solid var(--primary)">
-              <td colspan="3" style="padding:8px 10px;font-weight:900">TOTAL (${employees.length})</td>
+              <td colspan="3" style="padding:8px 10px;font-weight:900;text-align:${isAR?'right':'left'}">${isAR ? `المجموع (${employees.length})` : `TOTAL (${employees.length})`}</td>
               <td style="padding:8px 10px;text-align:center;font-weight:800;color:var(--success)">${totalPresent}</td>
               <td style="padding:8px 10px;text-align:center;font-weight:800;color:var(--danger)">${totalAbsent}</td>
-              <td style="padding:8px 10px;text-align:right;font-weight:900;color:var(--primary)">${Utils.fmtCurrency(totalNet)}</td>
+              <td style="padding:8px 10px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--primary)">${Utils.fmtCurrency(totalNet)}</td>
             </tr>
           </tfoot>
         </table>
@@ -12554,53 +12671,61 @@ const ChargesModule = {
     </div>`;
     
     Dialog.show({
-      title: `<i class="fas fa-file-invoice-dollar" style="color:#6366f1"></i> Détails Masse Salariale — ${Utils.escHTML(c.month || '')}`,
+      title: `<i class="fas fa-file-invoice-dollar" style="color:#6366f1"></i> ${isAR ? 'تفاصيل كتلة الرواتب — ' : 'Détails Masse Salariale — '}${Utils.escHTML(c.month || '')}`,
       message: html,
-      confirmText: 'Fermer',
+      confirmText: isAR ? 'إغلاق' : 'Fermer',
       cancelText: null,
       type: 'info'
     });
   },
 
   async _editCharge(id) {
+    const isAR = T.isRTL();
     const charges = DB.getAll('bank_charges');
     const c = charges.find(x => String(x.id) === String(id));
-    if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
+    if (!c) { Utils.notify(isAR ? 'التكلفة غير موجودة' : 'Charge introuvable', 'warning'); return; }
 
     const banks = DB.getSettings().banks || [];
     const categories = [
-      'Loyer & Bail commercial', 'Electricite & Gaz (Sonelgaz)', 'Eau (ADE)',
-      'Telecom & Internet', 'Salaires & Primes RH', 'Assurances professionnelles',
-      'Logiciels & Cloud', 'Entretien & Maintenance', 'Impots & Taxes',
-      'Frais bancaires', 'Autre charge'
+      { id: 'Loyer & Bail commercial', fr: 'Loyer & Bail commercial', ar: 'إيجار المحل أو المستودع' },
+      { id: 'Electricite & Gaz (Sonelgaz)', fr: 'Électricité & Gaz (Sonelgaz)', ar: 'الكهرباء والغاز (سونلغاز)' },
+      { id: 'Eau (ADE)', fr: 'Eau (ADE)', ar: 'المياه (الجزائرية للمياه)' },
+      { id: 'Telecom & Internet', fr: 'Télécom & Internet', ar: 'الهاتف والإنترنت' },
+      { id: 'Salaires & Primes RH', fr: 'Salaires & Primes RH', ar: 'الرواتب والعلاوات RH' },
+      { id: 'Assurances professionnelles', fr: 'Assurances professionnelles', ar: 'التأمينات المهنية' },
+      { id: 'Logiciels & Cloud', fr: 'Logiciels & Cloud', ar: 'البرمجيات والاشتراكات السحابية' },
+      { id: 'Entretien & Maintenance', fr: 'Entretien & Maintenance', ar: 'الصيانة والترميم' },
+      { id: 'Impots & Taxes', fr: 'Impôts & Taxes', ar: 'الضرائب والرسوم' },
+      { id: 'Frais bancaires', fr: 'Frais bancaires', ar: 'رسوم الحساب والخدمات البنكية' },
+      { id: 'Autre charge', fr: 'Autre charge', ar: 'تكاليف ومصاريف أخرى' }
     ];
-    const bankOpts = banks.map(b => `<option value="${b.id}" ${c.bankId===b.id?'selected':''}>${Utils.escHTML(b.name)}</option>`).join('');
-    const catOpts = categories.map(cat => `<option value="${cat}" ${c.category===cat?'selected':''}>${cat}</option>`).join('');
+    const bankOpts = banks.map(b => `<option value="${b.id}" ${c.bankId===b.id?'selected':''}>${isAR ? 'بنك :' : 'Banque :'} ${Utils.escHTML(b.name)}</option>`).join('');
+    const catOpts = categories.map(cat => `<option value="${cat.id}" ${(c.category===cat.id||c.category===cat.fr)?'selected':''}>${isAR ? cat.ar : cat.fr}</option>`).join('');
 
     const r = await Dialog.show({
-      title: 'Modifier la Charge',
+      title: isAR ? 'تعديل التكلفة' : 'Modifier la Charge',
       message: `
         <div style="padding:4px 0">
-          <div class="form-group mb-2"><label style="font-weight:700">Designation</label>
+          <div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'البيان' : 'Désignation'}</label>
             <input type="text" id="edit_chg_label" class="input" style="width:100%" value="${Utils.escHTML(c.label||'')}">
           </div>
-          <div class="form-group mb-2"><label style="font-weight:700">Categorie</label>
+          <div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'الفئة' : 'Catégorie'}</label>
             <select id="edit_chg_cat" class="input" style="width:100%">${catOpts}</select>
           </div>
-          <div class="form-group mb-2"><label style="font-weight:700">Montant (DA)</label>
+          <div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'المبلغ (د.ج)' : 'Montant (DA)'}</label>
             <input type="number" id="edit_chg_amount" class="input" style="width:100%;font-size:18px;font-weight:800;text-align:center" min="0" step="any" value="${c.amount||0}">
           </div>
-          <div class="form-group mb-2"><label style="font-weight:700">Source de paiement</label>
+          <div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'مصدر الدفع' : 'Source de paiement'}</label>
             <select id="edit_chg_source" class="input" style="width:100%">
-              <option value="caisse" ${c.bankId==='caisse'?'selected':''}>Caisse Principale</option>
+              <option value="caisse" ${c.bankId==='caisse'?'selected':''}>${isAR ? '💵 الصندوق الرئيسي (نقداً)' : '💵 Caisse Principale'}</option>
               ${bankOpts}
             </select>
           </div>
-          <div class="form-group mb-2"><label style="font-weight:700">Date</label>
+          <div class="form-group mb-2"><label style="font-weight:700">${isAR ? 'التاريخ' : 'Date'}</label>
             <input type="date" id="edit_chg_date" class="input" style="width:100%" value="${c.date||Utils.today()}">
           </div>
         </div>`,
-      type: 'info', confirmText: 'Enregistrer', cancelText: 'Annuler'
+      type: 'info', confirmText: isAR ? 'حفظ' : 'Enregistrer', cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
     if (!r) return;
 
@@ -12610,8 +12735,8 @@ const ChargesModule = {
     const newSource = document.getElementById('edit_chg_source')?.value || 'caisse';
     const newDate = document.getElementById('edit_chg_date')?.value || c.date;
 
-    if (!newLabel) { Utils.notify('Designation obligatoire', 'warning'); return; }
-    if (newAmount <= 0) { Utils.notify('Montant invalide', 'warning'); return; }
+    if (!newLabel) { Utils.notify(isAR ? 'البيان إلزامي' : 'Désignation obligatoire', 'warning'); return; }
+    if (newAmount <= 0) { Utils.notify(isAR ? 'المبلغ غير صالح' : 'Montant invalide', 'warning'); return; }
 
     const oldAmount = c.amount || 0;
     const oldSource = c.bankId || 'caisse';
@@ -12636,7 +12761,7 @@ const ChargesModule = {
         DB.insert('caisse_admin', {
           type: 'deposit', source: 'charge_reversal',
           amount: oldAmount,
-          note: `Ajustement charge: ${newLabel} (ancien montant annule)`,
+          note: `${isAR ? 'تعديل تكلفة:' : 'Ajustement charge:'} ${newLabel} (${isAR ? 'إلغاء المبلغ السابق' : 'ancien montant annulé'})`,
           userId: u?.id, userName: u?.name, date: Utils.today()
         });
       }
@@ -12645,29 +12770,30 @@ const ChargesModule = {
         DB.insert('caisse_admin', {
           type: 'withdrawal', source: 'charge',
           amount: newAmount,
-          note: `Charge modifiee: ${newLabel}`,
+          note: `${isAR ? 'تكلفة معدلة:' : 'Charge modifiée:'} ${newLabel}`,
           userId: u?.id, userName: u?.name, date: newDate
         });
       } else {
         DB.insert('bank_transactions', {
           bankId: newSource, type: 'payment', subtype: 'charge',
           amount: newAmount,
-          note: `Charge modifiee: ${newLabel}`,
+          note: `${isAR ? 'تكلفة معدلة:' : 'Charge modifiée:'} ${newLabel}`,
           date: newDate, by: u?.id, byName: u?.name,
           createdAt: new Date().toISOString()
         });
       }
     }
 
-    Utils.notify('Charge modifiee avec succes', 'success');
+    Utils.notify(isAR ? 'تم تعديل التكلفة بنجاح' : 'Charge modifiée avec succès', 'success');
     App.loadModule('charges');
   },
 
   _exportChargePDF(id) {
+    const isAR = T.isRTL();
     const c = DB.getAll('bank_charges').find(x => String(x.id) === String(id));
-    if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
+    if (!c) { Utils.notify(isAR ? 'التكلفة غير موجودة' : 'Charge introuvable', 'warning'); return; }
     const banks = DB.getSettings().banks || [];
-    const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
+    const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? (isAR ? 'الصندوق الرئيسي' : 'Caisse Principale') : (isAR ? 'بنك' : 'Banque') };
     const settings = DB.getSettings();
 
     const { jsPDF } = window.jspdf;
@@ -12677,9 +12803,9 @@ const ChargesModule = {
 
     // Header
     doc.setFontSize(18); doc.setFont('helvetica', 'bold');
-    doc.text(settings.companyName || 'Entreprise', pw/2, y, { align: 'center' }); y += 8;
+    doc.text(settings.companyName || (isAR ? 'المؤسسة' : 'Entreprise'), pw/2, y, { align: 'center' }); y += 8;
     doc.setFontSize(12); doc.setFont('helvetica', 'normal');
-    doc.text('Reçu de Charge / Frais', pw/2, y, { align: 'center' }); y += 10;
+    doc.text(isAR ? 'وصل تكلفة / مصاريف استغلال' : 'Reçu de Charge / Frais', pw/2, y, { align: 'center' }); y += 10;
 
     // Line
     doc.setDrawColor(100); doc.setLineWidth(0.5); doc.line(15, y, pw-15, y); y += 8;
@@ -12687,16 +12813,16 @@ const ChargesModule = {
     // Info rows
     doc.setFontSize(11);
     const info = [
-      ['Libellé :', c.label || c.subtype || '-'],
+      ['Libellé / Désignation :', c.label || c.subtype || '-'],
       ['Catégorie :', c.category || '-'],
       ['Date :', Utils.fmtDate(c.date)],
       ['Source :', bank.name],
       ['Type :', c.type === 'auto' ? 'Automatique' : 'Manuel'],
-      ['Créé par :', c.createdByName || '-'],
+      ['Auteur / Créé par :', c.createdByName || '-'],
     ];
     info.forEach(([k, v]) => {
       doc.setFont('helvetica', 'bold'); doc.text(k, 20, y);
-      doc.setFont('helvetica', 'normal'); doc.text(String(v), 65, y);
+      doc.setFont('helvetica', 'normal'); doc.text(String(v), 75, y);
       y += 7;
     });
     y += 3;
@@ -12735,16 +12861,17 @@ const ChargesModule = {
     }
 
     doc.save(`Charge_${(c.label||'').replace(/[^a-zA-Z0-9]/g,'_').substring(0,30)}_${c.date||''}.pdf`);
-    Utils.notify('PDF généré avec succès', 'success');
+    Utils.notify(isAR ? 'تم إنشاء ملف PDF بنجاح' : 'PDF généré avec succès', 'success');
   },
 
   async _deleteCharge(id) {
+    const isAR = T.isRTL();
     const c = DB.getAll('bank_charges').find(x => String(x.id) === String(id));
     if (!c) return;
 
     const ok = await Utils.confirm2(
-      'Supprimer cette charge ?',
-      `${c.label || 'Charge'} — ${Utils.fmtCurrency(c.amount||0)}\n\nLe montant sera re-credite dans ${c.bankId === 'caisse' ? 'la caisse' : 'le compte bancaire'}.`
+      isAR ? 'حذف هذه التكلفة؟' : 'Supprimer cette charge ?',
+      `${c.label || (isAR ? 'تكلفة' : 'Charge')} — ${Utils.fmtCurrency(c.amount||0)}\n\n${isAR ? `سيتم إعادة قيد المبلغ في ${c.bankId === 'caisse' ? 'الصندوق الرئيسي' : 'الحساب البنكي'}.` : `Le montant sera re-crédité dans ${c.bankId === 'caisse' ? 'la caisse' : 'le compte bancaire'}.`}`
     );
     if (!ok) return;
 
@@ -12755,7 +12882,7 @@ const ChargesModule = {
       DB.insert('caisse_admin', {
         type: 'deposit', source: 'charge_reversal',
         amount: c.amount || 0,
-        note: `Annulation charge: ${c.label || 'Sans designation'}`,
+        note: `${isAR ? 'إلغاء تكلفة:' : 'Annulation charge:'} ${c.label || (isAR ? 'بدون بيان' : 'Sans désignation')}`,
         userId: u?.id, userName: u?.name,
         date: Utils.today()
       });
@@ -12763,14 +12890,14 @@ const ChargesModule = {
       DB.insert('bank_transactions', {
         bankId: c.bankId, type: 'deposit', subtype: 'charge_reversal',
         amount: c.amount || 0,
-        note: `Annulation charge: ${c.label || 'Sans designation'}`,
+        note: `${isAR ? 'إلغاء تكلفة:' : 'Annulation charge:'} ${c.label || (isAR ? 'بدون بيان' : 'Sans désignation')}`,
         date: Utils.today(), by: u?.id, byName: u?.name,
         createdAt: new Date().toISOString()
       });
     }
 
     DB.delete('bank_charges', id);
-    Utils.notify('Charge supprimee et montant re-credite', 'success');
+    Utils.notify(isAR ? 'تم حذف التكلفة وإعادة قيد المبلغ' : 'Charge supprimée et montant re-crédité', 'success');
     App.loadModule('charges');
   }
 };

@@ -136,7 +136,7 @@ const T = {
     aud_doc_id:'ID doc', aud_hash:'Hash', aud_by:'Par',
     aud_create:'Création', aud_update:'Modification', aud_delete:'Suppression',
     // Role labels
-    role_admin:'Administrateur', role_user:'Utilisateur', role_supplier:'Usine / Fournisseur',
+    role_admin:'Administrateur', role_user:'Utilisateur', role_supplier:'Usine / Fournisseur', role_supplier_agent:'Agent Usine',
     // Misc
     col_ref:'Référence', col_date:'Date', col_supplier:'Fournisseur', col_amount:'Montant',
     col_status:'Statut', col_actions:'Actions', col_by:'Par', col_total_ht:'HT',
@@ -277,7 +277,7 @@ const T = {
     aud_title:'سجل المراجعة', aud_action:'الإجراء', aud_collection:'المجموعة',
     aud_doc_id:'معرف الوثيقة', aud_hash:'الرمز', aud_by:'بواسطة',
     aud_create:'إنشاء', aud_update:'تعديل', aud_delete:'حذف',
-    role_admin:'مسؤول', role_user:'مستخدم', role_supplier:'مصنع / مورد',
+    role_admin:'مسؤول', role_user:'مستخدم', role_supplier:'مصنع / مورد', role_supplier_agent:'وكيل المصنع',
     col_ref:'المرجع', col_date:'التاريخ', col_supplier:'المورد', col_amount:'المبلغ',
     col_status:'الحالة', col_actions:'إجراءات', col_by:'بواسطة', col_total_ht:'قبل الرسوم',
     col_timbre:'الطابع', col_total_ttc:'الشامل', col_truck:'رقم الشاحنة', col_driver:'السائق',
@@ -930,19 +930,20 @@ const DB = {
         this._lastResult = result;
 
         setTimeout(() => {
+          const isAR = typeof T !== 'undefined' && T.isRTL();
           if (widget) widget.classList.remove('healing');
           if (label) {
             if (fixes.length > 0) {
-              label.textContent = `⚡ Auto-corrigé (${fixes.length})`;
+              label.textContent = isAR ? `⚡ تصحيح تلقائي (${fixes.length})` : `⚡ Auto-corrigé (${fixes.length})`;
               label.style.color = 'var(--warning)';
               if (pulse) pulse.style.background = 'var(--warning)';
               setTimeout(() => {
-                label.textContent = 'Intégrité: 100%';
+                label.textContent = isAR ? 'سلامة البيانات: 100%' : 'Intégrité: 100%';
                 label.style.color = 'var(--text)';
                 if (pulse) pulse.style.background = '#10b981';
               }, 12000);
             } else {
-              label.textContent = 'Intégrité: 100%';
+              label.textContent = isAR ? 'سلامة البيانات: 100%' : 'Intégrité: 100%';
               label.style.color = 'var(--text)';
               if (pulse) pulse.style.background = '#10b981';
             }
@@ -950,7 +951,8 @@ const DB = {
         }, 500);
 
         if (isManual) {
-          Utils.notify(`✅ Diagnostic 15 min terminé : Données 100% intègres (${fixes.length} corrections)`, 'success', 4000);
+          const isAR = typeof T !== 'undefined' && T.isRTL();
+          Utils.notify(isAR ? `✅ اكتمل فحص 15 دقيقة: البيانات سليمة 100% (${fixes.length} تصحيحات)` : `✅ Diagnostic 15 min terminé : Données 100% intègres (${fixes.length} corrections)`, 'success', 4000);
         }
 
         return result;
@@ -967,11 +969,11 @@ const DB = {
             </div>
             <span class="badge badge-success" style="font-size:11px;padding:3px 8px">100% OK</span>
           </div>
-        `).join('') || '<div style="color:var(--text-muted);text-align:center;padding:20px">Initialisation en cours...</div>';
+        `).join('') || `<div style="color:var(--text-muted);text-align:center;padding:20px">${isAR ? 'جارٍ الفحص والتهيئة...' : 'Initialisation en cours...'}</div>`;
 
         const fixesHtml = (res.fixes && res.fixes.length) ? `
           <div style="margin-top:16px">
-            <h4 style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--warning);margin-bottom:8px"><i class="fas fa-magic"></i> Dernières corrections automatiques :</h4>
+            <h4 style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--warning);margin-bottom:8px"><i class="fas fa-magic"></i> ${isAR ? 'آخر التصحيحات التلقائية :' : 'Dernières corrections automatiques :'}</h4>
             <div style="max-height:120px;overflow-y:auto;background:var(--bg-inset);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--text-secondary)">
               ${res.fixes.map(f => `<div style="padding:4px 0;border-bottom:1px solid var(--border)">✓ ${Utils.escHTML(f)}</div>`).join('')}
             </div>
@@ -989,11 +991,11 @@ const DB = {
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
             <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:12px;text-align:center">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--success)">Score de Conformité</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--success)">${isAR ? 'نسبة التطابق والنزاهة' : 'Score de Conformité'}</div>
               <div style="font-size:24px;font-weight:900;color:var(--success)">100%</div>
             </div>
             <div style="background:var(--bg-inset);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Prochaine vérification</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted)">${isAR ? 'الفحص القادم' : 'Prochaine vérification'}</div>
               <div style="font-size:20px;font-weight:800;color:var(--primary);font-family:var(--font-mono)" id="modalCountdownTicker">--:--</div>
             </div>
           </div>
@@ -1147,18 +1149,21 @@ const DB = {
 
         // Update sync indicator dot only — NO page reload (that destroys open modals/forms)
         if (!indicator) {
+          const isAR = typeof T !== 'undefined' && T.isRTL();
           indicator = document.createElement('div');
           indicator.id = 'sync-indicator';
-          indicator.title = 'Synchronisé avec le cloud';
+          indicator.title = isAR ? 'متزامن مع السحابة' : 'Synchronisé avec le cloud';
           indicator.style.cssText = 'position:fixed;bottom:12px;right:12px;width:8px;height:8px;border-radius:50%;background:#10b981;z-index:9999;opacity:.8;transition:all .3s';
           document.body.appendChild(indicator);
         }
+        const isAR = typeof T !== 'undefined' && T.isRTL();
         indicator.style.background = '#10b981';
-        indicator.title = 'Synchronisé — ' + new Date().toLocaleTimeString('fr-FR');
+        indicator.title = (isAR ? 'تمت المزامنة — ' : 'Synchronisé — ') + new Date().toLocaleTimeString(isAR ? 'ar-DZ' : 'fr-FR');
         // Re-run migrations after sync in case new delivered BLs came in from other users
         this.runMigrations();
       } catch (e) {
-        if (indicator) { indicator.style.background = '#ef4444'; indicator.title = 'Sync échoué'; }
+        const isAR = typeof T !== 'undefined' && T.isRTL();
+        if (indicator) { indicator.style.background = '#ef4444'; indicator.title = isAR ? 'فشلت المزامنة' : 'Sync échoué'; }
       }
     };
     // Delay first sync so UI renders from cache first (instant), then background sync
@@ -1291,14 +1296,16 @@ const DB = {
         if (hasBrChange || hasBlChange) {
           const oldRef = col === 'brs' ? `${item.brNum}` : `${item.ref}`;
           const newRef = col === 'brs' ? `${serverItem.brNum}` : `${serverItem.ref}`;
-          if (typeof Utils !== 'undefined') Utils.notify(`⚠️ Numéro ajusté: ${oldRef} → ${newRef} (conflit résolu)`, 'warning', 5000);
+          const isAR = typeof T !== 'undefined' && T.isRTL();
+          if (typeof Utils !== 'undefined') Utils.notify(isAR ? `⚠️ تم تعديل الرقم: ${oldRef} ← ${newRef} (تم حل التعارض)` : `⚠️ Numéro ajusté: ${oldRef} → ${newRef} (conflit résolu)`, 'warning', 5000);
           if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 400);
         }
       }).catch(e => {
         // Server rejected (409 duplicate, 500, etc.) — roll back optimistic save & show error
         const rolled = this.getAll(col).filter(i => i.id !== item.id);
         localStorage.setItem(col, JSON.stringify(rolled));
-        if (typeof Utils !== 'undefined') Utils.notify('❌ ' + (e.message || 'Erreur serveur'), 'error');
+        const isAR = typeof T !== 'undefined' && T.isRTL();
+        if (typeof Utils !== 'undefined') Utils.notify('❌ ' + (e.message || (isAR ? 'خطأ في الخادم' : 'Erreur serveur')), 'error');
         if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 200);
       });
     }
@@ -1372,9 +1379,10 @@ const DB = {
 
   // ─── Recycle Bin: Restore ──────────────────────────────────
   restoreFromBin(binId, overrideData = {}) {
+    const isAR = typeof T !== 'undefined' && T.isRTL();
     const bin = this.getAll('recycle_bin');
     const entry = bin.find(e => e.id === binId);
-    if (!entry || entry.restored) return { ok: false, error: 'Introuvable ou déjà restauré' };
+    if (!entry || entry.restored) return { ok: false, error: isAR ? 'غير موجود أو تمت استعادته مسبقاً' : 'Introuvable ou déjà restauré' };
 
     const { collection, item } = entry;
     const existing = this.getAll(collection);
@@ -1413,7 +1421,7 @@ const DB = {
         if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
           window.API.remove('recycle_bin', binId).catch(() => {});
         }
-        return { ok: false, error: 'Impossible de restaurer : le BR d\'origine a été supprimé.' };
+        return { ok: false, error: isAR ? 'تعذر الاستعادة: تم حذف وصل الاستلام الأصلي.' : 'Impossible de restaurer : le BR d\'origine a été supprimé.' };
       }
       // For non-partial BLs, block if BR already has an active BL
       // For partial BLs, always allow restore (multiple partials per BR is expected)
@@ -1426,7 +1434,7 @@ const DB = {
           if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
             window.API.remove('recycle_bin', binId).catch(() => {});
           }
-          return { ok: false, error: `Ce BL ne peut plus être restauré car le BR ${br.ref} est déjà rattaché à un autre BL actif (${activeBLs[0].ref}). L'élément a été définitivement purgé de la corbeille.` };
+          return { ok: false, error: isAR ? `لا يمكن استعادة وصل التسليم هذا لأن وصل الاستلام ${br.ref} مرتبط بالفعل بوصل تسليم نشط آخر (${activeBLs[0].ref}). تم حذف العنصر نهائياً من المهملات.` : `Ce BL ne peut plus être restauré car le BR ${br.ref} est déjà rattaché à un autre BL actif (${activeBLs[0].ref}). L'élément a été définitivement purgé de la corbeille.` };
         }
       }
     }
@@ -1859,7 +1867,7 @@ const DB = {
   async hardReset() {
     const ok1 = await Dialog.confirm(T.isRTL() ? 'تأكيد' : 'Confirmation', T.get('set_reset_confirm'), 'danger');
     if (!ok1) return;
-    const ok2 = await Dialog.confirm(T.isRTL() ? 'تأكيد نهائي' : 'CONFIRMATION FINALE', 'CONFIRMATION FINALE — Toutes les données seront effacées.', 'danger');
+    const ok2 = await Dialog.confirm(T.isRTL() ? 'تأكيد نهائي' : 'CONFIRMATION FINALE', T.isRTL() ? 'تأكيد نهائي — سيتم حذف جميع البيانات نهائياً.' : 'CONFIRMATION FINALE — Toutes les données seront effacées.', 'danger');
     if (!ok2) return;
     localStorage.clear(); this.init(); location.reload();
   }
@@ -2154,7 +2162,7 @@ const Utils = {
       validated_usine: ['badge-info',      'fa-industry',       isAR ? 'مؤكد من المصنع (BR جاهز)' : '🏭 Validé Usine (BR Généré)'],
       delivered:       ['badge-success',   'fa-check-circle',   isAR ? 'تم الشحن والتسليم' : '✅ Enlevé & Livré'],
       locked:          ['badge-dark',      'fa-lock',           T.get('st_locked')],
-      returned:        ['badge-danger',    'fa-undo',           '🔄 Retourné'],
+      returned:        ['badge-danger',    'fa-undo',           isAR ? '🔄 تم الإرجاع' : '🔄 Retourné'],
       reception:       ['badge-warning',   'fa-clock',          T.get('st_pending')],
     };
     const [cls, icon, label] = m[status] || ['badge-secondary', 'fa-circle', status||''];
@@ -2162,9 +2170,10 @@ const Utils = {
   },
 
   async confirm2(msg1, msg2) { 
-    const ok1 = await Dialog.confirm('Confirmation', msg1, 'danger');
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+    const ok1 = await Dialog.confirm(isAR ? 'تأكيد' : 'Confirmation', msg1, 'danger');
     if (!ok1) return false;
-    return await Dialog.confirm('Confirmation 2', msg2, 'danger');
+    return await Dialog.confirm(isAR ? 'تأكيد ثانٍ' : 'Confirmation 2', msg2, 'danger');
   },
 
   debounce(fn, d=200) { let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), d); }; },
@@ -2172,8 +2181,9 @@ const Utils = {
   historyHTML(col, id) {
     const entries = DB.getHistory(col, id);
     if (!entries.length) return '';
+    const isAR = typeof T !== 'undefined' && T.isRTL();
     return `<div class="history-section">
-      <h4><i class="fas fa-history"></i> Historique</h4>
+      <h4><i class="fas fa-history"></i> ${isAR ? 'سجل العمليات' : 'Historique'}</h4>
       ${entries.map(e => `<div class="history-entry">
         <div class="history-dot"></div>
         <span class="h-time">${this.fmtDateTime(e.ts)}</span>
@@ -2275,10 +2285,11 @@ const NotifMgr = {
     return this.getAll().filter(n => !n.read && (!n.targetUserId || String(n.targetUserId) === String(u?.id))).length;
   },
   add({ type='info', title='', message='', link=null, targetUserId=null, data=null }) {
+    const isAR = typeof T !== 'undefined' && T.isRTL();
     this._playNotifSound();
     const notif = {
       type,
-      title: title || 'Notification ERP',
+      title: title || (isAR ? 'إشعار النظام' : 'Notification ERP'),
       message: message || '',
       link,
       targetUserId,
@@ -2331,10 +2342,11 @@ const NotifMgr = {
     const list = document.getElementById('notifDropdownList');
     if (!list) return;
     const items = this.getAll().slice(0, 30);
+    const isAR = typeof T !== 'undefined' && T.isRTL();
     if (!items.length) {
       list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text4);font-size:12px">
         <i class="fas fa-bell-slash" style="font-size:24px;opacity:.3;display:block;margin-bottom:6px"></i>
-        Aucune notification pour le moment
+        ${isAR ? 'لا توجد إشعارات حالياً' : 'Aucune notification pour le moment'}
       </div>`;
       return;
     }
@@ -2478,6 +2490,7 @@ const SessionMgr = {
     const tvaAmount = totalHT * (tvaRate / 100);
 
     // 1. Generate État de Vente document with BL list and Returns list
+    const isAR = typeof T !== 'undefined' && T.isRTL();
     const etatDoc = {
       ref,
       year,
@@ -2485,10 +2498,10 @@ const SessionMgr = {
       dateStart: today,
       dateEnd: today,
       userId,
-      userName: u?.name || 'Vendeur',
+      userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       items,
-      blList: summary.bls.map(b => ({ id: b.id, ref: b.ref, clientName: b.clientName || 'Client Comptoir', totalTTC: Number(b.totalTTC)||0, date: b.date })),
-      returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || 'Client', totalTTC: Number(r.totalTTC)||0, date: r.date })),
+      blList: summary.bls.map(b => ({ id: b.id, ref: b.ref, clientName: b.clientName || (isAR ? 'زبون المتجر' : 'Client Comptoir'), totalTTC: Number(b.totalTTC)||0, date: b.date })),
+      returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || (isAR ? 'عميل' : 'Client'), totalTTC: Number(r.totalTTC)||0, date: r.date })),
       totalBLsTTC: summary.totalSalesTTC,
       totalReturnsTTC: summary.totalReturnsTTC,
       totalHT,
@@ -2496,7 +2509,7 @@ const SessionMgr = {
       tvaAmount,
       totalTTC: summary.netAmount,
       createdBy: userId,
-      createdByName: u?.name || 'Vendeur',
+      createdByName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       createdAt: now.toISOString(),
       bankId: targetBankId,
       status: 'deposited'
@@ -2513,7 +2526,7 @@ const SessionMgr = {
         amount: summary.netAmount,
         date: today,
         ref: 'EV-DEP-' + ref.replace(/\//g, '-'),
-        note: `Dépôt État de Vente ${ref} (${u?.name || ''}) — ${summary.bls.length} BLs, ${summary.retours.length} Retours`,
+        note: isAR ? `إيداع كشف المبيعات ${ref} (${u?.name || ''}) — ${summary.bls.length} شحنة, ${summary.retours.length} إرجاع` : `Dépôt État de Vente ${ref} (${u?.name || ''}) — ${summary.bls.length} BLs, ${summary.retours.length} Retours`,
         etatVenteId: savedEtat.id,
         etatVenteRef: ref,
         createdBy: userId,
@@ -2547,13 +2560,13 @@ const SessionMgr = {
       type: 'deposit',
       source: 'mini_caisse_cloture',
       userId,
-      userName: u?.name || 'Vendeur',
+      userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       sessionId: session.id,
       sessionDate: today,
       amount: summary.netAmount,
       targetBankId,
       etatVenteRef: ref,
-      note: `Clôture Mini Caisse — ${u?.name || ''} — Net: ${Utils.fmtCurrency(summary.netAmount)} versé à ${targetBank?.name || 'Banque'}`
+      note: isAR ? `إغلاق الصندوق — ${u?.name || ''} — الصافي: ${Utils.fmtCurrency(summary.netAmount)} مودع في ${targetBank?.name || (isAR ? 'البنك' : 'Banque')}` : `Clôture Mini Caisse — ${u?.name || ''} — Net: ${Utils.fmtCurrency(summary.netAmount)} versé à ${targetBank?.name || 'Banque'}`
     });
 
     WorkLog.logOut(userId);
@@ -2565,6 +2578,7 @@ const SessionMgr = {
     if (!session) return null;
     const oldNet = session.closedNet || 0;
     const adminUser = Auth.getCurrentUser();
+    const isAR = typeof T !== 'undefined' && T.isRTL();
 
     // Update session
     const updated = DB.update('sessions', sessionId, {
@@ -2572,7 +2586,7 @@ const SessionMgr = {
       adjustedBy: adminUser?.id,
       adjustedByName: adminUser?.name,
       adjustedAt: new Date().toISOString(),
-      adminMotif: adminMotif || 'Correction manuelle administrateur'
+      adminMotif: adminMotif || (isAR ? 'تصحيح يدوي من المشرف' : 'Correction manuelle administrateur')
     }, 'Rectification Clôture Admin');
 
     // Update related bank transaction if exists
