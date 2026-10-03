@@ -27,7 +27,11 @@ const API = (() => {
   async function req(method, path, body) {
     // Don't even try if we have no token (prevents pointless 401s)
     if (!_token && path !== '/auth/login') {
-      console.warn(`[API] No token — skipping ${method} ${path}`);
+      if (!req._skipped) req._skipped = {};
+      if (!req._skipped[path]) {
+        console.debug(`[API] No token — skipping ${method} ${path}`);
+        req._skipped[path] = true;
+      }
       return null;
     }
 

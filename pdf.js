@@ -1271,7 +1271,7 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
       this._tc(doc, C.WHITE);
-      this._text(doc, isAR ? (isRoute ? 'وصل التسليم (طريق / تنقل)' : 'وصل التسليم') : (isRoute ? 'BON DE LIVRAISON (ROUTE / CIRCULATION)' : 'BON DE LIVRAISON'), PW / 2, y + 7, { align: 'center' });
+      this._text(doc, isAR ? (isRoadOnly ? 'وصل التسليم (طريق / تنقل)' : 'وصل التسليم') : (isRoadOnly ? 'BON DE LIVRAISON (ROUTE / CIRCULATION)' : 'BON DE LIVRAISON'), PW / 2, y + 7, { align: 'center' });
       y += 12;
 
       // ── 3. Info Strip (N° BCH, Date, BR Ref, Chauffeur, Immat) ──

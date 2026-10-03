@@ -3896,6 +3896,14 @@ const CaisseModule = {
     const today = Utils.today();
     const now = new Date().toTimeString().slice(0, 5);
     
+    // Guard: avoid duplicate session for same user + same day
+    const existing = SessionMgr.getTodaySession(u.id);
+    if (existing) {
+      Utils.notify(T.isRTL() ? 'لديك جلسة مفتوحة بالفعل لليوم.' : 'Vous avez déjà une session ouverte pour aujourd\'hui.', 'warning');
+      App.loadModule('dashboard');
+      return;
+    }
+
     DB.insert('sessions', {
       userId: u.id,
       userName: u.name,

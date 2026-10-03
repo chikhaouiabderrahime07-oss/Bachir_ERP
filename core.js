@@ -905,6 +905,122 @@ const DB = {
           if (bchFixed > 0) DB.rawSet('bls', allBCHs);
           checks.push({ name: 'Bons de Chargement & Intégrité Usine', status: 'OK', detail: `${allBCHs.length} BCH vérifiés (${bchFixed} incohérences traitées)` });
 
+          // Check 11: BR Mathematical Integrity & TVA Recalculation
+          const allBRs = DB.getAll('brs');
+          let brFixed = 0;
+          const defaultTvaRate = Number(DB.getSettings().tvaRate) || 19;
+          allBRs.forEach(br => {
+            if (!br.lines || !br.lines.length) return;
+            const calcHT = Math.round(br.lines.reduce((acc, l) => acc + (Number(l.total) || ((Number(l.qty) || 0) * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0)/100))), 0) * 100) / 100;
+            const rate = Number(br.tvaRate) || defaultTvaRate;
+            const calcTVA = Math.round(calcHT * rate / 100 * 100) / 100;
+            const calcTimbre = br.noTimbre ? 0 : (Number(br.timbreAmount) || DB.calcTimbre(calcHT) || 0);
+            const calcTTC = Math.round((calcHT + calcTVA + calcTimbre) * 100) / 100;
+            let changed = false;
+            if (br.totalHT === undefined || Math.abs(Number(br.totalHT) - calcHT) > 0.05) { br.totalHT = calcHT; changed = true; }
+            if (!br.tvaRate) { br.tvaRate = rate; changed = true; }
+            if (br.tvaAmount === undefined || br.tvaAmount === 0 || Math.abs(Number(br.tvaAmount) - calcTVA) > 0.05) { br.tvaAmount = calcTVA; changed = true; }
+            if (br.totalTTC === undefined || Math.abs(Number(br.totalTTC) - calcTTC) > 0.05) { br.totalTTC = calcTTC; changed = true; }
+            if (changed) {
+              brFixed++;
+              fixes.push(`BR ${br.ref} recalculé: HT=${Utils.fmtCurrency(calcHT)}, TVA(${rate}%)=${Utils.fmtCurrency(calcTVA)}, TTC=${Utils.fmtCurrency(calcTTC)}`);
+            }
+          });
+          if (brFixed > 0) DB.rawSet('brs', allBRs);
+          checks.push({ name: 'Intégrité Mathématique BR (TVA/TTC)', status: 'OK', detail: `${allBRs.length} BR vérifiés (${brFixed} recalculés)` });
+
+          // Check 12: Duplicate Sessions Detector & Auto-Clean
+          let sessionsDeduped = 0;
+          const sessionsByKey = {};
+          sessions.forEach(s => {
+            const key = `${s.userId}_${s.date}`;
+            if (!sessionsByKey[key]) sessionsByKey[key] = [];
+            sessionsByKey[key].push(s);
+          });
+          const cleanedSessions = [];
+          Object.values(sessionsByKey).forEach(group => {
+            if (group.length > 1) {
+              // Keep the one with 'closed' status, or the first one
+              const closed = group.find(s => s.status === 'closed');
+              const keeper = closed || group[0];
+              cleanedSessions.push(keeper);
+              sessionsDeduped += (group.length - 1);
+              fixes.push(`⚠️ ${group.length - 1} session(s) doublon(s) supprimée(s) pour user #${group[0].userId} le ${group[0].date}`);
+            } else {
+              cleanedSessions.push(group[0]);
+            }
+          });
+          if (sessionsDeduped > 0) DB.rawSet('sessions', cleanedSessions);
+          checks.push({ name: 'Détection Doublons Sessions', status: sessionsDeduped > 0 ? 'FIXED' : 'OK', detail: sessionsDeduped > 0 ? `${sessionsDeduped} doublon(s) éliminé(s)` : 'Aucun doublon' });
+
+          // Check 13: Duplicate Caisse Admin Entries Detector
+          let caisseDeduped = 0;
+          const caisseAll = DB.getAll('caisse_admin');
+          const caisseSeen = {};
+          const cleanedCaisse = [];
+          caisseAll.forEach(e => {
+            // Build a fingerprint: type + source + blId + sessionDate + amount + userId
+            const fp = `${e.type}|${e.source||''}|${e.blId||''}|${e.sessionId||''}|${e.sessionDate||''}|${Number(e.amount)||0}|${e.userId||''}`;
+            if (caisseSeen[fp]) {
+              caisseDeduped++;
+              fixes.push(`⚠️ Doublon caisse_admin éliminé: ${e.type} ${Utils.fmtCurrency(e.amount)} (${e.note?.slice(0,40)||''}...)`);
+            } else {
+              caisseSeen[fp] = true;
+              cleanedCaisse.push(e);
+            }
+          });
+          if (caisseDeduped > 0) DB.rawSet('caisse_admin', cleanedCaisse);
+          checks.push({ name: 'Détection Doublons Caisse Principale', status: caisseDeduped > 0 ? 'FIXED' : 'OK', detail: caisseDeduped > 0 ? `${caisseDeduped} doublon(s) éliminé(s)` : 'Aucun doublon' });
+
+          // Check 14: Cross-Collection Anomaly Scanner (the "Police")
+          const anomalies = [];
+          // 14a: BLs with invalid totalTTC (0 or undefined but has lines)
+          bls.forEach(bl => {
+            if (bl.lines && bl.lines.length > 0 && (!bl.totalTTC || Number(bl.totalTTC) <= 0) && bl.status !== 'draft' && bl.status !== 'cancelled') {
+              anomalies.push({ type: 'BL', ref: bl.ref || `#${bl.id}`, issue: 'Total TTC = 0 malgré des lignes', severity: 'warning' });
+            }
+          });
+          // 14b: BRs with totalTTC = 0 but has lines
+          allBRs.forEach(br => {
+            if (br.lines && br.lines.length > 0 && (!br.totalTTC || Number(br.totalTTC) <= 0)) {
+              anomalies.push({ type: 'BR', ref: br.ref || `#${br.id}`, issue: 'Total TTC = 0 malgré des lignes', severity: 'warning' });
+            }
+          });
+          // 14c: Sessions with negative closedNet
+          sessions.forEach(s => {
+            if (s.status === 'closed' && Number(s.closedNet) < 0) {
+              anomalies.push({ type: 'Session', ref: `${s.date} (user #${s.userId})`, issue: `Net négatif: ${Utils.fmtCurrency(s.closedNet)}`, severity: 'warning' });
+            }
+          });
+          // 14d: Etat de vente docs without matching bank transaction
+          const evDocs2 = DB.getAll('etat_vente_docs');
+          const bankTxs2 = DB.getAll('bank_transactions');
+          evDocs2.forEach(ev => {
+            if (ev.status === 'deposited' && Number(ev.totalTTC) > 0) {
+              const hasTx = bankTxs2.some(bt => bt.etatVenteId && String(bt.etatVenteId) === String(ev.id));
+              if (!hasTx) {
+                anomalies.push({ type: 'État de Vente', ref: ev.ref || `#${ev.id}`, issue: 'Marqué déposé mais aucune transaction bancaire trouvée', severity: 'critical' });
+              }
+            }
+          });
+          // Fire notification alerts for anomalies
+          if (anomalies.length > 0) {
+            anomalies.forEach(a => {
+              fixes.push(`🚨 Anomalie ${a.type} ${a.ref}: ${a.issue}`);
+            });
+            // Push a top-level notification for admin
+            if (typeof NotifMgr !== 'undefined' && NotifMgr.add) {
+              const isAR = typeof T !== 'undefined' && T.isRTL();
+              NotifMgr.add({
+                type: 'warning',
+                title: isAR ? `⚠️ ${anomalies.length} anomalie(s) détectée(s)` : `⚠️ ${anomalies.length} anomalie(s) détectée(s)`,
+                message: anomalies.slice(0, 5).map(a => `${a.type} ${a.ref}: ${a.issue}`).join('\n'),
+                persistent: true
+              });
+            }
+          }
+          checks.push({ name: 'Scanner d\'Anomalies Transversales', status: anomalies.length > 0 ? 'ALERT' : 'OK', detail: anomalies.length > 0 ? `${anomalies.length} anomalie(s) trouvée(s)` : 'Aucune anomalie' });
+
           if (fixes.length > 0) {
             DB.insert('audit_log', {
               action: 'AUTOCORRECT',
