@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    PDF.JS — PROFESSIONAL DOCUMENT GENERATOR v15.0
    Exact match: BC_DG_BC_006_2026-7.pdf reference
    + Arabic font support (Amiri TTF auto-loaded from CDN)
@@ -500,9 +500,11 @@
     async exportBLRoute(id)       { try{ await this._ensureArabicFont(); this._exportBL(id, true); }catch(e){console.error(e);this._notify('Erreur BL Route: '+e.message,'error');} },
     async exportTempoBL(id)       { try{ await this._ensureArabicFont(); this._exportTempoBL(id); }catch(e){console.error(e);this._notify('Erreur Tempo BL: '+e.message,'error');} },
     async exportBL(id)            { try{ await this._ensureArabicFont(); this._exportBL(id); }catch(e){console.error(e);this._notify('Erreur BL: '+e.message,'error');} },
+    async exportBonRetour(id)     { try{ await this._ensureArabicFont(); this._exportBonRetour(id); }catch(e){console.error(e);this._notify('Erreur Bon de Retour: '+e.message,'error');} },
     async exportDecharge(id) { try{ await this._ensureArabicFont(); this._exportDecharge(id); }catch(e){console.error(e);this._notify('Erreur Decharge: '+e.message,'error');} },
     async exportBankDecharge(id) { try{ await this._ensureArabicFont(); this._exportBankDecharge(id); }catch(e){console.error(e);this._notify('Erreur Bank Decharge: '+e.message,'error');} },
     async exportSupplierPayDecharge(id) { try{ await this._ensureArabicFont(); this._exportSupplierPayDecharge(id); }catch(e){console.error(e);this._notify('Erreur Pay Decharge: '+e.message,'error');} },
+
 
 
     /* ══════════════════════════════════════════════════════════
@@ -873,91 +875,6 @@
       }
 
       this._save(doc, `Etat_de_Vente_${(ref || period).replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);
-    },
-
-    exportBonRetour(doc) {
-      this._ensureArabicFont().then(() => this._exportBonRetour(doc)).catch(e => {
-        console.error(e); this._notify('Erreur: ' + e.message, 'error');
-      });
-    },
-
-    _exportBonRetour(doc) {
-      const s = this._settings();
-      const cli = doc.clientId ? DB.getById('clients', doc.clientId) || {} : {};
-      const d = this._newDoc();
-      
-      let y = this._drawCompanyHeader(d, s, MT);
-      y = this._drawBanner(d, 'BON DE RETOUR', y);
-      y = this._drawInfoStrip(d, [
-        {label:'Date', value:this._fmtDate(doc.date)},
-        {label:'Réf Retour', value:this._t(doc.ref||'/')},
-        {label:'BL Retourné', value:this._t(doc.blRef||'/')},
-      ], y);
-      
-      // Client box
-      const cliLines = [
-        cli.name || doc.clientName || '/',
-        cli.address || '',
-        cli.nif ? `NIF: ${cli.nif}` : '',
-        cli.rc ? `RC: ${cli.rc}` : '',
-      ].filter(Boolean);
-      
-      const cw = (PW - ML - MR);
-      this._drawEntityBox(d, 'Client / Destinataire', cliLines, ML, y + 2, cw, 28);
-      y += 34;
-      
-      // Table
-      const COLS = [
-        {label:'N°', width:12, halign:'center'},
-        {label:'DÉSIGNATION', width:75, halign:'left'},
-        {label:'UNITÉ', width:15, halign:'center'},
-        {label:'QTÉ', width:18, halign:'center'},
-        {label:'P.U HT', width:34, halign:'center'},
-        {label:'TOTAL HT', width:40, halign:'center'},
-      ];
-      
-      const lines = doc.items || [];
-      const bodyRows = lines.map((l, i) => [
-        String(i+1).padStart(2,'0'),
-        this._t(l.designation||''),
-        this._t(l.unit||'U'),
-        this._fmtNum(l.qtyDelivered || l.qty || 0),
-        this._fmtMoney(l.price||0),
-        this._fmtMoney((l.qtyDelivered||l.qty||0) * (l.price||0)),
-      ]);
-      if(!bodyRows.length) bodyRows.push(['01','-','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
-      
-      const tEndY = this._buildTable(d, y, COLS, bodyRows, {
-        totalHT: doc.totalHT||0,
-        tvaAmount: doc.tvaAmount||0,
-        tvaRate: doc.tvaRate||0,
-        timbre: doc.timbreAmount||0,
-        totalTTC: doc.totalTTC||0
-      });
-      y = tEndY + 4;
-      
-      // Reason
-      if (doc.reason) {
-        d.setFont('helvetica','italic'); d.setFontSize(8); this._tc(d, C.GRAY_TXT);
-        d.text(`Motif du retour : ${this._t(doc.reason)}`, ML, y);
-        y += 6;
-      }
-      
-      // Amount in words
-      const wd = this._amountWords(doc.totalTTC||0);
-      if(wd){
-        d.setFont('helvetica','italic'); d.setFontSize(8); this._tc(d,C.GRAY_TXT);
-        const wl=d.splitTextToSize(`Arretee a : ${wd} dinars algeriens`,CW);
-        d.text(wl,ML,y); y+=wl.length*4+3;
-      }
-      
-      this._drawSigBlock(d,[
-        {label:'Direction Générale', sub:this._t(s.companyName||''), sub2:'Cachet & Signature'},
-        {label:'Le Client', value:this._t(doc.clientName||''), sub:'Cachet & Signature'},
-      ], Math.max(y+4, PH-62), 44);
-      
-      this._drawFooter(d,1,1);
-      this._save(d, `Bon_Retour_${this._t(doc.ref||'').replace(/\//g,'_')}.pdf`);
     },
 
     /* ══════════════════════════════════════════════════════════
@@ -1341,7 +1258,7 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
       this._tc(doc, C.WHITE);
-      doc.text(isRoadOnly ? 'BON DE LIVRAISON — POUR LA ROUTE' : 'BON DE LIVRAISON', PW / 2, y + 7, { align: 'center' });
+      doc.text('BON DE LIVRAISON', PW / 2, y + 7, { align: 'center' });
       y += 12;
 
       // ── 3. Info Strip (N° BCH, Date, BR Ref, Chauffeur, Immat) ──
@@ -1478,7 +1395,7 @@
       // ── 7. Traceability Note ──
       this._rect(doc, ML, y, CW, 6, [254, 243, 199], [251, 191, 36]);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [146, 64, 14]);
-      doc.text(`DOCUMENT FORMEL (CHAKLI) POUR LA ROUTE | REF BCH : ${bchRef} | BR : ${brRef}`, ML + CW / 2, y + 4, { align: 'center' });
+      doc.text(`DOCUMENT DE LIVRAISON | REF BCH : ${bchRef} | BR : ${brRef}`, ML + CW / 2, y + 4, { align: 'center' });
       y += 8;
 
       // ── 8. Signature Blocks ──
@@ -1513,6 +1430,226 @@
     ══════════════════════════════════════════════════════════ */
     _exportTempoBL(id) {
       return this._exportBL(id, false);
+    },
+
+    /* ══════════════════════════════════════════════════════════
+       BON DE RETOUR
+    ══════════════════════════════════════════════════════════ */
+    _exportBonRetour(id) {
+      let br = DB.getById('bon_retours', id);
+      if (!br) {
+        br = DB.getAll('bon_retours').find(r => String(r.blId) === String(id) || String(r.bcId) === String(id));
+      }
+      if (!br) { this._notify('Bon de Retour introuvable','error'); return; }
+      
+      const cli = br.clientId ? DB.getById('clients', br.clientId)||{} : {};
+      const s   = this._settings();
+      const doc = this._newDoc();
+
+      const lines    = br.items || br.lines || [];
+      const totalHT  = Number(br.totalHT || 0);
+      const totalTTC = Number(br.totalTTC || 0);
+
+      const brRef = this._t(br.ref);
+      const blRef = this._t(br.blRef || '/');
+
+      let y = MT;
+
+      // ── 1. Company Header with Logos ──
+      const SLOT_W = 28, SLOT_H = 16;
+      const drawLogo = (src, sx) => {
+        if (!src) return;
+        try {
+          const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/gif') ? 'GIF' : 'JPEG';
+          const props = doc.getImageProperties ? doc.getImageProperties(src) : null;
+          const ar = (props && props.width && props.height) ? props.width / props.height : 1;
+          let w = SLOT_W, h = w / ar;
+          if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
+          if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
+          doc.addImage(src, fmt, sx + (SLOT_W - w) / 2, y + (SLOT_H - h) / 2, w, h, undefined, 'FAST');
+        } catch(e) {}
+      };
+      drawLogo(s.logoLeft, ML);
+      drawLogo(s.logoRight, PW - MR - SLOT_W);
+
+      const cName = this._t(s.companyName || '/');
+      if (this._hasAr(cName) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+      else doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      this._tc(doc, [239, 68, 68]); // Red theme for Bon de Retour
+      doc.text(cName.toUpperCase(), PW / 2, y + 6, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      this._tc(doc, [71, 85, 105]);
+      const leg1 = [s.nif && `NIF : ${s.nif}`, s.rc && `RC : ${s.rc}`, s.nis && `NIS : ${s.nis}`, s.ai && `AI : ${s.ai}`].filter(Boolean).join('  |  ');
+      if (leg1) doc.text(leg1, PW / 2, y + 10.5, { align: 'center' });
+      const leg2 = [s.address && `Adresse : ${this._t(s.address)}`, s.phone && `Tel : ${s.phone}`].filter(Boolean).join('  |  ');
+      if (leg2) doc.text(leg2, PW / 2, y + 14.5, { align: 'center' });
+      y += 18;
+
+      // ── 2. Title Banner ──
+      doc.setFillColor(239, 68, 68); // Red
+      doc.roundedRect(ML, y, CW, 10, 1.5, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      this._tc(doc, C.WHITE);
+      doc.text('BON DE RETOUR', PW / 2, y + 7, { align: 'center' });
+      y += 12;
+
+      // ── 3. Info Strip ──
+      this._rect(doc, ML, y, CW, 10, [254, 242, 242], [252, 165, 165]); // Light red
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      this._tc(doc, [15, 23, 42]);
+      const iColW = CW / 3;
+      doc.text('N BR :', ML + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(brRef, ML + 2, y + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Date :', ML + iColW + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(this._fmtDate(br.date), ML + iColW + 2, y + 8);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('BL Origine :', ML + iColW*2 + 2, y + 4);
+      doc.setFont('helvetica', 'normal');
+      doc.text(blRef, ML + iColW*2 + 2, y + 8);
+      y += 12;
+
+      // Reason block
+      if (br.reason || br.returnReason) {
+        this._rect(doc, ML, y, CW, 10, [255, 255, 255], [252, 165, 165]);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [239, 68, 68]);
+        doc.text('MOTIF DU RETOUR :', ML + 3, y + 4);
+        doc.setFont('helvetica', 'normal'); this._tc(doc, [15, 23, 42]);
+        doc.text(this._t(br.reason || br.returnReason || '/'), ML + 3, y + 8);
+        y += 12;
+      }
+
+      // ── 4. Entity boxes ──
+      const gap = 4, cw2 = (CW - gap) / 2, boxH = 22;
+      // Left: Entreprise
+      const supName = this._t(s.companyName || 'Entreprise');
+      this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [252, 165, 165]);
+      doc.setFillColor(254, 242, 242);
+      doc.rect(ML, y, cw2, 5, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [153, 27, 27]);
+      doc.text('RECEPTEUR (ENTREPRISE)', ML + 3, y + 3.5);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
+      doc.text(supName.slice(0, 40), ML + 3, y + 9.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
+      doc.text(`Tel : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + 14);
+      doc.text(`Adresse : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + 18);
+
+      // Right: Client
+      const cliName = this._t(cli.name || br.clientName || 'Client');
+      this._rect(doc, ML + cw2 + gap, y, cw2, boxH, [255, 255, 255], [252, 165, 165]);
+      doc.setFillColor(254, 242, 242);
+      doc.rect(ML + cw2 + gap, y, cw2, 5, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [153, 27, 27]);
+      doc.text('CLIENT / EXPEDITEUR DU RETOUR', ML + cw2 + gap + 3, y + 3.5);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
+      doc.text(cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
+      doc.text(`NIF : ${cli.nif || '-'}  |  Tel : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + 14);
+      doc.text(`Adresse : ${this._t(cli.address || '-').slice(0, 42)}`, ML + cw2 + gap + 3, y + 18);
+      y += boxH + 3;
+
+      // ── 5. Items Table ──
+      const colDef = [
+        { label: 'N', w: 10, align: 'center' },
+        { label: 'DESIGNATION DES MARCHANDISES RETOURNEES', w: 82, align: 'left' },
+        { label: 'UNITE', w: 14, align: 'center' },
+        { label: 'QTE RET.', w: 20, align: 'center' },
+        { label: 'P.U. HT', w: 32, align: 'right' },
+        { label: 'TOTAL HT', w: 36, align: 'right' }
+      ];
+
+      this._rect(doc, ML, y, CW, 6, [239, 68, 68], [239, 68, 68]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, C.WHITE);
+      let cx = ML;
+      colDef.forEach(c => {
+        if (c.align === 'center') doc.text(c.label, cx + c.w / 2, y + 4, { align: 'center' });
+        else if (c.align === 'right') doc.text(c.label, cx + c.w - 2, y + 4, { align: 'right' });
+        else doc.text(c.label, cx + 2, y + 4);
+        cx += c.w;
+      });
+      y += 6;
+
+      const maxRows = 12;
+      const visibleLines = lines.slice(0, maxRows);
+      const rowH = 6;
+      visibleLines.forEach((l, i) => {
+        const qty = Number(l.qtyDelivered || l.qty || 0);
+        const pu = Number(l.price || 0);
+        const disc = Number(l.disc || 0);
+        const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
+
+        const rowBg = i % 2 === 0 ? [255, 255, 255] : [254, 242, 242];
+        this._rect(doc, ML, y, CW, rowH, rowBg, [252, 165, 165]);
+
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); this._tc(doc, [30, 41, 59]);
+        let rx = ML;
+        doc.text(String(i + 1).padStart(2, '0'), rx + 5, y + 4, { align: 'center' });
+        rx += 10;
+        doc.text(this._t(l.designation || 'Marchandise').slice(0, 50), rx + 2, y + 4);
+        rx += 82;
+        doc.text(this._t(l.unit || 'U'), rx + 7, y + 4, { align: 'center' });
+        rx += 14;
+        doc.setFont('helvetica', 'bold');
+        doc.text(this._fmtNum(qty), rx + 10, y + 4, { align: 'center' });
+        rx += 20;
+        doc.setFont('helvetica', 'normal');
+        doc.text(this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''), rx + 30, y + 4, { align: 'right' });
+        rx += 32;
+        doc.setFont('helvetica', 'bold');
+        doc.text(this._fmtMoney(tot), rx + 34, y + 4, { align: 'right' });
+        y += rowH;
+      });
+
+      if (!visibleLines.length) {
+        this._rect(doc, ML, y, CW, rowH, [255, 255, 255], [252, 165, 165]);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7); this._tc(doc, [148, 163, 184]);
+        doc.text('Aucune ligne', ML + 12, y + 4);
+        y += rowH;
+      }
+
+      // ── 6. Totals Bar ──
+      this._rect(doc, ML, y, CW, 8, [254, 242, 242], [252, 165, 165]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); this._tc(doc, [15, 23, 42]);
+      doc.text(`TOTAL HT : ${this._fmtMoney(totalHT)}`, ML + 5, y + 5.5);
+      doc.setFontSize(9); this._tc(doc, [239, 68, 68]);
+      doc.text(`TOTAL TTC : ${this._fmtMoney(totalTTC)}`, ML + CW - 5, y + 5.5, { align: 'right' });
+      y += 10;
+
+      // ── 7. Signature Blocks ──
+      const sigW2 = (CW - 6) / 3, sigH = 28;
+      const sigY = Math.max(y + 4, PH - 50);
+      
+      // Sig 1: Client
+      this._rect(doc, ML, sigY, sigW2, sigH, [255, 255, 255], [252, 165, 165]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [153, 27, 27]);
+      doc.text('LE CLIENT / EXPEDITEUR', ML + 3, sigY + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
+      doc.text('Cachet et Signature', ML + 3, sigY + sigH - 2);
+
+      // Sig 2: Chauffeur
+      this._rect(doc, ML + sigW2 + 3, sigY, sigW2, sigH, [255, 255, 255], [252, 165, 165]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [153, 27, 27]);
+      doc.text('LE CHAUFFEUR / TRANSPORTEUR', ML + sigW2 + 6, sigY + 4);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
+      doc.text('Pris en charge pour retour', ML + sigW2 + 6, sigY + sigH - 2);
+
+      // Sig 3: Recepteur
+      this._rect(doc, ML + (sigW2 + 3) * 2, sigY, sigW2, sigH, [255, 255, 255], [252, 165, 165]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [153, 27, 27]);
+      doc.text('LE RECEPTEUR (ENTREPRISE)', ML + (sigW2 + 3) * 2 + 3, sigY + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
+      doc.text('Date, Signature et Cachet', ML + (sigW2 + 3) * 2 + 3, sigY + sigH - 2);
+
+      this._save(doc, `BR_${brRef.replace(/[\/\\]/g,'_')}.pdf`);
     },
 
     /* ══════════════════════════════════════════════════════════

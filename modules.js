@@ -1138,7 +1138,7 @@ const BLModule = {
           <thead><tr>
             <th style="font-size:11px">${T.get('col_ref')}</th><th style="font-size:11px">${T.get('bl_linked_br')}</th><th style="font-size:11px">${T.get('col_date')}</th>
             <th style="font-size:11px">${T.get('col_client')}</th><th style="font-size:11px">${T.isRTL()?'السائق':'Chauffeur'}</th>
-            <th style="font-size:11px">${T.get('col_total_ttc')}</th><th style="font-size:11px">${T.get('col_status')}</th><th class="td-actions" style="font-size:11px">${T.get('col_actions')}</th>
+            <th style="font-size:11px">${T.get('col_total_ttc')}</th><th style="font-size:11px">${T.get('col_status')}</th><th class="td-actions" style="font-size:11px;text-align:center">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
             ${items.length ? items.slice(0, this._displayLimit).map(bl=>{
@@ -1155,12 +1155,14 @@ const BLModule = {
                 <td class="fw-bold text-primary" style="white-space:nowrap">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
                 <td style="text-align:center"><div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div><div style="font-size:10px;font-weight:700;color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'};line-height:1.2">${bl.status==='delivered'?'Livré':bl.status==='returned'?'Retourné':'En cours'}</div><div style="font-size:9px;color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'};line-height:1;direction:rtl">${bl.status==='delivered'?'تم التسليم':bl.status==='returned'?'مرتجع':'قيد التنفيذ'}</div></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<div style="margin-top:3px"><span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;padding:2px 6px;background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(5,150,105,.15));color:#059669;border-radius:4px;font-weight:800;border:1px solid rgba(16,185,129,.25)"><i class="fas fa-industry"></i> Validé Usine ✓</span></div>` : (bl.status === 'pending_usine' ? `<div style="margin-top:3px"><span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;padding:2px 6px;background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(217,119,6,.15));color:#d97706;border-radius:4px;font-weight:800;border:1px solid rgba(245,158,11,.25)"><i class="fas fa-hourglass-half"></i> En attente Usine</span></div>` : '')}</td>
                 <td class="td-actions" style="white-space:nowrap">
-                  <button class="btn btn-xs" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}" style="color:#3b82f6;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2)"><i class="fas fa-eye"></i></button>
-                  ${Auth.canEdit(bl)?`<button class="btn btn-xs" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier" style="color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2)"><i class="fas fa-edit"></i></button>`:''}
-                  ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs" onclick="BLModule.processReturn(${bl.id})" title="Retour" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer" style="color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)"><i class="fas fa-check"></i></button>`:''))}
-                  <button class="btn btn-xs" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15)"><i class="fas fa-file-pdf"></i></button>
-                  <button class="btn btn-xs" onclick="PDFGen.exportBL(${bl.id})" title="BL Route" style="color:#8b5cf6;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2)"><i class="fas fa-route"></i></button>
-                  ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>`:''}
+                  <div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:nowrap">
+                    <button class="btn btn-xs" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}" style="color:#3b82f6;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-eye"></i></button>
+                    ${Auth.canEdit(bl)?`<button class="btn btn-xs" onclick="BLModule.showEdit(${bl.id},${Auth.isAdmin()})" title="Modifier" style="color:#f59e0b;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-edit"></i></button>`:''}
+                    ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs" onclick="BLModule.processReturn(${bl.id})" title="Retour" style="color:#ef4444;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer" style="color:#10b981;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-check"></i></button>`:''))}
+                    <button class="btn btn-xs" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-file-pdf"></i></button>
+                    <button class="btn btn-xs" onclick="PDFGen.exportBL(${bl.id})" title="BL" style="color:#8b5cf6;background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-route"></i></button>
+                    ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-trash"></i></button>`:''}
+                  </div>
                 </td>
               </tr>`;
             }).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
@@ -2297,11 +2299,12 @@ const BLModule = {
       ${Auth.canEdit(bl)?`<button class="btn btn-outline" onclick="UI.closeModal();BLModule.showEdit(${blId})"><i class="fas fa-edit"></i> ${T.get('edit')} / تعديل</button>`:''}
       ${(!isLocked && !isReturned)?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')} / تم التسليم</button>`:''}
       ${(isLocked && !isReturned && Auth.canReturn(bl))?`<button class="btn btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> Retour Marchandise / إرجاع</button>`:''}
-      ${isReturned?`<button class="btn" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2);cursor:default" disabled><i class="fas fa-warehouse"></i> En Stock / في المخزون</button>`:''}
+      ${isReturned?`<button class="btn" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2);cursor:default" disabled><i class="fas fa-warehouse"></i> ${T.isRTL()?'في المخزون':'En Stock'}</button>${Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.undoReturn(${blId})"><i class="fas fa-undo-alt"></i> ${T.isRTL()?'إلغاء الإرجاع':'Annuler le Retour'}</button>`:''}`:''}
       ${isLocked && !isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin Modif</button>`:''}
       <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-invoice"></i> BCH (2 Volets)</button>
       <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road"></i> BL Route</button>
       <button class="btn btn-outline" style="color:#7c3aed;border-color:#a78bfa;background:rgba(139,92,246,.05)" onclick="PDFGen.exportTempoBL(${blId})"><i class="fas fa-route"></i> BL</button>
+      ${isReturned ? `<button class="btn btn-outline" style="color:#ef4444;border-color:#ef4444" onclick="PDFGen.exportBonRetour(${blId})"><i class="fas fa-file-pdf"></i> ${T.isRTL()?'سند الإرجاع PDF':'Bon de Retour PDF'}</button>` : ''}
       <button class="btn btn-outline" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
       ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> Valider Usine</button>` : ''}
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')} / إغلاق</button>`;
@@ -2319,6 +2322,43 @@ const BLModule = {
     UI.closeModal();
     BLModule.showEdit(blId, true /* adminOverride */);
   },
+  async undoReturn(blId) {
+    if (!Auth.isAdmin()) return;
+    const bl = DB.getById('bls', blId);
+    if (!bl || bl.status !== 'returned') return;
+    const isAR = T.isRTL();
+    
+    const ok = await Dialog.show({
+      title: isAR ? 'إلغاء إرجاع البضاعة' : 'Annuler le Retour',
+      message: isAR 
+        ? `<div style="padding:10px"><div class="alert alert-warning" style="font-size:13px"><i class="fas fa-exclamation-triangle"></i> <strong>تنبيه:</strong> سيتم إلغاء إرجاع ${Utils.escHTML(bl.ref)} وإعادته إلى حالة "تم التسليم".</div><p>هل أنت متأكد؟</p></div>`
+        : `<div style="padding:10px"><div class="alert alert-warning" style="font-size:13px"><i class="fas fa-exclamation-triangle"></i> <strong>Attention :</strong> Le retour de ${Utils.escHTML(bl.ref)} sera annulé et le BL passera en statut "Livré".</div><p>Êtes-vous sûr ?</p></div>`,
+      type: 'warning',
+      confirmText: isAR ? 'نعم، إلغاء الإرجاع' : 'Oui, Annuler le Retour',
+      cancelText: isAR ? 'لا' : 'Non'
+    });
+    if (!ok) return;
+    
+    // Restore the BL to delivered status
+    DB.update('bls', blId, {
+      status: 'delivered',
+      returnRef: null,
+      returnReason: null,
+      returnedAt: null,
+      returnedBy: null,
+      returnedByName: null,
+      undoneReturnAt: new Date().toISOString(),
+      undoneReturnBy: Auth.getCurrentUser()?.id
+    }, isAR ? 'إلغاء الإرجاع (مسؤول)' : 'Annulation retour (admin)');
+    
+    // Remove the bon de retour if it exists
+    const retours = DB.getAll('bon_retours');
+    const ret = retours.find(r => Number(r.blId) === Number(blId) || Number(r.bcId) === Number(blId));
+    if (ret) DB.delete('bon_retours', ret.id);
+    
+    Utils.notify(isAR ? '✅ تم إلغاء الإرجاع بنجاح' : '✅ Retour annulé — BL restauré en "Livré"', 'success');
+    App.loadModule('bls');
+  },
 
   async processReturn(blId) {
     const bl = DB.getById('bls', blId);
@@ -2332,7 +2372,14 @@ const BLModule = {
     const br = bl.brId ? DB.getById('brs', bl.brId) : null;
     const amount = Number(bl.totalTTC || br?.totalTTC || 0);
 
-    const reasons = [
+    const isAR = T.isRTL();
+    const reasons = isAR ? [
+      'بضاعة تالفة',
+      'عدم مطابقة المواد',
+      'رفض الزبون عند الاستلام',
+      'إلغاء الطلبية من الزبون',
+      'سبب آخر'
+    ] : [
       'Marchandise endommagée / avariée',
       'Non-conformité des articles',
       'Refus du client à la réception',
@@ -2348,11 +2395,23 @@ const BLModule = {
             <i class="fas fa-undo"></i>
           </div>
           <div>
-            <div style="font-weight:800;font-size:15px;color:var(--text)">Générer un Bon de Retour (BR)</div>
+            <div style="font-weight:800;font-size:15px;color:var(--text)">${isAR ? 'إنشاء سند إرجاع' : 'Générer un Bon de Retour (BR)'}</div>
             <div style="font-size:12px;color:var(--text4);margin-top:2px">Bon de Chargement: <strong>${Utils.escHTML(bl.ref||'')}</strong> — Montant: <strong style="color:var(--danger)">${Utils.fmtCurrency(amount)}</strong></div>
           </div>
         </div>
 
+        ${isAR ? `
+        <div class="alert alert-warning mb-2" style="font-size:12px">
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>العواقب المحاسبية :</strong>
+          <ul style="margin:6px 0 0 16px;padding:0;direction:rtl">
+            <li>سيتم إنشاء <strong>سند إرجاع</strong> رسمي.</li>
+            <li>سيتم خصم المبلغ (-) من تقرير المبيعات اليومي.</li>
+            <li>سيتم تسجيل سحب من الخزينة لموازنة المبلغ المحصل.</li>
+            <li>سيتم <strong>حجز مرجع سند الشحن هذا كمرتجع</strong> نهائيا.</li>
+          </ul>
+        </div>
+        ` : `
         <div class="alert alert-warning mb-2" style="font-size:12px">
           <i class="fas fa-exclamation-triangle"></i>
           <strong>Conséquences comptables & ERP :</strong>
@@ -2363,33 +2422,34 @@ const BLModule = {
             <li>La référence de ce Bon de Chargement sera <strong>réservée définitivement comme retournée</strong>.</li>
           </ul>
         </div>
+        `}
 
         <div class="form-group mb-2">
-          <label class="required" style="font-weight:700">Motif du retour</label>
-          <select id="ret_reason_sel" class="input" style="width:100%;margin-bottom:8px" onchange="if(this.value==='Autre motif') document.getElementById('ret_reason_custom').style.display='block'; else document.getElementById('ret_reason_custom').style.display='none';">
+          <label class="required" style="font-weight:700">${isAR ? 'سبب الإرجاع' : 'Motif du retour'}</label>
+          <select id="ret_reason_sel" class="input" style="width:100%;margin-bottom:8px" onchange="if(this.value==='Autre motif' || this.value==='سبب آخر') document.getElementById('ret_reason_custom').style.display='block'; else document.getElementById('ret_reason_custom').style.display='none';">
             ${opts}
           </select>
           <input type="text" id="ret_reason_custom" class="input" style="width:100%;display:none" placeholder="Précisez le motif du retour...">
         </div>
 
         <div class="form-group mb-2">
-          <label style="font-weight:700">Observations / Remarques</label>
+          <label style="font-weight:700">${isAR ? 'ملاحظات' : 'Observations / Remarques'}</label>
           <textarea id="ret_notes" class="input" style="width:100%;height:60px" placeholder="Détails supplémentaires..."></textarea>
         </div>
       </div>`;
 
     const ok = await Dialog.show({
-      title: `Retour Marchandise — Bon de Chargement ${bl.ref}`,
+      title: isAR ? `إرجاع البضاعة — ${bl.ref}` : `Retour Marchandise — Bon de Chargement ${bl.ref}`,
       message: modalHTML,
       type: 'danger',
-      confirmText: 'Confirmer le Retour & Générer BR',
-      cancelText: 'Annuler'
+      confirmText: isAR ? 'تأكيد الإرجاع وإنشاء سند الإرجاع' : 'Confirmer le Retour & Générer BR',
+      cancelText: isAR ? 'إلغاء' : 'Annuler'
     });
 
     if (!ok) return;
 
     let reason = document.getElementById('ret_reason_sel')?.value || 'Retour marchandise';
-    if (reason === 'Autre motif') {
+    if (reason === 'Autre motif' || reason === 'سبب آخر') {
       const custom = document.getElementById('ret_reason_custom')?.value?.trim();
       if (custom) reason = custom;
     }
@@ -2467,7 +2527,7 @@ const BLModule = {
       });
     }
     if (typeof PDFGen !== 'undefined' && PDFGen.exportBonRetour) {
-      setTimeout(() => PDFGen.exportBonRetour(brDoc), 400);
+      setTimeout(() => PDFGen.exportBonRetour(brDoc.id), 400);
     }
     App.loadModule('bls');
   },
@@ -3389,7 +3449,7 @@ const CaisseModule = {
         <td style="padding:10px 14px;font-size:12px;color:var(--text3)">${Utils.escHTML(r.reason || '—')}</td>
         <td style="padding:10px 14px;text-align:right;font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(r.totalTTC)}</td>
         <td style="padding:10px 14px;text-align:right">
-          ${window.PDFGen ? `<button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonRetour(${JSON.stringify(r).replace(/"/g, '&quot;')})" title="PDF"><i class="fas fa-file-pdf"></i></button>` : ''}
+          ${window.PDFGen ? `<button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonRetour(${r.id})" title="PDF"><i class="fas fa-file-pdf"></i></button>` : ''}
         </td>
       </tr>`;
     }).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted)"><i class="fas fa-check-circle" style="font-size:20px;opacity:.3;display:block;margin-bottom:6px"></i>${isAR ? 'لا توجد مرتجعات اليوم' : 'Aucun retour marchandise enregistré aujourd\'hui'}</td></tr>`;
