@@ -223,19 +223,17 @@ hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
 
 /* ── AUTOCOMPLETE RTL FIX ── */
 .autocomplete-dropdown {
-  position: absolute;
-  z-index: 9999 !important;
-  width: 100%;
+  position: fixed;
+  z-index: 99999 !important;
   background: var(--bg-card, var(--bg2));
   border: 1px solid var(--border2);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.18);
   max-height: 240px;
   overflow-y: auto;
-  top: calc(100% + 4px);
-  left: 0;
   backdrop-filter: blur(12px);
   scrollbar-width: thin;
+  display: none;
 }
 .autocomplete-dropdown::-webkit-scrollbar { width: 5px }
 .autocomplete-dropdown::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px }

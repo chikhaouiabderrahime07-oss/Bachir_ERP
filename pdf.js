@@ -442,7 +442,10 @@
       if (totalsData.extraFees) totRows.push(mkTotRow(isAR ? 'مصاريف إضافية' : 'Frais suppl.',   this._fmtMoney(totalsData.extraFees), false));
       totRows.push(mkTotRow(isAR ? 'المجموع خ.ر' : 'Total HT',   this._fmtMoney(totalsData.totalHT||0),  false));
       if (totalsData.tvaAmount) totRows.push(mkTotRow(isAR ? `الضرائب (ر.ق.م ${totalsData.tvaRate||19}%)` : `Taxes (TVA ${totalsData.tvaRate||19}%)`, this._fmtMoney(totalsData.tvaAmount||0), false));
-      if (totalsData.timbre) totRows.push(mkTotRow(isAR ? 'الطابع الجبائي' : 'Timbre Fiscal', this._fmtMoney(totalsData.timbre||0), false));
+      if (totalsData.timbre) {
+        const tRateLabel = totalsData.timbreRate ? ` (${totalsData.timbreRate}%)` : '';
+        totRows.push(mkTotRow(isAR ? `الطابع الجبائي${tRateLabel}` : `Timbre Fiscal${tRateLabel}`, this._fmtMoney(totalsData.timbre||0), false));
+      }
       totRows.push(mkTotRow(isAR ? 'المجموع ك.ر' : 'TOTAL TTC',  this._fmtMoney(totalsData.totalTTC||0), true));
 
       /* Tag first/last for mesh drawing */
@@ -635,16 +638,18 @@
     _exportEtatVente(data) {
       const { 
         ref, createdByName, createdAt, items, totalHT, tvaAmt, tvaRate, timbreAmt, 
-        totalTTC, period, settings, blList = [], returnList = [], 
+        totalTTC, period, blList = [], returnList = [], 
         grossTotalTTC = 0, returnsTotalTTC = 0, netTotalTTC = null 
       } = data;
+      // Safety: settings may be undefined if called from old code path
+      const settings = data.settings || (typeof DB !== 'undefined' ? DB.getSettings() : {}) || {};
 
       const finalNetTTC = netTotalTTC !== null && netTotalTTC !== undefined ? netTotalTTC : totalTTC;
       const effectiveGross = grossTotalTTC || totalTTC;
       const effectiveReturns = returnsTotalTTC || 0;
 
       const s = {
-        companyName: settings.evCompanyName || settings.companyName,
+        companyName: settings.evCompanyName || settings.companyName || '',
         address: settings.evAddress || settings.address,
         phone: settings.evPhone || settings.phone,
         fax: settings.evFax,
@@ -702,12 +707,15 @@
       });
       if(!bodyRows.length) bodyRows.push(['01','Aucune ligne','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
       
+      // Fiscal TTC = HT + TVA + Timbre (for the articles summary table)
+      const fiscalTTC = timbreAmt ? Math.round(((totalHT||0) + (tvaAmt||0) + (timbreAmt||0)) * 100) / 100 : effectiveGross;
       let tEndY = this._buildTable(doc, y, COLS, bodyRows, {
         totalHT: totalHT,
         tvaAmount: tvaAmt,
         tvaRate: tvaRate,
         timbre: timbreAmt,
-        totalTTC: effectiveGross
+        timbreRate: data.timbreRate || (timbreAmt ? 1 : 0),
+        totalTTC: fiscalTTC
       });
       
       y = tEndY + 8;
@@ -726,7 +734,7 @@
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       this._tc(doc, C.GRAY_TXT);
-      doc.text(isAR ? 'إجمالي المبيعات (خام) :' : 'Total Ventes BL (Brut) :', boxX + 4, y + 6);
+      doc.text(isAR ? 'إجمالي مبيعات الشحن (خام) :' : 'Total Ventes BCH (Brut) :', boxX + 4, y + 6);
       doc.setFont('helvetica', 'bold');
       this._tc(doc, [16, 185, 129]);
       doc.text('+' + this._fmtMoney(effectiveGross), boxX + boxW - 4, y + 6, { align: 'right' });
@@ -790,12 +798,12 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         this._tc(doc, C.PRIMARY);
-        this._text(doc, isAR ? `1. تفاصيل وصولات التسليم المتضمنة (مبيعات اليوم : ${blList.length} وصل)` : `I. DETAIL DES BONS DE LIVRAISON INCLUS (VENTES DU JOUR : ${blList.length} BL)`, ML, y);
+        this._text(doc, isAR ? `1. تفاصيل وصولات الشحن المتضمنة (مبيعات اليوم : ${blList.length} سند)` : `I. DETAIL DES BONS DE CHARGEMENT INCLUS (VENTES DU JOUR : ${blList.length} BCH)`, ML, y);
         y += 4;
 
         const blCols = [
           {label:isAR ? 'الرقم' : 'N°', width:12, halign:'center'},
-          {label:isAR ? 'مرجع وصل التسليم' : 'RÉFÉRENCE BL', width:42, halign:'center'},
+          {label:isAR ? 'مرجع سند الشحن' : 'RÉFÉRENCE BCH', width:42, halign:'center'},
           {label:isAR ? 'التاريخ' : 'DATE', width:26, halign:'center'},
           {label:isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', width:72, halign:'left'},
           {label:isAR ? 'المبلغ ك.ر' : 'MONTANT TTC', width:42, halign:'right'}

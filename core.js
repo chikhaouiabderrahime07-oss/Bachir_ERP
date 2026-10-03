@@ -1021,6 +1021,23 @@ const DB = {
           }
           checks.push({ name: 'Scanner d\'Anomalies Transversales', status: anomalies.length > 0 ? 'ALERT' : 'OK', detail: anomalies.length > 0 ? `${anomalies.length} anomalie(s) trouvée(s)` : 'Aucune anomalie' });
 
+          // Check 15: État de Vente Timbre Fiscal Recalculation
+          // Old état de vente docs may be missing timbreAmount — fix them
+          const allEVDocs = DB.getAll('etat_vente_docs');
+          let evTimbreFixed = 0;
+          allEVDocs.forEach(ev => {
+            if (ev.totalHT && ev.totalHT > 0 && (ev.timbreAmount === undefined || ev.timbreAmount === null)) {
+              const timbre = DB.calcTimbre(Number(ev.totalHT));
+              ev.timbreAmount = timbre;
+              const tvaAmt = Number(ev.tvaAmount) || (Number(ev.totalHT) * (Number(ev.tvaRate) || 19) / 100);
+              ev.totalTTCFiscal = Math.round((Number(ev.totalHT) + tvaAmt + timbre) * 100) / 100;
+              evTimbreFixed++;
+              fixes.push(`État de Vente ${ev.ref}: timbre fiscal ajouté (${Utils.fmtCurrency(timbre)}), TTC fiscal = ${Utils.fmtCurrency(ev.totalTTCFiscal)}`);
+            }
+          });
+          if (evTimbreFixed > 0) DB.rawSet('etat_vente_docs', allEVDocs);
+          checks.push({ name: 'Timbre Fiscal États de Vente', status: evTimbreFixed > 0 ? 'FIXED' : 'OK', detail: evTimbreFixed > 0 ? `${evTimbreFixed} état(s) corrigé(s)` : 'Tous les états ont le timbre' });
+
           if (fixes.length > 0) {
             DB.insert('audit_log', {
               action: 'AUTOCORRECT',
@@ -1832,16 +1849,65 @@ const DB = {
 
 
   // ─── Driver autocomplete ───────────────────────────────────
-  getDriverIMM(name) {
-    const d = this.getAll('drivers').find(d => d && d.name && d.name.toLowerCase() === (name || '').toLowerCase());
-    return d ? d.imm : '';
+  // ─── Driver autocomplete ───────────────────────────────────
+  getDrivers(q = '') {
+    const query = (q || '').trim().toLowerCase();
+    const map = new Map();
+    // 1. From drivers collection
+    (this.getAll('drivers') || []).forEach(d => {
+      if (d && d.name) map.set(d.name.toLowerCase(), { name: d.name.trim(), imm: d.imm || '', count: d.count || 1 });
+    });
+    // 2. From historical BLs (BCH)
+    (this.getAll('bls') || []).forEach(b => {
+      if (b && b.driverName) {
+        const k = b.driverName.trim().toLowerCase();
+        const existing = map.get(k);
+        if (existing) {
+          if (!existing.imm && b.truckIMM) existing.imm = b.truckIMM;
+          existing.count = (existing.count || 1) + 1;
+        } else {
+          map.set(k, { name: b.driverName.trim(), imm: b.truckIMM || '', count: 1 });
+        }
+      }
+    });
+    // 3. From historical BRs
+    (this.getAll('brs') || []).forEach(b => {
+      if (b && b.driverName) {
+        const k = b.driverName.trim().toLowerCase();
+        const existing = map.get(k);
+        if (existing) {
+          if (!existing.imm && b.truckIMM) existing.imm = b.truckIMM;
+          existing.count = (existing.count || 1) + 1;
+        } else {
+          map.set(k, { name: b.driverName.trim(), imm: b.truckIMM || '', count: 1 });
+        }
+      }
+    });
+    const list = Array.from(map.values()).sort((a,b) => (b.count||0) - (a.count||0));
+    if (!query) return list.slice(0, 15);
+    return list.filter(d => d.name.toLowerCase().includes(query) || (d.imm && d.imm.toLowerCase().includes(query))).slice(0, 15);
   },
+
+  getDriverIMM(name) {
+    if (!name) return '';
+    const drivers = this.getDrivers(name);
+    const exact = drivers.find(d => d.name.toLowerCase() === name.trim().toLowerCase());
+    return exact ? exact.imm : (drivers[0]?.imm || '');
+  },
+
   saveDriver(name, imm) {
-    if (!name || !imm) return;
+    if (!name) return;
+    const cleanName = name.trim();
+    const cleanImm = (imm || '').trim();
     const drivers = this.getAll('drivers');
-    const idx = drivers.findIndex(d => d && d.name && d.name.toLowerCase() === name.toLowerCase());
-    if (idx >= 0) { drivers[idx].imm = imm; this.rawSet('drivers', drivers); }
-    else { this.insert('drivers', { name, imm }); }
+    const idx = drivers.findIndex(d => d && d.name && d.name.toLowerCase() === cleanName.toLowerCase());
+    if (idx >= 0) {
+      drivers[idx].imm = cleanImm || drivers[idx].imm;
+      drivers[idx].count = (drivers[idx].count || 1) + 1;
+      this.rawSet('drivers', drivers);
+    } else {
+      this.insert('drivers', { name: cleanName, imm: cleanImm, count: 1 });
+    }
   },
 
   // ─── Timbre calculation ────────────────────────────────────────
@@ -1920,18 +1986,94 @@ const DB = {
     return { timbre: t, total: Number(amt) + t };
   },
 
-  // ─── Article catalog ───────────────────────────────────────
-  searchArticles(q) {
-    return this.getAll('articles')
-      .filter(a => a && a.name && a.name.toLowerCase().includes((q||'').toLowerCase()))
-      .slice(0, 10);
+  // ─── Article catalog & suggestions ─────────────────────────
+  searchArticles(q = '') {
+    const query = (q || '').trim().toLowerCase();
+    const map = new Map();
+    // 1. From saved articles catalog
+    (this.getAll('articles') || []).forEach(a => {
+      if (a && a.name) {
+        map.set(a.name.trim().toLowerCase(), {
+          name: a.name.trim(),
+          unit: a.unit || 'U',
+          price: Number(a.price) || 0,
+          purchasePrice: Number(a.purchasePrice || a.priceBuy || 0),
+          count: a.count || 1
+        });
+      }
+    });
+    // 2. From all BRs (historical receipts)
+    (this.getAll('brs') || []).forEach(br => {
+      (br.lines || []).forEach(l => {
+        if (l && l.designation) {
+          const k = l.designation.trim().toLowerCase();
+          const existing = map.get(k);
+          if (existing) {
+            if (!existing.price && l.price) existing.price = Number(l.price);
+            if (!existing.purchasePrice && l.price) existing.purchasePrice = Number(l.price);
+            existing.count = (existing.count || 1) + 1;
+          } else {
+            map.set(k, {
+              name: l.designation.trim(),
+              unit: l.unit || 'U',
+              price: Number(l.price) || 0,
+              purchasePrice: Number(l.price) || 0,
+              count: 1
+            });
+          }
+        }
+      });
+    });
+    // 3. From all BLs (historical shipments)
+    (this.getAll('bls') || []).forEach(bl => {
+      (bl.lines || []).forEach(l => {
+        if (l && l.designation) {
+          const k = l.designation.trim().toLowerCase();
+          const existing = map.get(k);
+          if (existing) {
+            if (!existing.price && l.price) existing.price = Number(l.price);
+            if (!existing.purchasePrice && l.purchasePrice) existing.purchasePrice = Number(l.purchasePrice);
+            existing.count = (existing.count || 1) + 1;
+          } else {
+            map.set(k, {
+              name: l.designation.trim(),
+              unit: l.unit || 'U',
+              price: Number(l.price) || 0,
+              purchasePrice: Number(l.purchasePrice || 0),
+              count: 1
+            });
+          }
+        }
+      });
+    });
+    const list = Array.from(map.values()).sort((a,b) => (b.count||0) - (a.count||0));
+    if (!query) return list.slice(0, 15);
+    return list.filter(a => a.name.toLowerCase().includes(query)).slice(0, 15);
   },
-  saveArticle(name, unit, price) {
+
+  saveArticle(name, unit, price, purchasePrice = null) {
     if (!name) return;
+    const cleanName = name.trim();
     const arts = this.getAll('articles');
-    const idx = arts.findIndex(a => a && a.name && a.name.toLowerCase() === name.toLowerCase());
-    if (idx >= 0) { arts[idx] = { ...arts[idx], unit: unit || arts[idx].unit, price: price || arts[idx].price }; this.rawSet('articles', arts); }
-    else { this.insert('articles', { name, unit: unit||'', price: Number(price)||0 }); }
+    const idx = arts.findIndex(a => a && a.name && a.name.toLowerCase() === cleanName.toLowerCase());
+    if (idx >= 0) {
+      arts[idx] = { 
+        ...arts[idx], 
+        unit: unit || arts[idx].unit, 
+        price: Number(price) || arts[idx].price,
+        purchasePrice: purchasePrice !== null ? Number(purchasePrice) : (arts[idx].purchasePrice || arts[idx].priceBuy || 0),
+        count: (arts[idx].count || 1) + 1
+      }; 
+      this.rawSet('articles', arts); 
+    } else { 
+      this.insert('articles', { 
+        name: cleanName, 
+        unit: unit||'U', 
+        price: Number(price)||0,
+        purchasePrice: Number(purchasePrice)||0,
+        count: 1 
+      }); 
+    }
   },
 
   // ─── Audit chain ───────────────────────────────────────────
@@ -2664,7 +2806,9 @@ const SessionMgr = {
     const totalHT = items.reduce((s, it) => s + (it.qty * it.unitPrice), 0);
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = totalHT * (tvaRate / 100);
-    const timbreAmount = DB.calcTimbre(totalHT);
+    // Etat de vente: FIXED 1% timbre (not slab-based like BCH)
+    const TIMBRE_RATE_EV = 1; // 1% fixed for etat de vente
+    const timbreAmount = Math.round(totalHT * TIMBRE_RATE_EV / 100 * 100) / 100;
     const totalTTCCalc = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
 
     // 1. Generate État de Vente document with BL list and Returns list
@@ -2686,6 +2830,7 @@ const SessionMgr = {
       tvaRate,
       tvaAmount,
       timbreAmount,
+      timbreRate: TIMBRE_RATE_EV,
       totalTTC: summary.netAmount,
       totalTTCFiscal: totalTTCCalc,
       createdBy: userId,
@@ -2731,23 +2876,70 @@ const SessionMgr = {
       etatVenteRef: ref,
       bankTxId,
       targetBankId,
+      realBchNet: summary.netAmount,
+      etatVenteTTC: totalTTCCalc,
+      timbreAmount,
+      ecartFiscal: Math.round((totalTTCCalc - summary.netAmount) * 100) / 100,
       note: note || '',
       closedAt: now.toISOString()
     }, 'Clôture Mini Caisse');
 
-    // 4. Update caisse_admin deposit
-    DB.insert('caisse_admin', {
-      type: 'deposit',
-      source: 'mini_caisse_cloture',
-      userId,
-      userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
-      sessionId: session.id,
-      sessionDate: today,
-      amount: summary.netAmount,
-      targetBankId,
-      etatVenteRef: ref,
-      note: isAR ? `إغلاق الصندوق — ${u?.name || ''} — الصافي: ${Utils.fmtCurrency(summary.netAmount)} مودع في ${targetBank?.name || (isAR ? 'البنك' : 'Banque')}` : `Clôture Mini Caisse — ${u?.name || ''} — Net: ${Utils.fmtCurrency(summary.netAmount)} versé à ${targetBank?.name || 'Banque'}`
-    });
+    // 4. Update caisse_admin with full moves:
+    const ecartFiscal = Math.round((totalTTCCalc - summary.netAmount) * 100) / 100;
+    const bankLabel = targetBank?.name || (isAR ? 'البنك' : 'Banque');
+
+    // 4a. Real BCH gross revenues collected into counter
+    if (summary.totalSalesTTC > 0) {
+      DB.insert('caisse_admin', {
+        type: 'deposit',
+        source: 'bch_recettes_reelles',
+        userId,
+        userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
+        sessionId: session.id,
+        sessionDate: today,
+        amount: summary.totalSalesTTC,
+        targetBankId,
+        etatVenteRef: ref,
+        note: isAR ? `إيرادات وصولات الشحن الفعلية (${summary.bls.length} سند) — إغلاق ${u?.name || ''}` : `Recettes réelles des Bons de Chargement (${summary.bls.length} BCH) — Clôture ${u?.name || ''}`
+      });
+    }
+
+    // 4b. Deduct returns if any
+    if (summary.totalReturnsTTC > 0) {
+      DB.insert('caisse_admin', {
+        type: 'withdrawal',
+        source: 'bch_retours_deduits',
+        userId,
+        userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
+        sessionId: session.id,
+        sessionDate: today,
+        amount: summary.totalReturnsTTC,
+        targetBankId,
+        etatVenteRef: ref,
+        note: isAR ? `خصم مرتجعات البضاعة (${summary.retours.length} إرجاع) — ${u?.name || ''}` : `Déduction des Retours Marchandise (${summary.retours.length} retours) — ${u?.name || ''}`
+      });
+    }
+
+    // 4c. Withdrawal / Transfer to Bank via État de Vente
+    if (summary.netAmount > 0) {
+      DB.insert('caisse_admin', {
+        type: 'withdrawal',
+        source: 'transfert_banque_etat_vente',
+        userId,
+        userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
+        sessionId: session.id,
+        sessionDate: today,
+        amount: summary.netAmount,
+        targetBankId,
+        etatVenteRef: ref,
+        etatVenteTTC: totalTTCCalc,
+        timbreAmount,
+        ecartFiscal,
+        note: isAR 
+          ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(summary.netAmount)} | كشف المبيعات مع 1% طابع: ${Utils.fmtCurrency(totalTTCCalc)} | فارق الطابع: +${Utils.fmtCurrency(ecartFiscal)})`
+          : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Net versé: ${Utils.fmtCurrency(summary.netAmount)} | État 1% timbre: ${Utils.fmtCurrency(totalTTCCalc)} | Écart fiscal: +${Utils.fmtCurrency(ecartFiscal)})`
+      });
+    }
 
     WorkLog.logOut(userId);
     return { session: updatedSession, etatDoc: savedEtat, summary };

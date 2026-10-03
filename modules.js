@@ -532,12 +532,11 @@ const BRModule = {
   _onDesInput(idx, val) {
     const dd = document.getElementById(`br-ac-${idx}`);
     if (!dd) return;
-    if (!val || val.length < 1) { dd.style.display='none'; return; }
-    const arts = DB.searchArticles(val);
+    const arts = DB.searchArticles(val || '');
     if (!arts.length) { dd.style.display='none'; return; }
     dd.innerHTML = arts.map(a=>
       `<div class="autocomplete-item" onmousedown="BRModule._selectArticle(${idx},'${Utils.escHTML(a.name).replace(/'/g,"\\'")}','${Utils.escHTML(a.unit||'').replace(/'/g,"\\'")}',${a.price||0})">
-        <span>${Utils.escHTML(a.name)}</span>
+        <span><i class="fas fa-box" style="color:var(--primary);margin-right:6px"></i>${Utils.escHTML(a.name)}</span>
         <span class="ac-price">${Utils.fmtCurrency(a.price||0)}</span>
       </div>`
     ).join('');
@@ -547,7 +546,7 @@ const BRModule = {
       const rect = inp.getBoundingClientRect();
       dd.style.left = rect.left + 'px';
       dd.style.top = (rect.bottom + 2) + 'px';
-      dd.style.width = rect.width + 'px';
+      dd.style.width = Math.max(rect.width, 240) + 'px';
     }
     dd.style.display = 'block';
   },
@@ -1281,7 +1280,7 @@ const BLModule = {
     const supMap = {}; DB.getAll('suppliers').forEach(s => supMap[s.id] = s);
     const allSuppliers = DB.getAll('suppliers');
     const allClients = DB.getAll('clients');
-    const allArticles = DB.getAll('articles');
+    const allArticles = DB.searchArticles('');
     openBRs.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
     // Modal HTML with 2 Modes
@@ -1332,7 +1331,10 @@ const BLModule = {
           <div class="form-row-3">
             <div class="form-group mb-0">
               <label class="required"><i class="fas fa-id-card"></i> ${isAR ? 'اسم السائق' : 'Nom du Chauffeur'}</label>
-              <input type="text" id="direct-bch-driver" class="input" placeholder="${isAR ? 'الاسم الكامل للسائق...' : 'Nom complet...'}" oninput="BLModule._onDirectDriverInput(this.value)">
+              <div class="autocomplete-wrap" style="position:relative">
+                <input type="text" id="direct-bch-driver" class="input" placeholder="${isAR ? 'الاسم الكامل للسائق...' : 'Nom complet...'}" oninput="BLModule._onDirectDriverInput(this.value)" onfocus="BLModule._onDirectDriverInput(this.value)" onblur="setTimeout(()=>BLModule._closeDirectDriverAC(),200)">
+                <div class="autocomplete-dropdown" id="direct-bch-driver-ac"></div>
+              </div>
             </div>
             <div class="form-group mb-0">
               <label class="required"><i class="fas fa-truck"></i> ${isAR ? 'رقم تسجيل الشاحنة' : 'Matricule Camion'}</label>
@@ -1393,7 +1395,7 @@ const BLModule = {
           <div style="display:flex;flex-direction:column;gap:4px;min-width:260px;text-align:${isAR?'left':'right'}">
             <div style="font-size:12px;color:var(--text3)">${isAR ? 'المجموع خ.ر :' : 'Total HT :'} <strong id="direct-bch-tot-ht" style="color:var(--text)">0,00 DA</strong></div>
             <div style="font-size:12px;color:var(--text3)">${isAR ? 'الرسم TVA' : 'TVA'} (<span id="direct-bch-tva-pct">19%</span>) : <strong id="direct-bch-tot-tva" style="color:var(--text)">0,00 DA</strong></div>
-            <div style="font-size:12px;color:var(--text3)">${isAR ? 'الطابع الجبائي :' : 'Timbre Fiscal :'} <strong id="direct-bch-tot-timbre" style="color:var(--text)">0,00 DA</strong></div>
+            <div style="font-size:12px;color:var(--text3)">${isAR ? 'الطابع الجبائي :' : 'Timbre Fiscal :'} <strong id="direct-bch-tot-timbre" style="color:var(--text)">0,00 DA</strong> <span id="direct-bch-timbre-detail" style="font-size:11px;color:var(--primary);font-weight:700"></span></div>
             <div style="font-size:16px;font-weight:900;color:var(--primary);border-top:2px solid var(--primary);padding-top:6px;margin-top:2px">
               ${isAR ? 'المجموع الشامل TTC :' : 'TOTAL TTC :'} <span id="direct-bch-tot-ttc">0,00 DA</span>
             </div>
@@ -1426,7 +1428,7 @@ const BLModule = {
       <div id="bch-footer-stock" style="display:none;gap:8px;justify-content:flex-end;width:100%">
         <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
         <button class="btn btn-outline" id="newbl-pdf" style="display:none" onclick="BLModule._saveFromNewBL(true)"><i class="fas fa-file-pdf"></i> ${isAR ? 'حفظ و PDF' : 'Sauver & PDF'}</button>
-        <button class="btn btn-success" id="newbl-save" style="display:none" onclick="BLModule._saveFromNewBL(false)"><i class="fas fa-truck"></i> ${isAR ? 'إنشاء سند التسليم' : 'Créer BL'}</button>
+        <button class="btn btn-success" id="newbl-save" style="display:none" onclick="BLModule._saveFromNewBL(false)"><i class="fas fa-truck-loading"></i> ${isAR ? 'إنشاء سند الشحن' : 'Créer Bon de Chargement'}</button>
       </div>
     `;
 
@@ -1502,7 +1504,9 @@ const BLModule = {
 
   _onDirectArticleSelect(idx, val) {
     if (!val) return;
-    const art = DB.getAll('articles').find(a => a && a.name && a.name.toLowerCase() === val.toLowerCase());
+    const cleanVal = val.trim().toLowerCase();
+    const matches = DB.searchArticles(val);
+    const art = matches.find(a => a.name.toLowerCase() === cleanVal) || matches[0];
     if (art) {
       const uInp = document.getElementById(`direct-bch-unit-${idx}`);
       const pInp = document.getElementById(`direct-bch-price-${idx}`);
@@ -1546,6 +1550,7 @@ const BLModule = {
     const tvaAmt = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('direct-bch-no-timbre')?.checked || false;
     const timbreAmt = noTimbre ? 0 : DB.calcTimbre(totalHT);
+    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(totalHT);
     const totalTTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
 
     const el = id => document.getElementById(id);
@@ -1554,6 +1559,15 @@ const BLModule = {
     if (el('direct-bch-tot-tva')) el('direct-bch-tot-tva').textContent = Utils.fmtCurrency(tvaAmt);
     if (el('direct-bch-tot-timbre')) el('direct-bch-tot-timbre').textContent = Utils.fmtCurrency(timbreAmt);
     if (el('direct-bch-tot-ttc')) el('direct-bch-tot-ttc').textContent = Utils.fmtCurrency(totalTTC);
+
+    if (el('direct-bch-timbre-detail')) {
+      if (noTimbre || totalHT <= 0 || timbreAmt <= 0) {
+        el('direct-bch-timbre-detail').textContent = '';
+      } else {
+        const effPct = ((timbreAmt / totalHT) * 100).toFixed(2);
+        el('direct-bch-timbre-detail').textContent = `(${effPct}% | ${timbreDetail?.tranches||0} tranches × ${timbreDetail?.perTranche||1.5} DA)`;
+      }
+    }
   },
 
   _onDirectClientChange(clientId) {
@@ -1565,13 +1579,38 @@ const BLModule = {
     }
   },
 
-  _onDirectDriverInput(name) {
-    if (!name) return;
-    const imm = DB.getDriverIMM(name);
-    const truckInp = document.getElementById('direct-bch-truck');
-    if (imm && truckInp && !truckInp.value) {
-      truckInp.value = imm;
+  _onDirectDriverInput(val) {
+    const dd = document.getElementById('direct-bch-driver-ac');
+    if (!dd) return;
+    const drivers = DB.getDrivers(val || '');
+    if (!drivers.length) { dd.style.display = 'none'; return; }
+    dd.innerHTML = drivers.slice(0, 10).map(d =>
+      `<div class="autocomplete-item" onmousedown="BLModule._selectDirectDriver('${Utils.escHTML(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(d.imm||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+        <span><i class="fas fa-id-card" style="color:var(--primary);margin-right:6px"></i>${Utils.escHTML(d.name)}</span>
+        ${d.imm ? `<span class="ac-price">${Utils.escHTML(d.imm)}</span>` : ''}
+      </div>`
+    ).join('');
+    const inp = document.getElementById('direct-bch-driver');
+    if (inp) {
+      const rect = inp.getBoundingClientRect();
+      dd.style.left = rect.left + 'px';
+      dd.style.top = (rect.bottom + 2) + 'px';
+      dd.style.width = Math.max(rect.width, 240) + 'px';
     }
+    dd.style.display = 'block';
+  },
+
+  _selectDirectDriver(name, imm) {
+    const dInp = document.getElementById('direct-bch-driver');
+    const tInp = document.getElementById('direct-bch-truck');
+    if (dInp) dInp.value = name;
+    if (tInp && imm) tInp.value = imm;
+    this._closeDirectDriverAC();
+  },
+
+  _closeDirectDriverAC() {
+    const dd = document.getElementById('direct-bch-driver-ac');
+    if (dd) dd.style.display = 'none';
   },
 
   async _saveDirectBCH(andPrint = false, printType = 'bch') {
@@ -1784,7 +1823,7 @@ const BLModule = {
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     if (bl.status === 'returned') {
-      Utils.notify(isAR ? "تم إرجاع سند التسليم هذا وأرشفته نهائياً. التعديل غير ممكن." : "Ce bon de livraison a été retourné et est archivé définitivement. Modification impossible.", 'error');
+      Utils.notify(isAR ? "تم إرجاع سند الشحن هذا وأرشفته نهائياً. التعديل غير ممكن." : "Ce bon de chargement a été retourné et est archivé définitivement. Modification impossible.", 'error');
       return;
     }
     if (!Auth.canEdit(bl) && !adminOverride) {
@@ -1809,10 +1848,9 @@ const BLModule = {
   _onDriverInput(val) {
     const dd = document.getElementById('bl-driver-ac');
     if (!dd) return;
-    if (!val || val.length < 1) { dd.style.display='none'; return; }
-    const drivers = DB.getAll('drivers').filter(d => (d.name||'').toLowerCase().includes((val||'').toLowerCase()));
+    const drivers = DB.getDrivers(val || '');
     if (!drivers.length) { dd.style.display='none'; return; }
-    // Show ALL matching drivers (same logic as article autocomplete in BR)
+    // Show ALL matching drivers (from catalog + historical BLs/BRs)
     dd.innerHTML = drivers.slice(0, 10).map(d =>
       `<div class="autocomplete-item" onmousedown="BLModule._selectDriver('${Utils.escHTML(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(d.imm||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
         <span><i class="fas fa-id-card" style="color:var(--primary);margin-right:6px"></i>${Utils.escHTML(d.name)}</span>
@@ -1825,7 +1863,7 @@ const BLModule = {
       const rect = inp.getBoundingClientRect();
       dd.style.left = rect.left + 'px';
       dd.style.top = (rect.bottom + 2) + 'px';
-      dd.style.width = rect.width + 'px';
+      dd.style.width = Math.max(rect.width, 240) + 'px';
     }
     dd.style.display = 'block';
   },
@@ -1984,7 +2022,7 @@ const BLModule = {
       <div class="totals-box" style="min-width:280px">
         <div class="totals-row"><label>${T.isRTL()?'المجموع قبل الرسوم':'Montant HT'}</label><span id="bl-tot-ht">0,00 DA</span></div>
         <div class="totals-row"><label>${T.isRTL()?'TVA':'Taxes (TVA)'} <span id="bl-tva-pct" style="color:var(--text4);font-size:10px"></span></label><span id="bl-tot-tva">0,00 DA</span></div>
-        <div class="totals-row"><label>${T.isRTL()?'الطابع الجبائي':'Timbre Fiscal'}</label>
+        <div class="totals-row"><label>${T.isRTL()?'الطابع الجبائي':'Timbre Fiscal'} <span id="bl-timbre-pct" style="color:var(--primary);font-size:10px;font-weight:700"></span></label>
           <input type="number" id="bl-tot-timbre"
             value="${(bl?.timbreAmount ?? 0).toFixed(2)}"
             ${bl?.timbreAmount ? 'data-manual="1"' : ''}
@@ -2085,11 +2123,20 @@ const BLModule = {
     const timbreInput = document.getElementById('bl-tot-timbre');
     if (timbreInput && (!timbreInput.dataset.manual || noTimbre)) timbreInput.value = autoTimbre.toFixed(2);
     const timbre = noTimbre ? 0 : (parseFloat(timbreInput?.value)||0);
+    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(ht);
     const el = n => document.getElementById(n);
     if (el('bl-tot-ht'))     el('bl-tot-ht').textContent     = Utils.fmtCurrency(ht);
     if (el('bl-tot-tva'))    el('bl-tot-tva').textContent    = Utils.fmtCurrency(tva);
     if (el('bl-tva-pct'))    el('bl-tva-pct').textContent    = tvaRate + '%';
     if (el('bl-tot-ttc'))    el('bl-tot-ttc').textContent    = Utils.fmtCurrency(ht + tva + timbre);
+    if (el('bl-timbre-pct')) {
+      if (noTimbre || ht <= 0 || timbre <= 0) {
+        el('bl-timbre-pct').textContent = '';
+      } else {
+        const effPct = ((timbre / ht) * 100).toFixed(2);
+        el('bl-timbre-pct').textContent = `(${effPct}% | ${timbreDetail?.tranches||0} tr. × ${timbreDetail?.perTranche||1.5} DA)`;
+      }
+    }
     let isPartial = false, j = 0;
     while (document.getElementById(`bl-qty-${j}`)) {
       const inp = document.getElementById(`bl-qty-${j}`);
@@ -2272,7 +2319,7 @@ const BLModule = {
 
     // ── Returned BL is permanently reserved & locked forever ──
     if (bl.status === 'returned') {
-      Utils.notify(isAR ? '⛔ سند التسليم هذا مؤرشف نهائياً كـ مرتجع. رقمه محجوز ولا يمكن إعادة استخدامه.' : '⛔ Ce Bon de Livraison est définitivement archivé comme RETOURNÉ. Sa référence est réservée et ne peut pas être réutilisée.', 'warning', 5000);
+      Utils.notify(isAR ? '⛔ سند الشحن هذا مؤرشف نهائياً كـ مرتجع. رقمه محجوز ولا يمكن إعادة استخدامه.' : '⛔ Ce Bon de Chargement est définitivement archivé comme RETOURNÉ. Sa référence est réservée et ne peut pas être réutilisée.', 'warning', 5000);
       return;
     }
     // ── Already delivered — no double-confirm ──
@@ -2504,7 +2551,7 @@ const BLModule = {
     const bl = DB.getById('bls', blId);
     if (!bl) return;
     if (bl.status === 'returned') {
-      Utils.notify(isAR ? 'تم إرجاع سند التسليم هذا مسبقاً.' : 'Ce bon de livraison a déjà été retourné.', 'warning');
+      Utils.notify(isAR ? 'تم إرجاع سند الشحن هذا مسبقاً.' : 'Ce bon de chargement a déjà été retourné.', 'warning');
       return;
     }
     const u = Auth.getCurrentUser();
@@ -2676,7 +2723,7 @@ const BLModule = {
     const bl = DB.getById('bls', id);
     if (!bl) return;
     if (bl.status === 'returned') {
-      Utils.notify(isAR ? '⛔ تم إرجاع سند التسليم هذا وأرشفته نهائياً. الحذف غير ممكن.' : '⛔ Ce bon de livraison a été retourné et est archivé définitivement. Suppression impossible.', 'error');
+      Utils.notify(isAR ? '⛔ تم إرجاع سند الشحن هذا وأرشفته نهائياً. الحذف غير ممكن.' : '⛔ Ce bon de chargement a été retourné et est archivé définitivement. Suppression impossible.', 'error');
       return;
     }
     if (!Auth.canDelete(bl)) {
@@ -3210,7 +3257,7 @@ const SupplierPortalModule = {
       <!-- Credits Footer -->
       <div style="text-align:center;padding:20px 0 10px;margin-top:30px;border-top:1px solid var(--border)">
         <div style="font-size:10px;color:var(--text4);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">${isAR ? 'تم التطوير بواسطة' : 'Développé par'}</div>
-        <div style="font-size:13px;font-weight:800;background:linear-gradient(135deg,#0d9488,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer" onclick="if(typeof App!=='undefined')App.showCredits()">KIDMAT.SITE</div>
+        <div style="font-size:13px;font-weight:800;background:linear-gradient(135deg,#0d9488,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer" onclick="if(typeof App!=='undefined')App.showCredits()">AI ABDO — Intelligent Systems</div>
         <div style="font-size:9px;color:var(--text4);margin-top:2px">Intelligent Business Solutions</div>
       </div>
 
@@ -3636,9 +3683,15 @@ const BCSupervisionModule = {
 };
 
 const CaisseModule = {
+  _selectedUserId: null,
+  switchUser(uid) {
+    this._selectedUserId = uid ? parseInt(uid) : null;
+    App.loadModule('caisse');
+  },
   render() {
-    const u = Auth.getCurrentUser();
-    if (!u) return '';
+    const currentU = Auth.getCurrentUser();
+    if (!currentU) return '';
+    const u = (Auth.isAdmin() && this._selectedUserId) ? (DB.getById('users', this._selectedUserId) || currentU) : currentU;
     const today = Utils.today();
     const isAR = T.isRTL();
 
@@ -3672,7 +3725,7 @@ const CaisseModule = {
           ${!isClosed ? `<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${b.id})" title="${isAR ? 'إرجاع بضاعة' : 'Retour Marchandise'}"><i class="fas fa-undo"></i></button>` : ''}
         </td>
       </tr>`;
-    }).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text-muted)"><i class="fas fa-inbox" style="font-size:24px;opacity:.3;display:block;margin-bottom:8px"></i>${isAR ? 'لا توجد وصولات تسليم اليوم' : 'Aucun bon de livraison validé aujourd\'hui'}</td></tr>`;
+    }).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text-muted)"><i class="fas fa-inbox" style="font-size:24px;opacity:.3;display:block;margin-bottom:8px"></i>${isAR ? 'لا توجد وصولات شحن اليوم' : 'Aucun bon de livraison validé aujourd\'hui'}</td></tr>`;
 
     // Retours rows
     const retoursRows = summary.retours.length ? summary.retours.map((r, i) => {
@@ -3709,6 +3762,14 @@ const CaisseModule = {
         </div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${Auth.isAdmin() ? `
+            <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);padding:4px 8px;border-radius:8px;border:1px solid var(--border)">
+              <span style="font-size:11px;font-weight:700;color:var(--text4)"><i class="fas fa-user-circle"></i> ${isAR ? 'الصندوق المعروض :' : 'Afficher caisse :'}</span>
+              <select class="input" style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;border:none;background:transparent" onchange="CaisseModule.switchUser(this.value)">
+                ${DB.getAll('users').filter(x => x.active !== false && (x.role === 'user' || x.role === 'admin')).map(x => `<option value="${x.id}" ${x.id === u.id ? 'selected' : ''}>${Utils.escHTML(x.name || x.username)} ${x.id === currentU.id ? (isAR ? '(أنا)' : '(Moi)') : ''}</option>`).join('')}
+              </select>
+            </div>
+          ` : ''}
           <button class="btn btn-outline btn-sm" onclick="CaisseModule.printDailyTicket()" title="${isAR ? 'طباعة الوصل التلخيصي لليوم' : 'Imprimer le ticket récapitulatif du jour'}">
             <i class="fas fa-receipt"></i> ${isAR ? 'طباعة الوصل' : 'Ticket Récapitulatif'}
           </button>
@@ -3889,7 +3950,7 @@ const CaisseModule = {
     const totalHT = Object.values(aggregated).reduce((s, it) => s + (it.qty * it.unitPrice), 0);
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
-    const timbreAmount = DB.calcTimbre(totalHT);
+    const timbreAmount = Math.round(totalHT * 1 / 100 * 100) / 100; // Fixed 1% for etat de vente
     const etatVenteTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
     const difference = Math.round((etatVenteTTC - netCaisse) * 100) / 100;
 
@@ -3985,7 +4046,7 @@ const CaisseModule = {
               <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7c3aed;margin-bottom:6px"><i class="fas fa-file-invoice-dollar"></i> ${isAR?'كشف المبيعات':'État de Vente'}</div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'المجموع HT:':'Total HT :'}</span><span style="font-weight:700">${Utils.fmtCurrency(Math.round(totalHT*100)/100)}</span></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الرسم على القيمة المضافة':'TVA'} (${tvaRate}%) :</span><span style="font-weight:700">${Utils.fmtCurrency(tvaAmount)}</span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الطابع الجبائي:':'Timbre Fiscal :'}</span><span style="font-weight:700">${Utils.fmtCurrency(timbreAmount)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الطابع الجبائي (1%):':'Timbre Fiscal (1%) :'}</span><span style="font-weight:700">${Utils.fmtCurrency(timbreAmount)}</span></div>
               <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'المجموع TTC:':'Total TTC :'}</span><span style="color:#7c3aed">${Utils.fmtCurrency(etatVenteTTC)}</span></div>
             </div>
           </div>
@@ -4101,10 +4162,24 @@ const CaisseModule = {
       Utils.notify(isAR ? "لا يوجد أي كشف مبيعات لهذا اليوم." : "Aucun État de Vente trouvé pour aujourd'hui.", 'warning');
       return;
     }
-    if (window.PDFGen && PDFGen.exportEtatVente && typeof EtatVenteModule !== 'undefined') {
+    if (typeof EtatVenteModule !== 'undefined' && EtatVenteModule._doPDF) {
       EtatVenteModule._doPDF(etatDoc, DB.getSettings());
     } else if (window.PDFGen && PDFGen.exportEtatVente) {
-      PDFGen.exportEtatVente(etatDoc);
+      // Fallback: wrap raw doc with settings for the PDF generator
+      const settings = DB.getSettings();
+      const period = etatDoc.dateStart === etatDoc.dateEnd ? Utils.fmtDate(etatDoc.dateStart) : `Du ${Utils.fmtDate(etatDoc.dateStart)} au ${Utils.fmtDate(etatDoc.dateEnd)}`;
+      const banks = settings.banks || [];
+      const bank = banks.find(b => String(b.id) === String(etatDoc.bankId));
+      PDFGen.exportEtatVente({
+        ref: etatDoc.ref, createdByName: etatDoc.createdByName || etatDoc.userName,
+        createdAt: etatDoc.createdAt, items: etatDoc.items || [],
+        totalHT: etatDoc.totalHT, tvaAmt: etatDoc.tvaAmount, tvaRate: etatDoc.tvaRate,
+        timbreAmt: etatDoc.timbreAmount || 0, totalTTC: etatDoc.totalTTC,
+        period, settings, blList: etatDoc.blList || [], returnList: etatDoc.returnList || [],
+        grossTotalTTC: etatDoc.totalBLsTTC || etatDoc.totalTTC,
+        returnsTotalTTC: etatDoc.totalReturnsTTC || 0,
+        netTotalTTC: etatDoc.totalTTC, bankName: bank?.name || ''
+      });
     } else {
       App.loadModule('etat_vente');
     }
@@ -5576,7 +5651,7 @@ const ClientsModule = {
     if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
     // Check BLs linked to this client (not BRs — clients are linked via BLs)
     const hasLinkedBLs = DB.getAll('bls').some(b => Number(b.clientId) === Number(id));
-    if (hasLinkedBLs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات تسليم مرتبطة.':'Impossible: ce client a des BL liés — supprimez-les d\'abord.'),'error'); return; }
+    if (hasLinkedBLs) { Utils.notify((T.isRTL()?'غير ممكن: هذا الزبون لديه وصولات شحن مرتبطة.':'Impossible: ce client a des BCH liés — supprimez-les d\'abord.'),'error'); return; }
     const ok = await Dialog.confirm(T.isRTL() ? 'حذف الزبون' : 'Supprimer client', T.get('delete')+'?', 'danger');
     if (!ok) return;
     DB.delete('clients',id); Utils.notify((T.isRTL()?'تم حذف الزبون':'Client supprimé'),'success'); App.loadModule('clients');
@@ -8909,7 +8984,7 @@ const AuditModule = {
           <select onchange="AuditModule._filters.collection=this.value;App.loadModule('audit')">
             <option value="all">${T.get('all')}</option>
             <option value="brs" ${collection==='brs'?'selected':''}>Bons de Réception</option>
-            <option value="bls" ${collection==='bls'?'selected':''}>Bons de Livraison</option>
+            <option value="bls" ${collection==='bls'?'selected':''}>Bons de Chargement (BCH)</option>
             <option value="caisse_admin" ${collection==='caisse_admin'?'selected':''}>Caisse Principale</option>
             <option value="suppliers" ${collection==='suppliers'?'selected':''}>Fournisseurs</option>
             <option value="clients" ${collection==='clients'?'selected':''}>Clients</option>
@@ -10539,7 +10614,7 @@ const EtatVenteModule = {
     <!-- Summary KPI cards -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0ea5e9;margin-bottom:4px">${isAR ? 'سندات التسليم المشمولة' : 'Bons de Livraison Inclus'}</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0ea5e9;margin-bottom:4px">${isAR ? 'سندات الشحن المشمولة' : 'Bons de Chargement Inclus (BCH)'}</div>
         <div style="font-size:24px;font-weight:900;color:#0ea5e9">${bls.length} ${isAR ? 'سند' : 'BL'}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
@@ -10611,7 +10686,7 @@ const EtatVenteModule = {
     <!-- Section 2: Bottom Table 1 - Bons de Livraison inclus -->
     <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;margin-bottom:24px;box-shadow:0 4px 15px rgba(0,0,0,.02)">
       <div style="padding:14px 20px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <strong style="color:var(--text);font-size:14px"><i class="fas fa-truck" style="color:#0ea5e9;${isAR?'margin-left:8px':'margin-right:8px'}"></i> ${isAR ? `ثانياً: سندات التسليم المدرجة في الكشف (${bls.length} سند)` : `II. Bons de Livraison Inclus dans l'État (${bls.length} BLs)`}</strong>
+        <strong style="color:var(--text);font-size:14px"><i class="fas fa-truck" style="color:#0ea5e9;${isAR?'margin-left:8px':'margin-right:8px'}"></i> ${isAR ? `ثانياً: سندات الشحن المدرجة في الكشف (${bls.length} سند)` : `II. Bons de Chargement Inclus (BCH) dans l'État (${bls.length} BLs)`}</strong>
         <span style="font-weight:800;color:var(--success);font-size:14px">${isAR ? 'المجموع الخام :' : 'Total Brut :'} +${Utils.fmtCurrency(grossTotalTTC)}</span>
       </div>
       <div style="overflow-x:auto">
@@ -10637,7 +10712,7 @@ const EtatVenteModule = {
                 <td style="padding:9px 16px;color:var(--text2)">${Utils.escHTML(b.clientName || (isAR ? 'زبون عام' : 'Client Comptoir'))}</td>
                 <td style="padding:9px 16px;text-align:${isAR?'left':'right'};font-weight:800;color:var(--success)">+${Utils.fmtCurrency(b.totalTTC || 0)}</td>
               </tr>`;
-            }).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4)">${isAR ? 'لا يوجد أي سند تسليم ضمن هذا التحديد' : 'Aucun bon de livraison pour cette sélection'}</td></tr>`}
+            }).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4)">${isAR ? 'لا يوجد أي سند شحن ضمن هذا التحديد' : 'Aucun bon de chargement pour cette sélection'}</td></tr>`}
           </tbody>
           ${bls.length ? `
           <tfoot>
@@ -10931,7 +11006,7 @@ const EtatVenteModule = {
     const isAR = T.isRTL();
     const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC } = this._getFilteredData();
     if (!bls.length && !retours.length) {
-      Utils.notify(isAR ? 'لا توجد سندات تسليم أو مرتجعات ضمن هذا التحديد.' : 'Aucun bon de livraison ni retour pour cette sélection.', 'warning');
+      Utils.notify(isAR ? 'لا توجد سندات شحن أو مرتجعات ضمن هذا التحديد.' : 'Aucun bon de chargement ni retour pour cette sélection.', 'warning');
       return;
     }
     
