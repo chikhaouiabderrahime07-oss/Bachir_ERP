@@ -1146,7 +1146,7 @@ const BLModule = {
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
               const dest = bl.destinationAddress||cli?.address||'';
-               return `<tr style="vertical-align:middle">
+               return `<tr>
                 <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:10px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-user" style="width:10px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
                 <td>${br?`<span class="badge badge-primary" style="font-size:10px;padding:2px 5px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
                 <td style="white-space:nowrap">${Utils.fmtDate(bl.date).substring(0,5)}<div style="color:var(--text4);font-size:10px;margin-top:2px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>

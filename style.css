@@ -136,9 +136,7 @@
 [data-theme="dark"] tbody tr:hover          { background:rgba(var(--primary-rgb),.12) }
 [data-theme="dark"] .user-dropdown          { background:var(--surface) }
 [data-theme="dark"] .modal-header           { background:var(--bg-inset) }
-[data-theme="dark"] .table-shell .data-table .td-actions { background: #1a1d21; }
-[data-theme="dark"] .table-shell .data-table thead th:last-child { background: #22262b; }
-[data-theme="dark"] .table-shell .data-table tbody tr:hover .td-actions { background: #22262b; }
+
 /* Comfort mode component overrides */
 [data-theme="comfort"] .card-header            { background:rgba(200,180,140,.03) }
 [data-theme="comfort"] thead th                { background:rgba(200,180,140,.06) }
@@ -146,9 +144,7 @@
 [data-theme="comfort"] tbody tr:hover          { background:rgba(var(--primary-rgb),.10) }
 [data-theme="comfort"] .user-dropdown          { background:var(--surface) }
 [data-theme="comfort"] .modal-header           { background:var(--bg-inset) }
-[data-theme="comfort"] .table-shell .data-table .td-actions { background: #242019; }
-[data-theme="comfort"] .table-shell .data-table thead th:last-child { background: #2d2820; }
-[data-theme="comfort"] .table-shell .data-table tbody tr:hover .td-actions { background: #2d2820; }
+
 [data-theme="comfort"] .sidebar { background: #1c1912 !important; }
 
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
@@ -835,14 +831,15 @@ hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
 .data-table { width:100%; border-collapse:collapse }
 table { width:100%; border-collapse:collapse }
 thead th {
-  background:var(--bg3); padding:8px 10px; text-align:left;
-  font-size:10px; text-transform:uppercase; letter-spacing:.5px;
-  color:var(--text4); border-bottom:1px solid var(--border);
-  white-space:nowrap; font-weight:700;
+  background: rgba(var(--primary-rgb), .06);
+  padding: 10px 12px; text-align: left;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text2); border-bottom: 2px solid rgba(var(--primary-rgb), .2);
+  white-space: nowrap; font-weight: 700;
 }
-tbody td { padding:8px 10px; border-bottom:1px solid var(--border); font-size:12px; vertical-align:middle }
-tbody tr:nth-child(even) { background:rgba(0,0,0,.015) }
-tbody tr:hover { background:rgba(var(--primary-rgb),.05) }
+tbody td { padding:10px 12px; border-bottom:1px solid var(--border); font-size:12px; vertical-align:middle }
+tbody tr:nth-child(even) { background:rgba(var(--primary-rgb),.03) }
+tbody tr:hover { background:rgba(var(--primary-rgb),.08); transition: background .15s ease }
 .table-fixed { table-layout:fixed }
 .table-fixed th,.table-fixed td { overflow:hidden; text-overflow:ellipsis }
 
@@ -1412,6 +1409,7 @@ tbody tr:hover { background:rgba(var(--primary-rgb),.05) }
   gap: 10px; padding: 12px 20px;
   background: var(--bg-inset); border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  margin-bottom: 12px;
 }
 .filter-group { display: flex; flex-direction: column; gap: 4px; min-width: 120px; flex-shrink: 0; }
 .filter-group label {
@@ -1503,28 +1501,10 @@ th.pointage-sticky-col {
   border-bottom: 2px solid var(--border);
 }
 
-/* Sticky action column — always visible */
-.table-shell .data-table .td-actions,
-.table-shell .data-table thead th:last-child {
-  position: sticky;
-  right: 0;
-  z-index: 2;
-  background: var(--bg2);
+/* Action column — plain cell, same as other columns */
+.table-shell .data-table .td-actions {
   white-space: nowrap;
-  min-width: 120px;
-}
-.table-shell .data-table thead th:last-child {
-  background: var(--bg3);
-  z-index: 3;
-}
-.table-shell .data-table tbody tr:hover .td-actions {
-  background: var(--bg3);
-}
-[dir="rtl"] .table-shell .data-table .td-actions,
-[dir="rtl"] .table-shell .data-table thead th:last-child {
-  right: auto;
-  left: 0;
-  border-left: none;
+  text-align: center;
 }
 
 /* ── Quick action button ── */
@@ -1550,14 +1530,7 @@ th.pointage-sticky-col {
   border-radius: 6px;
   margin: 1px;
 }
-/* Action buttons group - cleaner layout */
-.td-actions {
-  display: flex;
-  gap: 3px;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: flex-end;
-}
+/* Action buttons group - alignment handled by inner flex div */
 
 /* ── fw-bold / text-primary helpers ── */
 .fw-bold { font-weight:700; }
