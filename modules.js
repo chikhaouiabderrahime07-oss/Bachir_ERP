@@ -1161,6 +1161,7 @@ const BLModule = {
                     ${bl.status==='returned'?'':(Auth.canReturn(bl)?`<button class="btn btn-xs" onclick="BLModule.processReturn(${bl.id})" title="Retour" style="color:#ef4444;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-undo"></i></button>`:((!isLocked)?`<button class="btn btn-xs" onclick="BLModule.confirmDelivery(${bl.id})" title="Livrer" style="color:#10b981;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-check"></i></button>`:''))}
                     <button class="btn btn-xs" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-file-pdf"></i></button>
                     <button class="btn btn-xs" onclick="PDFGen.exportBL(${bl.id})" title="BL" style="color:#8b5cf6;background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-route"></i></button>
+                    ${bl.status==='returned'?`<button class="btn btn-xs" onclick="PDFGen.exportBonRetour(${bl.id})" title="${T.isRTL()?'سند إرجاع':'Bon de Retour PDF'}" style="color:#fff;background:linear-gradient(135deg,#ef4444,#dc2626);border:none;min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-file-pdf"></i></button>`:''}
                     ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-trash"></i></button>`:''}
                   </div>
                 </td>
@@ -2321,19 +2322,22 @@ const BLModule = {
     </table>
     ${Utils.historyHTML('bls', blId)}`;
 
-    const footer = `
-      ${Auth.canEdit(bl)?`<button class="btn btn-outline" onclick="UI.closeModal();BLModule.showEdit(${blId})"><i class="fas fa-edit"></i> ${T.get('edit')} / تعديل</button>`:''}
-      ${(!isLocked && !isReturned)?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')} / تم التسليم</button>`:''}
-      ${(isLocked && !isReturned && Auth.canReturn(bl))?`<button class="btn btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> Retour Marchandise / إرجاع</button>`:''}
-      ${isReturned?`<button class="btn" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2);cursor:default" disabled><i class="fas fa-warehouse"></i> ${T.isRTL()?'في المخزون':'En Stock'}</button>${Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.undoReturn(${blId})"><i class="fas fa-undo-alt"></i> ${T.isRTL()?'إلغاء الإرجاع':'Annuler le Retour'}</button>`:''}`:''}
-      ${isLocked && !isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;gap:6px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin Modif</button>`:''}
-      <button class="btn btn-outline" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-invoice"></i> BCH (2 Volets)</button>
-      <button class="btn btn-outline" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road"></i> BL Route</button>
-      <button class="btn btn-outline" style="color:#7c3aed;border-color:#a78bfa;background:rgba(139,92,246,.05)" onclick="PDFGen.exportTempoBL(${blId})"><i class="fas fa-route"></i> BL</button>
-      ${isReturned ? `<button class="btn btn-outline" style="color:#ef4444;border-color:#ef4444" onclick="PDFGen.exportBonRetour(${blId})"><i class="fas fa-file-pdf"></i> ${T.isRTL()?'سند الإرجاع PDF':'Bon de Retour PDF'}</button>` : ''}
-      <button class="btn btn-outline" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
-      ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> Valider Usine</button>` : ''}
-      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')} / إغلاق</button>`;
+    const footer = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center">
+      ${(!isLocked && !isReturned)?`<button class="btn btn-success" style="font-size:12px" onclick="UI.closeModal();BLModule.confirmDelivery(${blId})"><i class="fas fa-check-circle"></i> ${T.get('bl_delivered')}</button>`:''}
+      ${Auth.canEdit(bl)&&!isReturned?`<button class="btn btn-outline" style="font-size:12px" onclick="UI.closeModal();BLModule.showEdit(${blId})"><i class="fas fa-edit"></i> ${T.get('edit')}</button>`:''}
+      ${(isLocked && !isReturned && Auth.canReturn(bl))?`<button class="btn" style="background:#ef4444;color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.processReturn(${blId})"><i class="fas fa-undo"></i> ${T.isRTL()?'إرجاع':'Retour'}</button>`:''}
+      ${isLocked && !isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.adminOverrideEdit(${blId})"><i class="fas fa-shield-alt"></i> Admin</button>`:''}
+      ${isReturned && Auth.isAdmin()?`<button class="btn" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.undoReturn(${blId})"><i class="fas fa-undo-alt"></i> ${T.isRTL()?'إلغاء الإرجاع':'Annuler Retour'}</button>`:''}
+      ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none;font-size:12px" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> Valider Usine</button>` : ''}
+      <span style="width:1px;height:24px;background:var(--border);margin:0 2px"></span>
+      <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-pdf" style="color:#ef4444"></i> BCH</button>
+      <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road" style="color:#3b82f6"></i> BL Route</button>
+      <button class="btn btn-outline" style="font-size:11px;padding:6px 10px;color:#7c3aed;border-color:#a78bfa" onclick="PDFGen.exportTempoBL(${blId})"><i class="fas fa-route"></i> BL</button>
+      ${isReturned ? `<button class="btn" style="background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;font-size:11px;padding:6px 10px" onclick="PDFGen.exportBonRetour(${blId})"><i class="fas fa-file-pdf"></i> ${T.isRTL()?'سند إرجاع':'Bon Retour'}</button>` : ''}
+      <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
+      <span style="width:1px;height:24px;background:var(--border);margin:0 2px"></span>
+      <button class="btn btn-secondary" style="font-size:12px" onclick="UI.closeModal()">${T.get('close')}</button>
+    </div>`;
     const modalTitle = isReturned 
       ? `<i class="fas fa-undo" style="color:#ef4444"></i> ${T.isRTL()?'سند إرجاع':'Bon de Retour'} — ${bl.ref}` 
       : `<i class="fas fa-file-export"></i> ${bl.ref}`;
