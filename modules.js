@@ -473,7 +473,7 @@ const BRModule = {
                 <td style="text-align:center"><div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${isLocked?'rgba(16,185,129,.1)':'rgba(14,165,233,.1)'};color:${isLocked?'#10b981':'#0ea5e9'}"><i class="fas ${isLocked?'fa-check':'fa-clock'}" style="font-size:11px"></i></div><div style="font-size:10px;font-weight:700;color:${isLocked?'#10b981':'#0ea5e9'};line-height:1.2">${isLocked?'Enlevé & Livré':'Émis'}</div><div style="font-size:9px;color:${isLocked?'#10b981':'#0ea5e9'};line-height:1;direction:rtl">${isLocked?'تم الاستلام':'صادر'}</div></div>${hasBL ? `<div style="margin-top:2px"><span style="display:inline-flex;align-items:center;gap:2px;font-size:8px;padding:1px 4px;background:rgba(99,102,241,.1);color:#6366f1;border-radius:3px;font-weight:700"><i class="fas fa-truck"></i> BCH</span></div>` : ''}</td>
                 <td class="td-actions" style="white-space:nowrap">
                   <button class="btn btn-xs" onclick="BRModule.showDetail(${br.id})" title="${T.get('details')}" style="color:#3b82f6;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2)"><i class="fas fa-eye"></i></button>
-                  ${!hasBL && !isLocked && (Auth.isAdmin()||Auth.can('canCreateBL'))?`<button class="btn btn-xs" onclick="BLModule.showGenerate(${br.id})" title="${T.get('br_gen_bl')}" style="color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);font-weight:700;font-size:10px"><i class="fas fa-truck"></i> BCH</button>`:''}
+                  ${!isLocked && !BLModule.getBRRemaining(br.id).exhausted && (Auth.isAdmin()||Auth.can('canCreateBL'))?`<button class="btn btn-xs" onclick="BLModule.showGenerate(${br.id})" title="${T.get('br_gen_bl')}" style="color:#10b981;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);font-weight:700;font-size:10px"><i class="fas fa-truck"></i> BCH</button>`:''}
                   ${canEdit?`<button class="btn btn-xs" onclick="BRModule.showEdit(${br.id})" title="${T.get('edit')}" style="color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2)"><i class="fas fa-edit"></i></button>`:''}
                   <button class="btn btn-xs" onclick="PDFGen.exportBR(${br.id})" title="${T.get('pdf')}" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15)"><i class="fas fa-file-pdf"></i></button>
                   ${canDel?`<button class="btn btn-xs" onclick="BRModule.deleteBR(${br.id})" title="${T.get('delete')}" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>`:''}
@@ -687,7 +687,8 @@ const BRModule = {
 
   async _modalBody(br=null) {
     const year = new Date().getFullYear();
-    const nextNum = await DB.getNextBRNum();
+    // Editing an existing BR never needs a new number → skip the server round-trip (it made Edit look dead when slow)
+    const nextNum = br ? br.brNum : await DB.getNextBRNum();
     const brNum = br ? br.brNum : nextNum;
     const brYear = br ? br.year : year;
     const initLines = br ? (br.lines||[]) : [{}];
@@ -816,13 +817,23 @@ const BRModule = {
   },
 
   async showEdit(id) {
-    const br = DB.getById('brs', id);
-    if (!br) return;
-    const body = await this._modalBody(br);
-    UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} BR — ${br.ref}`, body, `
-      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
-      <button class="btn btn-warning" onclick="BRModule._saveBR(${id},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
-    setTimeout(()=>{ BRModule._recalcTotals(); FormGuide.start(['br-supplier','br-date','br-num','br-des-0','br-qty-0','br-price-0']); }, 100);
+    const isAR = T.isRTL();
+    try {
+      const br = DB.getById('brs', id);
+      if (!br) { Utils.notify(isAR ? 'الوصل غير موجود' : 'BR introuvable', 'error'); return; }
+      if (!Auth.canEdit(br)) {
+        Utils.notify(isAR ? '🔒 التعديل غير مسموح: المستند مقفل أو اليوم انتهى. المسؤول فقط.' : '🔒 Modification interdite : document verrouillé ou journée terminée. Admin uniquement.', 'warning');
+        return;
+      }
+      const body = await this._modalBody(br);
+      UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')} BR — ${br.ref}`, body, `
+        <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+        <button class="btn btn-warning" onclick="BRModule._saveBR(${id},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'xl');
+      setTimeout(()=>{ BRModule._recalcTotals(); FormGuide.start(['br-supplier','br-date','br-num','br-des-0','br-qty-0','br-price-0']); }, 100);
+    } catch (e) {
+      console.error('[BR showEdit]', e);
+      Utils.notify((isAR ? 'خطأ في فتح التعديل: ' : 'Erreur ouverture édition : ') + e.message, 'error');
+    }
   },
 
   _saveBR(editId, andPrint) {
@@ -865,23 +876,34 @@ const BRModule = {
       notes, receivedBy, controlledBy, status: 'open'
     };
 
-    // ── Admin acting as another user ──────────────────────────────
+    // ── Ownership: new BR → attribute to creator (or user chosen by admin). Edit → NEVER change owner/status ──
     const adminU = Auth.getCurrentUser();
-    const targetUserId = Auth.isAdmin() && BRModule._adminActAsUserId ? BRModule._adminActAsUserId : adminU?.id;
-    const targetUser = DB.getById('users', targetUserId) || adminU;
-    data.createdBy = targetUserId;
-    data.createdByName = targetUser?.name || targetUser?.username || '?';
     data.lastModifiedBy = adminU?.id;
     data.lastModifiedByName = adminU?.name;
+    if (!editId) {
+      const targetUserId = Auth.isAdmin() && BRModule._adminActAsUserId ? BRModule._adminActAsUserId : adminU?.id;
+      const targetUser = DB.getById('users', targetUserId) || adminU;
+      data.createdBy = targetUserId;
+      data.createdByName = targetUser?.name || targetUser?.username || '?';
+    } else {
+      delete data.status; // keep delivered/locked/etc.
+    }
     BRModule._adminActAsUserId = null; // reset
 
     let savedBR;
     if (editId) {
+      const before = DB.getById('brs', editId);
+      if (!Auth.canEdit(before)) { Utils.notify(isAR ? '🔒 التعديل غير مسموح' : '🔒 Modification interdite', 'error'); UI.closeModal(); return; }
       savedBR = DB.update('brs', editId, data);
-      const bl = DB.getAll('bls').find(b=>Number(b.brId)===Number(editId));
-      if (bl) DB.update('bls', bl.id, { ref: DB.buildBLRef(brNum,year,null,suppAbbrev) }, 'Sync avec BR modifié');
+      // Re-sync linked BCH refs ONLY if the BR number changed (keep partial suffix -Pxx)
+      if (before && (Number(before.brNum) !== Number(brNum) || Number(before.year) !== Number(year))) {
+        DB.getAll('bls').filter(b=>Number(b.brId)===Number(editId)).forEach(bl => {
+          DB.update('bls', bl.id, { ref: DB.buildBCHRef(brNum, year, bl.partNum || null, suppAbbrev) }, 'Sync avec BR modifié');
+        });
+      }
       Utils.notify((T.isRTL()?'تم تعديل وصل الاستلام':'BR modifié avec succès'), 'success');
     } else {
+      data.status = 'open';
       savedBR = DB.insert('brs', data);
       Utils.notify((T.isRTL()?'تم إنشاء وصل الاستلام':'BR créé avec succès'), 'success');
     }
@@ -935,7 +957,7 @@ const BRModule = {
 
     const footer = `
     ${canEdit&&!isLocked?`<button class="btn btn-outline" onclick="UI.closeModal();BRModule.showEdit(${id})"><i class="fas fa-edit"></i> ${T.get('edit')}</button>`:''}
-    ${!bl&&!isLocked&&(Auth.isAdmin()||Auth.can('canCreateBL'))?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.showGenerate(${id})"><i class="fas fa-truck"></i> ${T.get('br_gen_bl')}</button>`:''}
+    ${!isLocked&&!BLModule.getBRRemaining(id).exhausted&&(Auth.isAdmin()||Auth.can('canCreateBL'))?`<button class="btn btn-success" onclick="UI.closeModal();BLModule.showGenerate(${id})"><i class="fas fa-truck"></i> ${T.get('br_gen_bl')}</button>`:''}
     <button class="btn btn-outline" onclick="PDFGen.exportBR(${id})"><i class="fas fa-file-pdf"></i> PDF</button>
     <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')}</button>`;
     UI.showModal(`<i class="fas fa-file-import"></i> ${br.ref}`, body, footer, 'lg');
@@ -1017,6 +1039,48 @@ const BRModule = {
 const BLModule = {
   _filters: { q:'', status:'all', clientId:'all', supplierId:'all', dateFrom:'', dateTo:'', createdBy:'all', driver:'all', sortDir:'desc' },
   _displayLimit: 50, // Lazy render: show 50 at a time
+
+  /* How much of a BR is still available for a NEW BCH (returned/cancelled BCHs free their qty back) */
+  getBRRemaining(brId, excludeBlId = null) {
+    const br = DB.getById('brs', brId);
+    if (!br) return { exists:false, remainingQty:0, exhausted:true, byKey:{} };
+    const key = l => (l.designation || l.articleId || '').trim();
+    const total = {}, used = {};
+    (br.lines || []).forEach(l => { const k = key(l); total[k] = (total[k] || 0) + (Number(l.qty) || 0); });
+    DB.getAll('bls')
+      .filter(b => Number(b.brId) === Number(brId) && b.status !== 'returned' && b.status !== 'cancelled' && (excludeBlId == null || Number(b.id) !== Number(excludeBlId)))
+      .forEach(b => (b.lines || []).forEach(l => { const k = key(l); used[k] = (used[k] || 0) + (Number(l.qtyDelivered ?? l.qty) || 0); }));
+    const byKey = {};
+    let remainingQty = 0;
+    Object.keys(total).forEach(k => { const r = Math.max(0, Math.round((total[k] - (used[k] || 0)) * 1000) / 1000); byKey[k] = r; remainingQty += r; });
+    return { exists:true, remainingQty, exhausted: remainingQty <= 0.0001, byKey };
+  },
+
+  /* Status cell for the BCH list.
+     - open            → "En cours" (BCH created from stock, nothing validated by anybody yet)
+     - pending_usine   → "En attente usine" (usine has NOT validated yet)
+     - validated_usine → "Validé usine" (usine confirmed loading)
+     - delivered       → "Livré"   - returned → "Retourné" */
+  _statusCell(bl) {
+    const isAR = T.isRTL();
+    const st = bl.status || 'open';
+    const lbr = bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null;
+    const usineOK = st === 'validated_usine' || (st === 'delivered' && lbr && lbr.status !== 'reserved');
+    const map = {
+      open:            { c:'#0ea5e9', bg:'rgba(14,165,233,.12)', ic:'fa-truck-moving',     fr:'En cours',          ar:'قيد التنفيذ' },
+      pending_usine:   { c:'#d97706', bg:'rgba(245,158,11,.14)', ic:'fa-hourglass-half',   fr:'En attente usine',  ar:'بانتظار المصنع' },
+      validated_usine: { c:'#059669', bg:'rgba(16,185,129,.12)', ic:'fa-industry',         fr:'Validé usine',      ar:'مؤكد من المصنع' },
+      delivered:       { c:'#10b981', bg:'rgba(16,185,129,.12)', ic:'fa-check-double',     fr:'Livré',             ar:'تم التسليم' },
+      locked:          { c:'#10b981', bg:'rgba(16,185,129,.12)', ic:'fa-lock',             fr:'Verrouillé',        ar:'مقفل' },
+      returned:        { c:'#ef4444', bg:'rgba(239,68,68,.12)',  ic:'fa-undo',             fr:'Retourné',          ar:'مرتجع' },
+    };
+    const m = map[st] || map.open;
+    return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:${m.bg};color:${m.c}"><i class="fas ${m.ic}" style="font-size:12px"></i></div>
+      <div style="font-size:10px;font-weight:700;color:${m.c};line-height:1.2">${isAR ? m.ar : m.fr}</div>
+      ${usineOK && st === 'delivered' ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;padding:1px 5px;background:rgba(16,185,129,.12);color:#059669;border-radius:4px;font-weight:800"><i class="fas fa-industry"></i> ${isAR ? 'مؤكد من المصنع' : 'Validé usine ✓'}</span>` : ''}
+    </div>`;
+  },
 
   render() {
     // ── Inline History view ──
@@ -1163,7 +1227,7 @@ const BLModule = {
                 <td>${Utils.escHTML(cli?.name||'-')}</td>
                 <td>${Utils.escHTML(bl.driverName||'-')}<div style="font-size:10px;color:var(--text4)"><code>${Utils.escHTML(bl.truckIMM||'')}</code></div></td>
                 <td class="fw-bold text-primary" style="white-space:nowrap">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td>
-                <td style="text-align:center"><div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px"><div style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:${bl.status==='delivered'?'rgba(16,185,129,.1)':bl.status==='returned'?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'}"><i class="fas ${bl.status==='delivered'?'fa-check':bl.status==='returned'?'fa-undo':'fa-clock'}" style="font-size:11px"></i></div><div style="font-size:10px;font-weight:700;color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'};line-height:1.2">${bl.status==='delivered'?'Livré':bl.status==='returned'?'Retourné':'En cours'}</div><div style="font-size:9px;color:${bl.status==='delivered'?'#10b981':bl.status==='returned'?'#ef4444':'#0ea5e9'};line-height:1;direction:rtl">${bl.status==='delivered'?'تم التسليم':bl.status==='returned'?'مرتجع':'قيد التنفيذ'}</div></div>${bl.linkedBrId || bl.status === 'validated_usine' ? `<div style="margin-top:3px"><span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;padding:2px 6px;background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(5,150,105,.15));color:#059669;border-radius:4px;font-weight:800;border:1px solid rgba(16,185,129,.25)"><i class="fas fa-industry"></i> Validé Usine ✓</span></div>` : (bl.status === 'pending_usine' ? `<div style="margin-top:3px"><span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;padding:2px 6px;background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(217,119,6,.15));color:#d97706;border-radius:4px;font-weight:800;border:1px solid rgba(245,158,11,.25)"><i class="fas fa-hourglass-half"></i> En attente Usine</span></div>` : '')}</td>
+                <td style="text-align:center">${BLModule._statusCell(bl)}</td>
                 <td class="td-actions" style="white-space:nowrap">
                   <div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:nowrap">
                     <button class="btn btn-xs" onclick="BLModule.showDetail(${bl.id})" title="${T.get('details')}" style="color:#3b82f6;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-eye"></i></button>
@@ -1690,8 +1754,10 @@ const BLModule = {
     if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify(isAR ? '⛔ إذن مرفوض — إنشاء سند الشحن' : '⛔ Permission refusée — création BCH', 'error'); return; }
     const br = DB.getById('brs', brId);
     if (!br) return;
-
-    // Admin picks which user this BL belongs to (same as showNewBL)
+    if (BLModule.getBRRemaining(brId).exhausted) {
+      Utils.notify(isAR ? '⛔ تم استهلاك كامل كمية هذا الوصل في سندات شحن. لا يمكن إنشاء سند جديد.' : '⛔ Toute la quantité de ce BR est déjà utilisée dans un/des BCH. Impossible d\'en créer un nouveau.', 'error', 5000);
+      return;
+    }
     if (Auth.isAdmin()) {
       const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== false);
       if (users.length > 0) {
@@ -2104,11 +2170,19 @@ const BLModule = {
       return;
     }
 
-    /* Determine if partial */
-    const isPartial = brLines.some((l, i) => {
-      const qty = parseFloat(document.getElementById(`bl-qty-${i}`)?.value)||0;
-      return qty < (Number(l.qty)||0);
-    });
+    /* Guard: never allocate more than what is still available on the BR */
+    const rem = BLModule.getBRRemaining(brId, editBlId || null);
+    const askedByKey = {};
+    deliveredLines.forEach(l => { const k = (l.designation || l.articleId || '').trim(); askedByKey[k] = (askedByKey[k] || 0) + l.qtyDelivered; });
+    const over = Object.keys(askedByKey).find(k => askedByKey[k] > (rem.byKey[k] ?? 0) + 0.0001);
+    if (over) {
+      Utils.notify(isAR ? `⛔ الكمية المطلوبة لـ "${over}" تتجاوز المتبقي (${rem.byKey[over] ?? 0}).` : `⛔ Quantité demandée pour "${over}" supérieure au reste disponible (${rem.byKey[over] ?? 0}).`, 'error', 5000);
+      return;
+    }
+    const existingActiveCount = DB.getAll('bls').filter(b => Number(b.brId) === Number(brId) && b.status !== 'returned' && b.status !== 'cancelled' && (!editBlId || Number(b.id) !== Number(editBlId))).length;
+
+    /* Determine if partial: something remains on the BR after this BCH */
+    const isPartial = Object.keys(rem.byKey).some(k => (rem.byKey[k] - (askedByKey[k] || 0)) > 0.0001);
 
     /* Totals */
     const totalHT  = Math.round(deliveredLines.reduce((s,l) => s+l.total, 0) * 100) / 100;
@@ -2124,13 +2198,14 @@ const BLModule = {
       const existing = DB.getById('bls', editBlId);
       ref = existing?.ref || DB.buildBCHRef(br.brNum, br.year);
       partNum = existing?.partNum || null;
-    } else if (isPartial) {
+    } else if (isPartial || existingActiveCount > 0) {
       partNum = DB.getNextBLPartNum(brId);
       ref = DB.buildBCHRef(br.brNum, br.year, partNum);
     } else {
       ref = DB.buildBCHRef(br.brNum, br.year);
     }
 
+    // Auto-save driver (+ truck) in the DB so it shows up as a suggestion next time
     DB.saveDriver(driverName, truckIMM);
 
     const data = {
@@ -2139,8 +2214,9 @@ const BLModule = {
       lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       isPartial, partNum,
       isBonChargement: true,
-      // From existing BR in stock -> goods already received, so validated usine
-      status: (adminOverride && editBlId) ? (DB.getById('bls', editBlId)?.status || 'validated_usine') : 'validated_usine'
+      source: 'stock',
+      // BCH made from a BR already in stock: it is simply "En cours" (NOT validated by an usine)
+      status: editBlId ? (DB.getById('bls', editBlId)?.status || 'open') : 'open'
     };
 
     // Admin acting as user attribution (new BL only)
@@ -2179,7 +2255,7 @@ const BLModule = {
           conflicting.forEach(ce => window.API.remove('recycle_bin', ce.id).catch(() => {}));
         }
       }
-      if (!isPartial) DB.update('brs', brId, { status:'delivered', deliveredAt:new Date().toISOString() }, 'Livraison complète via BL');
+      if (BLModule.getBRRemaining(brId).exhausted) DB.update('brs', brId, { status:'delivered', deliveredAt:new Date().toISOString() }, 'Quantité BR entièrement utilisée en BCH');
       Utils.notify(isAR ? (isPartial ? `تم إنشاء سند تسليم جزئي: ${ref}` : `تم إنشاء سند التسليم: ${ref}`) : (isPartial ? `BL partiel créé : ${ref}` : `BL créé : ${ref}`), 'success');
     }
     UI.closeModal();
@@ -3018,9 +3094,15 @@ const SupplierPortalModule = {
                 ${!isValidated ? `
                 <button class="btn btn-sm btn-success" style="background:#10b981;color:#fff;font-weight:700" onclick="SupplierPortalModule.promptValidation(${bc.id})">
                   <i class="fas fa-check-circle"></i> ${isAR ? 'التحقق وإنشاء BR' : 'Valider Chargement & Générer BR'}
-                </button>` : `
+                </button>` : bc.status !== 'delivered' ? `
+                <button class="btn btn-sm" style="background:#3b82f6;color:#fff;font-weight:700" onclick="SupplierPortalModule.markDelivered(${bc.id})">
+                  <i class="fas fa-truck-loading"></i> ${isAR ? 'تأكيد وصول البضاعة' : 'Confirmer Livraison'}
+                </button>
                 <span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,.1);padding:5px 12px;border-radius:8px">
-                  <i class="fas fa-lock"></i> ${isAR ? 'تم التحميل و التحقق' : 'Chargé & BR Validé'}
+                  <i class="fas fa-industry"></i> ${isAR ? 'تم التحقق من المصنع' : 'Validé Usine'}
+                </span>` : `
+                <span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,.1);padding:5px 12px;border-radius:8px">
+                  <i class="fas fa-check-double"></i> ${isAR ? 'تم التسليم' : 'Livré'}
                 </span>`}
               </div>
             </div>
@@ -3125,7 +3207,84 @@ const SupplierPortalModule = {
       </div>`;
       })() : ''}
 
+      <!-- Credits Footer -->
+      <div style="text-align:center;padding:20px 0 10px;margin-top:30px;border-top:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text4);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">${isAR ? 'تم التطوير بواسطة' : 'Développé par'}</div>
+        <div style="font-size:13px;font-weight:800;background:linear-gradient(135deg,#0d9488,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer" onclick="if(typeof App!=='undefined')App.showCredits()">KIDMAT.SITE</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:2px">Intelligent Business Solutions</div>
+      </div>
+
     </div>`;
+  },
+
+  async markDelivered(bcId) {
+    const isAR = T.isRTL();
+    const bc = DB.getById('bls', bcId);
+    if (!bc) return;
+    
+    const ok = await Dialog.show({
+      title: isAR ? '🚚 تأكيد وصول البضاعة' : '🚚 Confirmer la livraison',
+      message: `<div ${isAR?'dir="rtl"':''} style="padding:8px 0">
+        <div style="font-size:13px;color:var(--text);margin-bottom:8px">
+          ${isAR ? 'هل تم استلام البضاعة فعلياً للشحنة:' : 'Marchandise effectivement reçue pour le chargement :'}
+          <strong>${Utils.escHTML(bc.ref)}</strong> ?
+        </div>
+        <div style="font-size:12px;color:var(--text3)">
+          ${isAR ? 'المبلغ:' : 'Montant :'} <strong>${Utils.fmtCurrency(bc.totalTTC||0)}</strong>
+        </div>
+        <div class="alert alert-info" style="font-size:11px;margin-top:10px">
+          <i class="fas fa-info-circle"></i> 
+          ${isAR ? 'بمجرد التأكيد، سيتم قفل السند نهائياً.' : 'Une fois confirmé, ce bon sera verrouillé définitivement.'}
+        </div>
+      </div>`,
+      type: 'info',
+      confirmText: isAR ? 'تأكيد الاستلام' : 'Confirmer Réception',
+      cancelText: T.get('cancel')
+    });
+    if (!ok) return;
+
+    const u = Auth.getCurrentUser();
+    const now = new Date().toISOString();
+
+    // Update BCH status to delivered
+    DB.update('bls', bcId, {
+      status: 'delivered',
+      deliveredAt: now,
+      deliveredBy: u?.id,
+      deliveredByName: u?.name || 'Utilisateur'
+    }, 'Livraison confirmée depuis portail');
+
+    // If linked BR exists, check if all BCH from that BR are delivered
+    if (bc.brId || bc.linkedBrId) {
+      const brId = bc.brId || bc.linkedBrId;
+      const otherBCH = DB.getAll('bls').filter(b => 
+        (Number(b.brId) === Number(brId) || Number(b.linkedBrId) === Number(brId)) && 
+        Number(b.id) !== Number(bcId)
+      );
+      const allDelivered = otherBCH.every(b => b.status === 'delivered');
+      if (allDelivered) {
+        DB.update('brs', brId, {
+          status: 'delivered',
+          deliveredAt: now,
+          deliveredBy: u?.id,
+          deliveredByName: u?.name || 'Utilisateur'
+        }, 'Toutes les BCH liées sont livrées');
+      }
+    }
+
+    // Notification
+    if (typeof NotifMgr !== 'undefined') {
+      NotifMgr.add({
+        type: 'delivery_confirmed',
+        title: isAR ? 'تأكيد وصول البضاعة' : 'Livraison confirmée',
+        message: isAR ? `تم تأكيد وصول بضاعة الشحنة ${bc.ref}. المبلغ: ${Utils.fmtCurrency(bc.totalTTC||0)}` : `Livraison confirmée pour ${bc.ref}. Montant: ${Utils.fmtCurrency(bc.totalTTC||0)}`,
+        icon: 'fa-truck',
+        color: '#10b981'
+      });
+    }
+
+    Utils.notify(isAR ? '✅ تم تأكيد وصول البضاعة بنجاح!' : '✅ Livraison confirmée avec succès !', 'success');
+    App.loadModule(App._currentModule || 'supplier_portal');
   },
 
   async promptValidation(bcId) {
@@ -3570,7 +3729,7 @@ const CaisseModule = {
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">
             <i class="fas fa-truck" style="color:var(--success)"></i> ${isAR ? 'مبيعات اليوم (BCH)' : 'Ventes BCH du jour'}
           </div>
-          <div style="font-size:24px;font-weight:900;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</div>
+          <div style="font-size:24px;font-weight:900;color:var(--success)">+${Utils.fmtCurrency(summary.totalSalesTTC)}</div>
           <div style="font-size:11px;color:var(--text4);margin-top:2px">${summary.bls.length} ${isAR ? 'سند شحن' : 'bon(s) de chargement'}</div>
         </div>
 
@@ -3578,7 +3737,7 @@ const CaisseModule = {
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">
             <i class="fas fa-undo" style="color:var(--danger)"></i> ${isAR ? 'مرتجعات البضاعة (BR)' : 'Retours Marchandise (BR)'}
           </div>
-          <div style="font-size:24px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</div>
+          <div style="font-size:24px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturnsTTC)}</div>
           <div style="font-size:11px;color:var(--text4);margin-top:2px">${summary.retours.length} ${isAR ? 'سند إرجاع مخصوم' : 'bon(s) de retour déduit(s)'}</div>
         </div>
 
@@ -3617,7 +3776,7 @@ const CaisseModule = {
             <div style="font-size:12px;color:var(--text3);margin-top:2px">
               ${isClosed
                 ? (isAR ? `مرجع : <strong>${Utils.escHTML(session.etatVenteRef || 'تم الإنشاء')}</strong> — المبلغ المحول : <strong>${Utils.fmtCurrency(closedNet)}</strong> إلى <strong>${Utils.escHTML(bankName)}</strong>.` : `Réf : <strong>${Utils.escHTML(session.etatVenteRef || 'Généré')}</strong> — Montant transféré : <strong>${Utils.fmtCurrency(closedNet)}</strong> vers <strong>${Utils.escHTML(bankName)}</strong>.`)
-                : (isAR ? `إجمالي المبيعات : <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong> − المرتجعات : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong> = الصافي المحول للبنك : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.` : `Total Ventes : <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong> − Retours : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong> = Net à transférer en banque : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.`)
+                : (isAR ? `إجمالي المبيعات : <strong>+${Utils.fmtCurrency(summary.totalSalesTTC)}</strong> − المرتجعات : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturnsTTC)}</strong> = الصافي المحول للبنك : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.` : `Total Ventes : <strong>+${Utils.fmtCurrency(summary.totalSalesTTC)}</strong> − Retours : <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturnsTTC)}</strong> = Net à transférer en banque : <strong style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</strong>.`)
               }
             </div>
           </div>
@@ -3632,7 +3791,7 @@ const CaisseModule = {
           <div style="padding:14px 18px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
             <i class="fas fa-truck" style="color:var(--primary)"></i>
             <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR ? 'وصولات الشحن الصادرة اليوم (المبيعات)' : 'Mes Bons de Chargement du jour (Ventes)'}</h3>
-            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.bls.length} ${isAR ? 'سند' : 'chargement(s)'} — ${isAR ? 'المجموع :' : 'Total :'} <strong>+${Utils.fmtCurrency(summary.grossSales)}</strong></span>
+            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.bls.length} ${isAR ? 'سند' : 'chargement(s)'} — ${isAR ? 'المجموع :' : 'Total :'} <strong>+${Utils.fmtCurrency(summary.totalSalesTTC)}</strong></span>
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3647,7 +3806,7 @@ const CaisseModule = {
               <tbody>${blRows}</tbody>
               ${summary.bls.length ? `<tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)">
                 <td colspan="3" style="padding:12px 14px;font-weight:800;text-align:${isAR?'left':'right'};font-size:13px;color:var(--text)">${isAR ? 'إجمالي مبيعات الشحن' : 'TOTAL VENTES BCH'}</td>
-                <td style="padding:12px 14px;text-align:${isAR?'left':'right'};font-weight:900;font-size:15px;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</td>
+                <td style="padding:12px 14px;text-align:${isAR?'left':'right'};font-weight:900;font-size:15px;color:var(--success)">+${Utils.fmtCurrency(summary.totalSalesTTC)}</td>
                 <td colspan="2"></td>
               </tr></tfoot>` : ''}
             </table>
@@ -3659,7 +3818,7 @@ const CaisseModule = {
           <div style="padding:14px 18px;background:var(--bg-inset);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
             <i class="fas fa-undo" style="color:var(--danger)"></i>
             <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text)">${isAR ? 'مرتجعات البضاعة اليوم (خصومات)' : 'Mes Retours Marchandise du jour (Bons de Retour)'}</h3>
-            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.retours.length} ${isAR ? 'مرتجع' : 'retour(s)'} — ${isAR ? 'المجموع :' : 'Total :'} <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</strong></span>
+            <span style="margin-${isAR ? 'right' : 'left'}:auto;font-size:11px;color:var(--text-muted)">${summary.retours.length} ${isAR ? 'مرتجع' : 'retour(s)'} — ${isAR ? 'المجموع :' : 'Total :'} <strong style="color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturnsTTC)}</strong></span>
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -3674,7 +3833,7 @@ const CaisseModule = {
               <tbody>${retoursRows}</tbody>
               ${summary.retours.length ? `<tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)">
                 <td colspan="4" style="padding:12px 14px;font-weight:800;text-align:${isAR?'left':'right'};font-size:13px;color:var(--text)">${isAR ? 'إجمالي المرتجعات المخصومة' : 'TOTAL RETOURS DÉDUITS'}</td>
-                <td style="padding:12px 14px;text-align:${isAR?'left':'right'};font-weight:900;font-size:15px;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</td>
+                <td style="padding:12px 14px;text-align:${isAR?'left':'right'};font-weight:900;font-size:15px;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturnsTTC)}</td>
                 <td></td>
               </tr></tfoot>` : ''}
             </table>
@@ -3708,24 +3867,161 @@ const CaisseModule = {
 
     const bankOpts = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)} — ${Utils.escHTML(b.bankName || '')} (${Utils.escHTML(b.accountNum || (isAR ? 'حساب' : 'Compte'))})</option>`).join('');
 
+    // Compute fiscal breakdown
+    const caisseBrut = summary.totalSalesTTC; // Real BCH amounts
+    const totalReturns = summary.totalReturnsTTC;
+    const netCaisse = summary.netAmount; // caisseBrut - totalReturns
+    
+    // Etat de vente with timbre: aggregate articles from BCH
+    const aggregated = {};
+    summary.bls.forEach(bl => {
+      (bl.lines || []).forEach(line => {
+        const key = (line.designation || '').trim();
+        if (!key) return;
+        const qty = Number(line.qtyDelivered || line.qty) || 0;
+        const price = Number(line.price) || 0;
+        const disc = Number(line.disc) || 0;
+        const ep = price * (1 - disc / 100);
+        if (!aggregated[key]) aggregated[key] = { qty: 0, unitPrice: ep };
+        aggregated[key].qty += qty;
+      });
+    });
+    const totalHT = Object.values(aggregated).reduce((s, it) => s + (it.qty * it.unitPrice), 0);
+    const tvaRate = Number(settings.tvaRate) || 19;
+    const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
+    const timbreAmount = DB.calcTimbre(totalHT);
+    const etatVenteTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
+    const difference = Math.round((etatVenteTTC - netCaisse) * 100) / 100;
+
+    // Build BCH detail rows
+    const bchRows = summary.bls.map((b, i) => {
+      const cli = DB.getById('clients', b.clientId);
+      return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--bg-inset)':''}">
+        <td style="padding:8px 10px;font-weight:700;color:var(--primary);font-size:12px">${Utils.escHTML(b.ref||'')}</td>
+        <td style="padding:8px 10px;font-size:12px">${Utils.escHTML(cli?.name||b.clientName||'—')}</td>
+        <td style="padding:8px 10px;font-size:11px;color:var(--text4)">${b.createdAt?new Date(b.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+        <td style="padding:8px 10px;text-align:center;font-size:11px">${(b.lines||[]).length} ${isAR?'سلعة':'art.'}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:800;color:var(--success);font-size:13px">+${Utils.fmtCurrency(b.totalTTC)}</td>
+        <td style="padding:8px 10px;text-align:center">
+          <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${b.id})" title="${isAR?'تفاصيل':'Détails'}"><i class="fas fa-eye"></i></button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Build returns rows
+    const retRows = summary.retours.map((r, i) => {
+      return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--bg-inset)':''}">
+        <td style="padding:8px 10px;font-weight:700;color:var(--danger);font-size:12px">${Utils.escHTML(r.ref||'')}</td>
+        <td style="padding:8px 10px;font-size:12px">${Utils.escHTML(r.blRef||'—')}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:800;color:var(--danger);font-size:13px">-${Utils.fmtCurrency(r.totalTTC)}</td>
+      </tr>`;
+    }).join('');
+
+    const thS = 'padding:6px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text-muted)';
+
     const modalHTML = `
-      <div style="padding:4px 0" ${isAR ? 'dir="rtl"' : ''}>
-        <div style="background:linear-gradient(135deg,rgba(2,132,199,.08),rgba(2,132,199,.02));border:1px solid rgba(2,132,199,.2);border-radius:12px;padding:16px;margin-bottom:16px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:8px">${isAR ? 'ملخص إغلاق الصندوق' : 'Récapitulatif de clôture'}</div>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
-            <span style="color:var(--text2)">${isAR ? `إجمالي مبيعات وصولات الشحن (${summary.bls.length})` : `Total Ventes Bons de Chargement (${summary.bls.length})`}</span>
-            <span style="font-weight:700;color:var(--success)">+${Utils.fmtCurrency(summary.grossSales)}</span>
+      <div style="padding:4px 0;max-height:70vh;overflow-y:auto" ${isAR ? 'dir="rtl"' : ''}>
+        
+        <!-- BCH Detail Table -->
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--primary);letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-truck"></i> ${isAR ? `وصولات الشحن اليوم (${summary.bls.length})` : `Bons de Chargement du jour (${summary.bls.length})`}
           </div>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
-            <span style="color:var(--text2)">${isAR ? `إجمالي مرتجعات البضاعة (${summary.retours.length})` : `Total Retours Marchandise (${summary.retours.length})`}</span>
-            <span style="font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(summary.totalReturns)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:6px;border-top:1px solid var(--border);font-size:16px;font-weight:900">
-            <span style="color:var(--text)">${isAR ? 'الصافي للتحويل إلى البنك' : 'Net à transférer en Banque'}</span>
-            <span style="color:var(--primary)">${Utils.fmtCurrency(summary.netAmount)}</span>
+          <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="background:var(--bg-inset);border-bottom:1px solid var(--border);position:sticky;top:0">
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR?'المرجع':'Réf'}</th>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR?'الزبون':'Client'}</th>
+                <th style="${thS}">${isAR?'الوقت':'Heure'}</th>
+                <th style="${thS};text-align:center">${isAR?'المواد':'Articles'}</th>
+                <th style="${thS};text-align:right">${isAR?'المبلغ TTC':'Montant TTC'}</th>
+                <th style="${thS};text-align:center"><i class="fas fa-eye"></i></th>
+              </tr></thead>
+              <tbody>${bchRows || `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text4)">${isAR?'لا توجد سندات':'Aucun BCH'}</td></tr>`}</tbody>
+              ${summary.bls.length ? `<tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)">
+                <td colspan="4" style="padding:8px 10px;font-weight:900;text-align:${isAR?'left':'right'};font-size:12px">${isAR?'إجمالي المبيعات الحقيقي (الصندوق الخام)':'TOTAL VENTES RÉEL (Caisse Brute)'}</td>
+                <td style="padding:8px 10px;text-align:right;font-weight:900;font-size:14px;color:var(--success)">+${Utils.fmtCurrency(caisseBrut)}</td>
+                <td></td>
+              </tr></tfoot>` : ''}
+            </table>
           </div>
         </div>
 
+        <!-- Returns Table -->
+        ${summary.retours.length ? `<div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--danger);letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-undo"></i> ${isAR ? `المرتجعات (${summary.retours.length})` : `Retours Marchandise (${summary.retours.length})`}
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="background:var(--bg-inset);border-bottom:1px solid var(--border)">
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR?'المرجع':'Réf'}</th>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR?'السند الأصلي':'BCH Origine'}</th>
+                <th style="${thS};text-align:right">${isAR?'المبلغ':'Montant'}</th>
+              </tr></thead>
+              <tbody>${retRows}</tbody>
+              <tfoot><tr style="background:var(--bg-inset);border-top:2px solid var(--border)">
+                <td colspan="2" style="padding:8px 10px;font-weight:900;text-align:${isAR?'left':'right'};font-size:12px">${isAR?'إجمالي المرتجعات':'TOTAL RETOURS'}</td>
+                <td style="padding:8px 10px;text-align:right;font-weight:900;font-size:14px;color:var(--danger)">-${Utils.fmtCurrency(totalReturns)}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <!-- Fiscal Breakdown: Caisse Brute vs Etat de Vente -->
+        <div style="background:linear-gradient(135deg,rgba(2,132,199,.08),rgba(2,132,199,.02));border:1px solid rgba(2,132,199,.2);border-radius:12px;padding:14px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;margin-bottom:10px">${isAR ? 'التفصيل المالي والجبائي' : 'Détail Fiscal & Comptable'}</div>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
+            <!-- Left: Caisse Brute -->
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px">
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--success);margin-bottom:6px"><i class="fas fa-cash-register"></i> ${isAR?'الصندوق الخام':'Caisse Brute'}</div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'إيرادات BCH:':'Recettes BCH :'}</span><span style="font-weight:700;color:var(--success)">+${Utils.fmtCurrency(caisseBrut)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'المرتجعات:':'Retours :'}</span><span style="font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(totalReturns)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'صافي الصندوق:':'Net Caisse :'}</span><span style="color:var(--primary)">${Utils.fmtCurrency(netCaisse)}</span></div>
+            </div>
+            <!-- Right: Etat de Vente -->
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px">
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7c3aed;margin-bottom:6px"><i class="fas fa-file-invoice-dollar"></i> ${isAR?'كشف المبيعات':'État de Vente'}</div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'المجموع HT:':'Total HT :'}</span><span style="font-weight:700">${Utils.fmtCurrency(Math.round(totalHT*100)/100)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الرسم على القيمة المضافة':'TVA'} (${tvaRate}%) :</span><span style="font-weight:700">${Utils.fmtCurrency(tvaAmount)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الطابع الجبائي:':'Timbre Fiscal :'}</span><span style="font-weight:700">${Utils.fmtCurrency(timbreAmount)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'المجموع TTC:':'Total TTC :'}</span><span style="color:#7c3aed">${Utils.fmtCurrency(etatVenteTTC)}</span></div>
+            </div>
+          </div>
+
+          <!-- Difference -->
+          <div style="background:${difference > 0 ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'};border:1px solid ${difference > 0 ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR?'الفرق (كشف المبيعات − الصندوق الخام)':'Différence (État de Vente − Caisse Brute)'}</div>
+              <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR?'= رسوم الطابع الجبائي المحتسبة':'= Frais de timbre fiscal comptabilisés'}</div>
+            </div>
+            <div style="font-size:16px;font-weight:900;color:${difference >= 0 ? 'var(--success)' : 'var(--danger)'}">${difference >= 0 ? '+' : ''}${Utils.fmtCurrency(difference)}</div>
+          </div>
+        </div>
+
+        <!-- Movements Recap -->
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:14px;font-size:12px">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4);margin-bottom:6px"><i class="fas fa-exchange-alt"></i> ${isAR?'حركات الصندوق عند الإغلاق':'Mouvements Caisse à la Clôture'}</div>
+          <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span><i class="fas fa-arrow-down" style="color:var(--success)"></i> ${isAR?'إيداع — إيرادات BCH حقيقية':'Dépôt — Recettes BCH réelles'}</span>
+            <span style="font-weight:700;color:var(--success)">+${Utils.fmtCurrency(caisseBrut)}</span>
+          </div>
+          ${totalReturns > 0 ? `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span><i class="fas fa-arrow-up" style="color:var(--danger)"></i> ${isAR?'سحب — مرتجعات بضاعة':'Retrait — Retours marchandise'}</span>
+            <span style="font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(totalReturns)}</span>
+          </div>` : ''}
+          <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span><i class="fas fa-university" style="color:var(--primary)"></i> ${isAR?'تحويل للبنك — كشف المبيعات':'Versement Banque — État de Vente'}</span>
+            <span style="font-weight:700;color:var(--primary)">${Utils.fmtCurrency(netCaisse)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;font-weight:900;font-size:13px;margin-top:4px">
+            <span>${isAR?'رصيد الصندوق بعد الإغلاق:':'Solde Caisse après clôture :'}</span>
+            <span style="color:var(--text)">0.00 DA</span>
+          </div>
+        </div>
+
+        <!-- Bank selection -->
         <div class="form-group mb-2">
           <label class="required" style="font-weight:700"><i class="fas fa-university" style="color:var(--primary);${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'الحساب البنكي المستلم' : 'Compte bancaire destinataire'}</label>
           <select id="cloture_bank_id" class="input" style="width:100%;font-weight:600;padding:10px">
@@ -3740,7 +4036,7 @@ const CaisseModule = {
 
         <div class="alert alert-info mb-1" style="font-size:11px">
           <i class="fas fa-info-circle"></i>
-          ${isAR ? 'يقوم الإغلاق بتوليد كشف المبيعات اليومي مع القائمة الكاملة للسندات والمرتجعات المخصومة، ويقيد المبلغ في الحساب البنكي ويقفل عمليات اليوم.' : 'La clôture génère l\'État de Vente journalier avec la liste complète des BL et les retours déduits, crédite le compte bancaire et verrouille les opérations du jour.'}
+          ${isAR ? 'يقوم الإغلاق بتوليد كشف المبيعات اليومي (مع الطابع الجبائي) وتحويل المبلغ الصافي إلى البنك وقفل عمليات اليوم نهائياً.' : 'La clôture génère l\'État de Vente journalier (avec timbre fiscal), transfère le montant net vers la banque et verrouille définitivement les opérations du jour.'}
         </div>
       </div>`;
 
@@ -3759,7 +4055,29 @@ const CaisseModule = {
 
     try {
       const result = await SessionMgr.closeMiniCaisse(u.id, bankId, note);
-      Utils.notify(isAR ? `✅ تم إغلاق الصندوق بنجاح! تم إنشاء كشف المبيعات ${result?.etatDoc?.ref || ''} وتحويل الأموال.` : `✅ Caisse clôturée avec succès ! État de vente ${result?.etatDoc?.ref || ''} généré et fonds versés.`, 'success', 6000);
+      const bank = banks.find(b => String(b.id) === String(bankId));
+      const bankName = bank?.name || (isAR ? 'البنك' : 'Banque');
+      const netAmt = result?.summary?.netAmount || 0;
+      
+      // Toast notification
+      Utils.notify(isAR 
+        ? `✅ تم إغلاق الصندوق بنجاح!\nكشف المبيعات: ${result?.etatDoc?.ref || ''}\nالمبلغ المحول: ${Utils.fmtCurrency(netAmt)} ← ${bankName}`
+        : `✅ Caisse clôturée avec succès !\nÉtat de vente: ${result?.etatDoc?.ref || ''}\nMontant versé: ${Utils.fmtCurrency(netAmt)} → ${bankName}`, 'success', 8000);
+      
+      // Persistent notification for bank migration
+      if (typeof NotifMgr !== 'undefined') {
+        NotifMgr.add({
+          type: 'bank_deposit',
+          title: isAR ? 'تحويل بنكي — إغلاق الصندوق' : 'Versement Bancaire — Clôture Caisse',
+          message: isAR 
+            ? `تم تحويل مبلغ ${Utils.fmtCurrency(netAmt)} إلى الحساب البنكي "${bankName}" — مرجع كشف المبيعات: ${result?.etatDoc?.ref || ''}`
+            : `Montant de ${Utils.fmtCurrency(netAmt)} versé au compte bancaire "${bankName}" — Réf État de Vente: ${result?.etatDoc?.ref || ''}`,
+          icon: 'fa-university',
+          color: '#10b981',
+          userId: u.id
+        });
+      }
+      
       App.loadModule('caisse');
     } catch (e) {
       console.error(e);
@@ -3783,7 +4101,9 @@ const CaisseModule = {
       Utils.notify(isAR ? "لا يوجد أي كشف مبيعات لهذا اليوم." : "Aucun État de Vente trouvé pour aujourd'hui.", 'warning');
       return;
     }
-    if (window.PDFGen && PDFGen.exportEtatVente) {
+    if (window.PDFGen && PDFGen.exportEtatVente && typeof EtatVenteModule !== 'undefined') {
+      EtatVenteModule._doPDF(etatDoc, DB.getSettings());
+    } else if (window.PDFGen && PDFGen.exportEtatVente) {
       PDFGen.exportEtatVente(etatDoc);
     } else {
       App.loadModule('etat_vente');
@@ -3844,8 +4164,8 @@ const CaisseModule = {
         ${blsHtml || `<div>${isAR ? 'لا توجد سندات' : 'Aucun BL'}</div>`}
         ${retoursHtml}
         <div class="line"></div>
-        <div class="flex bold"><span>${isAR ? 'إجمالي المبيعات :' : 'TOTAL VENTES :'}</span><span>+${Utils.fmtCurrency(summary.grossSales)}</span></div>
-        <div class="flex bold"><span>${isAR ? 'إجمالي المرتجعات :' : 'TOTAL RETOURS :'}</span><span>-${Utils.fmtCurrency(summary.totalReturns)}</span></div>
+        <div class="flex bold"><span>${isAR ? 'إجمالي المبيعات :' : 'TOTAL VENTES :'}</span><span>+${Utils.fmtCurrency(summary.totalSalesTTC)}</span></div>
+        <div class="flex bold"><span>${isAR ? 'إجمالي المرتجعات :' : 'TOTAL RETOURS :'}</span><span>-${Utils.fmtCurrency(summary.totalReturnsTTC)}</span></div>
         <div class="line"></div>
         <div class="flex bold" style="font-size:14px"><span>${isAR ? 'صافي الصندوق :' : 'NET CAISSE :'}</span><span>${Utils.fmtCurrency(summary.netAmount)}</span></div>
         <div class="line"></div>
@@ -3898,9 +4218,22 @@ const CaisseModule = {
     if (!u) return;
     const isAR = T.isRTL();
     
+    // Guard: avoid duplicate session for same user + same day
+    const existing = SessionMgr.getTodaySession(u.id);
+    if (existing) {
+      Utils.notify(isAR ? 'لديك جلسة مفتوحة بالفعل لليوم.' : 'Vous avez déjà une session ouverte pour aujourd\'hui.', 'warning');
+      App.loadModule('dashboard');
+      return;
+    }
+
     const ok = await Dialog.show({
       title: isAR ? 'بدء يومية الصندوق الخاصة بك؟' : 'Démarrer votre journée de caisse?',
-      message: `<div class="form-group" ${isAR?'dir="rtl"':''}><label style="font-weight:600;margin-bottom:6px;display:block">${isAR ? 'المبلغ الافتتاحي في الصندوق (د.ج)' : 'Montant en caisse au début (DA)'}</label><input type="number" id="morning_start_amount" class="input" style="font-size:20px;font-weight:800;text-align:center" value="0"></div>`,
+      message: `<div ${isAR?'dir="rtl"':''} style="text-align:center;padding:10px 0">
+        <i class="fas fa-sun" style="font-size:36px;color:#f59e0b;margin-bottom:12px;display:block"></i>
+        <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px">${isAR ? 'مرحباً ' + Utils.escHTML(u.name) + '!' : 'Bonjour ' + Utils.escHTML(u.name) + ' !'}</div>
+        <div style="font-size:12px;color:var(--text3)">${isAR ? 'هل تريد بدء جلسة الصندوق لهذا اليوم؟' : 'Voulez-vous démarrer votre session de caisse pour aujourd\'hui ?'}</div>
+        <div style="font-size:11px;color:var(--text4);margin-top:8px">${isAR ? '📅 ' + Utils.fmtDate(Utils.today()) : '📅 ' + Utils.fmtDate(Utils.today())}</div>
+      </div>`,
       type: 'info',
       confirmText: isAR ? 'بدء اليومية' : 'Démarrer',
       cancelText: T.get('cancel')
@@ -3908,27 +4241,19 @@ const CaisseModule = {
     
     if (!ok) return;
     
-    const amount = Number(document.getElementById('morning_start_amount')?.value || 0);
     const today = Utils.today();
     const now = new Date().toTimeString().slice(0, 5);
-    
-    // Guard: avoid duplicate session for same user + same day
-    const existing = SessionMgr.getTodaySession(u.id);
-    if (existing) {
-      Utils.notify(T.isRTL() ? 'لديك جلسة مفتوحة بالفعل لليوم.' : 'Vous avez déjà une session ouverte pour aujourd\'hui.', 'warning');
-      App.loadModule('dashboard');
-      return;
-    }
 
     DB.insert('sessions', {
       userId: u.id,
       userName: u.name,
       date: today,
       startTime: now,
-      startAmount: amount,
+      startAmount: 0,
       status: 'open'
     });
     
+    Utils.notify(isAR ? '✅ تم بدء اليومية بنجاح!' : '✅ Journée démarrée avec succès !', 'success');
     App.loadModule('dashboard');
   }
 };
@@ -6513,6 +6838,8 @@ const UsersModule = {
           document.getElementById('permSection').style.display = (isAdmin || isSup) ? 'none' : 'block';
           const sg = document.getElementById('uSupplierSelectGroup');
           if (sg) sg.style.display = isSup ? 'block' : 'none';
+          const rh = document.getElementById('rhSection');
+          if (rh) rh.style.display = isSup ? 'none' : 'block';
         ">
           <option value="user" ${u.role!=='admin'&&u.role!=='supplier'&&u.role!=='supplier_agent'?'selected':''}>${T.get('role_user')}</option>
           <option value="supplier" ${u.role==='supplier'?'selected':''}>${isAR ? '🏭 مصنع / مورد (بوابة عمليات السحب)' : '🏭 Usine / Fournisseur (Portail Enlèvements)'}</option>
@@ -6530,7 +6857,7 @@ const UsersModule = {
     </div>
 
     <!-- Informations RH (Ressources Humaines) -->
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
+    <div id="rhSection" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;display:${u.role==='supplier'||u.role==='supplier_agent'?'none':'block'}">
       <div style="font-weight:800;font-size:13px;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:6px">
         <i class="fas fa-id-card-alt" style="color:var(--primary)"></i> ${isAR ? 'بطاقة الموارد البشرية' : 'Fiche Ressources Humaines (RH)'}
       </div>
@@ -6552,6 +6879,32 @@ const UsersModule = {
         <div class="form-group"><label>${isAR ? 'رقم الهاتف' : 'N° Téléphone'}</label><input type="text" id="uPhone" value="${Utils.escHTML(u.phone||'')}" placeholder="Ex: 0550 12 34 56"></div>
         <div class="form-group"><label>${isAR ? 'ملاحظات إدارية' : 'Remarques / Notes RH'}</label><input type="text" id="uRhNotes" value="${Utils.escHTML(u.rhNotes||'')}" placeholder="${isAR ? 'ملاحظات داخلية...' : 'Notes internes...'}"></div>
       </div>
+    </div>
+
+    <!-- Notification Preferences -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:800;font-size:13px;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+        <i class="fas fa-bell" style="color:#f59e0b"></i> ${isAR ? 'إعدادات الإشعارات' : 'Préférences de Notifications'}
+      </div>
+      <div style="font-size:11px;color:var(--text4);margin-bottom:10px">${isAR ? 'اختر أنواع الإشعارات التي يستقبلها هذا المستخدم' : 'Choisissez les types de notifications reçues par cet utilisateur'}</div>
+      ${(() => {
+        const prefs = (typeof NotifMgr !== 'undefined') ? NotifMgr.getPrefs(u.id) : {};
+        const types = (typeof NotifMgr !== 'undefined') ? NotifMgr.NOTIF_TYPES : {};
+        return Object.entries(types).map(([key, meta]) => {
+          const checked = prefs[key] !== false;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <i class="fas ${meta.icon}" style="color:${meta.color};width:16px;text-align:center"></i>
+              <span style="font-size:12px;font-weight:600">${isAR ? meta.ar : meta.fr}</span>
+            </div>
+            <label style="position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;margin:0">
+              <input type="checkbox" id="notifPref_${key}" ${checked ? 'checked' : ''} style="opacity:0;width:0;height:0">
+              <span style="position:absolute;cursor:pointer;inset:0;background:${checked ? '#10b981' : '#cbd5e1'};border-radius:22px;transition:.3s" onclick="this.style.background=this.previousElementSibling.checked?'#cbd5e1':'#10b981'"></span>
+              <span style="position:absolute;top:3px;${isAR?'right':'left'}:${checked?'20px':'3px'};width:16px;height:16px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.2)" onclick="const px=this.previousElementSibling.previousElementSibling.checked?'3px':'20px';this.style.${isAR?'right':'left'}=px"></span>
+            </label>
+          </div>`;
+        }).join('');
+      })()}
     </div>
 
     <!-- Permissions Section -->
@@ -6605,6 +6958,16 @@ const UsersModule = {
     const data = { 
       name, username, role, supplierId, avatar, jobTitle, department, baseSalary, tauxHoraire, congeBalance, hireDate, phone, rhNotes 
     };
+
+    // Collect notification preferences
+    const notifPrefs = {};
+    if (typeof NotifMgr !== 'undefined' && NotifMgr.NOTIF_TYPES) {
+      Object.keys(NotifMgr.NOTIF_TYPES).forEach(key => {
+        const cb = document.getElementById('notifPref_' + key);
+        notifPrefs[key] = cb ? cb.checked : true;
+      });
+    }
+    data.notifPrefs = notifPrefs;
 
     if (role !== 'admin') {
       const perms = {};
@@ -10190,6 +10553,26 @@ const EtatVenteModule = {
       <div style="background:linear-gradient(135deg,rgba(13,148,136,.12),rgba(20,184,166,.05));border:1px solid rgba(13,148,136,.25);border-radius:14px;padding:16px 18px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d9488;margin-bottom:4px">${isAR ? 'الصافي للإيداع بالبنك' : 'Net à Déposer en Banque'}</div>
         <div style="font-size:22px;font-weight:900;color:#0d9488">${Utils.fmtCurrency(netTotalTTC)}</div>
+      </div>
+    </div>
+
+    <!-- Fiscal breakdown: HT / TVA / Timbre -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4);margin-bottom:4px">${isAR ? 'المجموع خ.ر (HT)' : 'Total HT'}</div>
+        <div style="font-size:16px;font-weight:800;color:var(--text)">${Utils.fmtCurrency(totalHT)}</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#f59e0b;margin-bottom:4px">${isAR ? 'الضرائب ر.ق.م' : 'TVA'} (${tvaRate}%)</div>
+        <div style="font-size:16px;font-weight:800;color:#f59e0b">${Utils.fmtCurrency(tvaAmt)}</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8b5cf6;margin-bottom:4px">${isAR ? 'الطابع الجبائي' : 'Timbre Fiscal'}</div>
+        <div style="font-size:16px;font-weight:800;color:#8b5cf6">${Utils.fmtCurrency(timbreAmt)}</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);margin-bottom:4px">${isAR ? 'المجموع ك.ر (TTC)' : 'Total TTC'}</div>
+        <div style="font-size:16px;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(totalHT + tvaAmt + timbreAmt)}</div>
       </div>
     </div>
 

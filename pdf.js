@@ -712,14 +712,85 @@
       
       y = tEndY + 8;
 
+      // ── Grand Récapitulatif Final Box (PAGE 1 — printable summary) ──
+      if (y + 40 > PH - 35) { doc.addPage(); y = MT + 8; }
+
+      const boxW = 100;
+      const boxX = ML + CW - boxW;
+      const boxH = effectiveReturns > 0 ? 30 : 22;
+
+      this._fill(doc, [248, 250, 252]);
+      this._stroke(doc, C.LINE);
+      doc.rect(boxX, y, boxW, boxH, 'FD');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      this._tc(doc, C.GRAY_TXT);
+      doc.text(isAR ? 'إجمالي المبيعات (خام) :' : 'Total Ventes BL (Brut) :', boxX + 4, y + 6);
+      doc.setFont('helvetica', 'bold');
+      this._tc(doc, [16, 185, 129]);
+      doc.text('+' + this._fmtMoney(effectiveGross), boxX + boxW - 4, y + 6, { align: 'right' });
+
+      let curY = y + 6;
+      if (effectiveReturns > 0) {
+        curY += 7;
+        doc.setFont('helvetica', 'normal');
+        this._tc(doc, C.GRAY_TXT);
+        doc.text(isAR ? 'خصم المرتجعات :' : 'Déduction Retours (BR) :', boxX + 4, curY);
+        doc.setFont('helvetica', 'bold');
+        this._tc(doc, [220, 38, 38]);
+        doc.text('- ' + this._fmtMoney(effectiveReturns), boxX + boxW - 4, curY, { align: 'right' });
+      }
+
+      curY += 8;
+      this._fill(doc, C.PRIMARY);
+      doc.rect(boxX, curY - 4, boxW, 9, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      this._tc(doc, C.WHITE);
+      doc.text(isAR ? 'الصافي النهائي (إيداع) :' : 'NET FINAL (VERSEMENT) :', boxX + 4, curY + 2);
+      doc.text(this._fmtMoney(finalNetTTC), boxX + boxW - 4, curY + 2, { align: 'right' });
+
+      y += boxH + 6;
+
+      const wd = this._amountWords(finalNetTTC);
+      if (wd) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        this._tc(doc, C.GRAY_TXT);
+        const wl = doc.splitTextToSize(isAR ? `حُددت هذه الوثيقة بالمبلغ الصافي : ${wd} دينار جزائري.` : `Arrêtée la présente à la somme nette de : ${wd} dinars algériens.`, CW);
+        doc.text(wl, ML, y);
+        y += wl.length * 4 + 4;
+      }
+
+      // Signature on page 1
+      if (y + 36 > PH - 15) { doc.addPage(); y = MT + 10; }
+
+      this._drawSigBlock(doc, [
+        { label: isAR ? 'مسؤول الصندوق / البائع' : 'Le Responsable Caisse / Vendeur', sub: this._t(createdByName || 'Caissier'), value: '', sub2: isAR ? 'التوقيع' : 'Signature' },
+        { label: isAR ? 'الإدارة العامة والمراقبة' : 'Direction Générale & Contrôle', sub: this._t(s.companyName || ''), value: '', sub2: isAR ? 'الختم والتأشيرة' : 'Cachet & Visa' }
+      ], Math.max(y + 2, PH - 55), 38);
+
+      // ══════════════════════════════════════════════════════════
+      // PAGE 2+ : Détails des Bons de Livraison et Retours
+      // ══════════════════════════════════════════════════════════
+
       // ── Sub-header: Table 1 - Bons de Livraison inclus ──
       if (blList && blList.length > 0) {
-        if (y + 35 > PH - 25) { doc.addPage(); y = MT + 8; }
+        doc.addPage();
+        y = MT + 8;
+
+        // Mini header for detail pages
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        this._tc(doc, C.PRIMARY);
+        this._text(doc, isAR ? `تفاصيل كشف المبيعات — مرجع: ${ref || ''}` : `DÉTAILS ÉTAT DE VENTE — Réf: ${ref || ''}`, ML, y);
+        y += 8;
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         this._tc(doc, C.PRIMARY);
-        this._text(doc, isAR ? `2. تفاصيل وصولات التسليم المتضمنة (مبيعات اليوم : ${blList.length} وصل)` : `II. DETAIL DES BONS DE LIVRAISON INCLUS (VENTES DU JOUR : ${blList.length} BL)`, ML, y);
+        this._text(doc, isAR ? `1. تفاصيل وصولات التسليم المتضمنة (مبيعات اليوم : ${blList.length} وصل)` : `I. DETAIL DES BONS DE LIVRAISON INCLUS (VENTES DU JOUR : ${blList.length} BL)`, ML, y);
         y += 4;
 
         const blCols = [
@@ -770,16 +841,16 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         this._tc(doc, [220, 38, 38]);
-        doc.text(`III. RETOURS MARCHANDISE DÉDUITS (BONS DE RETOUR : ${returnList.length} BR)`, ML, y);
+        this._text(doc, isAR ? `2. مرتجعات البضائع المخصومة (عدد سندات الإرجاع: ${returnList.length})` : `II. RETOURS MARCHANDISE DÉDUITS (BONS DE RETOUR : ${returnList.length} BR)`, ML, y);
         y += 4;
 
         const retCols = [
-          {label:'N°', width:12, halign:'center'},
-          {label:'BON DE RETOUR', width:38, halign:'center'},
-          {label:'BL ORIGINE', width:34, halign:'center'},
-          {label:'DATE', width:24, halign:'center'},
-          {label:'CLIENT & MOTIF', width:46, halign:'left'},
-          {label:'DÉDUCTION TTC', width:40, halign:'right'}
+          {label:isAR ? 'الرقم' : 'N°', width:12, halign:'center'},
+          {label:isAR ? 'سند الإرجاع' : 'BON DE RETOUR', width:38, halign:'center'},
+          {label:isAR ? 'المرجع الأصلي' : 'BL ORIGINE', width:34, halign:'center'},
+          {label:isAR ? 'التاريخ' : 'DATE', width:24, halign:'center'},
+          {label:isAR ? 'الزبون والسبب' : 'CLIENT & MOTIF', width:46, halign:'left'},
+          {label:isAR ? 'الخصم ك.ر' : 'DÉDUCTION TTC', width:40, halign:'right'}
         ];
 
         const retRows = returnList.map((r, i) => [
@@ -787,7 +858,7 @@
           this._t(r.ref || '—'),
           this._t(r.blRef || '—'),
           this._fmtDate(r.date),
-          this._t((r.clientName ? r.clientName + (r.motif ? ' - ' + r.motif : '') : (r.motif || 'Retour'))),
+          this._t((r.clientName ? r.clientName + (r.motif ? ' - ' + r.motif : '') : (r.motif || (isAR ? 'إرجاع' : 'Retour')))),
           '- ' + this._fmtMoney(r.totalTTC || 0)
         ]);
 
@@ -815,68 +886,6 @@
 
         y = doc.lastAutoTable.finalY + 8;
       }
-
-      // ── Grand Récapitulatif Final Box ──
-      if (y + 40 > PH - 35) { doc.addPage(); y = MT + 8; }
-
-      const boxW = 100;
-      const boxX = ML + CW - boxW;
-      const boxH = effectiveReturns > 0 ? 30 : 22;
-
-      this._fill(doc, [248, 250, 252]);
-      this._stroke(doc, C.LINE);
-      doc.rect(boxX, y, boxW, boxH, 'FD');
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      this._tc(doc, C.GRAY_TXT);
-      doc.text('Total Ventes BL (Brut) :', boxX + 4, y + 6);
-      doc.setFont('helvetica', 'bold');
-      this._tc(doc, [16, 185, 129]);
-      doc.text('+' + this._fmtMoney(effectiveGross), boxX + boxW - 4, y + 6, { align: 'right' });
-
-      let curY = y + 6;
-      if (effectiveReturns > 0) {
-        curY += 7;
-        doc.setFont('helvetica', 'normal');
-        this._tc(doc, C.GRAY_TXT);
-        doc.text('Déduction Retours (BR) :', boxX + 4, curY);
-        doc.setFont('helvetica', 'bold');
-        this._tc(doc, [220, 38, 38]);
-        doc.text('- ' + this._fmtMoney(effectiveReturns), boxX + boxW - 4, curY, { align: 'right' });
-      }
-
-      curY += 8;
-      this._fill(doc, C.PRIMARY);
-      doc.rect(boxX, curY - 4, boxW, 9, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      this._tc(doc, C.WHITE);
-      doc.text('NET FINAL (VERSEMENT) :', boxX + 4, curY + 2);
-      doc.text(this._fmtMoney(finalNetTTC), boxX + boxW - 4, curY + 2, { align: 'right' });
-
-      y += boxH + 6;
-
-      const wd = this._amountWords(finalNetTTC);
-      if (wd) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(8);
-        this._tc(doc, C.GRAY_TXT);
-        const wl = doc.splitTextToSize(`Arrêtée la présente à la somme nette de : ${wd} dinars algériens.`, CW);
-        doc.text(wl, ML, y);
-        y += wl.length * 4 + 4;
-      }
-
-      // Check space for signature
-      if (y + 36 > PH - 15) {
-        doc.addPage();
-        y = MT + 10;
-      }
-
-      this._drawSigBlock(doc, [
-        { label: 'Le Responsable Caisse / Vendeur', sub: this._t(createdByName || 'Caissier'), value: '', sub2: 'Signature' },
-        { label: 'Direction Générale & Contrôle', sub: this._t(s.companyName || ''), value: '', sub2: 'Cachet & Visa' }
-      ], Math.max(y + 2, PH - 55), 38);
 
       // Multi-page pagination
       const totalPages = doc.internal.getNumberOfPages();

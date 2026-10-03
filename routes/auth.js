@@ -50,7 +50,7 @@ router.post('/login', async (req, res) => {
     invalidateUser(user.username); // the previous session must be rejected immediately
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, name: user.name, role: user.role, sessionId },
+      { id: user.id, username: user.username, name: user.name, role: user.role, supplierId: user.supplierId || null, sessionId },
       process.env.JWT_SECRET,
       { expiresIn: JWT_EXPIRY }
     );
@@ -60,7 +60,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token,
-      user: { id: user.id, name: user.name, username: user.username, role: user.role, sessionId },
+      user: { id: user.id, name: user.name, username: user.username, role: user.role, supplierId: user.supplierId || null, sessionId },
       weakPassword,
     });
 

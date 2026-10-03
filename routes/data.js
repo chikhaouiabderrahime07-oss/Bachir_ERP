@@ -28,6 +28,18 @@ function adminOnlyForUsers(req, res, next) {
   next();
 }
 
+/** Suppliers can only write to collections relevant to their portal. */
+function supplierWriteGuard(req, res, next) {
+  const isSupplier = req.user?.role === 'supplier' || req.user?.role === 'supplier_agent';
+  if (!isSupplier) return next();
+  const col = req.params.col;
+  const ALLOWED_WRITE = ['bls', 'brs', 'notifications', 'sessions'];
+  if (!ALLOWED_WRITE.includes(col)) {
+    return res.status(403).json({ error: 'Accès refusé pour les fournisseurs' });
+  }
+  next();
+}
+
 /** Never store a plain-text password at rest. */
 async function hashPasswordIfNeeded(data) {
   if (data && typeof data.password === 'string' && data.password && !data.password.startsWith('$2')) {
@@ -183,19 +195,54 @@ router.get('/:col', async (req, res) => {
     const col = req.params.col;
     const limit = parseInt(req.query.limit) || 0;
     const tail  = parseInt(req.query.tail) || 0;
+
+    // ── Supplier data isolation: restrict what supplier users can see ──
+    const isSupplier = req.user?.role === 'supplier' || req.user?.role === 'supplier_agent';
+    const supplierSid = isSupplier ? req.user.supplierId : null;
+
+    // Collections that suppliers are NOT allowed to access at all
+    const BLOCKED_FOR_SUPPLIER = ['caisse_admin', 'bank_accounts', 'bank_transactions', 'etat_vente_docs', 'pointage'];
+    if (isSupplier && BLOCKED_FOR_SUPPLIER.includes(col)) {
+      return res.json([]); // empty — no access
+    }
+
+    // Build MongoDB query with supplier filter for relevant collections
+    let filter = { col };
+    if (isSupplier && supplierSid) {
+      // For BLs and BRs: only show documents belonging to this supplier
+      if (col === 'bls' || col === 'brs') {
+        filter['data.supplierId'] = { $in: [supplierSid, String(supplierSid), Number(supplierSid)] };
+      }
+      // For notifications: only show their own
+      if (col === 'notifications') {
+        filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
+      }
+      // For sessions: only show their own
+      if (col === 'sessions') {
+        filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
+      }
+    }
+
     let docs;
     if (tail > 0) {
-      docs = await Document.find({ col }).sort({ createdAt: -1 }).limit(tail).lean();
+      docs = await Document.find(filter).sort({ createdAt: -1 }).limit(tail).lean();
       docs.reverse();
     } else {
-      let query = Document.find({ col });
+      let query = Document.find(filter);
       if (limit > 0) {
         const sortDir = req.query.sort === 'asc' ? 1 : -1;
         query = query.sort({ createdAt: sortDir }).limit(limit);
       }
       docs = await query.lean();
     }
-    res.json(docs.map(d => publicData(col, d.data)));
+
+    // For 'users' collection, suppliers can only see their own user record
+    let results = docs.map(d => publicData(col, d.data));
+    if (isSupplier && col === 'users') {
+      results = results.filter(u => u.id === req.user.id || String(u.id) === String(req.user.id));
+    }
+
+    res.json(results);
   } catch (e) {
     console.error('[DATA/GET]', e);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -205,16 +252,33 @@ router.get('/:col', async (req, res) => {
 // ─── GET /api/data/:col/:id  (get single doc) ────────────────────
 router.get('/:col/:id', async (req, res) => {
   try {
-    const doc = await Document.findOne(idQuery(req.params.col, req.params.id)).lean();
+    const col = req.params.col;
+    const isSupplier = req.user?.role === 'supplier' || req.user?.role === 'supplier_agent';
+    const BLOCKED = ['caisse_admin', 'bank_accounts', 'bank_transactions', 'etat_vente_docs', 'pointage'];
+    if (isSupplier && BLOCKED.includes(col)) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+
+    const doc = await Document.findOne(idQuery(col, req.params.id)).lean();
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
-    res.json(publicData(req.params.col, doc.data));
+
+    // Supplier isolation: BLs/BRs must belong to this supplier
+    if (isSupplier && req.user.supplierId && (col === 'bls' || col === 'brs')) {
+      const sid = req.user.supplierId;
+      const docSid = doc.data?.supplierId;
+      if (docSid && String(docSid) !== String(sid) && Number(docSid) !== Number(sid)) {
+        return res.status(403).json({ error: 'Accès refusé' });
+      }
+    }
+
+    res.json(publicData(col, doc.data));
   } catch (e) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
 // ─── POST /api/data/:col  (insert) ───────────────────────────────
-router.post('/:col', adminOnlyForUsers, async (req, res) => {
+router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
     const col  = req.params.col;
     const data = { ...(req.body || {}) };
@@ -294,7 +358,7 @@ router.post('/:col', adminOnlyForUsers, async (req, res) => {
 });
 
 // ─── PUT /api/data/:col/bulk  (safe upsert — never deletes) ──────
-router.put('/:col/bulk', adminOnlyForUsers, async (req, res) => {
+router.put('/:col/bulk', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
     const col   = req.params.col;
     const items = req.body;
@@ -322,7 +386,7 @@ router.put('/:col/bulk', adminOnlyForUsers, async (req, res) => {
 });
 
 // ─── PUT /api/data/:col/:id  (full replace of one doc) ───────────
-router.put('/:col/:id', adminOnlyForUsers, async (req, res) => {
+router.put('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
     const col    = req.params.col;
     const id     = Number(req.params.id);
@@ -347,7 +411,7 @@ router.put('/:col/:id', adminOnlyForUsers, async (req, res) => {
 // Only the fields present in the body are written, using $set on each
 // field. Two users editing DIFFERENT fields of the same document can no
 // longer overwrite each other (the old read-merge-save lost updates).
-router.patch('/:col/:id', adminOnlyForUsers, async (req, res) => {
+router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
     const col = req.params.col;
     const query = idQuery(col, req.params.id);
@@ -408,7 +472,7 @@ router.patch('/:col/:id', adminOnlyForUsers, async (req, res) => {
 });
 
 // ─── DELETE /api/data/:col/:id ────────────────────────────────────
-router.delete('/:col/:id', adminOnlyForUsers, async (req, res) => {
+router.delete('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
     const col   = req.params.col;
     const result = await Document.deleteOne(idQuery(col, req.params.id));

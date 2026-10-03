@@ -1277,6 +1277,12 @@ const DB = {
         indicator.title = (isAR ? 'تمت المزامنة — ' : 'Synchronisé — ') + new Date().toLocaleTimeString(isAR ? 'ar-DZ' : 'fr-FR');
         // Re-run migrations after sync in case new delivered BLs came in from other users
         this.runMigrations();
+        // Auto-reload the current view if data actually changed (and no modal is open)
+        if (colsToSync.length > 0 && typeof App !== 'undefined' && App._currentModule) {
+          if (!document.getElementById('modalOverlay')?.classList.contains('active')) {
+            App.reloadDebounced(App._currentModule, 500);
+          }
+        }
       } catch (e) {
         const isAR = typeof T !== 'undefined' && T.isRTL();
         if (indicator) { indicator.style.background = '#ef4444'; indicator.title = isAR ? 'فشلت المزامنة' : 'Sync échoué'; }
@@ -1284,7 +1290,7 @@ const DB = {
     };
     // Delay first sync so UI renders from cache first (instant), then background sync
     setTimeout(() => doSync(), 2000);
-    setInterval(doSync, 120000); // 2min — easy on Render free tier
+    setInterval(doSync, 5000); // 5s — near-instant sync between users
   },
 
   _seed() {
@@ -2365,6 +2371,40 @@ const WorkLog = {
 
 // ─── NOTIFICATION MANAGER ──────────────────────────────────────
 const NotifMgr = {
+  // ── Notification types & role-based defaults ──
+  NOTIF_TYPES: {
+    bc_created:         { fr: 'Nouveau BCH créé',             ar: 'سند شحن جديد',              icon: 'fa-plus-circle',    color: '#3b82f6' },
+    bc_validated:       { fr: 'BCH validé par l\'usine',      ar: 'تم التحقق من المصنع',         icon: 'fa-industry',       color: '#10b981' },
+    delivery_confirmed: { fr: 'Livraison confirmée',           ar: 'تأكيد التسليم',              icon: 'fa-truck',          color: '#10b981' },
+    bc_returned:        { fr: 'Retour marchandise',            ar: 'إرجاع بضاعة',               icon: 'fa-undo',           color: '#ef4444' },
+    bank_deposit:       { fr: 'Versement bancaire',            ar: 'تحويل بنكي',                icon: 'fa-university',     color: '#0ea5e9' },
+    warning:            { fr: 'Alerte système / Anomalie',     ar: 'تنبيه النظام / خلل',         icon: 'fa-exclamation-triangle', color: '#f59e0b' }
+  },
+
+  // Default prefs per role — what each role NEEDS to see
+  ROLE_DEFAULTS: {
+    admin:           { bc_created: true, bc_validated: true, delivery_confirmed: true, bc_returned: true, bank_deposit: true, warning: true },
+    manager:         { bc_created: true, bc_validated: true, delivery_confirmed: true, bc_returned: true, bank_deposit: true, warning: true },
+    user:            { bc_created: true, bc_validated: true, delivery_confirmed: true, bc_returned: true, bank_deposit: true, warning: false },
+    supplier:        { bc_created: true, bc_validated: true, delivery_confirmed: true, bc_returned: false, bank_deposit: false, warning: false },
+    supplier_agent:  { bc_created: true, bc_validated: true, delivery_confirmed: true, bc_returned: false, bank_deposit: false, warning: false }
+  },
+
+  /** Get notification preferences for a user (user-specific overrides or role defaults) */
+  getPrefs(userId) {
+    const u = userId ? DB.getById('users', userId) : Auth.getCurrentUser();
+    if (!u) return this.ROLE_DEFAULTS.user;
+    // User-specific overrides stored in user.notifPrefs
+    if (u.notifPrefs && typeof u.notifPrefs === 'object') return u.notifPrefs;
+    // Fall back to role defaults
+    return this.ROLE_DEFAULTS[u.role] || this.ROLE_DEFAULTS.user;
+  },
+
+  /** Save notification preferences for a user */
+  savePrefs(userId, prefs) {
+    DB.update('users', userId, { notifPrefs: prefs });
+  },
+
   _playNotifSound() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2400,16 +2440,30 @@ const NotifMgr = {
     const u = Auth.getCurrentUser();
     return this.getAll().filter(n => !n.read && (!n.targetUserId || String(n.targetUserId) === String(u?.id))).length;
   },
-  add({ type='info', title='', message='', link=null, targetUserId=null, data=null }) {
+  add({ type='info', title='', message='', link=null, targetUserId=null, data=null, icon=null, color=null, userId=null }) {
     const isAR = typeof T !== 'undefined' && T.isRTL();
+    
+    // ── Check notification preferences before creating ──
+    const currentUser = Auth.getCurrentUser();
+    const recipientId = targetUserId || userId || currentUser?.id;
+    if (recipientId && type in (this.ROLE_DEFAULTS.admin || {})) {
+      const prefs = this.getPrefs(recipientId);
+      if (prefs && prefs[type] === false) {
+        // User disabled this notification type — skip silently
+        return null;
+      }
+    }
+
     this._playNotifSound();
     const notif = {
       type,
       title: title || (isAR ? 'إشعار النظام' : 'Notification ERP'),
       message: message || '',
       link,
-      targetUserId,
+      targetUserId: targetUserId || userId || null,
       data,
+      icon: icon || (this.NOTIF_TYPES[type]?.icon) || null,
+      color: color || (this.NOTIF_TYPES[type]?.color) || null,
       read: false,
       date: new Date().toISOString(),
       createdAt: new Date().toISOString()
@@ -2467,20 +2521,26 @@ const NotifMgr = {
       return;
     }
     const icons = {
-      bc_created: { icon: 'fa-truck-loading', color: '#0d9488', bg: 'rgba(13,148,136,.1)' },
-      bc_validated: { icon: 'fa-check-circle', color: '#10b981', bg: 'rgba(16,185,129,.1)' },
-      bc_returned: { icon: 'fa-undo', color: '#ef4444', bg: 'rgba(239,68,68,.1)' },
-      auto_br: { icon: 'fa-file-import', color: '#6366f1', bg: 'rgba(99,102,241,.1)' },
-      system: { icon: 'fa-info-circle', color: '#3b82f6', bg: 'rgba(59,130,246,.1)' },
+      bc_created:         { icon: 'fa-plus-circle',           color: '#3b82f6',  bg: 'rgba(59,130,246,.1)' },
+      bc_validated:       { icon: 'fa-industry',              color: '#10b981',  bg: 'rgba(16,185,129,.1)' },
+      delivery_confirmed: { icon: 'fa-truck',                 color: '#10b981',  bg: 'rgba(16,185,129,.1)' },
+      bc_returned:        { icon: 'fa-undo',                  color: '#ef4444',  bg: 'rgba(239,68,68,.1)' },
+      bank_deposit:       { icon: 'fa-university',            color: '#0ea5e9',  bg: 'rgba(14,165,233,.1)' },
+      warning:            { icon: 'fa-exclamation-triangle',  color: '#f59e0b',  bg: 'rgba(245,158,11,.1)' },
+      auto_br:            { icon: 'fa-file-import',           color: '#6366f1',  bg: 'rgba(99,102,241,.1)' },
+      system:             { icon: 'fa-info-circle',           color: '#3b82f6',  bg: 'rgba(59,130,246,.1)' },
     };
     list.innerHTML = items.map(n => {
-      const cfg = icons[n.type] || icons.system;
+      // Use per-notification metadata if available, fallback to type map
+      const nIcon = n.icon || (icons[n.type] || icons.system).icon;
+      const nColor = n.color || (icons[n.type] || icons.system).color;
+      const nBg = (icons[n.type] || icons.system).bg;
       const timeAgo = Utils.fmtDateTime ? Utils.fmtDateTime(n.date || n.createdAt) : (n.date || '').slice(0, 16);
       return `
         <div class="notif-item ${n.read ? 'read' : 'unread'}" style="padding:10px 12px;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid var(--border);cursor:pointer;background:${n.read ? 'transparent' : 'rgba(var(--primary-rgb),.05)'}"
           onclick="NotifMgr.handleClick(${n.id})">
-          <div style="width:32px;height:32px;border-radius:8px;background:${cfg.bg};color:${cfg.color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">
-            <i class="fas ${cfg.icon}"></i>
+          <div style="width:32px;height:32px;border-radius:8px;background:${nBg};color:${nColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">
+            <i class="fas ${nIcon}"></i>
           </div>
           <div style="flex:1;min-width:0">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
@@ -2604,6 +2664,8 @@ const SessionMgr = {
     const totalHT = items.reduce((s, it) => s + (it.qty * it.unitPrice), 0);
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = totalHT * (tvaRate / 100);
+    const timbreAmount = DB.calcTimbre(totalHT);
+    const totalTTCCalc = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
 
     // 1. Generate État de Vente document with BL list and Returns list
     const isAR = typeof T !== 'undefined' && T.isRTL();
@@ -2623,7 +2685,9 @@ const SessionMgr = {
       totalHT,
       tvaRate,
       tvaAmount,
+      timbreAmount,
       totalTTC: summary.netAmount,
+      totalTTCFiscal: totalTTCCalc,
       createdBy: userId,
       createdByName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       createdAt: now.toISOString(),
