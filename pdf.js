@@ -1498,25 +1498,35 @@
       y += 12;
 
       // ── 3. Info Strip ──
-      this._rect(doc, ML, y, CW, 10, [254, 242, 242], [252, 165, 165]); // Light red
+      const bchRef = this._t(br.blRef || br.ref || '/');
+      const origBL = br.brId ? (() => { const origBr = DB.getById('brs', br.brId); return origBr ? this._t(origBr.ref) : '/'; })() : '/';
+      const returnDate = br.returnedAt ? this._fmtDate(br.returnedAt) : this._fmtDate(br.date);
+      
+      this._rect(doc, ML, y, CW, 14, [254, 242, 242], [252, 165, 165]); // Light red
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
       this._tc(doc, [15, 23, 42]);
-      const iColW = CW / 3;
-      doc.text('N BR :', ML + 2, y + 4);
-      doc.setFont('helvetica', 'normal');
-      doc.text(brRef, ML + 2, y + 8);
+      const iColW = CW / 4;
+      
+      doc.text('N\u00b0 BON RETOUR :', ML + 2, y + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(brRef, ML + 2, y + 9);
 
-      doc.setFont('helvetica', 'bold');
-      doc.text('Date :', ML + iColW + 2, y + 4);
-      doc.setFont('helvetica', 'normal');
-      doc.text(this._fmtDate(br.date), ML + iColW + 2, y + 8);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text('DATE RETOUR :', ML + iColW + 2, y + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(returnDate, ML + iColW + 2, y + 9);
 
-      doc.setFont('helvetica', 'bold');
-      doc.text('BL Origine :', ML + iColW*2 + 2, y + 4);
-      doc.setFont('helvetica', 'normal');
-      doc.text(blRef, ML + iColW*2 + 2, y + 8);
-      y += 12;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text('R\u00c9F BCH :', ML + iColW*2 + 2, y + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(bchRef, ML + iColW*2 + 2, y + 9);
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text('R\u00c9F BR :', ML + iColW*3 + 2, y + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(blRef, ML + iColW*3 + 2, y + 9);
+      y += 16;
 
       // Reason block
       if (br.reason || br.returnReason) {

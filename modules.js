@@ -1146,7 +1146,7 @@ const BLModule = {
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
               const dest = bl.destinationAddress||cli?.address||'';
-               return `<tr>
+               return `<tr style="vertical-align:middle">
                 <td><strong>${Utils.escHTML(bl.ref||'')}</strong>${isLocked?` <i class="fas fa-lock locked-icon"></i>`:''}${bl.status==='returned'?`<div style="font-size:10px;color:#ef4444;margin-top:2px"><i class="fas fa-undo"></i> Ret.</div>`:''}<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-user" style="width:10px"></i> ${Utils.escHTML(bl.createdByName||'-')}</div></td>
                 <td>${br?`<span class="badge badge-primary" style="font-size:10px;padding:2px 5px">${Utils.escHTML(br.ref)}</span>`:'-'}</td>
                 <td style="white-space:nowrap">${Utils.fmtDate(bl.date).substring(0,5)}<div style="color:var(--text4);font-size:10px;margin-top:2px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</div></td>
@@ -2276,12 +2276,38 @@ const BLModule = {
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       ${Utils.statusBadge(bl.status||'open')}
       ${isLocked && !isReturned ? `<span class="badge badge-success"><i class="fas fa-check-circle"></i> Livré</span>` : ''}
-      ${isReturned ? `<span class="badge badge-danger" style="background:#ef4444;color:#fff;font-weight:700"><i class="fas fa-ban"></i> RETOURNÉ DÉFINITIVEMENT (${Utils.escHTML(bl.returnRef||'BR')})</span>` : ''}
+      ${isReturned ? `<span class="badge badge-danger" style="background:#ef4444;color:#fff;font-weight:700"><i class="fas fa-ban"></i> RETOURNÉ</span>` : ''}
     </div>
-    ${isReturned ? `<div class="alert alert-danger mb-2" style="font-size:12px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:10px;padding:12px">
-      <div style="display:flex;align-items:center;gap:8px;color:#ef4444;font-weight:700;margin-bottom:4px"><i class="fas fa-undo"></i> Marchandise retournée définitivement</div>
-      <div style="color:var(--text2)">Réf Bon de Retour : <strong>${Utils.escHTML(bl.returnRef||'—')}</strong> | Motif : <strong>${Utils.escHTML(bl.returnReason||'—')}</strong></div>
-      ${bl.returnedByName ? `<div style="font-size:11px;color:var(--text4);margin-top:2px">Traité par : ${Utils.escHTML(bl.returnedByName)} le ${Utils.fmtDateTime(bl.returnedAt)}</div>` : ''}
+    ${isReturned ? `<div style="background:linear-gradient(135deg,rgba(239,68,68,.06),rgba(220,38,38,.06));border:2px solid rgba(239,68,68,.2);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,.15)">
+        <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#ef4444,#dc2626);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0"><i class="fas fa-undo"></i></div>
+        <div>
+          <div style="font-weight:900;font-size:16px;color:#ef4444">${T.isRTL()?'سند إرجاع البضاعة':'BON DE RETOUR'}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${Utils.escHTML(bl.returnRef||'—')}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+          <i class="fas fa-truck-loading" style="color:#f59e0b;width:16px"></i>
+          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'مرجع BCH':'Réf BCH'}</div><strong>${Utils.escHTML(bl.ref||'—')}</strong></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+          <i class="fas fa-file-alt" style="color:#3b82f6;width:16px"></i>
+          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'مرجع BR':'Réf BR coordonné'}</div><strong>${br ? Utils.escHTML(br.ref) : '—'}</strong></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+          <i class="fas fa-calendar-times" style="color:#ef4444;width:16px"></i>
+          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'تاريخ الإرجاع':'Date de retour'}</div><strong>${bl.returnedAt ? Utils.fmtDateTime(bl.returnedAt) : '—'}</strong></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+          <i class="fas fa-user-shield" style="color:#8b5cf6;width:16px"></i>
+          <div><div style="font-size:10px;color:var(--text4);font-weight:600">${T.isRTL()?'بواسطة':'Traité par'}</div><strong>${Utils.escHTML(bl.returnedByName||'—')}</strong></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;background:rgba(239,68,68,.06);border-radius:8px;border:1px solid rgba(239,68,68,.12)">
+        <div style="font-size:10px;color:#ef4444;font-weight:700;margin-bottom:4px"><i class="fas fa-exclamation-circle"></i> ${T.isRTL()?'سبب الإرجاع':'MOTIF DU RETOUR'}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${Utils.escHTML(bl.returnReason||'—')}</div>
+      </div>
     </div>` : ''}
     <table class="detail-table">
       <tr><th>${T.isRTL()?"مرجع BL":"Référence BL"}</th><td><strong>${Utils.escHTML(bl.ref||'')}</strong></td></tr>
@@ -2308,7 +2334,10 @@ const BLModule = {
       <button class="btn btn-outline" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
       ${bl.status === 'pending_usine' ? `<button class="btn btn-success" style="background:#10b981;color:#fff;border:none" onclick="UI.closeModal();SupplierPortalModule.promptValidation(${blId})"><i class="fas fa-industry"></i> Valider Usine</button>` : ''}
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('close')} / إغلاق</button>`;
-    UI.showModal(`<i class="fas fa-file-export"></i> ${bl.ref}`, body, footer, 'lg');
+    const modalTitle = isReturned 
+      ? `<i class="fas fa-undo" style="color:#ef4444"></i> ${T.isRTL()?'سند إرجاع':'Bon de Retour'} — ${bl.ref}` 
+      : `<i class="fas fa-file-export"></i> ${bl.ref}`;
+    UI.showModal(modalTitle, body, footer, 'lg');
   },
 
   async adminOverrideEdit(blId) {
