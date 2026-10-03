@@ -9,5 +9,7 @@ const docSchema = new mongoose.Schema({
 }, { timestamps: false });
 
 docSchema.index({ col: 1, 'data.id': 1 });
+// Newest-first / "tail" reads (logs, ?limit=) use this index instead of an in-memory sort
+docSchema.index({ col: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Document', docSchema);

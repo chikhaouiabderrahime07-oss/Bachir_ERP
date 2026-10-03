@@ -114,7 +114,8 @@ const API = (() => {
     return data;
   }
 
-  function logout() {
+  async function logout() {
+    try { await req('POST', '/auth/logout'); } catch (_) { /* best effort */ }
     clearToken();
     _user = null;
   }
@@ -144,6 +145,7 @@ const API = (() => {
   }
 
   // ── Data CRUD ───────────────────────────────────────────────────
+  async function get(path) { return req('GET', path); }
   async function getAll(col, qs='')  { return req('GET',    `/data/${col}${qs}`) || []; }
   async function getById(col,id) { return req('GET',    `/data/${col}/${id}`); }
   async function insert(col,doc) { return req('POST',   `/data/${col}`, doc); }
@@ -171,7 +173,7 @@ const API = (() => {
 
   return {
     syncCloudToLocal, login, logout, isLoggedIn, getUser, initFromToken,
-    getAll, getById, insert, update, remove, bulkSync,
+    get, getAll, getById, insert, update, remove, bulkSync,
     getSettings, saveSettings, getTimbreSlabs, saveTimbreSlabs,
     listBackups, createBackup, restoreBackup, deleteBackup,
     ping,

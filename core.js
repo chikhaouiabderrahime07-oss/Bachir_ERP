@@ -1096,6 +1096,8 @@ const DB = {
   },
 
   // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
+  _syncVersions: {},  // last-known version per collection
+
   startLiveSync() {
     if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
     const ESSENTIAL = ['users', 'sessions', 'notifications', '_settings', '_timbre_slabs'];
@@ -1106,8 +1108,39 @@ const DB = {
       if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
 
       try {
-        const colsToSync = [...new Set([...ESSENTIAL, ...Object.keys(this._loaded)])];
-        // Serialize syncs — don't fire 15+ requests in parallel (kills Render free tier)
+        // 1. Fetch lightweight version map (no DB reads, just in-memory counters)
+        let changed = null;
+        try {
+          const versions = await window.API.get('/data/_versions');
+          if (versions && typeof versions === 'object') {
+            changed = [];
+            for (const [col, ver] of Object.entries(versions)) {
+              if (this._syncVersions[col] !== ver) changed.push(col);
+            }
+            // Also check essential collections that may not be in the version map
+            for (const c of ESSENTIAL) {
+              if (!changed.includes(c) && !this._loaded[c]) changed.push(c);
+            }
+            // Store new versions
+            Object.assign(this._syncVersions, versions);
+          }
+        } catch (e) {
+          // _versions endpoint may not exist on old server — fall back to full sync
+          changed = null;
+        }
+
+        // 2. Build list of collections to sync
+        let colsToSync;
+        if (changed !== null) {
+          // Differential: only re-download collections that actually changed
+          const loaded = Object.keys(this._loaded);
+          colsToSync = changed.filter(c => ESSENTIAL.includes(c) || loaded.includes(c));
+        } else {
+          // Fallback: sync everything (old behavior)
+          colsToSync = [...new Set([...ESSENTIAL, ...Object.keys(this._loaded)])];
+        }
+
+        // 3. Serialize syncs — don't fire 15+ requests in parallel (kills Render free tier)
         for (const c of colsToSync) {
           await this._syncCollection(c);
         }
@@ -1216,6 +1249,11 @@ const DB = {
   },
   where(col, fn) { return this.getAll(col).filter(fn); },
 
+  nextId(col) {
+    const items = this.getAll(col);
+    return items.length ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
+  },
+
   insert(col, data) {
     const items = this.getAll(col);
     const id = items.length ? Math.max(...items.map(i => i.id)) + 1 : 1;
@@ -1283,9 +1321,15 @@ const DB = {
     this.rawSet(col, items);
     this._audit('UPDATE', col, id, old, items[idx]);
     this._history(col, id, 'UPDATE', note, old, items[idx]);
-    // ── Cloud: atomic UPDATE (safe for concurrent users) ──
+    // ── Cloud: atomic PATCH (only changed fields — safe for concurrent users) ──
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      window.API.update(col, id, items[idx]).catch(e => console.warn('[DB.update] cloud sync failed', e.message));
+      const patch = {
+        ...data,
+        updatedAt: items[idx].updatedAt,
+        updatedBy: items[idx].updatedBy,
+        updatedByName: items[idx].updatedByName
+      };
+      window.API.update(col, id, patch).catch(e => console.warn('[DB.update] cloud sync failed', e.message));
     }
     return items[idx];
   },
@@ -2035,6 +2079,52 @@ const Utils = {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   },
   todayKey() { return this.today(); },
+
+  numberToWordsFR(n) {
+    if (n === 0) return 'zéro dinars';
+    const u = ['','un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
+    const t = ['','dix','vingt','trente','quarante','cinquante','soixante','soixante-dix','quatre-vingt','quatre-vingt-dix'];
+
+    function convertUnder1000(num, isThousands = false) {
+      let c = Math.floor(num / 100);
+      let rem = num % 100;
+      let r = '';
+      if (c === 1) r += 'cent ';
+      else if (c > 1) r += u[c] + ' cent' + (rem === 0 && !isThousands ? 's ' : ' ');
+
+      if (rem > 0) {
+        if (rem < 20) r += u[rem] + ' ';
+        else {
+          let ten = Math.floor(rem / 10);
+          let unit = rem % 10;
+          if (ten === 7 || ten === 9) { ten--; unit += 10; }
+          
+          if (ten === 8 && unit === 0) r += 'quatre-vingt' + (isThousands ? ' ' : 's ');
+          else if (ten === 8) r += 'quatre-vingt-' + u[unit] + ' ';
+          else {
+            r += t[ten];
+            if (unit === 1) r += ' et un ';
+            else if (unit === 11 && ten === 6) r += ' et onze ';
+            else if (unit > 0) r += '-' + u[unit] + ' ';
+            else r += ' ';
+          }
+        }
+      }
+      return r.trim();
+    }
+
+    let b = Math.floor(n / 1e9); n %= 1e9;
+    let m = Math.floor(n / 1e6); n %= 1e6;
+    let k = Math.floor(n / 1e3); n %= 1e3;
+    
+    let res = '';
+    if (b > 0) res += convertUnder1000(b) + (b === 1 ? ' milliard ' : ' milliards ');
+    if (m > 0) res += convertUnder1000(m) + (m === 1 ? ' million ' : ' millions ');
+    if (k > 0) res += (k === 1 ? 'mille ' : convertUnder1000(k, true) + ' mille ');
+    if (n > 0) res += convertUnder1000(n) + ' ';
+
+    return res.trim() + ' dinars';
+  },
 
   escHTML(s) {
     const d = document.createElement('div'); d.appendChild(document.createTextNode(String(s??'')));

@@ -3752,6 +3752,36 @@ const CaisseModule = {
         </table>
       </div>
     </div>`;
+  },
+
+  async showMorningPrompt() {
+    const u = Auth.getCurrentUser();
+    if (!u) return;
+    
+    const ok = await Dialog.show({
+      title: 'Démarrer votre journée de caisse?',
+      message: `<div class="form-group"><label>Montant en caisse au début (DA)</label><input type="number" id="morning_start_amount" class="input" style="font-size:20px;font-weight:800;text-align:center" value="0"></div>`,
+      type: 'info',
+      confirmText: 'Démarrer',
+      cancelText: 'Annuler'
+    });
+    
+    if (!ok) return;
+    
+    const amount = Number(document.getElementById('morning_start_amount')?.value || 0);
+    const today = Utils.today();
+    const now = new Date().toTimeString().slice(0, 5);
+    
+    DB.insert('sessions', {
+      userId: u.id,
+      userName: u.name,
+      date: today,
+      startTime: now,
+      startAmount: amount,
+      status: 'open'
+    });
+    
+    App.loadModule('dashboard');
   }
 };
 
@@ -4895,7 +4925,7 @@ const SuppliersModule = {
               <td>${Utils.escHTML(s.contact||'-')}</td>
               <td><span class="badge badge-primary">${brMap[s.id]||0}</span></td>
               <td class="td-actions">
-                <button class="btn btn-xs btn-primary" onclick="SuppliersModule.showSupplierDetail(${s.id})" title="Détails"><i class="fas fa-chart-line"></i></button>
+                <button class="btn btn-xs btn-primary" onclick="PartnersModule._detailType='supplier';PartnersModule._detailId=${s.id};App.loadModule('partners')" title="Détails"><i class="fas fa-chart-line"></i></button>
                 <button class="btn btn-xs btn-outline" onclick="SuppliersModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="SuppliersModule.deleteSup(${s.id})"><i class="fas fa-trash"></i></button>
               </td>
@@ -4999,7 +5029,7 @@ const ClientsModule = {
               <td>${Utils.escHTML(s.contact||'-')}</td>
               <td><span class="badge badge-primary">${DB.getAll('bls').filter(b=>String(b.clientId)===String(s.id)).length}</span></td>
               <td class="td-actions">
-                <button class="btn btn-xs btn-primary" onclick="ClientsModule.showClientDetail(${s.id})" title="Détails"><i class="fas fa-chart-line"></i></button>
+                <button class="btn btn-xs btn-primary" onclick="PartnersModule._detailType='client';PartnersModule._detailId=${s.id};App.loadModule('partners')" title="Détails"><i class="fas fa-chart-line"></i></button>
                 <button class="btn btn-xs btn-outline" onclick="ClientsModule.showEdit(${s.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="ClientsModule.deleteCli(${s.id})"><i class="fas fa-trash"></i></button>
               </td>
@@ -7710,6 +7740,36 @@ const SettingsModule = {
     }
   },
 
+  async _exportData() {
+    try {
+      const data = DB.exportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `erp-export-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      Utils.notify('✅ Données exportées avec succès', 'success');
+    } catch(e) {
+      Utils.notify('❌ Erreur: ' + e.message, 'error');
+    }
+  },
+
+  async _importData() {
+    const fileInput = document.getElementById('importFile');
+    if (!fileInput?.files?.length) { Utils.notify('Sélectionnez un fichier JSON d\'abord', 'warning'); return; }
+    try {
+      const text = await fileInput.files[0].text();
+      const data = JSON.parse(text);
+      DB.importAll(data);
+      Utils.notify('✅ Données importées avec succès. Rechargement...', 'success');
+      setTimeout(() => location.reload(), 1500);
+    } catch(e) {
+      Utils.notify('❌ Erreur d\'import: ' + e.message, 'error');
+    }
+  },
+
   // ── Create manual backup ────────────────────────────────────────
   async _createManualBackup() {
     if (!window.API) return;
@@ -9119,6 +9179,136 @@ const BankModule = {
   _openBank(bankId) { BankModule._activeBank = bankId; App.loadModule('bank'); },
   _updSupBal(supId) { BankModule._onSupChange(); },
   _paySupplier(bankId) { BankModule.paySupplierModal(bankId); },
+
+  showExtraitModal(bankId = null) {
+    const banks = DB.getSettings().banks || [];
+    if (!banks.length) { Utils.notify('Configurez un compte bancaire d\'abord','warning'); return; }
+    
+    const bankOpts = banks.map(b=>`<option value="${b.id}" ${b.id===bankId?'selected':''}>${Utils.escHTML(b.name)}</option>`).join('');
+    
+    // Default to first day of current month to today
+    const d = new Date();
+    const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+    const today = Utils.today();
+    
+    const html = `
+      <div style="margin-bottom:12px;display:flex;gap:10px;align-items:center;background:var(--bg2);padding:10px;border-radius:8px">
+        <select id="ex_bank_id" class="input" style="flex:1">${bankOpts}</select>
+        <input type="date" id="ex_date_from" class="input" value="${firstDay}">
+        <input type="date" id="ex_date_to" class="input" value="${today}">
+        <button class="btn btn-primary" onclick="BankModule._updateExtraitPreview()"><i class="fas fa-sync"></i> Filtrer</button>
+      </div>
+      <div id="ex_preview_content" style="min-height:300px;background:#fff;padding:20px;border:1px solid #ddd;border-radius:4px;color:#000;font-family:Arial,sans-serif">
+        <div style="text-align:center;color:#666;margin-top:40px"><i class="fas fa-spinner fa-spin"></i> Chargement...</div>
+      </div>
+    `;
+
+    Dialog.show({
+      title: 'Extrait de Compte',
+      message: html,
+      type: 'info',
+      confirmText: '🖨️ Imprimer',
+      cancelText: 'Fermer',
+      width: '800px'
+    }).then(ok => {
+      if (ok) {
+        const content = document.getElementById('ex_preview_content').innerHTML;
+        const w = window.open('','_blank');
+        w.document.write(`<html><head><title>Extrait de Compte</title><style>table{width:100%;border-collapse:collapse;font-size:12px;font-family:Arial,sans-serif;}th,td{border:1px solid #000;padding:6px;text-align:left;}th{background:#eee;} .text-right{text-align:right;} h2,h3{text-align:center;margin:5px 0;} @media print { @page { size: A4 portrait; margin: 15mm; } body { -webkit-print-color-adjust: exact; } button { display: none; } }</style></head><body onload="window.print()">` + content + '</body></html>');
+        w.document.close();
+      }
+    });
+
+    setTimeout(() => this._updateExtraitPreview(), 100);
+  },
+
+  _updateExtraitPreview() {
+    const bankId = document.getElementById('ex_bank_id')?.value;
+    const dateFrom = document.getElementById('ex_date_from')?.value;
+    const dateTo = document.getElementById('ex_date_to')?.value;
+    const el = document.getElementById('ex_preview_content');
+    if (!el || !bankId) return;
+
+    const bank = (DB.getSettings().banks || []).find(b=>b.id===bankId);
+    let txs = DB.getAll('bank_transactions').filter(t => t.bankId === bankId);
+    
+    // Sort chronological
+    txs.sort((a,b) => (a.date||'').localeCompare(b.date||'') || a.id - b.id);
+    
+    // Calculate solde initial (before dateFrom)
+    let soldeInitial = 0;
+    const txsInPeriod = [];
+    
+    for (const t of txs) {
+      const isDeposit = t.type === 'deposit';
+      const amt = t.amount || 0;
+      
+      if (dateFrom && (t.date||'') < dateFrom) {
+        soldeInitial += isDeposit ? amt : -amt;
+      } else if (!dateTo || (t.date||'') <= dateTo) {
+        txsInPeriod.push(t);
+      }
+    }
+
+    let currentSolde = soldeInitial;
+    let html = `
+      <h2>EXTRAIT DE COMPTE</h2>
+      <h3>${Utils.escHTML(bank?.name || '')} - ${Utils.escHTML(bank?.accountNum || '')}</h3>
+      <div style="margin-bottom:15px;font-size:12px">Période du <strong>${dateFrom}</strong> au <strong>${dateTo}</strong></div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Libellé</th>
+            <th>Réf / Pièce</th>
+            <th class="text-right">Débit</th>
+            <th class="text-right">Crédit</th>
+            <th class="text-right">Solde</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="3"><strong>SOLDE INITIAL</strong></td>
+            <td></td>
+            <td></td>
+            <td class="text-right"><strong>${Utils.fmtCurrency(soldeInitial)}</strong></td>
+          </tr>
+    `;
+
+    for (const t of txsInPeriod) {
+      const isDeposit = t.type === 'deposit';
+      const amt = t.amount || 0;
+      currentSolde += isDeposit ? amt : -amt;
+      
+      const debit = !isDeposit ? Utils.fmtCurrency(amt) : '';
+      const credit = isDeposit ? Utils.fmtCurrency(amt) : '';
+      
+      html += `
+        <tr>
+          <td>${Utils.escHTML(t.date || '')}</td>
+          <td>${Utils.escHTML(t.note || t.subtype || '')}</td>
+          <td>${Utils.escHTML(t.ref || '')}</td>
+          <td class="text-right" style="color:red">${debit}</td>
+          <td class="text-right" style="color:green">${credit}</td>
+          <td class="text-right"><strong>${Utils.fmtCurrency(currentSolde)}</strong></td>
+        </tr>
+      `;
+    }
+
+    html += `
+          <tr>
+            <td colspan="3"><strong>SOLDE FINAL</strong></td>
+            <td></td>
+            <td></td>
+            <td class="text-right"><strong>${Utils.fmtCurrency(currentSolde)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    
+    el.innerHTML = html;
+  }
 };
 Modules.bank = BankModule;
 
@@ -11025,17 +11215,18 @@ const PointageModule = {
     const prorata = Math.round(sb * (tt > 0 ? jt / tt : 0) * 100) / 100;
     const montantHS = Math.round(tauxHS * nbHS * 100) / 100;
     const brut = Math.round((prorata + montantHS + primes) * 100) / 100;
-    const cnas = Math.round(brut * tauxCNAS * 100) / 100;
-    const baseImposable = Math.round((brut - cnas) * 100) / 100;
+    const cnas = Number((brut * tauxCNAS).toFixed(2));
+    const baseImposable = Number((brut - cnas).toFixed(2));
     
+    // IRG progressif — Barème Algérie 2022+ (LF2022 art.104)
     let irg = 0;
     if (irgActive) {
-      if (baseImposable <= 10000) irg = 0;
-      else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
-      else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
-      else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+      if (baseImposable <= 30000) irg = 0;
+      else if (baseImposable <= 120000) irg = Number(((baseImposable - 30000) * 0.23).toFixed(2));
+      else if (baseImposable <= 360000) irg = Number((20700 + (baseImposable - 120000) * 0.27).toFixed(2));
+      else irg = Number((85500 + (baseImposable - 360000) * 0.30).toFixed(2));
     }
-    const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
+    const net = Number((brut - cnas - irg - retenues).toFixed(2));
     
     const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.innerText = Utils.fmtCurrency(v); };
     setVal('fiche_d_prorata', prorata);
@@ -11065,19 +11256,20 @@ const PointageModule = {
     const prorata = Math.round(sb * (tt > 0 ? jt / tt : 0) * 100) / 100;
     const montantHS = Math.round(tauxHS * nbHS * 100) / 100;
     const brut = Math.round((prorata + montantHS + primes) * 100) / 100;
-    const cnas = Math.round(brut * tauxCNAS * 100) / 100;
-    const baseImposable = Math.round((brut - cnas) * 100) / 100;
+    const cnas = Number((brut * tauxCNAS).toFixed(2));
+    const baseImposable = Number((brut - cnas).toFixed(2));
     const rhS = DB.getSettings().rh || {};
     
+    // IRG progressif — Barème Algérie 2022+ (LF2022 art.104)
     let irg = 0;
     if (rhS.irgActive !== false) {
-      if (baseImposable <= 10000) irg = 0;
-      else if (baseImposable <= 30000) irg = Math.round((baseImposable - 10000) * 0.20 * 100) / 100;
-      else if (baseImposable <= 120000) irg = Math.round((4000 + (baseImposable - 30000) * 0.30) * 100) / 100;
-      else irg = Math.round((31000 + (baseImposable - 120000) * 0.35) * 100) / 100;
+      if (baseImposable <= 30000) irg = 0;
+      else if (baseImposable <= 120000) irg = Number(((baseImposable - 30000) * 0.23).toFixed(2));
+      else if (baseImposable <= 360000) irg = Number((20700 + (baseImposable - 120000) * 0.27).toFixed(2));
+      else irg = Number((85500 + (baseImposable - 360000) * 0.30).toFixed(2));
     }
     
-    const net = Math.round((brut - cnas - irg - retenues) * 100) / 100;
+    const net = Number((brut - cnas - irg - retenues).toFixed(2));
 
     const data = {
       userId: u.id,

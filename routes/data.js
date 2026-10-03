@@ -1,15 +1,81 @@
 const express  = require('express');
+const bcrypt   = require('bcryptjs');
 const Document = require('../models/Document');
 const Settings = require('../models/Settings');
 const Counter  = require('../models/Counter');
 const auth     = require('../middleware/auth');
+const { bump, snapshot } = require('../lib/versions');
 
 const router = express.Router();
 router.use(auth); // ALL data routes require authentication
 
+// ─── Helpers ──────────────────────────────────────────────────────
+const SECRET_USER_FIELDS = ['password', 'currentSessionId'];
+
+/** Remove secrets from a users document before it leaves the server. */
+function publicData(col, data) {
+  if (col !== 'users' || !data) return data;
+  const safe = { ...data };
+  SECRET_USER_FIELDS.forEach(f => delete safe[f]);
+  return safe;
+}
+
+/** The `users` collection (accounts, roles, passwords) is administrator-only for writes. */
+function adminOnlyForUsers(req, res, next) {
+  if (req.params.col === 'users' && req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admins uniquement' });
+  }
+  next();
+}
+
+/** Never store a plain-text password at rest. */
+async function hashPasswordIfNeeded(data) {
+  if (data && typeof data.password === 'string' && data.password && !data.password.startsWith('$2')) {
+    data.password = await bcrypt.hash(data.password, 10);
+  }
+  return data;
+}
+
+/** Match a document id that may have been stored as number or string. */
+function idQuery(col, rawId) {
+  const numId = Number(rawId);
+  return isNaN(numId)
+    ? { col, 'data.id': rawId }
+    : { col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
+}
+
+/** Initialise the per-collection id counter ONCE from the current max id (no scan per insert). */
+async function ensureCounter(col) {
+  const cid = `id_${col}`;
+  const existing = await Counter.findOne({ _id: cid }).lean();
+  if (!existing) {
+    const top = await Document.findOne({ col, 'data.id': { $type: 'number' } })
+      .sort({ 'data.id': -1 }).select('data.id').lean();
+    try { await Counter.create({ _id: cid, seq: Number(top?.data?.id) || 0 }); }
+    catch (_) { /* concurrent init — fine */ }
+  }
+  return cid;
+}
+
+/** Allocate a server-side numeric id for a collection. */
+async function allocateId(col) {
+  const cid = await ensureCounter(col);
+  return Counter.nextSeq(cid);
+}
+
+/** Make sure the id counter never falls behind an id supplied by a client. */
+async function raiseCounter(col, id) {
+  const cid = await ensureCounter(col);
+  await Counter.updateOne({ _id: cid }, { $max: { seq: id } });
+}
+
+// ─── GET /api/data/_versions — cheap change detector (no DB access) ──
+router.get('/_versions', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(snapshot());
+});
+
 // ─── GET /api/data/next-num/:type — Atomic counter for BR/BL numbers ──
-// Returns the next unique number for a given type (brs/bls) and year.
-// Uses MongoDB atomic $inc to prevent duplicates with concurrent users.
 router.get('/next-num/:type', async (req, res) => {
   try {
     const type = req.params.type; // 'brs' or 'bls'
@@ -19,15 +85,13 @@ router.get('/next-num/:type', async (req, res) => {
     }
 
     const counterId = `${type}_${year}`;
-
-    // Check if counter exists; if not, initialize from current max in DB
     const existing = await Counter.findOne({ _id: counterId });
     if (!existing) {
       let docs;
       if (type === 'etat_vente') {
-         docs = await Document.find({ col: 'etat_vente_docs', 'data.year': year }).lean();
+        docs = await Document.find({ col: 'etat_vente_docs', 'data.year': year }).lean();
       } else {
-         docs = await Document.find({ col: type, 'data.year': year }).lean();
+        docs = await Document.find({ col: type, 'data.year': year }).lean();
       }
       const nums = docs.map(d => {
         if (type === 'etat_vente' && d.data?.ref) {
@@ -36,11 +100,10 @@ router.get('/next-num/:type', async (req, res) => {
         }
         return parseInt(d.data?.brNum || d.data?.blNum) || 0;
       });
-      const currentMax = nums.length ? Math.max(...nums) : (type === 'etat_vente' ? 0 : 99); // Start at 100 for br/bl, 1 for etat_vente
-      await Counter.create({ _id: counterId, seq: currentMax });
+      const currentMax = nums.length ? Math.max(...nums) : (type === 'etat_vente' ? 0 : 99);
+      try { await Counter.create({ _id: counterId, seq: currentMax }); } catch (_) { /* race */ }
     }
 
-    // Atomically increment and return
     const next = await Counter.nextSeq(counterId);
     res.json({ num: next });
   } catch (e) {
@@ -49,24 +112,22 @@ router.get('/next-num/:type', async (req, res) => {
   }
 });
 
-
 // ═══════════════════════════════════════════════════════════════════
 // IMPORTANT: Specific routes MUST come before parameterized routes!
 // ═══════════════════════════════════════════════════════════════════
 
-// ─── GET /api/data/timbre-slabs ── Dedicated slabs storage ──────
-// Stores slabs as a real Document (not Mixed settings) — 100% reliable
+// ─── GET /api/data/timbre-slabs ──────────────────────────────────
 router.get('/timbre-slabs', async (req, res) => {
   try {
     const doc = await Document.findOne({ col: 'timbre_slabs', 'data.key': 'main' }).lean();
     res.json(doc?.data?.slabs || []);
   } catch (e) {
     console.error('[TIMBRE-SLABS/GET]', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// ─── PUT /api/data/timbre-slabs ── Save slabs array ──────────────
+// ─── PUT /api/data/timbre-slabs ──────────────────────────────────
 router.put('/timbre-slabs', async (req, res) => {
   try {
     const slabs = Array.isArray(req.body) ? req.body : [];
@@ -75,10 +136,11 @@ router.put('/timbre-slabs', async (req, res) => {
       { col: 'timbre_slabs', data: { key: 'main', slabs } },
       { upsert: true, new: true }
     );
+    bump('_timbre_slabs');
     res.json({ ok: true, count: slabs.length });
   } catch (e) {
     console.error('[TIMBRE-SLABS/PUT]', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -99,16 +161,13 @@ router.patch('/settings/main', async (req, res) => {
   try {
     const doc = await Settings.findOne({ key: 'main' }).lean();
     const current = doc?.value || {};
-    // Deep merge via JSON round-trip (ensures plain objects, no Mongoose proxies)
     const merged = JSON.parse(JSON.stringify({ ...current, ...req.body }));
-
-    // Use native MongoDB driver directly — bypasses all Mongoose Mixed-type
-    // tracking issues (markModified not needed, arrays always saved correctly)
     await Settings.collection.updateOne(
       { key: 'main' },
       { $set: { value: merged, updatedAt: new Date() } },
       { upsert: true }
     );
+    bump('_settings');
     res.json(merged);
   } catch (e) {
     console.error('[SETTINGS/PATCH]', e);
@@ -116,16 +175,27 @@ router.patch('/settings/main', async (req, res) => {
   }
 });
 
-
 // ─── GET /api/data/:col  (get all docs in a collection) ──────────
+//   ?limit=N          newest N (newest first)        — legacy
+//   ?tail=N           newest N, returned oldest→newest — for append-only logs
 router.get('/:col', async (req, res) => {
   try {
+    const col = req.params.col;
     const limit = parseInt(req.query.limit) || 0;
-    const sortDir = req.query.sort === 'asc' ? 1 : -1;
-    let query = Document.find({ col: req.params.col });
-    if (limit > 0) query = query.sort({ createdAt: sortDir }).limit(limit);
-    const docs = await query.lean();
-    res.json(docs.map(d => d.data));
+    const tail  = parseInt(req.query.tail) || 0;
+    let docs;
+    if (tail > 0) {
+      docs = await Document.find({ col }).sort({ createdAt: -1 }).limit(tail).lean();
+      docs.reverse();
+    } else {
+      let query = Document.find({ col });
+      if (limit > 0) {
+        const sortDir = req.query.sort === 'asc' ? 1 : -1;
+        query = query.sort({ createdAt: sortDir }).limit(limit);
+      }
+      docs = await query.lean();
+    }
+    res.json(docs.map(d => publicData(col, d.data)));
   } catch (e) {
     console.error('[DATA/GET]', e);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -135,96 +205,87 @@ router.get('/:col', async (req, res) => {
 // ─── GET /api/data/:col/:id  (get single doc) ────────────────────
 router.get('/:col/:id', async (req, res) => {
   try {
-    const rawId = req.params.id;
-    const numId = Number(rawId);
-    const query = isNaN(numId)
-      ? { col: req.params.col, 'data.id': rawId }
-      : { col: req.params.col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
-    const doc = await Document.findOne(query).lean();
+    const doc = await Document.findOne(idQuery(req.params.col, req.params.id)).lean();
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
-    res.json(doc.data);
+    res.json(publicData(req.params.col, doc.data));
   } catch (e) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// ─── POST /api/data/:col  (insert — server assigns ID atomically) ─
-router.post('/:col', async (req, res) => {
+// ─── POST /api/data/:col  (insert) ───────────────────────────────
+router.post('/:col', adminOnlyForUsers, async (req, res) => {
   try {
     const col  = req.params.col;
-    const data = req.body;
+    const data = { ...(req.body || {}) };
     const now  = new Date().toISOString();
     const year = new Date().getFullYear();
 
-    // ── Guard: if a document with this exact id already exists → update it ──
-    // This prevents duplicates when migration or reconnect sends same data twice.
-    if (data.id) {
-      const existing = await Document.findOne({ col, 'data.id': Number(data.id) });
+    if (col === 'users') await hashPasswordIfNeeded(data);
+
+    const hasId = data.id !== undefined && data.id !== null && data.id !== '' && !isNaN(Number(data.id));
+
+    // ── Idempotency guard: same id already stored → this is a retry, merge instead of duplicating ──
+    if (hasId) {
+      const numId = Number(data.id);
+      const existing = await Document.findOne({ col, 'data.id': numId });
       if (existing) {
-        const merged = { ...existing.data, ...data, updatedAt: now };
+        const merged = { ...existing.data, ...data, id: numId, updatedAt: now };
         existing.data = merged;
         existing.updatedAt = new Date();
         await existing.save();
-        return res.status(200).json(merged); // 200 = updated (not 201 created)
+        bump(col);
+        return res.status(200).json(publicData(col, merged));
       }
     }
 
-    // ── 1. Atomic internal ID ──────────────────────────────────────
-    const existingDocs = await Document.find({ col }).select('data.id').lean();
-    const existingIds  = existingDocs.map(d => Number(d.data?.id) || 0);
-    const currentMaxId = existingIds.length ? Math.max(...existingIds) : 0;
-    await Counter.initFromMax(`id_${col}`, currentMaxId, 1);
-    const nextCounterId = await Counter.nextSeq(`id_${col}`);
-
-    const finalId = (data.id !== undefined && data.id !== null && !isNaN(Number(data.id)))
-      ? Number(data.id)
-      : nextCounterId;
-
-    if (finalId >= nextCounterId) {
-      await Counter.initFromMax(`id_${col}`, finalId, 1);
+    // ── Internal id ───────────────────────────────────────────────
+    let finalId;
+    if (hasId) {
+      finalId = Number(data.id);
+      await raiseCounter(col, finalId);
+    } else {
+      finalId = await allocateId(col);
     }
 
-    // ── 2. Atomic BR number — reject duplicates ───────────────────
+    // ── BR numbering: atomic, duplicates rejected ─────────────────
     let brNum = data.brNum;
     if (col === 'brs') {
       const brYear = data.year || year;
-      // If client sent a manual brNum, check it's not already taken
       if (brNum) {
         const dup = await Document.findOne({ col: 'brs', 'data.brNum': Number(brNum), 'data.year': brYear });
         if (dup) {
           return res.status(409).json({ error: `Le numéro BR ${brNum} est déjà utilisé pour l'année ${brYear}` });
         }
       } else {
-        // Auto-assign from atomic counter
         const counterId = `brs_${brYear}`;
         const existing = await Counter.findOne({ _id: counterId });
         if (!existing) {
-          const docs = await Document.find({ col: 'brs', 'data.year': brYear }).lean();
+          const docs = await Document.find({ col: 'brs', 'data.year': brYear }).select('data.brNum').lean();
           const nums = docs.map(d => parseInt(d.data?.brNum) || 0);
           const currentMax = nums.length ? Math.max(...nums) : 99;
-          await Counter.create({ _id: counterId, seq: currentMax });
+          try { await Counter.create({ _id: counterId, seq: currentMax }); } catch (_) { /* race */ }
         }
         brNum = await Counter.nextSeq(counterId);
       }
-      // Rebuild ref server-side to match the actual brNum
       const suppAbbrev = data.ref?.match(/\/([A-Z]+)\//)?.[1] || '';
       const n = String(brNum).padStart(3, '0');
       data.ref = suppAbbrev ? `${n}/BR/${suppAbbrev}/${data.year || brYear}` : `BR/${n}/${data.year || brYear}`;
     }
 
-    // ── 3. Build final document ────────────────────────────────────
     const newData = {
       ...data,
       id:        finalId,
       ...(col === 'brs' ? { brNum: Number(brNum) } : {}),
-      createdAt:    data.createdAt || now,
-      updatedAt:    now,
-      createdBy:    data.createdBy    ?? req.user.id,
+      createdAt:     data.createdAt || now,
+      updatedAt:     now,
+      createdBy:     data.createdBy    ?? req.user.id,
       createdByName: data.createdByName ?? req.user.name,
     };
 
     await Document.create({ col, data: newData });
-    res.status(201).json(newData);
+    bump(col);
+    res.status(201).json(publicData(col, newData));
 
   } catch (e) {
     console.error('[DATA/POST]', e);
@@ -232,26 +293,27 @@ router.post('/:col', async (req, res) => {
   }
 });
 
-// ─── PUT /api/data/:col/bulk  (safe upsert — never deletes) ─────
-// Only used for migration. Uses upsert-by-id so running it twice
-// never creates duplicates. Does NOT delete anything.
-router.put('/:col/bulk', async (req, res) => {
+// ─── PUT /api/data/:col/bulk  (safe upsert — never deletes) ──────
+router.put('/:col/bulk', adminOnlyForUsers, async (req, res) => {
   try {
     const col   = req.params.col;
     const items = req.body;
     if (!Array.isArray(items)) return res.status(400).json({ error: 'Array expected' });
+    if (col !== 'users' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admins uniquement' });
+    }
 
     if (items.length) {
       const ops = items.map(item => ({
         updateOne: {
           filter: { col, 'data.id': item.id },
           update: { $set: { col, data: item, updatedAt: new Date() } },
-          upsert: true  // insert if not found, update if found — NEVER duplicates
+          upsert: true
         }
       }));
       await Document.bulkWrite(ops);
+      bump(col);
     }
-
     res.json({ synced: items.length });
   } catch (e) {
     console.error('[DATA/BULK]', e);
@@ -260,11 +322,12 @@ router.put('/:col/bulk', async (req, res) => {
 });
 
 // ─── PUT /api/data/:col/:id  (full replace of one doc) ───────────
-router.put('/:col/:id', async (req, res) => {
+router.put('/:col/:id', adminOnlyForUsers, async (req, res) => {
   try {
     const col    = req.params.col;
     const id     = Number(req.params.id);
     const update = { ...req.body, updatedAt: new Date().toISOString() };
+    if (col === 'users') await hashPasswordIfNeeded(update);
 
     const doc = await Document.findOneAndUpdate(
       { col, 'data.id': id },
@@ -272,44 +335,72 @@ router.put('/:col/:id', async (req, res) => {
       { new: true }
     );
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
-    res.json(doc.data);
+    bump(col);
+    res.json(publicData(col, doc.data));
   } catch (e) {
     console.error('[DATA/PUT]', e);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// ─── PATCH /api/data/:col/:id  (partial update) ──────────────────
-router.patch('/:col/:id', async (req, res) => {
+// ─── PATCH /api/data/:col/:id  (partial, ATOMIC field-level update) ──
+// Only the fields present in the body are written, using $set on each
+// field. Two users editing DIFFERENT fields of the same document can no
+// longer overwrite each other (the old read-merge-save lost updates).
+router.patch('/:col/:id', adminOnlyForUsers, async (req, res) => {
   try {
     const col = req.params.col;
-    const rawId = req.params.id;
-    const numId = Number(rawId);
-    const query = isNaN(numId)
-      ? { col, 'data.id': rawId }
-      : { col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
-    const doc = await Document.findOne(query);
-    if (!doc) return res.status(404).json({ error: 'Non trouvé' });
+    const query = idQuery(col, req.params.id);
+    const patch = { ...(req.body || {}) };
 
-    const patch = req.body;
+    delete patch.id;                       // an id never changes
+    delete patch.currentSessionId;         // only the login route may touch sessions
+    if (col === 'users') {
+      delete patch.lastLoginAt;
+      if ('password' in patch) {
+        if (!patch.password) delete patch.password;   // empty = unchanged
+        else await hashPasswordIfNeeded(patch);
+      }
+    }
 
     // ── Duplicate check for BR number on update ──────────────────
     if (col === 'brs' && patch.brNum !== undefined) {
-      const brYear = patch.year || doc.data.year || new Date().getFullYear();
+      const current = await Document.findOne(query).select('data.year data.id').lean();
+      if (!current) return res.status(404).json({ error: 'Non trouvé' });
+      const brYear = patch.year || current.data.year || new Date().getFullYear();
       const dup = await Document.findOne({
-        col: 'brs', 'data.brNum': Number(patch.brNum), 'data.year': brYear, 'data.id': { $ne: doc.data.id }
+        col: 'brs', 'data.brNum': Number(patch.brNum), 'data.year': brYear, 'data.id': { $ne: current.data.id }
       });
       if (dup) {
         return res.status(409).json({ error: `Le numéro BR ${patch.brNum} est déjà utilisé pour l'année ${brYear}` });
       }
     }
 
+    const nowIso = new Date().toISOString();
+    const set = { 'data.updatedAt': nowIso, updatedAt: new Date() };
+    let dottedSafe = true;
+    for (const [k, v] of Object.entries(patch)) {
+      if (k === 'updatedAt') continue;
+      if (k.includes('.') || k.startsWith('$') || k === '') { dottedSafe = false; break; }
+      set[`data.${k}`] = v;
+    }
 
-    const merged  = { ...doc.data, ...patch, updatedAt: new Date().toISOString() };
-    doc.data      = merged;
-    doc.updatedAt = new Date();
-    await doc.save();
-    res.json(merged);
+    let doc;
+    if (dottedSafe) {
+      doc = await Document.findOneAndUpdate(query, { $set: set }, { new: true }).lean();
+    } else {
+      // Exotic keys: fall back to read-merge-save
+      const found = await Document.findOne(query);
+      if (!found) return res.status(404).json({ error: 'Non trouvé' });
+      found.data = { ...found.data, ...patch, updatedAt: nowIso };
+      found.updatedAt = new Date();
+      await found.save();
+      doc = found.toObject();
+    }
+    if (!doc) return res.status(404).json({ error: 'Non trouvé' });
+
+    bump(col);
+    res.json(publicData(col, doc.data));
   } catch (e) {
     console.error('[DATA/PATCH]', e);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -317,42 +408,35 @@ router.patch('/:col/:id', async (req, res) => {
 });
 
 // ─── DELETE /api/data/:col/:id ────────────────────────────────────
-router.delete('/:col/:id', async (req, res) => {
+router.delete('/:col/:id', adminOnlyForUsers, async (req, res) => {
   try {
     const col   = req.params.col;
-    const rawId = req.params.id;
-    const numId = Number(rawId);
-    const query = isNaN(numId)
-      ? { col, 'data.id': rawId }
-      : { col, $or: [{ 'data.id': numId }, { 'data.id': String(numId) }] };
-    const result = await Document.deleteOne(query);
+    const result = await Document.deleteOne(idQuery(col, req.params.id));
     if (!result.deletedCount) return res.status(404).json({ error: 'Non trouvé' });
-    res.json({ success: true, id: rawId });
+    bump(col);
+    res.json({ success: true, id: req.params.id });
   } catch (e) {
     console.error('[DATA/DELETE]', e);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
+
 // ─── POST /api/data/:col/dedup  (remove duplicates from a collection) ──
-// Admin-only cleanup endpoint. Keeps the FIRST document for each data.id
-// and removes all subsequent duplicates.
 router.post('/:col/dedup', async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
     const col = req.params.col;
-    const docs = await Document.find({ col }).sort({ createdAt: 1 }).lean();
+    const docs = await Document.find({ col }).sort({ createdAt: 1 }).select('data.id createdAt').lean();
     const seen = new Set();
     const toDelete = [];
     for (const doc of docs) {
       const key = String(doc.data?.id);
-      if (seen.has(key)) {
-        toDelete.push(doc._id);
-      } else {
-        seen.add(key);
-      }
+      if (seen.has(key)) toDelete.push(doc._id);
+      else seen.add(key);
     }
     if (toDelete.length) {
       await Document.deleteMany({ _id: { $in: toDelete } });
+      bump(col);
     }
     res.json({ removed: toDelete.length, remaining: docs.length - toDelete.length });
   } catch (e) {
@@ -362,4 +446,3 @@ router.post('/:col/dedup', async (req, res) => {
 });
 
 module.exports = router;
-

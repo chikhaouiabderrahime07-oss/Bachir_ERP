@@ -1,10 +1,13 @@
 const express = require('express');
 const bcrypt  = require('bcryptjs');
+const crypto  = require('crypto');
 const jwt     = require('jsonwebtoken');
 const Document = require('../models/Document');
+const { invalidateUser } = require('../middleware/auth');
 
 const router = express.Router();
 const JWT_EXPIRY = '12h';
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 // ─── POST /api/auth/login ───────────────────────────────────────
 router.post('/login', async (req, res) => {
@@ -39,11 +42,12 @@ router.post('/login', async (req, res) => {
     if (!passwordOk) return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect' });
 
     // Generate unique session identifier for single-session enforcement
-    const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    const sessionId = 'sess_' + Date.now() + '_' + crypto.randomBytes(6).toString('hex');
     await Document.updateOne(
       { _id: doc._id },
       { $set: { 'data.currentSessionId': sessionId, 'data.lastLoginAt': new Date().toISOString(), updatedAt: new Date() } }
     );
+    invalidateUser(user.username); // the previous session must be rejected immediately
 
     const token = jwt.sign(
       { id: user.id, username: user.username, name: user.name, role: user.role, sessionId },
@@ -51,7 +55,20 @@ router.post('/login', async (req, res) => {
       { expiresIn: JWT_EXPIRY }
     );
 
-    res.json({ token, user: { id: user.id, name: user.name, username: user.username, role: user.role, sessionId } });
+    // Warn the client when the account still uses the factory password
+    const weakPassword = password === DEFAULT_ADMIN_PASSWORD;
+
+    res.json({
+      token,
+      user: { id: user.id, name: user.name, username: user.username, role: user.role, sessionId },
+      weakPassword,
+    });
+
+    // Opportunistic safety net: Render's free tier sleeps, so the nightly cron
+    // may never fire. An admin login triggers a backup if the last one is >24h old.
+    if (user.role === 'admin') {
+      try { require('../cron/backup').maybeDailyBackup().catch(() => {}); } catch (_) { /* ignore */ }
+    }
   } catch (e) {
     console.error('[AUTH/login]', e);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -67,7 +84,8 @@ router.post('/refresh', (req, res) => {
     const age = Date.now()/1000 - decoded.iat;
     if (age > 86400) return res.status(401).json({ error: 'Session expirée, reconnectez-vous' });
     const newToken = jwt.sign(
-      { id: decoded.id, username: decoded.username, name: decoded.name, role: decoded.role },
+      // keep sessionId so single-session enforcement still applies to refreshed tokens
+      { id: decoded.id, username: decoded.username, name: decoded.name, role: decoded.role, sessionId: decoded.sessionId },
       process.env.JWT_SECRET,
       { expiresIn: JWT_EXPIRY }
     );
@@ -77,46 +95,66 @@ router.post('/refresh', (req, res) => {
   }
 });
 
-// ─── POST /api/auth/recover-admin  (emergency: unlock OR create admin) ──
-// No auth required. Works even if the database is completely empty.
+// ─── POST /api/auth/logout ──────────────────────────────────────
+router.post('/logout', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.json({ ok: true });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    if (decoded?.id) {
+      invalidateUser(decoded.id);
+      await Document.findOneAndUpdate(
+        { col: 'users', 'data.id': decoded.id },
+        { $unset: { 'data.currentSessionId': '' } }
+      );
+    }
+  } catch (_) { /* token already invalid */ }
+  res.json({ ok: true });
+});
+
+// ─── POST /api/auth/recover-admin  (emergency admin recovery) ───
+// SECURITY: this endpoint used to accept a secret hard-coded in the source,
+// and the source was publicly downloadable → anyone could take over the admin.
+// It is now DISABLED unless ADMIN_RECOVERY_SECRET (>= 16 chars) is set in the
+// server environment, and it generates a random password instead of "admin123".
 router.post('/recover-admin', async (req, res) => {
   try {
-    if (req.body.secret !== 'UNLOCK_ADMIN_NOW') {
-      return res.status(400).json({ error: 'Phrase incorrecte' });
-    }
-    const Document = require('../models/Document');
+    const expected = process.env.ADMIN_RECOVERY_SECRET || '';
+    if (expected.length < 16) return res.status(404).json({ error: 'Non trouvé' });
 
-    // Check if admin user exists
+    const given = Buffer.from(String(req.body?.secret || ''));
+    const want  = Buffer.from(expected);
+    if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) {
+      return res.status(403).json({ error: 'Phrase incorrecte' });
+    }
+
+    const newPassword = crypto.randomBytes(9).toString('base64').replace(/[^A-Za-z0-9]/g, 'x');
+    const hash = await bcrypt.hash(newPassword, 10);
     const existing = await Document.findOne({ col: 'users', 'data.role': 'admin' });
 
     if (existing) {
-      // Re-enable it AND reset password to default
       await Document.updateMany(
         { col: 'users', 'data.role': 'admin' },
-        { $set: { 'data.active': true, 'data.password': 'admin123', updatedAt: new Date() } }
+        { $set: { 'data.active': true, 'data.password': hash, updatedAt: new Date() }, $unset: { 'data.currentSessionId': '' } }
       );
-      return res.json({ success: true, action: 'unlocked', message: 'Admin débloqué et mot de passe réinitialisé. Login: admin / admin123' });
+      invalidateUser(existing.data.username);
+      return res.json({ success: true, action: 'unlocked', username: existing.data.username, newPassword,
+        message: 'Admin débloqué. Notez ce mot de passe maintenant, il ne sera plus affiché.' });
     }
 
-    // No admin user at all — create one from scratch
     await Document.create({
       col: 'users',
       data: {
-        id: 1,
-        name: 'Administrateur',
-        username: 'admin',
-        password: 'admin123',
-        role: 'admin',
-        active: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: 1, name: 'Administrateur', username: 'admin', password: hash,
+        role: 'admin', active: true,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       }
     });
-
-    return res.json({ success: true, action: 'created', message: 'Admin créé. Login: admin / admin123' });
+    return res.json({ success: true, action: 'created', username: 'admin', newPassword,
+      message: 'Admin créé. Notez ce mot de passe maintenant, il ne sera plus affiché.' });
   } catch (e) {
     console.error('[recover-admin]', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
