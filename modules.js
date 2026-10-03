@@ -11361,7 +11361,7 @@ const PointageModule = {
           Utils.notify("Impossible : les paies de ce mois sont déjà clôturées. Supprimez d'abord la charge correspondante.", "error");
           return;
         }
-        DB.remove('pointage_validations', existing.id);
+        DB.delete('pointage_validations', existing.id);
         Utils.notify("Validation du pointage annulée. Vous pouvez modifier les présences.", "success");
         App.loadModule('pointage');
       }
