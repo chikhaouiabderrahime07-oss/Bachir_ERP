@@ -1679,7 +1679,7 @@ const BLModule = {
 
   async showGenerate(brId) {
     const isAR = T.isRTL();
-    if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify(isAR ? '⛔ إذن مرفوض — إنشاء سند التسليم' : '⛔ Permission refusée — création BL', 'error'); return; }
+    if (!Auth.isAdmin() && !Auth.can('canCreateBL')) { Utils.notify(isAR ? '⛔ إذن مرفوض — إنشاء سند الشحن' : '⛔ Permission refusée — création BCH', 'error'); return; }
     const br = DB.getById('brs', brId);
     if (!br) return;
 
@@ -1690,7 +1690,7 @@ const BLModule = {
         const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
         const picked = await Dialog.show({
           title: isAR ? '👤 تخصيص الإنشاء إلى...' : '👤 Créer en tant que...',
-          message: `<div style="margin-bottom:10px;font-size:13px">${isAR ? 'سيتم احتساب سند التسليم هذا في صندوق :' : 'Ce BL sera attribué à la caisse de :'}</div><select id="dlg_bl_as_user" class="input" style="width:100%">${opts}</select><div style="margin-top:10px;font-size:11px;color:var(--text4)">${isAR ? 'ستبقى مسجلاً كـ "عُدّل بواسطة" لضمان الشفافية' : 'Vous restez affiché comme "Modifié par" pour transparence'}</div>`,
+          message: `<div style="margin-bottom:10px;font-size:13px">${isAR ? 'سيتم احتساب سند الشحن هذا في صندوق :' : 'Ce BCH sera attribué à la caisse de :'}</div><select id="dlg_bl_as_user" class="input" style="width:100%">${opts}</select><div style="margin-top:10px;font-size:11px;color:var(--text4)">${isAR ? 'ستبقى مسجلاً كـ "عُدّل بواسطة" لضمان الشفافية' : 'Vous restez affiché comme "Modifié par" pour transparence'}</div>`,
           type: 'info', confirmText: isAR ? 'متابعة' : 'Continuer', cancelText: isAR ? 'إلغاء' : 'Annuler'
         });
         if (!picked) return;
@@ -1701,7 +1701,7 @@ const BLModule = {
     UI.showModal(`<i class="fas fa-truck"></i> ${T.get('bl_from_br')} — ${br.ref}`, this._blModalBody(br, null), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-outline" onclick="BLModule._saveBL(${brId},null,true)"><i class="fas fa-print"></i> ${isAR ? 'حفظ و PDF' : 'Sauver & PDF'}</button>
-      <button class="btn btn-success" onclick="BLModule._saveBL(${brId},null,false)"><i class="fas fa-truck"></i> ${isAR ? 'توليد سند التسليم' : 'Générer BL'}</button>`, 'xl');
+      <button class="btn btn-success" onclick="BLModule._saveBL(${brId},null,false)"><i class="fas fa-truck"></i> ${isAR ? 'توليد سند الشحن' : 'Générer BCH'}</button>`, 'xl');
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
   },
 
