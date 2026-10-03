@@ -376,12 +376,14 @@
     /* ══════════════════════════════════════════════════════════
        PAGE FOOTER
     ══════════════════════════════════════════════════════════ */
-    _drawFooter(doc, pg, total) {
+    _drawFooter(doc, pg, total, hidePageNum = false) {
       const isAR = typeof T !== 'undefined' && T.isRTL();
       doc.setFont('helvetica','normal');
       doc.setFontSize(8);
       this._tc(doc,C.GRAY_TXT);
-      doc.text(isAR ? `صفحة ${pg} من ${total}` : `Page ${pg} sur ${total}`,PW/2,PH-6,{align:'center'});
+      if (!hidePageNum) {
+        doc.text(isAR ? `صفحة ${pg} من ${total}` : `Page ${pg} sur ${total}`,PW/2,PH-6,{align:'center'});
+      }
       doc.text(isAR ? `تاريخ الإصدار : ${this._fmtDateTime(new Date().toISOString())}` : `Genere le : ${this._fmtDateTime(new Date().toISOString())}`,ML,PH-6);
     },
 
@@ -708,13 +710,20 @@
       if(!bodyRows.length) bodyRows.push(['01','Aucune ligne','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
       
       // Fiscal TTC = HT + TVA + Timbre (for the articles summary table)
-      const fiscalTTC = timbreAmt ? Math.round(((totalHT||0) + (tvaAmt||0) + (timbreAmt||0)) * 100) / 100 : effectiveGross;
+      const ht = Number(totalHT) || 0;
+      const effectiveTimbreAmt = (Number(timbreAmt) > 0)
+        ? Number(timbreAmt)
+        : (ht > 0 ? Math.round(ht * 0.01 * 100) / 100 : 0);
+      const effectiveTimbreRate = 1; // Strictly 1% fixed for État de Vente
+      const effectiveTva = (Number(tvaAmt) > 0) ? Number(tvaAmt) : Math.round(ht * (Number(tvaRate) || 19) / 100 * 100) / 100;
+      const fiscalTTC = Math.round((ht + effectiveTva + effectiveTimbreAmt) * 100) / 100;
+
       let tEndY = this._buildTable(doc, y, COLS, bodyRows, {
-        totalHT: totalHT,
-        tvaAmount: tvaAmt,
-        tvaRate: tvaRate,
-        timbre: timbreAmt,
-        timbreRate: data.timbreRate || (timbreAmt ? 1 : 0),
+        totalHT: ht,
+        tvaAmount: effectiveTva,
+        tvaRate: tvaRate || 19,
+        timbre: effectiveTimbreAmt,
+        timbreRate: 1, // Displays "Timbre Fiscal (1%)"
         totalTTC: fiscalTTC
       });
       
@@ -756,7 +765,7 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       this._tc(doc, C.WHITE);
-      doc.text(isAR ? 'الصافي النهائي (إيداع) :' : 'NET FINAL (VERSEMENT) :', boxX + 4, curY + 2);
+      doc.text(isAR ? 'الصافي النهائي (إيداع 1% طابع) :' : 'NET FINAL (VERSEMENT 1% TIMBRE) :', boxX + 4, curY + 2);
       doc.text(this._fmtMoney(finalNetTTC), boxX + boxW - 4, curY + 2, { align: 'right' });
 
       y += boxH + 6;
@@ -792,35 +801,60 @@
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
         this._tc(doc, C.PRIMARY);
-        this._text(doc, isAR ? `تفاصيل كشف المبيعات — مرجع: ${ref || ''}` : `DÉTAILS ÉTAT DE VENTE — Réf: ${ref || ''}`, ML, y);
+        this._text(doc, isAR ? `ملحق تفصيلي لكشف المبيعات — مرجع: ${ref || ''}` : `ANNEXE DÉTAILLÉE ÉTAT DE VENTE — Réf: ${ref || ''}`, ML, y);
         y += 8;
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         this._tc(doc, C.PRIMARY);
-        this._text(doc, isAR ? `1. تفاصيل وصولات الشحن المتضمنة (مبيعات اليوم : ${blList.length} سند)` : `I. DETAIL DES BONS DE CHARGEMENT INCLUS (VENTES DU JOUR : ${blList.length} BCH)`, ML, y);
+        this._text(doc, isAR ? `1. تفاصيل وصولات الشحن المتضمنة (خ.ر / ضرائب / طابع / ك.ر) — ${blList.length} سند:` : `I. DÉTAIL DES BONS DE CHARGEMENT INCLUS (HT / TVA / TIMBRE / TTC) — ${blList.length} BCH :`, ML, y);
         y += 4;
 
         const blCols = [
-          {label:isAR ? 'الرقم' : 'N°', width:12, halign:'center'},
-          {label:isAR ? 'مرجع سند الشحن' : 'RÉFÉRENCE BCH', width:42, halign:'center'},
-          {label:isAR ? 'التاريخ' : 'DATE', width:26, halign:'center'},
-          {label:isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', width:72, halign:'left'},
-          {label:isAR ? 'المبلغ ك.ر' : 'MONTANT TTC', width:42, halign:'right'}
+          { label: isAR ? 'الرقم' : 'N°', width: 10, halign: 'center' },
+          { label: isAR ? 'مرجع سند الشحن' : 'RÉFÉRENCE BCH', width: 34, halign: 'center' },
+          { label: isAR ? 'التاريخ' : 'DATE', width: 22, halign: 'center' },
+          { label: isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', width: 44, halign: isAR ? 'right' : 'left' },
+          { label: isAR ? 'المجموع خ.ر' : 'MONTANT HT', width: 22, halign: 'right' },
+          { label: isAR ? 'الرسم 19%' : 'TVA 19%', width: 18, halign: 'right' },
+          { label: isAR ? 'الطابع' : 'TIMBRE', width: 16, halign: 'right' },
+          { label: isAR ? 'المجموع ك.ر' : 'MONTANT TTC', width: 24, halign: 'right' }
         ];
 
-        const blRows = blList.map((b, i) => [
-          String(i+1).padStart(2, '0'),
-          this._t(b.ref || '—'),
-          this._fmtDate(b.date),
-          this._t(b.clientName || (isAR ? 'زبون عادي' : 'Client Comptoir')),
-          this._fmtMoney(b.totalTTC || 0)
-        ]);
+        let sumBchHT = 0, sumBchTVA = 0, sumBchTimbre = 0, sumBchTTC = 0;
+        const blRows = blList.map((b, i) => {
+          const fullB = (typeof DB !== 'undefined' && b.id) ? (DB.getById('bls', b.id) || b) : b;
+          const bHT = Number(b.totalHT ?? fullB.totalHT ?? 0);
+          const bTVA = Number(b.tvaAmount ?? b.tva ?? fullB.tvaAmount ?? fullB.tva ?? 0);
+          const bTimbre = Number(b.timbreAmount ?? b.timbre ?? fullB.timbreAmount ?? fullB.timbre ?? 0);
+          const bTTC = Number(b.totalTTC ?? fullB.totalTTC ?? (bHT + bTVA + bTimbre)) || 0;
 
-        // Total row for BLs
+          sumBchHT += bHT;
+          sumBchTVA += bTVA;
+          sumBchTimbre += bTimbre;
+          sumBchTTC += bTTC;
+
+          return [
+            String(i+1).padStart(2, '0'),
+            this._t(b.ref || fullB.ref || '—'),
+            this._fmtDate(b.date || fullB.date),
+            this._t(b.clientName || fullB.clientName || (isAR ? 'زبون عادي' : 'Client Comptoir')),
+            this._fmtMoney(bHT),
+            this._fmtMoney(bTVA),
+            this._fmtMoney(bTimbre),
+            this._fmtMoney(bTTC)
+          ];
+        });
+
+        if (sumBchTTC === 0) sumBchTTC = effectiveGross;
+
+        // Total row for BCHs with HT, TVA, Timbre and TTC
         blRows.push([
-          { content: isAR ? 'إجمالي مبيعات وصولات التسليم (خام)' : 'TOTAL BRUT VENTES BL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
-          { content: '+' + this._fmtMoney(effectiveGross), styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129], fillColor: [240, 244, 248] } }
+          { content: isAR ? 'المجموع التراكمي لسندات الشحن' : 'TOTAL CUMULÉ DES BONS DE CHARGEMENT', colSpan: 4, styles: { halign: isAR ? 'left' : 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
+          { content: this._fmtMoney(sumBchHT), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
+          { content: this._fmtMoney(sumBchTVA), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: [217, 119, 6] } },
+          { content: this._fmtMoney(sumBchTimbre), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: [124, 58, 237] } },
+          { content: '+' + this._fmtMoney(sumBchTTC), styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129], fillColor: [240, 244, 248] } }
         ]);
 
         const blColStyles = {};
@@ -853,11 +887,11 @@
         y += 4;
 
         const retCols = [
-          {label:isAR ? 'الرقم' : 'N°', width:12, halign:'center'},
-          {label:isAR ? 'سند الإرجاع' : 'BON DE RETOUR', width:38, halign:'center'},
-          {label:isAR ? 'المرجع الأصلي' : 'BL ORIGINE', width:34, halign:'center'},
-          {label:isAR ? 'التاريخ' : 'DATE', width:24, halign:'center'},
-          {label:isAR ? 'الزبون والسبب' : 'CLIENT & MOTIF', width:46, halign:'left'},
+          {label:isAR ? 'الرقم' : 'N°', width:10, halign:'center'},
+          {label:isAR ? 'سند الإرجاع' : 'BON DE RETOUR', width:34, halign:'center'},
+          {label:isAR ? 'المرجع الأصلي' : 'BL ORIGINE', width:30, halign:'center'},
+          {label:isAR ? 'التاريخ' : 'DATE', width:22, halign:'center'},
+          {label:isAR ? 'الزبون والسبب' : 'CLIENT & MOTIF', width:54, halign: isAR ? 'right' : 'left'},
           {label:isAR ? 'الخصم ك.ر' : 'DÉDUCTION TTC', width:40, halign:'right'}
         ];
 
@@ -895,11 +929,11 @@
         y = doc.lastAutoTable.finalY + 8;
       }
 
-      // Multi-page pagination
+      // Multi-page pagination: hidePageNum = true so "Page 1 sur 2" is never printed on État de Vente (avoids bank confusion)
       const totalPages = doc.internal.getNumberOfPages();
       for (let p = 1; p <= totalPages; p++) {
         doc.setPage(p);
-        this._drawFooter(doc, p, totalPages);
+        this._drawFooter(doc, p, totalPages, true);
       }
 
       this._save(doc, `Etat_de_Vente_${(ref || period).replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`);

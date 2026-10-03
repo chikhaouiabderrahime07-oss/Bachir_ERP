@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=35.0">
+<link rel="stylesheet" href="style.css?v=35.3">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -349,10 +349,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=35.0"></script>
-<script src="core.js?v=35.0"></script>
-<script src="modules.js?v=35.0"></script>
-<script src="pdf.js?v=35.0"></script>
+<script src="api.js?v=35.5"></script>
+<script src="core.js?v=35.5"></script>
+<script src="modules.js?v=35.5"></script>
+<script src="pdf.js?v=35.5"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -415,7 +415,6 @@ const App = {
             localStorage.setItem('currentUser', JSON.stringify(realUser));
             if (realUser?.id) WorkLog.logIn(realUser.id);
             this._bootApp();
-            this._checkMorningSession();
           } catch (syncErr) {
             console.error('Sync error:', syncErr);
             errDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (syncErr.message || (T.isRTL() ? 'فشل المزامنة' : 'Erreur de synchronisation'));
@@ -436,7 +435,6 @@ const App = {
       const user = Auth.login(un, pw);
       if (user) {
         this._bootApp();
-        this._checkMorningSession();
       } else {
         errDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + (T.isRTL() ? 'بيانات الاعتماد غير صالحة' : 'Identifiants invalides');
         errDiv.style.display = 'block';
@@ -755,11 +753,11 @@ const App = {
     const menu = [
       { section: T.get('sec_documents'), items: [
         ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [{ mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') }] : []),
-        ...(isAdmin || Auth.can('canViewBRs') ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'bls', icon:'fa-truck-loading', label:T.get('nav_bls') }] : []),
+        ...(u.role !== 'supplier' && u.role !== 'supplier_agent' && (isAdmin || Auth.can('canViewBRs')) ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
+        ...(u.role !== 'supplier' && u.role !== 'supplier_agent' && (isAdmin || Auth.can('canViewBLs')) ? [{ mod:'bls', icon:'fa-truck-loading', label:T.get('nav_bls') }] : []),
         ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'supplier_portal', icon:'fa-industry', label:T.get('nav_supplier_portal') || (T.isRTL() ? 'بوابة المصانع' : 'Portail Usines') }] : []),
         ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'bc_supervision', icon:'fa-stream', label:T.get('nav_bc_tracker') || (T.isRTL() ? 'متابعة الشحن' : 'Suivi Chargements') }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
+        ...(u.role !== 'supplier' && u.role !== 'supplier_agent' && (isAdmin || Auth.can('canViewBLs')) ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
       ]},
       ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [
         { section: T.get('sec_cash'), items: [
@@ -1080,13 +1078,18 @@ const App = {
 
   _checkMorningSession() {
     const u = Auth.getCurrentUser();
-    if (!u || u.role === 'admin') return;
-    const existing = SessionMgr.getTodaySession(u.id);
+    // Strictly guard: NEVER show to admin, suppliers, or supplier agents
+    if (!u || u.role === 'admin' || u.role === 'supplier' || u.role === 'supplier_agent') return;
+    if (typeof Auth !== 'undefined' && Auth.isSupplier && Auth.isSupplier()) return;
+    if (typeof Auth !== 'undefined' && !Auth.can('canViewCaisse')) return;
+    if (this._hasPromptedSession) return;
+    this._hasPromptedSession = true;
+
+    const existing = typeof SessionMgr !== 'undefined' ? SessionMgr.getTodaySession(u.id) : null;
     if (!existing) {
-      // Small delay so app renders first
       setTimeout(() => {
         if (typeof CaisseModule !== 'undefined') CaisseModule.showMorningPrompt();
-      }, 600);
+      }, 1000);
     }
   },
 

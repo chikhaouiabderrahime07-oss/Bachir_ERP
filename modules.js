@@ -1257,23 +1257,7 @@ const BLModule = {
   },
 
 
-  async showNewBL() {
-    // Admin picks a user who has canCreateBL permission
-    if (Auth.isAdmin()) {
-      const users = DB.getAll('users').filter(u => u.role !== 'admin' && Auth.getUserPermissions(u).canCreateBL === true && u.active !== false);
-      if (users.length > 0) {
-        const opts = users.map(u=>`<option value="${u.id}">${Utils.escHTML(u.name||u.username)}</option>`).join('');
-        const isAR = T.isRTL();
-        const picked = await Dialog.show({
-          title: isAR ? '👤 تخصيص الإنشاء إلى...' : '👤 Attribuer la création à...',
-          message: `<div style="margin-bottom:10px;font-size:13px">${isAR ? 'سيتم احتساب سند الشحن هذا في صندوق :' : 'Ce Bon de Chargement sera comptabilisé dans la mini-caisse de :'}</div><select id="dlg_bl_as_user" class="input" style="width:100%">${opts}</select><div style="margin-top:10px;font-size:11px;color:var(--text4)">${isAR ? 'ستبقى مسجلاً كـ "عُدّل بواسطة" لضمان الشفافية' : 'Vous restez affiché comme "Modifié par" pour transparence'}</div>`,
-          type: 'info', confirmText: isAR ? 'متابعة' : 'Continuer', cancelText: isAR ? 'إلغاء' : 'Annuler'
-        });
-        if (!picked) return;
-        BLModule._adminActAsUserId = parseInt(document.getElementById('dlg_bl_as_user')?.value);
-      }
-    }
-
+  showNewBL() {
     const isAR = T.isRTL();
     const allBRs = DB.getAll('brs');
     const openBRs = allBRs.filter(b => b.status !== 'delivered' && b.status !== 'locked');
@@ -1281,6 +1265,8 @@ const BLModule = {
     const allSuppliers = DB.getAll('suppliers');
     const allClients = DB.getAll('clients');
     const allArticles = DB.searchArticles('');
+    const allUsers = DB.getAll('users').filter(u => u.active !== false && (u.role === 'user' || u.role === 'admin'));
+    const currentU = Auth.getCurrentUser();
     openBRs.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
     // Modal HTML with 2 Modes
@@ -1307,7 +1293,7 @@ const BLModule = {
       <!-- PANEL 1: DIRECT FACTORY MODE (No prior BR) -->
       <div id="bch-panel-direct">
         <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
-          <div class="form-row-3" style="margin-bottom:10px">
+          <div class="form-row-4" style="margin-bottom:10px">
             <div class="form-group mb-0">
               <label class="required"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</label>
               <select id="direct-bch-supplier" class="input" required>
@@ -1325,6 +1311,12 @@ const BLModule = {
             <div class="form-group mb-0">
               <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
               <input type="date" id="direct-bch-date" class="input" value="${Utils.today()}">
+            </div>
+            <div class="form-group mb-0">
+              <label><i class="fas fa-cash-register"></i> ${isAR ? 'الصندوق / البائع' : 'Caisse / Caissier'}</label>
+              <select id="direct-bch-user" class="input">
+                ${allUsers.map(u => `<option value="${u.id}" ${String(u.id) === String(currentU?.id) ? 'selected' : ''}>${Utils.escHTML(u.name || u.username)} ${String(u.id) === String(currentU?.id) ? (isAR ? '(أنا)' : '(Moi)') : ''}</option>`).join('')}
+              </select>
             </div>
           </div>
 
@@ -1470,6 +1462,12 @@ const BLModule = {
     const idx = (BLModule._directBCHRows = BLModule._directBCHRows || []).length;
     BLModule._directBCHRows.push(idx);
 
+    const initQty = item.qty != null ? item.qty : '';
+    const initPrice = item.price != null ? item.price : '';
+    const initBuy = item.purchasePrice != null ? item.purchasePrice : '';
+    const initDisc = item.disc != null ? item.disc : 0;
+    const initTot = (initQty && initPrice) ? Math.round(initQty * initPrice * (1 - (initDisc || 0) / 100) * 100) / 100 : 0;
+
     const tr = document.createElement('tr');
     tr.id = `direct-bch-tr-${idx}`;
     tr.innerHTML = `
@@ -1480,19 +1478,19 @@ const BLModule = {
         <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" placeholder="${T.isRTL() ? 'وحدة' : 'U'}" value="${Utils.escHTML(item.unit||'U')}">
       </td>
       <td>
-        <input type="number" id="direct-bch-qty-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" step="any" placeholder="0" value="${item.qty||''}" oninput="BLModule._recalcDirectBCHRow(${idx})">
+        <input type="number" id="direct-bch-qty-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" step="any" placeholder="0" value="${initQty}" oninput="BLModule._recalcDirectBCHRow(${idx})">
       </td>
       <td>
-        <input type="number" id="direct-bch-price-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${item.price||''}" oninput="BLModule._recalcDirectBCHRow(${idx})">
+        <input type="number" id="direct-bch-price-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${initPrice}" oninput="BLModule._recalcDirectBCHRow(${idx})">
       </td>
       <td>
-        <input type="number" id="direct-bch-buy-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${item.purchasePrice||''}">
+        <input type="number" id="direct-bch-buy-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${initBuy}">
       </td>
       <td>
-        <input type="number" id="direct-bch-disc-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" max="100" step="any" placeholder="0" value="${item.disc||0}" oninput="BLModule._recalcDirectBCHRow(${idx})">
+        <input type="number" id="direct-bch-disc-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" max="100" step="any" placeholder="0" value="${initDisc}" oninput="BLModule._recalcDirectBCHRow(${idx})">
       </td>
       <td style="text-align:right;font-weight:700;vertical-align:middle">
-        <span id="direct-bch-tot-${idx}">0,00 DA</span>
+        <span id="direct-bch-tot-${idx}">${Utils.fmtCurrency(initTot)}</span>
       </td>
       <td style="text-align:center;vertical-align:middle">
         <button type="button" class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="BLModule._removeDirectBCHRow(${idx})"><i class="fas fa-trash"></i></button>
@@ -1613,10 +1611,17 @@ const BLModule = {
     if (dd) dd.style.display = 'none';
   },
 
-  async _saveDirectBCH(andPrint = false, printType = 'bch') {
+  async _saveDirectBCH(andPrint = false, printType = 'bch', editId = null, adminOverride = false) {
     const isAR = T.isRTL();
+    const existing = editId ? DB.getById('bls', editId) : null;
+    if (editId && !existing) return;
+
     if (!Auth.isAdmin() && !Auth.can('canCreateBL')) {
       Utils.notify(isAR ? '⛔ ليس لديك إذن لإنشاء سندات الشحن' : '⛔ Vous n’avez pas la permission de créer des Bons de Chargement', 'error');
+      return;
+    }
+    if (existing && !Auth.canEdit(existing) && !adminOverride && !Auth.isAdmin()) {
+      Utils.notify(isAR ? '⛔ غير مصرح بالتعديل' : '⛔ Modification non autorisée', 'error');
       return;
     }
 
@@ -1672,9 +1677,6 @@ const BLModule = {
 
     const sup = DB.getById('suppliers', Number(supplierId));
     const cli = DB.getById('clients', Number(clientId));
-    const year = new Date().getFullYear();
-    const nextBCHNum = await DB.getNextBCHNum();
-    const ref = DB.buildBCHRef(nextBCHNum, year, null, sup?.refAbbrev || '');
 
     DB.saveDriver(driverName, truckIMM);
 
@@ -1685,9 +1687,91 @@ const BLModule = {
 
     // User attribution
     const adminU = Auth.getCurrentUser();
-    const targetUserId = (Auth.isAdmin() && BLModule._adminActAsUserId) ? BLModule._adminActAsUserId : adminU?.id;
+    const userSelectVal = document.getElementById('direct-bch-user')?.value;
+    const targetUserId = userSelectVal ? (isNaN(userSelectVal) ? userSelectVal : Number(userSelectVal)) : ((Auth.isAdmin() && BLModule._adminActAsUserId) ? BLModule._adminActAsUserId : (existing ? existing.createdBy : adminU?.id));
     const targetUser = DB.getById('users', targetUserId) || adminU;
     BLModule._adminActAsUserId = null;
+
+    if (existing) {
+      const updateDoc = {
+        date,
+        supplierId: Number(supplierId),
+        supplierName: sup?.name || existing.supplierName || 'Usine',
+        clientId: Number(clientId),
+        clientName: cli?.name || existing.clientName || 'Client',
+        driverName,
+        truckIMM,
+        destinationAddress: destAddr || cli?.address || '',
+        lines,
+        totalHT,
+        tvaRate,
+        tvaAmount,
+        noTimbre,
+        timbreAmount,
+        totalTTC,
+        createdBy: targetUserId,
+        createdByName: targetUser?.name || targetUser?.username || existing.createdByName || 'Utilisateur',
+        updatedAt: new Date().toISOString(),
+        updatedBy: adminU?.id,
+        updatedByName: adminU?.name || adminU?.username || 'Admin'
+      };
+      DB.update('bls', editId, updateDoc, adminOverride ? 'Modification Administrateur BCH' : 'Modification BCH');
+
+      // Keep linked reserved BR synchronized
+      if (existing.linkedBrId) {
+        const linkedBR = DB.getById('brs', existing.linkedBrId);
+        if (linkedBR) {
+          const brItems = lines.map(l => ({
+            articleId: l.articleId || null,
+            designation: l.designation,
+            unit: l.unit || 'U',
+            qty: l.qty,
+            qtyDelivered: l.qty,
+            price: l.purchasePrice || l.price,
+            total: Math.round((l.qty * (l.purchasePrice || l.price)) * 100) / 100
+          }));
+          const brTotalHT = Math.round(brItems.reduce((s, it) => s + it.total, 0) * 100) / 100;
+          const brTvaAmount = Math.round(brTotalHT * tvaRate / 100 * 100) / 100;
+          const brTotalTTC = Math.round((brTotalHT + brTvaAmount + timbreAmount) * 100) / 100;
+          DB.update('brs', existing.linkedBrId, {
+            supplierId: Number(supplierId),
+            supplierName: sup?.name || linkedBR.supplierName,
+            date,
+            items: brItems,
+            lines: brItems,
+            totalHT: brTotalHT,
+            tvaRate,
+            tvaAmount: brTvaAmount,
+            timbreAmount,
+            totalTTC: brTotalTTC,
+            updatedAt: new Date().toISOString()
+          }, 'Synchronisation BCH');
+        }
+      }
+
+      Utils.notify(isAR ? `تم حفظ تعديلات سند الشحن ${existing.ref} بنجاح` : `BCH ${existing.ref} mis à jour avec succès`, 'success', 4000);
+      UI.closeModal();
+      if (typeof App !== 'undefined' && App.currentModule === 'caisse') {
+        App.loadModule('caisse');
+      } else if (typeof App !== 'undefined') {
+        App.loadModule('bls');
+      }
+
+      if (andPrint) {
+        setTimeout(() => {
+          if (printType === 'route') {
+            PDFGen.exportBLRoute(editId);
+          } else {
+            PDFGen.exportBonChargement(editId);
+          }
+        }, 300);
+      }
+      return;
+    }
+
+    const year = new Date().getFullYear();
+    const nextBCHNum = await DB.getNextBCHNum();
+    const ref = DB.buildBCHRef(nextBCHNum, year, null, sup?.refAbbrev || '');
 
     const bchDoc = {
       ref,
@@ -1740,7 +1824,11 @@ const BLModule = {
     }
 
     UI.closeModal();
-    App.loadModule('bls');
+    if (typeof App !== 'undefined' && App.currentModule === 'caisse') {
+      App.loadModule('caisse');
+    } else if (typeof App !== 'undefined') {
+      App.loadModule('bls');
+    }
 
     if (andPrint && savedBCH) {
       setTimeout(() => {
@@ -1830,8 +1918,11 @@ const BLModule = {
       Utils.notify(isAR ? "هذا المستند يعود ليوم سابق أو أن الصندوق مغلق. المسؤول فقط يمكنه التعديل." : "Ce document date d'un jour antérieur ou la caisse est clôturée. Seul l'administrateur peut le modifier.", 'warning');
       return;
     }
+    if (!bl.brId || bl.isBonChargement) {
+      return this.showEditDirectBCH(blId, adminOverride);
+    }
     const br = DB.getById('brs', bl.brId);
-    if (!br) return;
+    if (!br) return this.showEditDirectBCH(blId, adminOverride);
     const title = adminOverride
       ? `<i class="fas fa-shield-alt" style="color:#a78bfa"></i> ${isAR ? 'تعديل المسؤول — ' : 'Admin Edit — '}${bl.ref} <span style="font-size:11px;background:rgba(99,102,241,.15);color:#a78bfa;padding:2px 8px;border-radius:6px;margin-inline-start:6px">Override</span>`
       : `<i class="fas fa-edit"></i> ${T.get('edit')} BL — ${bl.ref}`;
@@ -1843,6 +1934,160 @@ const BLModule = {
       }
       ${(bl.status !== 'delivered' && bl.status !== 'locked') ? `<button class="btn btn-success" onclick="BLModule._saveBL(${bl.brId},${blId},false);setTimeout(()=>BLModule.confirmDelivery(${blId}),500)"><i class="fas fa-check-circle"></i> ${isAR ? 'حفظ وتأكيد' : 'Sauver & Valider'}</button>` : ''}`, 'xl');
     setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
+  },
+
+  showEditDirectBCH(blId, adminOverride = false) {
+    const isAR = T.isRTL();
+    const bl = DB.getById('bls', blId);
+    if (!bl) return;
+    if (bl.status === 'returned') {
+      Utils.notify(isAR ? "تم إرجاع سند الشحن هذا وأرشفته نهائياً. التعديل غير ممكن." : "Ce bon de chargement a été retourné et est archivé définitivement. Modification impossible.", 'error');
+      return;
+    }
+    if (!Auth.canEdit(bl) && !adminOverride) {
+      Utils.notify(isAR ? "هذا المستند يعود ليوم سابق أو أن الصندوق مغلق. المسؤول فقط يمكنه التعديل." : "Ce document date d'un jour antérieur ou la caisse est clôturée. Seul l'administrateur peut le modifier.", 'warning');
+      return;
+    }
+
+    const currentU = Auth.getCurrentUser();
+    const allSuppliers = DB.getAll('suppliers');
+    const allClients = DB.getAll('clients');
+    const allArticles = DB.searchArticles('');
+    const allUsers = DB.getAll('users').filter(u => u.active !== false && (u.role === 'user' || u.role === 'admin'));
+
+    const modalHTML = `
+    <div style="margin-bottom:12px">
+      <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
+        <div class="form-row-4" style="margin-bottom:10px">
+          <div class="form-group mb-0">
+            <label class="required"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</label>
+            <select id="direct-bch-supplier" class="input" required>
+              <option value="">${isAR ? '— اختيار المصنع —' : "— Choisir l'Usine —"}</option>
+              ${allSuppliers.map(s => `<option value="${s.id}" ${s.id === bl.supplierId ? 'selected' : ''}>${Utils.escHTML(s.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group mb-0">
+            <label class="required"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون المستلم' : 'Client Destinataire'}</label>
+            <select id="direct-bch-client" class="input" required onchange="BLModule._onDirectClientChange(this.value)">
+              <option value="">${isAR ? '— اختيار الزبون —' : '— Choisir le Client —'}</option>
+              ${allClients.map(c => `<option value="${c.id}" ${c.id === bl.clientId ? 'selected' : ''}>${Utils.escHTML(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group mb-0">
+            <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
+            <input type="date" id="direct-bch-date" class="input" value="${bl.date || Utils.today()}">
+          </div>
+          <div class="form-group mb-0">
+            <label><i class="fas fa-cash-register"></i> ${isAR ? 'الصندوق / البائع' : 'Caisse / Caissier'}</label>
+            <select id="direct-bch-user" class="input">
+              ${allUsers.map(u => `<option value="${u.id}" ${(String(u.id) === String(bl.createdBy) || (bl.createdBy == null && String(u.id) === String(currentU?.id))) ? 'selected' : ''}>${Utils.escHTML(u.name || u.username)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-3">
+          <div class="form-group mb-0">
+            <label class="required"><i class="fas fa-id-card"></i> ${isAR ? 'اسم السائق' : 'Nom du Chauffeur'}</label>
+            <div class="autocomplete-wrap" style="position:relative">
+              <input type="text" id="direct-bch-driver" class="input" value="${Utils.escHTML(bl.driverName || '')}" placeholder="${isAR ? 'الاسم الكامل للسائق...' : 'Nom complet...'}" oninput="BLModule._onDirectDriverInput(this.value)" onfocus="BLModule._onDirectDriverInput(this.value)" onblur="setTimeout(()=>BLModule._closeDirectDriverAC(),200)">
+              <div class="autocomplete-dropdown" id="direct-bch-driver-ac"></div>
+            </div>
+          </div>
+          <div class="form-group mb-0">
+            <label class="required"><i class="fas fa-truck"></i> ${isAR ? 'رقم تسجيل الشاحنة' : 'Matricule Camion'}</label>
+            <input type="text" id="direct-bch-truck" class="input" value="${Utils.escHTML(bl.truckIMM || '')}" placeholder="${isAR ? 'مثال: 01234-123-16' : 'Ex: 01234-123-16'}">
+          </div>
+          <div class="form-group mb-0">
+            <label><i class="fas fa-map-marker-alt"></i> ${isAR ? 'الوجهة / الورشة' : 'Destination / Chantier'}</label>
+            <input type="text" id="direct-bch-dest" class="input" value="${Utils.escHTML(bl.destinationAddress || '')}" placeholder="${isAR ? 'عنوان التسليم...' : 'Adresse de livraison...'}">
+          </div>
+        </div>
+      </div>
+
+      <!-- Articles Table -->
+      <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:var(--text);display:flex;justify-content:space-between;align-items:center">
+        <span><i class="fas fa-list"></i> ${isAR ? 'البضائع المراد شحنها' : 'Marchandises à charger'}</span>
+        <button type="button" class="btn btn-xs btn-outline" onclick="BLModule._addDirectBCHRow()"><i class="fas fa-plus"></i> ${isAR ? 'إضافة سطر' : 'Ajouter ligne'}</button>
+      </div>
+
+      <datalist id="bch-articles-list">
+        ${allArticles.map(a => `<option value="${Utils.escHTML(a.name)}" data-unit="${Utils.escHTML(a.unit||'U')}" data-price="${a.price||0}">`).join('')}
+      </datalist>
+
+      <div class="table-wrap" style="margin-bottom:12px;max-height:260px;overflow-y:auto">
+        <table class="table" style="width:100%;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg3)">
+              <th style="min-width:180px;text-align:${isAR?'right':'left'}">${isAR ? 'التعيين / المنتج' : 'Désignation'}</th>
+              <th style="width:70px;text-align:center">${isAR ? 'الوحدة' : 'Unité'}</th>
+              <th style="width:90px;text-align:center">${isAR ? 'الكمية' : 'Quantité'}</th>
+              <th style="width:110px;text-align:center">${isAR ? 'سعر البيع خ.ر' : 'P.U. Vente HT'}</th>
+              <th style="width:110px;text-align:center">${isAR ? 'سعر شراء المصنع' : 'P.U. Achat Usine'}</th>
+              <th style="width:80px;text-align:center">${isAR ? 'تخفيض %' : 'Remise %'}</th>
+              <th style="width:110px;text-align:${isAR?'left':'right'}">${isAR ? 'المجموع خ.ر' : 'Total HT'}</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="direct-bch-rows"></tbody>
+        </table>
+      </div>
+
+      <!-- Direct Totals Box -->
+      <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px">
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <div class="form-group mb-0" style="width:110px">
+            <label>${isAR ? 'نسبة TVA %' : 'TVA %'}</label>
+            <select id="direct-bch-tva-rate" class="input" onchange="BLModule._recalcDirectBCHTotals()">
+              <option value="19" ${(bl.tvaRate === 19 || bl.tvaRate == null) ? 'selected' : ''}>19 %</option>
+              <option value="9" ${bl.tvaRate === 9 ? 'selected' : ''}>9 %</option>
+              <option value="0" ${bl.tvaRate === 0 ? 'selected' : ''}>0 % (${isAR ? 'معفى' : 'Exo'})</option>
+            </select>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:14px">
+            <input type="checkbox" id="direct-bch-no-timbre" ${bl.noTimbre ? 'checked' : ''} onchange="BLModule._recalcDirectBCHTotals()">
+            ${isAR ? 'معفى من الطابع الضريبي' : 'Exonéré de timbre'}
+          </label>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:260px;text-align:${isAR?'left':'right'}">
+          <div style="font-size:12px;color:var(--text3)">${isAR ? 'المجموع خ.ر :' : 'Total HT :'} <strong id="direct-bch-tot-ht" style="color:var(--text)">0,00 DA</strong></div>
+          <div style="font-size:12px;color:var(--text3)">${isAR ? 'الرسم TVA' : 'TVA'} (<span id="direct-bch-tva-pct">${bl.tvaRate ?? 19}%</span>) : <strong id="direct-bch-tot-tva" style="color:var(--text)">0,00 DA</strong></div>
+          <div style="font-size:12px;color:var(--text3)">${isAR ? 'الطابع الجبائي :' : 'Timbre Fiscal :'} <strong id="direct-bch-tot-timbre" style="color:var(--text)">0,00 DA</strong> <span id="direct-bch-timbre-detail" style="font-size:11px;color:var(--primary);font-weight:700"></span></div>
+          <div style="font-size:16px;font-weight:900;color:var(--primary);border-top:2px solid var(--primary);padding-top:6px;margin-top:2px">
+            ${isAR ? 'المجموع الشامل TTC :' : 'TOTAL TTC :'} <span id="direct-bch-tot-ttc">0,00 DA</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    `;
+
+    const footerHTML = `
+      <div style="display:flex;gap:8px;justify-content:flex-end;width:100%;flex-wrap:wrap">
+        <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+        <button class="btn btn-outline" onclick="BLModule._saveDirectBCH(true, 'route', ${blId}, ${adminOverride})"><i class="fas fa-road"></i> ${isAR ? 'حفظ وسند التسليم للطريق' : 'Sauver & BL Route'}</button>
+        <button class="btn btn-outline" onclick="BLModule._saveDirectBCH(true, 'bch', ${blId}, ${adminOverride})"><i class="fas fa-file-pdf"></i> ${isAR ? 'حفظ و PDF' : 'Sauver & PDF'}</button>
+        ${adminOverride
+          ? `<button class="btn" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff" onclick="BLModule._saveDirectBCH(false, null, ${blId}, true)"><i class="fas fa-shield-alt"></i> ${isAR ? 'حفظ (المسؤول)' : 'Sauver (Admin)'}</button>`
+          : `<button class="btn btn-warning" onclick="BLModule._saveDirectBCH(false, null, ${blId}, false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`
+        }
+        ${(bl.status !== 'delivered' && bl.status !== 'locked') ? `<button class="btn btn-success" onclick="BLModule._saveDirectBCH(false, null, ${blId}, ${adminOverride});setTimeout(()=>BLModule.confirmDelivery(${blId}),500)"><i class="fas fa-check-circle"></i> ${isAR ? 'حفظ وتأكيد' : 'Sauver & Valider'}</button>` : ''}
+      </div>
+    `;
+
+    const modalTitle = adminOverride
+      ? `<i class="fas fa-shield-alt" style="color:#a78bfa"></i> ${isAR ? 'تعديل المسؤول — ' : 'Admin Edit — '}${bl.ref} <span style="font-size:11px;background:rgba(99,102,241,.15);color:#a78bfa;padding:2px 8px;border-radius:6px;margin-inline-start:6px">Override</span>`
+      : `<i class="fas fa-edit"></i> ${isAR ? 'تعديل سند الشحن' : 'Modifier Bon de Chargement'} — ${bl.ref}`;
+
+    UI.showModal(modalTitle, modalHTML, footerHTML, 'xl');
+
+    BLModule._directBCHRows = [];
+    const lines = (bl.lines && bl.lines.length) ? bl.lines : (bl.items || []);
+    if (lines.length) {
+      lines.forEach(item => BLModule._addDirectBCHRow(item));
+    } else {
+      BLModule._addDirectBCHRow();
+    }
+    BLModule._recalcDirectBCHTotals();
   },
 
   _onDriverInput(val) {
@@ -2993,7 +3238,7 @@ const BLModule = {
 
 const SupplierPortalModule = {
   _filterSupplierId: 'all',
-  _filterStatus: 'pending_usine',
+  _filterStatus: 'all',
   _activeTab: 'validation',
   _suiviDateFrom: '',
   _suiviDateTo: '',
@@ -3007,25 +3252,27 @@ const SupplierPortalModule = {
     const allSuppliers = DB.getAll('suppliers');
     const allBLs = DB.getAll('bls');
 
-    let items = allBLs.filter(b => b.status !== 'returned' && b.status !== 'cancelled');
+    // Base filtered items for this supplier (all non-cancelled BCHs)
+    let allSupplierItems = allBLs.filter(b => b.status !== 'cancelled');
     if (supplierId && supplierId !== 'all') {
-      items = items.filter(b => String(b.supplierId) === String(supplierId));
+      allSupplierItems = allSupplierItems.filter(b => String(b.supplierId) === String(supplierId));
     }
-    if (this._filterStatus !== 'all') {
-      if (this._filterStatus === 'pending_usine') {
-        // pending_usine: BCH awaiting factory validation (may have reserved BR now)
-        items = items.filter(b => b.status === 'pending_usine' || (!b.status || b.status === 'open'));
-      } else if (this._filterStatus === 'validated_usine') {
-        items = items.filter(b => (b.brId || b.linkedBrId || b.status === 'validated_usine') && b.status !== 'delivered');
-      } else {
-        items = items.filter(b => b.status === this._filterStatus);
-      }
-    }
-    items.sort((a,b) => String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 
-    // Pending count: BCHs awaiting factory validation (may have reserved BR)
-    const pendingCount = allBLs.filter(b => (b.status === 'pending_usine' || (!b.status || b.status === 'open')) && b.status !== 'returned' && b.status !== 'cancelled' && (supplierId === 'all' || String(b.supplierId) === String(supplierId))).length;
-    const validatedToday = allBLs.filter(b => (b.status === 'validated_usine' || b.linkedBrId || b.brId) && (b.validatedAt||b.createdAt||'').slice(0,10) === Utils.today() && (supplierId === 'all' || String(b.supplierId) === String(supplierId))).length;
+    // Precise categorization across the entire lifecycle
+    const pendingItems   = allSupplierItems.filter(b => (b.status === 'pending_usine' || b.status === 'open' || !b.status) && b.status !== 'returned');
+    const validatedItems = allSupplierItems.filter(b => (b.status === 'validated_usine' || (b.linkedBrId && b.status !== 'delivered')) && b.status !== 'returned');
+    const deliveredItems = allSupplierItems.filter(b => b.status === 'delivered');
+    const returnedItems  = allSupplierItems.filter(b => b.status === 'returned');
+    const validatedToday = allSupplierItems.filter(b => (b.status === 'validated_usine' || b.status === 'delivered') && (b.validatedAt||b.createdAt||'').slice(0,10) === Utils.today()).length;
+
+    let items = allSupplierItems;
+    if (this._filterStatus === 'pending_usine') items = pendingItems;
+    else if (this._filterStatus === 'validated_usine') items = validatedItems;
+    else if (this._filterStatus === 'delivered') items = deliveredItems;
+    else if (this._filterStatus === 'returned') items = returnedItems;
+    else if (this._filterStatus !== 'all') items = allSupplierItems.filter(b => b.status === this._filterStatus);
+
+    items.sort((a,b) => String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 
     // Get supplier info for branded header
     const mySupplier = isSupplier && supplierId ? DB.getById('suppliers', supplierId) : null;
@@ -3062,21 +3309,26 @@ const SupplierPortalModule = {
         </div>
       </div>`}
 
-      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px">
-        <div class="stat-card" style="border-left:4px solid #f59e0b;background:var(--bg)">
-          <div class="stat-title"><i class="fas fa-clock" style="color:#f59e0b"></i> ${isAR ? 'في انتظار المصنع' : 'En attente Usine'}</div>
-          <div class="stat-val" style="color:#f59e0b;font-size:24px">${pendingCount}</div>
-          <div class="stat-sub">${isAR ? 'شاحنات في الطريق / للتحميل' : 'Camions en route / à charger'}</div>
+      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:20px">
+        <div class="stat-card" style="border-left:4px solid #f59e0b;background:var(--bg);cursor:pointer;transition:transform .15s ease" onclick="SupplierPortalModule._filterStatus='pending_usine';App.loadModule('supplier_portal')">
+          <div class="stat-title"><i class="fas fa-truck" style="color:#f59e0b"></i> ${isAR ? 'شاحنات في الطريق للمصنع' : 'Chauffeurs en route usine'}</div>
+          <div class="stat-val" style="color:#f59e0b;font-size:24px">${pendingItems.length}</div>
+          <div class="stat-sub">${isAR ? 'في انتظار التحميل وتأكيد المصنع' : 'En transit / pour enlèvement'}</div>
         </div>
-        <div class="stat-card" style="border-left:4px solid #10b981;background:var(--bg)">
-          <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? 'تم التحقق اليوم' : 'Validés Aujourd\'hui'}</div>
-          <div class="stat-val" style="color:#10b981;font-size:24px">${validatedToday}</div>
-          <div class="stat-sub">${isAR ? 'BRs تم إنشاؤها تلقائياً' : 'BRs créés automatiquement'}</div>
+        <div class="stat-card" style="border-left:4px solid #0d9488;background:var(--bg);cursor:pointer;transition:transform .15s ease" onclick="SupplierPortalModule._filterStatus='validated_usine';App.loadModule('supplier_portal')">
+          <div class="stat-title"><i class="fas fa-industry" style="color:#0d9488"></i> ${isAR ? 'تم التحقق (وصل استلام جاهز)' : 'Chargements validés (BR prêts)'}</div>
+          <div class="stat-val" style="color:#0d9488;font-size:24px">${validatedItems.length}</div>
+          <div class="stat-sub">${isAR ? `${validatedToday} تم التحقق منها اليوم` : `${validatedToday} validé(s) aujourd'hui`}</div>
         </div>
-        <div class="stat-card" style="border-left:4px solid var(--primary);background:var(--bg)">
-          <div class="stat-title"><i class="fas fa-boxes" style="color:var(--primary)"></i> ${isAR ? 'إجمالي التحميلات' : 'Total Chargements'}</div>
-          <div class="stat-val" style="color:var(--primary);font-size:24px">${items.length}</div>
-          <div class="stat-sub">${isAR ? 'معروض حالياً' : 'Actuellement affichés'}</div>
+        <div class="stat-card" style="border-left:4px solid #10b981;background:var(--bg);cursor:pointer;transition:transform .15s ease" onclick="SupplierPortalModule._filterStatus='delivered';App.loadModule('supplier_portal')">
+          <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? 'تم التسليم للعميل' : 'Enlevés & Livrés client'}</div>
+          <div class="stat-val" style="color:#10b981;font-size:24px">${deliveredItems.length}</div>
+          <div class="stat-sub">${isAR ? 'بضاعة مستلمة ومكتملة' : 'Livraisons clients achevées'}</div>
+        </div>
+        <div class="stat-card" style="border-left:4px solid var(--primary);background:var(--bg);cursor:pointer;transition:transform .15s ease" onclick="SupplierPortalModule._filterStatus='all';App.loadModule('supplier_portal')">
+          <div class="stat-title"><i class="fas fa-boxes" style="color:var(--primary)"></i> ${isAR ? 'إجمالي العمليات' : 'Total Opérations'}</div>
+          <div class="stat-val" style="color:var(--primary);font-size:24px">${allSupplierItems.length}</div>
+          <div class="stat-sub">${isAR ? 'عرض كافة العمليات' : 'Toutes les opérations'}</div>
         </div>
       </div>
 
@@ -3086,7 +3338,7 @@ const SupplierPortalModule = {
       </div>
 
       ${this._activeTab === 'validation' ? `
-      <div class="card" style="margin-bottom:20px">
+      <div class="card" style="margin-bottom:16px">
         <div class="filters-bar" style="padding:14px 18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           ${!isSupplier ? `
           <div class="filter-group" style="min-width:200px">
@@ -3097,13 +3349,14 @@ const SupplierPortalModule = {
             </select>
           </div>` : ''}
 
-          <div class="filter-group" style="min-width:180px">
-            <label>${isAR ? 'الحالة' : 'Statut'}</label>
+          <div class="filter-group" style="min-width:220px">
+            <label>${isAR ? 'تصفية حسب الحالة' : 'Filtrer par statut'}</label>
             <select onchange="SupplierPortalModule._filterStatus=this.value;App.loadModule('supplier_portal')">
-              <option value="all" ${this._filterStatus==='all'?'selected':''}>${isAR ? 'كل الحالات' : 'Tous les statuts'}</option>
-              <option value="pending_usine" ${this._filterStatus==='pending_usine'?'selected':''}>${isAR ? '⏳ في انتظار التحميل' : '⏳ En attente de chargement'}</option>
-              <option value="validated_usine" ${this._filterStatus==='validated_usine'?'selected':''}>${isAR ? '🏭 تم التحقق (BR منسق)' : '🏭 Validés usine (BR coordonné)'}</option>
-              <option value="delivered" ${this._filterStatus==='delivered'?'selected':''}>${isAR ? '✅ تم التسليم' : '✅ Livrés client'}</option>
+              <option value="all" ${this._filterStatus==='all'?'selected':''}>${isAR ? '📋 كل الحالات' : '📋 Tous les statuts'} (${allSupplierItems.length})</option>
+              <option value="pending_usine" ${this._filterStatus==='pending_usine'?'selected':''}>${isAR ? '🚚 شاحنات في الطريق للمصنع' : '🚚 Chauffeurs en route usine'} (${pendingItems.length})</option>
+              <option value="validated_usine" ${this._filterStatus==='validated_usine'?'selected':''}>${isAR ? '🏭 تم التحقق (وصل استلام جاهز)' : '🏭 Validés usine (BR prêt)'} (${validatedItems.length})</option>
+              <option value="delivered" ${this._filterStatus==='delivered'?'selected':''}>${isAR ? '✅ تم التسليم للعميل' : '✅ Enlevés & Livrés client'} (${deliveredItems.length})</option>
+              ${returnedItems.length ? `<option value="returned" ${this._filterStatus==='returned'?'selected':''}>${isAR ? '🔄 مرتجعات' : '🔄 Retours'} (${returnedItems.length})</option>` : ''}
             </select>
           </div>
 
@@ -3113,17 +3366,40 @@ const SupplierPortalModule = {
         </div>
       </div>
 
+      <!-- Quick Interactive Status Pills -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm ${this._filterStatus==='all'?'btn-primary':'btn-outline'}" onclick="SupplierPortalModule._filterStatus='all';App.loadModule('supplier_portal')" style="font-weight:700">
+          📋 ${isAR ? 'كل العمليات' : 'Toutes les opérations'} (${allSupplierItems.length})
+        </button>
+        <button class="btn btn-sm ${this._filterStatus==='pending_usine'?'btn-warning':'btn-outline'}" onclick="SupplierPortalModule._filterStatus='pending_usine';App.loadModule('supplier_portal')" style="font-weight:700">
+          🚚 ${isAR ? 'في الطريق للمصنع' : 'En route usine'} (${pendingItems.length})
+        </button>
+        <button class="btn btn-sm ${this._filterStatus==='validated_usine'?'btn-info':'btn-outline'}" onclick="SupplierPortalModule._filterStatus='validated_usine';App.loadModule('supplier_portal')" style="font-weight:700">
+          🏭 ${isAR ? 'تم التحقق / BR جاهز' : 'Validés usine / BR'} (${validatedItems.length})
+        </button>
+        <button class="btn btn-sm ${this._filterStatus==='delivered'?'btn-success':'btn-outline'}" onclick="SupplierPortalModule._filterStatus='delivered';App.loadModule('supplier_portal')" style="font-weight:700">
+          ✅ ${isAR ? 'تم التسليم' : 'Livrés client'} (${deliveredItems.length})
+        </button>
+        ${returnedItems.length ? `
+        <button class="btn btn-sm ${this._filterStatus==='returned'?'btn-danger':'btn-outline'}" onclick="SupplierPortalModule._filterStatus='returned';App.loadModule('supplier_portal')" style="font-weight:700">
+          🔄 ${isAR ? 'مرتجعات' : 'Retours'} (${returnedItems.length})
+        </button>` : ''}
+      </div>
+
       <div style="display:flex;flex-direction:column;gap:14px">
         ${items.length ? items.map(bc => {
           const sup = allSuppliers.find(s => s.id === bc.supplierId) || { name: bc.supplierName || 'Usine' };
           const cli = DB.getById('clients', bc.clientId) || { name: 'Client' };
-          const isValidated = bc.status === 'validated_usine' || bc.status === 'delivered';
+          const isDelivered = bc.status === 'delivered';
+          const isValidated = bc.status === 'validated_usine' || isDelivered;
+          const isPending = !isValidated && !isDelivered && bc.status !== 'returned';
+          const isReturned = bc.status === 'returned';
           const lines = bc.lines || [];
           return `
-          <div class="card" style="padding:18px;border-left:5px solid ${isValidated ? '#10b981' : '#f59e0b'};transition:all .2s ease">
+          <div class="card" style="padding:18px;border-left:5px solid ${isReturned ? '#ef4444' : (isDelivered ? '#10b981' : (isValidated ? '#0d9488' : '#f59e0b'))};transition:all .2s ease">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px">
               <div>
-                <div style="display:flex;align-items:center;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                   <span style="font-size:16px;font-weight:900;color:var(--text)">${Utils.escHTML(bc.ref)}</span>
                   ${Utils.statusBadge(bc.status || 'pending_usine')}
                   ${bc.linkedBrRef ? `<span class="badge badge-success"><i class="fas fa-link"></i> ${isAR ? 'BR منسق :' : 'BR Coordonné :'} ${Utils.escHTML(bc.linkedBrRef)}</span>` : ''}
@@ -3134,25 +3410,48 @@ const SupplierPortalModule = {
                 </div>
               </div>
 
-              <div style="display:flex;gap:8px;align-items:center">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-sm btn-outline" onclick="PDFGen.exportBonChargement(${bc.id})" title="${isAR ? 'طباعة وصل التحميل' : 'Imprimer Bon de Chargement 2 volets'}">
-                  <i class="fas fa-file-pdf"></i> ${isAR ? 'طباعة BCH' : 'Imprimer BCH (2 Volets)'}
+                  <i class="fas fa-file-pdf"></i> ${isAR ? 'طباعة BCH' : 'Imprimer BCH'}
                 </button>
-                ${!isValidated ? `
+                ${!isValidated && !isReturned ? `
                 <button class="btn btn-sm btn-success" style="background:#10b981;color:#fff;font-weight:700" onclick="SupplierPortalModule.promptValidation(${bc.id})">
-                  <i class="fas fa-check-circle"></i> ${isAR ? 'التحقق وإنشاء BR' : 'Valider Chargement & Générer BR'}
-                </button>` : bc.status !== 'delivered' ? `
+                  <i class="fas fa-check-circle"></i> ${isAR ? 'تأكيد التحميل & إصدار BR' : 'Valider Chargement & Générer BR'}
+                </button>` : (!isDelivered && !isReturned) ? `
                 <button class="btn btn-sm" style="background:#3b82f6;color:#fff;font-weight:700" onclick="SupplierPortalModule.markDelivered(${bc.id})">
-                  <i class="fas fa-truck-loading"></i> ${isAR ? 'تأكيد وصول البضاعة' : 'Confirmer Livraison'}
+                  <i class="fas fa-truck-loading"></i> ${isAR ? 'تأكيد وصول البضاعة' : 'Confirmer Livraison Client'}
                 </button>
-                <span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,.1);padding:5px 12px;border-radius:8px">
-                  <i class="fas fa-industry"></i> ${isAR ? 'تم التحقق من المصنع' : 'Validé Usine'}
+                <span style="font-size:11px;font-weight:700;color:#0d9488;background:rgba(13,148,136,.12);padding:5px 12px;border-radius:8px">
+                  <i class="fas fa-industry"></i> ${isAR ? 'تم التحقق من المصنع' : 'Validé Usine (BR Prêt)'}
+                </span>` : isDelivered ? `
+                <span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,.12);padding:5px 12px;border-radius:8px">
+                  <i class="fas fa-check-double"></i> ${isAR ? 'تم التسليم للعميل' : 'Livré au Client'}
                 </span>` : `
-                <span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,.1);padding:5px 12px;border-radius:8px">
-                  <i class="fas fa-check-double"></i> ${isAR ? 'تم التسليم' : 'Livré'}
+                <span style="font-size:11px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.12);padding:5px 12px;border-radius:8px">
+                  <i class="fas fa-undo"></i> ${isAR ? 'مرتجع' : 'Retourné'}
                 </span>`}
               </div>
             </div>
+
+            <!-- Lifecycle Visual Progress Bar -->
+            ${!isReturned ? `
+            <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;flex-wrap:wrap">
+              <span style="font-weight:800;color:var(--text3);margin-right:2px">${isAR ? 'مسار العملية:' : 'Étape du flux :'}</span>
+              <span style="font-weight:700;display:inline-flex;align-items:center;gap:4px;color:${isPending ? '#f59e0b' : '#10b981'}">
+                <i class="fas ${isPending ? 'fa-truck' : 'fa-check-circle'}"></i> 1. ${isAR ? 'الشاحنة في الطريق للمصنع' : 'Chauffeur en route vers usine'}
+              </span>
+              <i class="fas fa-chevron-right" style="color:var(--text4);font-size:9px"></i>
+              <span style="font-weight:700;display:inline-flex;align-items:center;gap:4px;color:${isDelivered ? '#10b981' : (isValidated ? '#0d9488' : 'var(--text4)')}">
+                <i class="fas ${isDelivered ? 'fa-check-circle' : (isValidated ? 'fa-industry' : 'fa-clock')}"></i> 2. ${isAR ? 'تحقق المصنع & إصدار BR' : 'Validation usine & BR généré'}
+              </span>
+              <i class="fas fa-chevron-right" style="color:var(--text4);font-size:9px"></i>
+              <span style="font-weight:700;display:inline-flex;align-items:center;gap:4px;color:${isDelivered ? '#10b981' : 'var(--text4)'}">
+                <i class="fas ${isDelivered ? 'fa-check-double' : 'fa-circle'}"></i> 3. ${isAR ? 'التسليم للعميل' : 'Livraison finale client'}
+              </span>
+            </div>` : `
+            <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:6px 12px;margin-bottom:12px;font-size:11px;color:#ef4444;font-weight:700">
+              <i class="fas fa-undo"></i> ${isAR ? 'هذه الشحنة تم إرجاعها وخصمها.' : 'Ce chargement a été retourné et déduit.'}
+            </div>`}
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;background:var(--bg2);padding:12px;border-radius:10px;margin-bottom:12px">
               <div>
@@ -3205,9 +3504,9 @@ const SupplierPortalModule = {
           </div>`;
         }).join('') : `
         <div class="empty-state" style="padding:60px 20px;text-align:center;background:var(--bg);border-radius:12px;border:1px solid var(--border)">
-          <i class="fas fa-check-circle" style="font-size:42px;color:#10b981;opacity:.6;margin-bottom:12px"></i>
-          <h4 style="font-size:16px;color:var(--text);margin:0">${isAR ? 'لا توجد تحميلات في الانتظار حالياً' : 'Aucun chargement en attente pour le moment'}</h4>
-          <p style="color:var(--text4);font-size:13px;margin-top:4px">${isAR ? 'تم تحميل جميع الشاحنات وإنشاء وصولات الاستلام المنسقة.' : 'Tous les camions ont été chargés et les bons de réception coordonnés ont été générés.'}</p>
+          <i class="fas fa-info-circle" style="font-size:42px;color:var(--text4);opacity:.6;margin-bottom:12px"></i>
+          <h4 style="font-size:16px;color:var(--text);margin:0">${this._filterStatus==='pending_usine' ? (isAR ? 'لا توجد شاحنات في الطريق للمصنع حالياً' : 'Aucun chauffeur en route vers l\'usine pour le moment') : this._filterStatus==='validated_usine' ? (isAR ? 'لا توجد شحنات محملة بانتظار التسليم' : 'Aucun chargement validé en attente de livraison') : this._filterStatus==='delivered' ? (isAR ? 'لا توجد شحنات مسلمة مسجلة' : 'Aucun chargement livré pour le moment') : (isAR ? 'لا توجد عمليات مسجلة' : 'Aucune opération trouvée')}</h4>
+          <p style="color:var(--text4);font-size:13px;margin-top:4px">${isAR ? 'يمكنك تغيير معايير التصفية أعلاه لعرض بقية العمليات.' : 'Vous pouvez modifier le filtre ci-dessus pour consulter les autres étapes.'}</p>
         </div>`}
       </div>
       ` : ''}
@@ -3437,15 +3736,15 @@ const BCSupervisionModule = {
 
     items.sort((a,b) => String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 
-    // Pipeline Groups — use STATUS-based classification (not brId presence)
-    // Since all BCH now get a reserved BR on creation, we check status instead
-    const pipePending   = items.filter(b => b.status === 'pending_usine' || b.status === 'open' || (!b.status && !b.brId));
-    const pipeValidated = items.filter(b => b.status === 'validated_usine');
-    const pipeDelivered = items.filter(b => b.status === 'delivered');
-    const pipeReturned  = items.filter(b => b.status === 'returned');
+    // Base items (before status filter)
+    const baseItems = items;
+    const pipePending   = baseItems.filter(b => b.status === 'pending_usine' || b.status === 'open' || (!b.status && !b.brId));
+    const pipeValidated = baseItems.filter(b => b.status === 'validated_usine');
+    const pipeDelivered = baseItems.filter(b => b.status === 'delivered');
+    const pipeReturned  = baseItems.filter(b => b.status === 'returned');
 
-    const totalTTC = items.filter(b => b.status !== 'returned').reduce((s,b) => s + (Number(b.totalTTC)||0), 0);
-    const totalReturnsTTC = items.filter(b => b.status === 'returned').reduce((s,b) => s + (Number(b.totalTTC)||0), 0);
+    const totalTTC = baseItems.filter(b => b.status !== 'returned').reduce((s,b) => s + (Number(b.totalTTC)||0), 0);
+    const totalReturnsTTC = baseItems.filter(b => b.status === 'returned').reduce((s,b) => s + (Number(b.totalTTC)||0), 0);
 
     return `
     <div style="padding:24px 28px;max-width:1400px;margin:0 auto">
@@ -3467,29 +3766,29 @@ const BCSupervisionModule = {
       </div>
 
       <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px">
-        <div class="stat-card" style="border-left:4px solid #f59e0b">
-          <div class="stat-title"><i class="fas fa-clock" style="color:#f59e0b"></i> ${isAR ? 'في انتظار المصنع' : 'En attente Usine'}</div>
+        <div class="stat-card" style="border-left:4px solid #f59e0b;cursor:pointer;transition:transform .15s ease" onclick="BCSupervisionModule._filters.status='pending_usine';App.loadModule('bc_supervision')">
+          <div class="stat-title"><i class="fas fa-truck" style="color:#f59e0b"></i> ${isAR ? 'شاحنات في الطريق للمصنع' : 'Chauffeurs en route usine'}</div>
           <div class="stat-val" style="color:#f59e0b">${pipePending.length}</div>
           <div class="stat-sub">${Utils.fmtCurrency(pipePending.reduce((s,b)=>s+(Number(b.totalTTC)||0),0))}</div>
         </div>
-        <div class="stat-card" style="border-left:4px solid #0d9488">
+        <div class="stat-card" style="border-left:4px solid #0d9488;cursor:pointer;transition:transform .15s ease" onclick="BCSupervisionModule._filters.status='validated_usine';App.loadModule('bc_supervision')">
           <div class="stat-title"><i class="fas fa-industry" style="color:#0d9488"></i> ${isAR ? 'تم التحقق من المصنع / وصل استلام' : 'Validés Usine / BR'}</div>
           <div class="stat-val" style="color:#0d9488">${pipeValidated.length}</div>
           <div class="stat-sub">${Utils.fmtCurrency(pipeValidated.reduce((s,b)=>s+(Number(b.totalTTC)||0),0))}</div>
         </div>
-        <div class="stat-card" style="border-left:4px solid #10b981">
+        <div class="stat-card" style="border-left:4px solid #10b981;cursor:pointer;transition:transform .15s ease" onclick="BCSupervisionModule._filters.status='delivered';App.loadModule('bc_supervision')">
           <div class="stat-title"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? 'تم السحب والتسليم' : 'Enlevés & Livrés'}</div>
           <div class="stat-val" style="color:#10b981">${pipeDelivered.length}</div>
           <div class="stat-sub">${Utils.fmtCurrency(pipeDelivered.reduce((s,b)=>s+(Number(b.totalTTC)||0),0))}</div>
         </div>
-        <div class="stat-card" style="border-left:4px solid #ef4444">
+        <div class="stat-card" style="border-left:4px solid #ef4444;cursor:pointer;transition:transform .15s ease" onclick="BCSupervisionModule._filters.status='returned';App.loadModule('bc_supervision')">
           <div class="stat-title"><i class="fas fa-undo" style="color:#ef4444"></i> ${isAR ? 'مرتجعات مخصومة' : 'Retours Déduits'}</div>
           <div class="stat-val" style="color:#ef4444">${pipeReturned.length}</div>
           <div class="stat-sub">−${Utils.fmtCurrency(totalReturnsTTC)}</div>
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:20px">
+      <div class="card" style="margin-bottom:16px">
         <div class="filters-bar" style="padding:14px 18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="filter-group" style="flex:2;min-width:180px">
             <label>${isAR ? 'بحث سريع' : 'Recherche rapide'}</label>
@@ -3525,50 +3824,73 @@ const BCSupervisionModule = {
         </div>
       </div>
 
+      <!-- Quick Status Filter Tabs -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm ${status==='all'?'btn-primary':'btn-outline'}" onclick="BCSupervisionModule._filters.status='all';App.loadModule('bc_supervision')" style="font-weight:700">
+          📋 ${isAR ? 'كل المراحل' : 'Toutes les étapes'} (${baseItems.length})
+        </button>
+        <button class="btn btn-sm ${status==='pending_usine'?'btn-warning':'btn-outline'}" onclick="BCSupervisionModule._filters.status='pending_usine';App.loadModule('bc_supervision')" style="font-weight:700">
+          🚚 ${isAR ? 'في الطريق للمصنع' : 'En route usine'} (${pipePending.length})
+        </button>
+        <button class="btn btn-sm ${status==='validated_usine'?'btn-info':'btn-outline'}" onclick="BCSupervisionModule._filters.status='validated_usine';App.loadModule('bc_supervision')" style="font-weight:700">
+          🏭 ${isAR ? 'تم التحقق / BR جاهز' : 'Validés usine / BR'} (${pipeValidated.length})
+        </button>
+        <button class="btn btn-sm ${status==='delivered'?'btn-success':'btn-outline'}" onclick="BCSupervisionModule._filters.status='delivered';App.loadModule('bc_supervision')" style="font-weight:700">
+          ✅ ${isAR ? 'تم التسليم' : 'Livrés client'} (${pipeDelivered.length})
+        </button>
+        <button class="btn btn-sm ${status==='returned'?'btn-danger':'btn-outline'}" onclick="BCSupervisionModule._filters.status='returned';App.loadModule('bc_supervision')" style="font-weight:700">
+          🔄 ${isAR ? 'مرتجعات' : 'Retours'} (${pipeReturned.length})
+        </button>
+      </div>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:flex-start">
-        <!-- Col 1: En attente Usine -->
+        <!-- Col 1: En route Usine -->
+        ${(status==='all' || status==='pending_usine') ? `
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #f59e0b">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-clock" style="color:#f59e0b"></i> ${isAR ? '1. في انتظار المصنع' : '1. En attente Usine'}</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-truck" style="color:#f59e0b"></i> ${isAR ? '1. 🚚 في الطريق إلى المصنع' : '1. 🚚 Chauffeur en route vers usine'}</strong>
             <span class="badge badge-warning">${pipePending.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipePending.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد في الانتظار' : 'Aucun en attente'}</div>`}
+            ${pipePending.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد في الانتظار' : 'Aucun chargement en transit'}</div>`}
           </div>
-        </div>
+        </div>` : ''}
 
         <!-- Col 2: Validé Usine (BR Généré) -->
+        ${(status==='all' || status==='validated_usine') ? `
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #0d9488">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-industry" style="color:#0d9488"></i> ${isAR ? '2. تم التحقق / وصل استلام' : '2. Validé Usine / BR'}</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-industry" style="color:#0d9488"></i> ${isAR ? '2. 🏭 تم التحقق / وصل استلام' : '2. 🏭 Validé Usine (BR officiel prêt)'}</strong>
             <span class="badge badge-primary">${pipeValidated.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipeValidated.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد' : 'Aucun validé'}</div>`}
+            ${pipeValidated.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد' : 'Aucun chargement validé'}</div>`}
           </div>
-        </div>
+        </div>` : ''}
 
         <!-- Col 3: Enlevé & Livré -->
+        ${(status==='all' || status==='delivered') ? `
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #10b981">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? '3. تم السحب والتسليم' : '3. Enlevé & Livré'}</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-check-circle" style="color:#10b981"></i> ${isAR ? '3. ✅ تم السحب والتسليم' : '3. ✅ Enlevé & Livré au client'}</strong>
             <span class="badge badge-success">${pipeDelivered.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipeDelivered.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد' : 'Aucun livré'}</div>`}
+            ${pipeDelivered.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد' : 'Aucun chargement livré'}</div>`}
           </div>
-        </div>
+        </div>` : ''}
 
         <!-- Col 4: Retourné -->
+        ${(status==='all' || status==='returned') ? `
         <div style="background:var(--bg2);border-radius:12px;padding:14px;border:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #ef4444">
-            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-undo" style="color:#ef4444"></i> ${isAR ? '4. مرتجع' : '4. Retourné'}</strong>
+            <strong style="font-size:13px;color:var(--text)"><i class="fas fa-undo" style="color:#ef4444"></i> ${isAR ? '4. 🔄 مرتجع' : '4. 🔄 Retours déduits'}</strong>
             <span class="badge badge-danger">${pipeReturned.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            ${pipeReturned.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد مرتجعات' : 'Aucun retour'}</div>`}
+            ${pipeReturned.map(bc => this._renderKanbanCard(bc, supMap, cliMap)).join('') || `<div style="padding:20px;text-align:center;color:var(--text4);font-size:11px">${isAR ? 'لا يوجد مرتجعات' : 'Aucun retour enregistré'}</div>`}
           </div>
-        </div>
+        </div>` : ''}
       </div>
     </div>`;
   },
@@ -3580,7 +3902,10 @@ const BCSupervisionModule = {
     return `
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;box-shadow:0 2px 6px rgba(0,0,0,.03)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-          <strong style="font-size:13px;color:var(--primary)">${Utils.escHTML(bc.ref)}</strong>
+          <div>
+            <strong style="font-size:13px;color:var(--primary)">${Utils.escHTML(bc.ref)}</strong>
+            <div style="margin-top:2px">${Utils.statusBadge(bc.status||'pending_usine')}</div>
+          </div>
           <span style="font-size:11px;font-weight:800;color:var(--text)">${Utils.fmtCurrency(bc.totalTTC)}</span>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">
@@ -3647,7 +3972,7 @@ const BCSupervisionModule = {
             ${bc.validatedAt ? `
             <div style="font-size:11px;color:#0d9488;margin-top:2px"><i class="fas fa-check-circle"></i> ${isAR ? 'تم التحقق في' : 'Validé le'} ${Utils.fmtDateTime ? Utils.fmtDateTime(bc.validatedAt) : bc.validatedAt} ${isAR ? 'من طرف' : 'par'} <strong>${Utils.escHTML(bc.validatedBy||(isAR?'المصنع':'Usine'))}</strong></div>
             ${bc.ticketPesee ? `<div style="font-size:11px;color:var(--text3);margin-top:2px"><i class="fas fa-weight-hanging"></i> ${isAR ? 'تذكرة الوزن / رقم المصنع :' : 'Ticket de Pesée / N° Usine :'} <strong>${Utils.escHTML(bc.ticketPesee)}</strong></div>` : ''}
-            ` : `<div style="font-size:11px;color:#f59e0b;margin-top:2px"><i class="fas fa-clock"></i> ${isAR ? 'جاري — السائق في الطريق نحو المصنع' : "En cours — Chauffeur en route vers l'usine"} ${Utils.escHTML(sup.name)}</div>`}
+            ` : `<div style="font-size:11px;color:#f59e0b;margin-top:2px"><i class="fas fa-truck"></i> ${isAR ? 'جاري — الشاحنة في الطريق نحو المصنع' : "En cours — Chauffeur en route vers l'usine"} ${Utils.escHTML(sup.name)}</div>`}
           </div>
 
           <!-- Step 4 -->
@@ -3657,7 +3982,7 @@ const BCSupervisionModule = {
             ${br ? `
             <div style="font-size:11px;color:#8b5cf6;margin-top:2px"><i class="fas fa-link"></i> ${isAR ? 'وصل استلام رسمي :' : 'BR officiel généré :'} <strong>${Utils.escHTML(br.ref)}</strong> (${Utils.fmtCurrency(br.totalTTC)})</div>
             <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-lock"></i> ${isAR ? 'مقفل — يمكن التعديل فقط من المسؤول' : 'Verrouillé — Modifiable uniquement par l\'administrateur'}</div>
-            ` : `<div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'في انتظار التحقق من المصنع للإنشاء التلقائي' : 'En attente de validation usine pour génération automatique'}</div>`}
+            ` : `<div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'الشاحنة في الطريق للمصنع — يتم إنشاء وصل الاستلام فور التحقق على الموقع' : 'En route vers usine — BR généré dès validation sur site'}</div>`}
           </div>
 
           <!-- Step 5 (if returned) -->
@@ -3685,41 +4010,43 @@ const BCSupervisionModule = {
 const CaisseModule = {
   _selectedUserId: null,
   switchUser(uid) {
-    this._selectedUserId = uid ? parseInt(uid) : null;
+    this._selectedUserId = uid === 'all' ? 'all' : (uid ? (isNaN(uid) ? uid : parseInt(uid)) : null);
     App.loadModule('caisse');
   },
   render() {
     const currentU = Auth.getCurrentUser();
     if (!currentU) return '';
-    const u = (Auth.isAdmin() && this._selectedUserId) ? (DB.getById('users', this._selectedUserId) || currentU) : currentU;
-    const today = Utils.today();
     const isAR = T.isRTL();
+    const isGlobal = Auth.isAdmin() && this._selectedUserId === 'all';
+    const u = isGlobal ? { id: 'all', name: isAR ? 'جميع الصناديق (إجمالي)' : 'Toutes les Caisses' } : ((Auth.isAdmin() && this._selectedUserId) ? (DB.getById('users', this._selectedUserId) || currentU) : currentU);
+    const today = Utils.today();
 
     // Auto-ensure open session exists for today
-    let session = SessionMgr.getTodaySession(u.id);
-    if (!session) {
+    let session = isGlobal ? { id: 'all', status: 'open', closedNet: null } : SessionMgr.getTodaySession(u.id);
+    if (!session && !isGlobal) {
       session = SessionMgr.startSession(u.id);
     }
 
     const summary = SessionMgr.getUserDaySummary(u.id, today);
-    const isClosed = session.status === 'closed';
-    const closedNet = session.closedNet !== null && session.closedNet !== undefined ? session.closedNet : summary.netAmount;
+    const isClosed = session ? session.status === 'closed' : false;
+    const closedNet = (session && session.closedNet !== null && session.closedNet !== undefined) ? session.closedNet : summary.netAmount;
     const settings = DB.getSettings();
     const banks = settings.banks || [];
-    const bankDoc = session.bankId ? banks.find(b => String(b.id) === String(session.bankId)) : null;
-    const bankName = session.bankName || bankDoc?.name || (banks.length > 0 ? banks[0].name : 'Banque');
+    const bankDoc = session?.bankId ? banks.find(b => String(b.id) === String(session.bankId)) : null;
+    const bankName = session?.bankName || bankDoc?.name || (banks.length > 0 ? banks[0].name : 'Banque');
 
     // BL rows
     const blRows = summary.bls.length ? summary.bls.map((b, i) => {
       const cli = DB.getById('clients', b.clientId);
       return `<tr style="border-bottom:1px solid var(--border);${i % 2 ? 'background:var(--bg-inset)' : ''}">
-        <td style="padding:10px 14px"><strong style="color:var(--primary)">${Utils.escHTML(b.ref || '')}</strong></td>
+        <td style="padding:10px 14px"><strong style="color:var(--primary)">${Utils.escHTML(b.ref || '')}</strong>${isGlobal ? `<span class="badge badge-info" style="margin-inline-start:6px;font-size:10px">${Utils.escHTML(b.createdByName || '')}</span>` : ''}</td>
         <td style="padding:10px 14px;color:var(--text)">${Utils.escHTML(cli?.name || b.clientName || '—')}</td>
         <td style="padding:10px 14px;font-size:11px;color:var(--text4)">${b.createdAt ? new Date(b.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
         <td style="padding:10px 14px;text-align:right;font-weight:700;color:var(--success)">+${Utils.fmtCurrency(b.totalTTC)}</td>
         <td style="padding:10px 14px;text-align:center">${Utils.statusBadge(b.status || 'delivered')}</td>
         <td style="padding:10px 14px;text-align:right;white-space:nowrap">
           <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${b.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
+          ${Auth.canEdit(b) ? `<button class="btn btn-xs" onclick="BLModule.showEdit(${b.id},${Auth.isAdmin()})" title="${isAR ? 'تعديل' : 'Modifier'}" style="color:#f59e0b;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);min-width:28px;min-height:28px;border-radius:6px;margin:0 2px"><i class="fas fa-edit"></i></button>` : ''}
           <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${b.id})" title="${isAR ? 'طباعة سند الشحن (نسختان)' : 'Imprimer BCH (2 Volets)'}"><i class="fas fa-print"></i></button>
           <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBLRoute(${b.id})" title="${isAR ? 'سند التسليم للطريق' : 'BL pour la route'}"><i class="fas fa-truck"></i></button>
           ${!isClosed ? `<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${b.id})" title="${isAR ? 'إرجاع بضاعة' : 'Retour Marchandise'}"><i class="fas fa-undo"></i></button>` : ''}
@@ -3766,7 +4093,8 @@ const CaisseModule = {
             <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);padding:4px 8px;border-radius:8px;border:1px solid var(--border)">
               <span style="font-size:11px;font-weight:700;color:var(--text4)"><i class="fas fa-user-circle"></i> ${isAR ? 'الصندوق المعروض :' : 'Afficher caisse :'}</span>
               <select class="input" style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;border:none;background:transparent" onchange="CaisseModule.switchUser(this.value)">
-                ${DB.getAll('users').filter(x => x.active !== false && (x.role === 'user' || x.role === 'admin')).map(x => `<option value="${x.id}" ${x.id === u.id ? 'selected' : ''}>${Utils.escHTML(x.name || x.username)} ${x.id === currentU.id ? (isAR ? '(أنا)' : '(Moi)') : ''}</option>`).join('')}
+                <option value="all" ${this._selectedUserId === 'all' ? 'selected' : ''}>${isAR ? '🌐 كل الصناديق (إجمالي)' : '🌐 Toutes les Caisses (Global)'}</option>
+                ${DB.getAll('users').filter(x => x.active !== false && (x.role === 'user' || x.role === 'admin')).map(x => `<option value="${x.id}" ${(!isGlobal && String(x.id) === String(u.id)) ? 'selected' : ''}>${Utils.escHTML(x.name || x.username)} ${String(x.id) === String(currentU.id) ? (isAR ? '(أنا)' : '(Moi)') : ''}</option>`).join('')}
               </select>
             </div>
           ` : ''}
@@ -3952,7 +4280,8 @@ const CaisseModule = {
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const timbreAmount = Math.round(totalHT * 1 / 100 * 100) / 100; // Fixed 1% for etat de vente
     const etatVenteTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
-    const difference = Math.round((etatVenteTTC - netCaisse) * 100) / 100;
+    const netEtatVenteTTC = Math.max(0, Math.round((etatVenteTTC - totalReturns) * 100) / 100);
+    const difference = Math.round((netEtatVenteTTC - netCaisse) * 100) / 100;
 
     // Build BCH detail rows
     const bchRows = summary.bls.map((b, i) => {
@@ -4036,26 +4365,26 @@ const CaisseModule = {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
             <!-- Left: Caisse Brute -->
             <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px">
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--success);margin-bottom:6px"><i class="fas fa-cash-register"></i> ${isAR?'الصندوق الخام':'Caisse Brute'}</div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--success);margin-bottom:6px"><i class="fas fa-cash-register"></i> ${isAR?'الصندوق الخام (وصولات الشحن)':'Caisse Brute (Bons de Chargement)'}</div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'إيرادات BCH:':'Recettes BCH :'}</span><span style="font-weight:700;color:var(--success)">+${Utils.fmtCurrency(caisseBrut)}</span></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'المرتجعات:':'Retours :'}</span><span style="font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(totalReturns)}</span></div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'صافي الصندوق:':'Net Caisse :'}</span><span style="color:var(--primary)">${Utils.fmtCurrency(netCaisse)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'صافي المقبوضات:':'Net Caisse :'}</span><span style="color:var(--primary)">${Utils.fmtCurrency(netCaisse)}</span></div>
             </div>
             <!-- Right: Etat de Vente -->
             <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px">
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7c3aed;margin-bottom:6px"><i class="fas fa-file-invoice-dollar"></i> ${isAR?'كشف المبيعات':'État de Vente'}</div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7c3aed;margin-bottom:6px"><i class="fas fa-file-invoice-dollar"></i> ${isAR?'كشف المبيعات (1% طابع)':'État de Vente (1% Timbre)'}</div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'المجموع HT:':'Total HT :'}</span><span style="font-weight:700">${Utils.fmtCurrency(Math.round(totalHT*100)/100)}</span></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الرسم على القيمة المضافة':'TVA'} (${tvaRate}%) :</span><span style="font-weight:700">${Utils.fmtCurrency(tvaAmount)}</span></div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الطابع الجبائي (1%):':'Timbre Fiscal (1%) :'}</span><span style="font-weight:700">${Utils.fmtCurrency(timbreAmount)}</span></div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'المجموع TTC:':'Total TTC :'}</span><span style="color:#7c3aed">${Utils.fmtCurrency(etatVenteTTC)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الطابع الجبائي (1% ثابت):':'Timbre Fiscal (1% fixe) :'}</span><span style="font-weight:700">${Utils.fmtCurrency(timbreAmount)}</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'الصافي للبنك:':'Net Versement :'}</span><span style="color:#7c3aed">${Utils.fmtCurrency(netEtatVenteTTC)}</span></div>
             </div>
           </div>
 
           <!-- Difference -->
-          <div style="background:${difference > 0 ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'};border:1px solid ${difference > 0 ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
+          <div style="background:${difference >= 0 ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'};border:1px solid ${difference >= 0 ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
             <div>
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR?'الفرق (كشف المبيعات − الصندوق الخام)':'Différence (État de Vente − Caisse Brute)'}</div>
-              <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR?'= رسوم الطابع الجبائي المحتسبة':'= Frais de timbre fiscal comptabilisés'}</div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR?'فارق الطابع الجبائي (كشف المبيعات 1% − مقبوضات BCH)':'Écart Fiscal Timbre (État de Vente 1% − Recettes BCH)'}</div>
+              <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR?'= فارق الطابع المحتسب قانونياً':'= Écart entre timbre variable BCH et 1% fixe'}</div>
             </div>
             <div style="font-size:16px;font-weight:900;color:${difference >= 0 ? 'var(--success)' : 'var(--danger)'}">${difference >= 0 ? '+' : ''}${Utils.fmtCurrency(difference)}</div>
           </div>
@@ -4073,8 +4402,8 @@ const CaisseModule = {
             <span style="font-weight:700;color:var(--danger)">-${Utils.fmtCurrency(totalReturns)}</span>
           </div>` : ''}
           <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-            <span><i class="fas fa-university" style="color:var(--primary)"></i> ${isAR?'تحويل للبنك — كشف المبيعات':'Versement Banque — État de Vente'}</span>
-            <span style="font-weight:700;color:var(--primary)">${Utils.fmtCurrency(netCaisse)}</span>
+            <span><i class="fas fa-university" style="color:var(--primary)"></i> ${isAR?'تحويل للبنك — كشف المبيعات (1% طابع)':'Versement Banque — État de Vente (1% timbre)'}</span>
+            <span style="font-weight:700;color:var(--primary)">${Utils.fmtCurrency(netEtatVenteTTC)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:4px 0;font-weight:900;font-size:13px;margin-top:4px">
             <span>${isAR?'رصيد الصندوق بعد الإغلاق:':'Solde Caisse après clôture :'}</span>
@@ -4118,7 +4447,7 @@ const CaisseModule = {
       const result = await SessionMgr.closeMiniCaisse(u.id, bankId, note);
       const bank = banks.find(b => String(b.id) === String(bankId));
       const bankName = bank?.name || (isAR ? 'البنك' : 'Banque');
-      const netAmt = result?.summary?.netAmount || 0;
+      const netAmt = result?.etatDoc?.totalTTC || result?.summary?.netAmount || 0;
       
       // Toast notification
       Utils.notify(isAR 
@@ -4174,7 +4503,9 @@ const CaisseModule = {
         ref: etatDoc.ref, createdByName: etatDoc.createdByName || etatDoc.userName,
         createdAt: etatDoc.createdAt, items: etatDoc.items || [],
         totalHT: etatDoc.totalHT, tvaAmt: etatDoc.tvaAmount, tvaRate: etatDoc.tvaRate,
-        timbreAmt: etatDoc.timbreAmount || 0, totalTTC: etatDoc.totalTTC,
+        timbreAmt: (Number(etatDoc.timbreAmount) > 0) ? Number(etatDoc.timbreAmount) : ((Number(etatDoc.totalHT)||0) > 0 ? Math.round((Number(etatDoc.totalHT)||0) * 0.01 * 100) / 100 : 0),
+        timbreRate: etatDoc.timbreRate || 1,
+        totalTTC: etatDoc.totalTTC,
         period, settings, blList: etatDoc.blList || [], returnList: etatDoc.returnList || [],
         grossTotalTTC: etatDoc.totalBLsTTC || etatDoc.totalTTC,
         returnsTotalTTC: etatDoc.totalReturnsTTC || 0,
@@ -4290,14 +4621,16 @@ const CaisseModule = {
 
   async showMorningPrompt() {
     const u = Auth.getCurrentUser();
-    if (!u) return;
+    if (!u || u.role === 'admin' || u.role === 'supplier' || u.role === 'supplier_agent') return;
+    if (typeof Auth !== 'undefined' && Auth.isSupplier && Auth.isSupplier()) return;
+    if (typeof Auth !== 'undefined' && !Auth.can('canViewCaisse')) return;
     const isAR = T.isRTL();
     
     // Guard: avoid duplicate session for same user + same day
     const existing = SessionMgr.getTodaySession(u.id);
     if (existing) {
       Utils.notify(isAR ? 'لديك جلسة مفتوحة بالفعل لليوم.' : 'Vous avez déjà une session ouverte pour aujourd\'hui.', 'warning');
-      App.loadModule('dashboard');
+      App.loadModule(Auth.isSupplier() ? 'supplier_portal' : 'dashboard');
       return;
     }
 
@@ -4329,7 +4662,7 @@ const CaisseModule = {
     });
     
     Utils.notify(isAR ? '✅ تم بدء اليومية بنجاح!' : '✅ Journée démarrée avec succès !', 'success');
-    App.loadModule('dashboard');
+    App.loadModule(Auth.isSupplier() ? 'supplier_portal' : 'dashboard');
   }
 };
 
@@ -10582,8 +10915,12 @@ const EtatVenteModule = {
 
     let totalHT = 0;
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
-    const tvaAmt = totalHT * (tvaRate / 100);
-    const timbreAmt = DB.calcTimbre(totalHT);
+    const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
+    const timbreRate = 1; // Strictly 1% fixed for État de Vente
+    const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
+    const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
+    const netTotalEV = Math.max(0, Math.round((totalEV_TTC - returnsTotalTTC) * 100) / 100);
+    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
 
     let html = `
     <!-- Filter bar -->
@@ -10618,7 +10955,7 @@ const EtatVenteModule = {
         <div style="font-size:24px;font-weight:900;color:#0ea5e9">${bls.length} ${isAR ? 'سند' : 'BL'}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--success);margin-bottom:4px">${isAR ? 'إجمالي المبيعات الخام (+)' : 'Total Brut Ventes (+)'}</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--success);margin-bottom:4px">${isAR ? 'إجمالي المبيعات الخام (+)' : 'Total Brut Ventes BCH (+)'}</div>
         <div style="font-size:20px;font-weight:900;color:var(--success)">+${Utils.fmtCurrency(grossTotalTTC)}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
@@ -10626,12 +10963,13 @@ const EtatVenteModule = {
         <div style="font-size:20px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(returnsTotalTTC)} <span style="font-size:12px;font-weight:600;color:var(--text4)">(${retours.length} ${isAR ? 'سند إرجاع' : 'BR'})</span></div>
       </div>
       <div style="background:linear-gradient(135deg,rgba(13,148,136,.12),rgba(20,184,166,.05));border:1px solid rgba(13,148,136,.25);border-radius:14px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d9488;margin-bottom:4px">${isAR ? 'الصافي للإيداع بالبنك' : 'Net à Déposer en Banque'}</div>
-        <div style="font-size:22px;font-weight:900;color:#0d9488">${Utils.fmtCurrency(netTotalTTC)}</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d9488;margin-bottom:4px">${isAR ? 'صافي كشف المبيعات (1% طابع)' : 'Net État de Vente (1% Timbre)'}</div>
+        <div style="font-size:22px;font-weight:900;color:#0d9488">${Utils.fmtCurrency(netTotalEV)}</div>
+        <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR ? `مقبوضات BCH: ${Utils.fmtCurrency(netTotalTTC)} | فارق: ${ecartFiscal >= 0 ? '+' : ''}${Utils.fmtCurrency(ecartFiscal)}` : `Recettes BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart: ${ecartFiscal >= 0 ? '+' : ''}${Utils.fmtCurrency(ecartFiscal)}`}</div>
       </div>
     </div>
 
-    <!-- Fiscal breakdown: HT / TVA / Timbre -->
+    <!-- Fiscal breakdown: HT / TVA / Timbre 1% / Total TTC -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text4);margin-bottom:4px">${isAR ? 'المجموع خ.ر (HT)' : 'Total HT'}</div>
@@ -10642,12 +10980,12 @@ const EtatVenteModule = {
         <div style="font-size:16px;font-weight:800;color:#f59e0b">${Utils.fmtCurrency(tvaAmt)}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8b5cf6;margin-bottom:4px">${isAR ? 'الطابع الجبائي' : 'Timbre Fiscal'}</div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8b5cf6;margin-bottom:4px">${isAR ? 'الطابع الجبائي (1% ثابت)' : 'Timbre Fiscal (1% fixe)'}</div>
         <div style="font-size:16px;font-weight:800;color:#8b5cf6">${Utils.fmtCurrency(timbreAmt)}</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);margin-bottom:4px">${isAR ? 'المجموع ك.ر (TTC)' : 'Total TTC'}</div>
-        <div style="font-size:16px;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(totalHT + tvaAmt + timbreAmt)}</div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);margin-bottom:4px">${isAR ? 'المجموع ك.ر (كشف المبيعات)' : 'Total TTC État de Vente'}</div>
+        <div style="font-size:16px;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(totalEV_TTC)}</div>
       </div>
     </div>
 
@@ -10948,7 +11286,25 @@ const EtatVenteModule = {
       };
       const savedDeposit = await DB.insert('bank_transactions', depositData);
       await DB.update('etat_vente_docs', doc.id, { bankDepositId: savedDeposit.id });
-      Utils.notify(isAR ? `✅ تم تأكيد الكشف. تم تسجيل إيداع بمبلغ ${Utils.fmtCurrency(nNet)}.` : `État validé. Dépôt de ${Utils.fmtCurrency(nNet)} enregistré.`, 'success', 5000);
+
+      const selBank = banks.find(b => String(b.id) === String(selectedBankId));
+      const bName = selBank ? selBank.name : (isAR ? 'البنك' : 'Banque');
+      await DB.insert('caisse_admin', {
+        type: 'withdrawal',
+        source: 'transfert_banque_etat_vente',
+        userId: u?.id,
+        userName: u?.name || (isAR ? 'الإدارة' : 'Administration'),
+        sessionDate: doc.dateEnd || doc.date || now.toISOString().split('T')[0],
+        amount: nNet,
+        targetBankId: selectedBankId,
+        etatVenteRef: doc.ref,
+        etatVenteTTC: nNet,
+        note: isAR 
+          ? `تحويل بنكي — كشف المبيعات ${doc.ref} إلى ${bName} (تأكيد الإدارة — 1% طابع: ${Utils.fmtCurrency(nNet)})` 
+          : `Versement bancaire — État de Vente ${doc.ref} vers ${bName} (Validé par Admin — 1% timbre: ${Utils.fmtCurrency(nNet)})`
+      });
+
+      Utils.notify(isAR ? `✅ تم تأكيد الكشف. تم تسجيل الإيداع البنكي وخصم الصندوق بمبلغ ${Utils.fmtCurrency(nNet)}.` : `État validé. Dépôt de ${Utils.fmtCurrency(nNet)} versé en banque et déduit de la caisse.`, 'success', 5000);
     } else {
       Utils.notify(isAR ? 'تم تأكيد الكشف بدون إيداع بنكي.' : 'État validé sans dépôt bancaire.', 'success');
     }
@@ -11063,8 +11419,12 @@ const EtatVenteModule = {
     const tvaRate = Number(settings.tvaRate) || 19;
     let totalHT = 0;
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
-    const tvaAmt = totalHT * (tvaRate / 100);
-    const timbreAmt = DB.calcTimbre(totalHT);
+    const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
+    const timbreRate = 1; // Strictly 1% fixed for État de Vente
+    const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
+    const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
+    const netTotalEV = Math.max(0, Math.round((totalEV_TTC - returnsTotalTTC) * 100) / 100);
+    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
     const u = Auth.getCurrentUser();
     
     const initialStatus = isAdmin ? 'validated' : 'pending_admin';
@@ -11075,20 +11435,33 @@ const EtatVenteModule = {
       date: this._getDateEnd(),
       dateStart: this._getDateStart(),
       dateEnd: this._getDateEnd(),
-      items: items,
-      blList: bls.map(b => ({ id: b.id, ref: b.ref, date: b.date, clientName: b.clientName || (isAR ? 'زبون عام' : 'Client Comptoir'), totalTTC: Number(b.totalTTC)||0, createdBy: b.createdBy })),
+      blList: bls.map(b => ({
+        id: b.id,
+        ref: b.ref,
+        date: b.date,
+        clientName: b.clientName || (isAR ? 'زبون عام' : 'Client Comptoir'),
+        totalHT: Number(b.totalHT) || 0,
+        tvaAmount: Number(b.tvaAmount || b.tva) || 0,
+        timbreAmount: Number(b.timbreAmount || b.timbre) || 0,
+        totalTTC: Number(b.totalTTC) || 0,
+        createdBy: b.createdBy
+      })),
       returnList: retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, date: r.date, clientName: r.clientName || (isAR ? 'زبون' : 'Client'), motif: r.motif || (isAR ? 'إرجاع بضاعة' : 'Retour marchandise'), totalTTC: Number(r.totalTTC)||0, userId: r.userId })),
       totalBLsTTC: grossTotalTTC,
       grossTotalTTC: grossTotalTTC,
       totalReturnsTTC: returnsTotalTTC,
       returnsTotalTTC: returnsTotalTTC,
-      netTotalTTC: netTotalTTC,
+      realBchNet: netTotalTTC,
+      realBchGross: grossTotalTTC,
+      netTotalTTC: netTotalEV,
       totalHT: totalHT,
       tvaRate: tvaRate,
       tvaAmount: tvaAmt,
-      timbreRate: settings.timbreRate || 0.0119,
+      timbreRate: 1,
       timbreAmount: timbreAmt,
-      totalTTC: netTotalTTC,
+      totalTTC: netTotalEV,
+      totalTTCFiscal: totalEV_TTC,
+      ecartFiscal: ecartFiscal,
       createdBy: u?.id,
       createdByName: u?.name || 'Utilisateur',
       createdAt: now.toISOString(),
@@ -11106,16 +11479,18 @@ const EtatVenteModule = {
       return;
     }
     
-    // Deposit into bank
-    if (isAdmin && selectedBankId && netTotalTTC > 0) {
+    // Deposit into bank & deduct from caisse_admin
+    if (isAdmin && selectedBankId && netTotalEV > 0) {
        const depositData = {
          type: 'deposit',
          subtype: 'etat_vente',
          bankId: selectedBankId,
-         amount: netTotalTTC,
+         amount: netTotalEV,
          date: this._getDateEnd(),
          ref: 'EV-DEP-' + ref.replace(/\//g, '-'),
-         note: `Dépôt État de Vente ${ref} — ${bls.length} BLs (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} Retours (-${Utils.fmtCurrency(returnsTotalTTC)})`,
+         note: isAR 
+           ? `إيداع كشف المبيعات ${ref} — ${bls.length} سند (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} إرجاع (-${Utils.fmtCurrency(returnsTotalTTC)}) — صافي 1% طابع: ${Utils.fmtCurrency(netTotalEV)}` 
+           : `Dépôt État de Vente ${ref} — ${bls.length} BLs (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} Retours (-${Utils.fmtCurrency(returnsTotalTTC)}) — Net 1% timbre: ${Utils.fmtCurrency(netTotalEV)}`,
          etatVenteId: savedDoc.id,
          etatVenteRef: ref,
          createdBy: u?.id,
@@ -11128,8 +11503,27 @@ const EtatVenteModule = {
          bankDepositId: savedDeposit.id
        });
        savedDoc.bankDepositId = savedDeposit.id;
+
+       // Deduct from caisse_admin
+       const bankLabel = selectedBank ? selectedBank.name : (isAR ? 'البنك' : 'Banque');
+       await DB.insert('caisse_admin', {
+         type: 'withdrawal',
+         source: 'transfert_banque_etat_vente',
+         userId: u?.id,
+         userName: u?.name || (isAR ? 'الإدارة' : 'Administration'),
+         sessionDate: this._getDateEnd(),
+         amount: netTotalEV,
+         targetBankId: selectedBankId,
+         etatVenteRef: ref,
+         etatVenteTTC: netTotalEV,
+         timbreAmount: timbreAmt,
+         ecartFiscal: ecartFiscal,
+         note: isAR 
+           ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(netTotalEV)} بطابع 1% | مقبوضات BCH: ${Utils.fmtCurrency(netTotalTTC)} | فارق الطابع: ${Utils.fmtCurrency(ecartFiscal)})`
+           : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Transféré: ${Utils.fmtCurrency(netTotalEV)} avec 1% timbre | Recettes réelles BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart timbre: ${Utils.fmtCurrency(ecartFiscal)})`
+       });
        
-       Utils.notify(isAR ? `✅ تم تأكيد إيداع ${Utils.fmtCurrency(netTotalTTC)} في حساب ${selectedBank ? selectedBank.name : 'البنك'}.` : `✅ Dépôt de ${Utils.fmtCurrency(netTotalTTC)} vers ${selectedBank ? selectedBank.name : 'Banque'} validé.`, 'success', 5000);
+       Utils.notify(isAR ? `✅ تم تأكيد كشف المبيعات وتحويل ${Utils.fmtCurrency(netTotalEV)} إلى حساب ${bankLabel}.` : `✅ État validé et versement de ${Utils.fmtCurrency(netTotalEV)} vers ${bankLabel} enregistré.`, 'success', 5000);
     } else if (!isAdmin) {
        Utils.notify(isAR ? '✅ تم إنشاء كشف المبيعات بنجاح. في انتظار تأكيد الإدارة.' : `✅ État de vente généré avec succès. En attente de validation admin.`, 'success', 5000);
     }
@@ -11151,15 +11545,29 @@ const EtatVenteModule = {
     const banks = settings.banks || [];
     const bank = banks.find(b => String(b.id) === String(doc.bankId));
 
+    const totalHT = Number(doc.totalHT) || 0;
+    const timbreAmt = (Number(doc.timbreAmount) > 0)
+      ? Number(doc.timbreAmount)
+      : (totalHT > 0 ? Math.round(totalHT * 0.01 * 100) / 100 : 0);
+    const timbreRate = 1; // Strictly 1% fixed for État de Vente
+
+    // Auto-heal old documents missing timbreAmount in the DB
+    if (doc.id && (!doc.timbreAmount || Number(doc.timbreAmount) <= 0 || doc.timbreRate !== 1) && timbreAmt > 0) {
+      doc.timbreAmount = timbreAmt;
+      doc.timbreRate = 1;
+      DB.update('etat_vente_docs', doc.id, { timbreAmount: timbreAmt, timbreRate: 1 });
+    }
+
     const data = {
       ref: doc.ref,
       createdByName: doc.createdByName || doc.userName,
       createdAt: doc.createdAt,
       items: doc.items || [],
-      totalHT: doc.totalHT,
+      totalHT: totalHT,
       tvaAmt: doc.tvaAmount,
       tvaRate: doc.tvaRate,
-      timbreAmt: doc.timbreAmount || 0,
+      timbreAmt: timbreAmt,
+      timbreRate: 1,
       totalTTC: doc.totalTTC,
       period: period,
       settings: settings,

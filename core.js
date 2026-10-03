@@ -346,6 +346,7 @@ const DB = {
   runMigrations() {
     try {
       this._migrateTimbreSlabsToLF2025(); // M003: update old timbre slabs to LF2025 format
+      this._migrateEtatVenteTimbre();      // M004: heal missing 1% timbre on historical États de Vente
       this.MasterBrain.recalibrateAll();  // The Master Brain: 360° financial integrity engine
     } catch(e) {
       console.warn('[MasterBrain] Error:', e);
@@ -1021,22 +1022,27 @@ const DB = {
           }
           checks.push({ name: 'Scanner d\'Anomalies Transversales', status: anomalies.length > 0 ? 'ALERT' : 'OK', detail: anomalies.length > 0 ? `${anomalies.length} anomalie(s) trouvée(s)` : 'Aucune anomalie' });
 
-          // Check 15: État de Vente Timbre Fiscal Recalculation
-          // Old état de vente docs may be missing timbreAmount — fix them
+          // Check 15: État de Vente Timbre Fiscal Recalculation (Fixed 1%)
           const allEVDocs = DB.getAll('etat_vente_docs');
           let evTimbreFixed = 0;
           allEVDocs.forEach(ev => {
-            if (ev.totalHT && ev.totalHT > 0 && (ev.timbreAmount === undefined || ev.timbreAmount === null)) {
-              const timbre = DB.calcTimbre(Number(ev.totalHT));
+            const ht = Number(ev.totalHT) || 0;
+            if (ht > 0 && (!ev.timbreAmount || Number(ev.timbreAmount) <= 0)) {
+              const timbre = Math.round(ht * 0.01 * 100) / 100;
               ev.timbreAmount = timbre;
-              const tvaAmt = Number(ev.tvaAmount) || (Number(ev.totalHT) * (Number(ev.tvaRate) || 19) / 100);
-              ev.totalTTCFiscal = Math.round((Number(ev.totalHT) + tvaAmt + timbre) * 100) / 100;
+              ev.timbreRate = 1;
+              const tvaRate = Number(ev.tvaRate) || 19;
+              const tvaAmt = Number(ev.tvaAmount) || Math.round(ht * tvaRate / 100 * 100) / 100;
+              ev.totalTTCFiscal = Math.round((ht + tvaAmt + timbre) * 100) / 100;
               evTimbreFixed++;
-              fixes.push(`État de Vente ${ev.ref}: timbre fiscal ajouté (${Utils.fmtCurrency(timbre)}), TTC fiscal = ${Utils.fmtCurrency(ev.totalTTCFiscal)}`);
+              fixes.push(`État de Vente ${ev.ref}: 1% timbre fiscal ajouté (${Utils.fmtCurrency(timbre)}), TTC fiscal = ${Utils.fmtCurrency(ev.totalTTCFiscal)}`);
+              if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+                window.API.update('etat_vente_docs', ev.id, ev).catch(e => console.warn('[cloud] EV autocorrect err:', e));
+              }
             }
           });
           if (evTimbreFixed > 0) DB.rawSet('etat_vente_docs', allEVDocs);
-          checks.push({ name: 'Timbre Fiscal États de Vente', status: evTimbreFixed > 0 ? 'FIXED' : 'OK', detail: evTimbreFixed > 0 ? `${evTimbreFixed} état(s) corrigé(s)` : 'Tous les états ont le timbre' });
+          checks.push({ name: 'Timbre Fiscal États de Vente (1%)', status: evTimbreFixed > 0 ? 'FIXED' : 'OK', detail: evTimbreFixed > 0 ? `${evTimbreFixed} état(s) corrigé(s)` : 'Tous les états ont le timbre 1%' });
 
           if (fixes.length > 0) {
             DB.insert('audit_log', {
@@ -1168,6 +1174,31 @@ const DB = {
     const lf2025 = this._defaultSettings().timbreSlabs;
     this.saveSettings({ timbreSlabs: lf2025, timbreMin: 5 });
     if (window._ERP_DEBUG) console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
+  },
+
+  // Migration M004: Ensure all historical État de Vente documents have 1% timbre fiscal & fiscal TTC
+  _migrateEtatVenteTimbre() {
+    const docs = this.getAll('etat_vente_docs');
+    let fixed = false;
+    docs.forEach(ev => {
+      const ht = Number(ev.totalHT) || 0;
+      if (ht > 0 && (!ev.timbreAmount || Number(ev.timbreAmount) <= 0)) {
+        const timbre = Math.round(ht * 0.01 * 100) / 100;
+        ev.timbreAmount = timbre;
+        ev.timbreRate = 1;
+        const tvaRate = Number(ev.tvaRate) || 19;
+        const tvaAmt = Number(ev.tvaAmount) || Math.round(ht * tvaRate / 100 * 100) / 100;
+        ev.totalTTCFiscal = Math.round((ht + tvaAmt + timbre) * 100) / 100;
+        fixed = true;
+        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+          window.API.update('etat_vente_docs', ev.id, ev).catch(e => console.warn('[cloud] EV migrate err:', e));
+        }
+      }
+    });
+    if (fixed) {
+      this.rawSet('etat_vente_docs', docs);
+      if (window._ERP_DEBUG) console.log('[Migration M004] Recalculated 1% timbre fiscal on historical États de Vente.');
+    }
   },
 
   async ensureLoaded(collections) {
@@ -2142,6 +2173,10 @@ const Auth = {
   getCurrentUser() { try { return JSON.parse(localStorage.getItem('currentUser')||'null'); } catch { return null; } },
   isLoggedIn() { return !!this.getCurrentUser(); },
   isAdmin() { return this.getCurrentUser()?.role === 'admin'; },
+  isSupplier() {
+    const u = this.getCurrentUser();
+    return u?.role === 'supplier' || u?.role === 'supplier_agent';
+  },
 
   login(username, password, forceBypass = false) {
     const u = DB.getAll('users').find(u => u.username===username && u.password===password && u.active!==false);
@@ -2231,6 +2266,26 @@ const Auth = {
     if (user.role === 'admin') {
       const p = this._defaultPermissions();
       return Object.fromEntries(Object.keys(p).map(k => [k, true]));
+    }
+    if (user.role === 'supplier' || user.role === 'supplier_agent') {
+      return {
+        ...this._defaultPermissions(),
+        canViewBLs: true,
+        canViewBRs: false,
+        canViewCaisse: false,
+        canViewBank: false,
+        canViewStats: false,
+        canViewCatalogue: false,
+        canViewSuppliers: false,
+        canViewClients: false,
+        canEditSuppliers: false,
+        canEditClients: false,
+        canCreateBR: false,
+        canCreateBL: false,
+        canDeleteBR: false,
+        canDeleteBL: false,
+        requireDailyLiquid: false
+      };
     }
     // Read LIVE user data from DB (not stale localStorage copy)
     const liveUser = DB.getAll('users').find(u => u.id === user.id) || user;
@@ -2420,14 +2475,14 @@ const Utils = {
   statusBadge(status) {
     const isAR = typeof T !== 'undefined' && T.isRTL();
     const m = {
-      open:            ['badge-secondary', 'fa-circle-dot',     isAR ? 'مفتوح' : 'Émis'],
-      pending_usine:   ['badge-warning',   'fa-clock',          isAR ? 'في انتظار المصنع' : '⏳ En attente usine'],
-      reserved:        ['badge-warning',   'fa-bookmark',       isAR ? 'محجوز — في انتظار التأكيد' : '📌 Réservé — En attente validation'],
-      validated_usine: ['badge-info',      'fa-industry',       isAR ? 'مؤكد من المصنع (BR جاهز)' : '🏭 Validé Usine (BR Généré)'],
-      delivered:       ['badge-success',   'fa-check-circle',   isAR ? 'تم الشحن والتسليم' : '✅ Enlevé & Livré'],
+      open:            ['badge-secondary', 'fa-truck',          isAR ? '🚚 الشاحنة في الطريق للمصنع' : '🚚 Chauffeur en route vers usine'],
+      pending_usine:   ['badge-warning',   'fa-truck',          isAR ? '🚚 الشاحنة في الطريق للمصنع' : '🚚 Chauffeur en route vers usine'],
+      reserved:        ['badge-warning',   'fa-bookmark',       isAR ? '📌 حجز مسبق — في الطريق للمصنع' : '📌 Réservé — En route usine'],
+      validated_usine: ['badge-info',      'fa-industry',       isAR ? '🏭 تم التحقق (وصل استلام جاهز)' : '🏭 Validé Usine (BR officiel prêt)'],
+      delivered:       ['badge-success',   'fa-check-circle',   isAR ? '✅ تم الشحن والتسليم للعميل' : '✅ Enlevé & Livré au client'],
       locked:          ['badge-dark',      'fa-lock',           T.get('st_locked')],
-      returned:        ['badge-danger',    'fa-undo',           isAR ? '🔄 تم الإرجاع' : '🔄 Retourné'],
-      reception:       ['badge-warning',   'fa-clock',          T.get('st_pending')],
+      returned:        ['badge-danger',    'fa-undo',           isAR ? '🔄 مرتجع' : '🔄 Retourné'],
+      reception:       ['badge-warning',   'fa-truck-loading',  isAR ? '🚚 جاري الاستلام' : '🚚 Réception en cours'],
     };
     const [cls, icon, label] = m[status] || ['badge-secondary', 'fa-circle', status||''];
     return `<span class="badge ${cls}"><i class="fas ${icon}"></i> ${label}</span>`;
@@ -2715,25 +2770,57 @@ const NotifMgr = {
 // ─── SESSION MANAGER — Mini Caisse & Clôture Vendeur ─────────
 const SessionMgr = {
   getTodaySession(userId) {
-    return DB.getAll('sessions').find(s => (s.userId === userId || String(s.userId) === String(userId)) && s.date === Utils.today()) || null;
+    const isUserMatch = (id) => {
+      if (id === userId || String(id) === String(userId)) return true;
+      const isAdminDoc = (id === 1 || id === '1' || id === 'admin');
+      const isAdminQuery = (userId === 1 || userId === '1' || userId === 'admin');
+      if (isAdminDoc && isAdminQuery) return true;
+      return false;
+    };
+    return DB.getAll('sessions').find(s => isUserMatch(s.userId) && s.date === Utils.today()) || null;
   },
 
   getLastClosedSession(userId) {
     const today = Utils.today();
+    const isUserMatch = (id) => {
+      if (id === userId || String(id) === String(userId)) return true;
+      const isAdminDoc = (id === 1 || id === '1' || id === 'admin');
+      const isAdminQuery = (userId === 1 || userId === '1' || userId === 'admin');
+      if (isAdminDoc && isAdminQuery) return true;
+      return false;
+    };
     return DB.getAll('sessions')
-      .filter(s => (s.userId === userId || String(s.userId) === String(userId)) && s.date < today && s.status === 'closed')
+      .filter(s => isUserMatch(s.userId) && s.date < today && s.status === 'closed')
       .sort((a,b)=>b.date.localeCompare(a.date))[0] || null;
   },
 
   getUserDaySummary(userId, date = Utils.today()) {
+    const isUserMatch = (creatorId) => {
+      if (userId === 'all') return true;
+      if (creatorId === userId || String(creatorId) === String(userId)) return true;
+      const isAdminDoc = (creatorId === 1 || creatorId === '1' || creatorId === 'admin');
+      const isAdminQuery = (userId === 1 || userId === '1' || userId === 'admin');
+      if (isAdminDoc && isAdminQuery) return true;
+      if (creatorId == null && isAdminQuery) return true;
+      return false;
+    };
+    const normDate = d => {
+      if (!d) return '';
+      if (d.includes('T')) return d.split('T')[0];
+      if (d.includes('/')) {
+        const p = d.split('/');
+        if (p.length === 3 && p[2].length === 4) return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+      }
+      return d.slice(0, 10);
+    };
     const bls = DB.getAll('bls').filter(b => 
-      (b.createdBy === userId || String(b.createdBy) === String(userId)) && 
-      (b.date || b.createdAt || '').slice(0, 10) === date && 
+      isUserMatch(b.createdBy) && 
+      (normDate(b.date) === date || normDate(b.createdAt) === date) && 
       (b.status !== 'returned' && b.status !== 'draft' && b.status !== 'cancelled')
     );
     const retours = DB.getAll('bon_retours').filter(r => 
-      (r.createdBy === userId || String(r.createdBy) === String(userId)) && 
-      (r.date || r.createdAt || '').slice(0, 10) === date
+      isUserMatch(r.createdBy) && 
+      (normDate(r.date) === date || normDate(r.createdAt) === date)
     );
     const totalSalesTTC = bls.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
     const totalReturnsTTC = retours.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
@@ -2793,7 +2880,7 @@ const SessionMgr = {
         const key = (line.designation || '').trim();
         if (!key) return;
         const qty = Number(line.qtyDelivered || line.qty) || 0;
-        const price = Number(line.price) || 0;
+        const price = Number(line.price || line.unitPrice) || 0;
         const disc = Number(line.disc) || 0;
         const effectivePrice = price * (1 - disc / 100);
         if (!aggregated[key]) {
@@ -2805,11 +2892,13 @@ const SessionMgr = {
     const items = Object.values(aggregated);
     const totalHT = items.reduce((s, it) => s + (it.qty * it.unitPrice), 0);
     const tvaRate = Number(settings.tvaRate) || 19;
-    const tvaAmount = totalHT * (tvaRate / 100);
+    const tvaAmount = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
     // Etat de vente: FIXED 1% timbre (not slab-based like BCH)
     const TIMBRE_RATE_EV = 1; // 1% fixed for etat de vente
     const timbreAmount = Math.round(totalHT * TIMBRE_RATE_EV / 100 * 100) / 100;
     const totalTTCCalc = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
+    const netAmountEV = Math.max(0, Math.round((totalTTCCalc - summary.totalReturnsTTC) * 100) / 100);
+    const ecartFiscal = Math.round((netAmountEV - summary.netAmount) * 100) / 100;
 
     // 1. Generate État de Vente document with BL list and Returns list
     const isAR = typeof T !== 'undefined' && T.isRTL();
@@ -2821,18 +2910,32 @@ const SessionMgr = {
       dateEnd: today,
       userId,
       userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
-      items,
-      blList: summary.bls.map(b => ({ id: b.id, ref: b.ref, clientName: b.clientName || (isAR ? 'زبون المتجر' : 'Client Comptoir'), totalTTC: Number(b.totalTTC)||0, date: b.date })),
+      blList: summary.bls.map(b => ({
+        id: b.id,
+        ref: b.ref,
+        clientName: b.clientName || (isAR ? 'زبون المتجر' : 'Client Comptoir'),
+        totalHT: Number(b.totalHT) || 0,
+        tvaAmount: Number(b.tvaAmount || b.tva) || 0,
+        timbreAmount: Number(b.timbreAmount || b.timbre) || 0,
+        totalTTC: Number(b.totalTTC) || 0,
+        date: b.date
+      })),
       returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || (isAR ? 'عميل' : 'Client'), totalTTC: Number(r.totalTTC)||0, date: r.date })),
       totalBLsTTC: summary.totalSalesTTC,
+      grossTotalTTC: summary.totalSalesTTC,
       totalReturnsTTC: summary.totalReturnsTTC,
+      returnsTotalTTC: summary.totalReturnsTTC,
+      realBchNet: summary.netAmount,
+      realBchGross: summary.totalSalesTTC,
       totalHT,
       tvaRate,
       tvaAmount,
       timbreAmount,
       timbreRate: TIMBRE_RATE_EV,
-      totalTTC: summary.netAmount,
+      totalTTC: netAmountEV,
+      netTotalTTC: netAmountEV,
       totalTTCFiscal: totalTTCCalc,
+      ecartFiscal,
       createdBy: userId,
       createdByName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       createdAt: now.toISOString(),
@@ -2841,17 +2944,19 @@ const SessionMgr = {
     };
     const savedEtat = DB.insert('etat_vente_docs', etatDoc);
 
-    // 2. Deposit into bank_transactions
+    // 2. Deposit into bank_transactions (Transfert État de Vente avec 1% timbre)
     let bankTxId = null;
-    if (targetBankId && summary.netAmount > 0) {
+    if (targetBankId && netAmountEV > 0) {
       const depTx = {
         type: 'deposit',
         subtype: 'etat_vente',
         bankId: targetBankId,
-        amount: summary.netAmount,
+        amount: netAmountEV,
         date: today,
         ref: 'EV-DEP-' + ref.replace(/\//g, '-'),
-        note: isAR ? `إيداع كشف المبيعات ${ref} (${u?.name || ''}) — ${summary.bls.length} شحنة, ${summary.retours.length} إرجاع` : `Dépôt État de Vente ${ref} (${u?.name || ''}) — ${summary.bls.length} BLs, ${summary.retours.length} Retours`,
+        note: isAR 
+          ? `إيداع كشف المبيعات ${ref} (${u?.name || ''}) — مبلغ الكشف (طابع 1%): ${Utils.fmtCurrency(netAmountEV)} | إيرادات BCH الفعلية: ${Utils.fmtCurrency(summary.netAmount)} | فارق الطابع: ${Utils.fmtCurrency(ecartFiscal)}` 
+          : `Dépôt État de Vente ${ref} (${u?.name || ''}) — Montant État (1% timbre): ${Utils.fmtCurrency(netAmountEV)} | Recettes BCH réelles: ${Utils.fmtCurrency(summary.netAmount)} | Écart fiscal: ${Utils.fmtCurrency(ecartFiscal)}`,
         etatVenteId: savedEtat.id,
         etatVenteRef: ref,
         createdBy: userId,
@@ -2865,7 +2970,7 @@ const SessionMgr = {
     // 3. Close Session
     const updatedSession = DB.update('sessions', session.id, {
       status: 'closed',
-      closedNet: summary.netAmount,
+      closedNet: netAmountEV,
       closedEspeces: summary.totalSalesTTC,
       closedMonnaie: summary.totalReturnsTTC,
       totalSales: summary.totalSalesTTC,
@@ -2877,18 +2982,17 @@ const SessionMgr = {
       bankTxId,
       targetBankId,
       realBchNet: summary.netAmount,
-      etatVenteTTC: totalTTCCalc,
+      etatVenteTTC: netAmountEV,
       timbreAmount,
-      ecartFiscal: Math.round((totalTTCCalc - summary.netAmount) * 100) / 100,
+      ecartFiscal,
       note: note || '',
       closedAt: now.toISOString()
     }, 'Clôture Mini Caisse');
 
     // 4. Update caisse_admin with full moves:
-    const ecartFiscal = Math.round((totalTTCCalc - summary.netAmount) * 100) / 100;
     const bankLabel = targetBank?.name || (isAR ? 'البنك' : 'Banque');
 
-    // 4a. Real BCH gross revenues collected into counter
+    // 4a. Real BCH gross revenues collected into counter (at real variable timbre)
     if (summary.totalSalesTTC > 0) {
       DB.insert('caisse_admin', {
         type: 'deposit',
@@ -2920,8 +3024,8 @@ const SessionMgr = {
       });
     }
 
-    // 4c. Withdrawal / Transfer to Bank via État de Vente
-    if (summary.netAmount > 0) {
+    // 4c. Withdrawal / Transfer to Bank via État de Vente (with fixed 1% timbre deducted from caisse)
+    if (netAmountEV > 0) {
       DB.insert('caisse_admin', {
         type: 'withdrawal',
         source: 'transfert_banque_etat_vente',
@@ -2929,15 +3033,15 @@ const SessionMgr = {
         userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
         sessionId: session.id,
         sessionDate: today,
-        amount: summary.netAmount,
+        amount: netAmountEV,
         targetBankId,
         etatVenteRef: ref,
-        etatVenteTTC: totalTTCCalc,
+        etatVenteTTC: netAmountEV,
         timbreAmount,
         ecartFiscal,
         note: isAR 
-          ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(summary.netAmount)} | كشف المبيعات مع 1% طابع: ${Utils.fmtCurrency(totalTTCCalc)} | فارق الطابع: +${Utils.fmtCurrency(ecartFiscal)})`
-          : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Net versé: ${Utils.fmtCurrency(summary.netAmount)} | État 1% timbre: ${Utils.fmtCurrency(totalTTCCalc)} | Écart fiscal: +${Utils.fmtCurrency(ecartFiscal)})`
+          ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} بمبلغ 1% طابع: ${Utils.fmtCurrency(netAmountEV)} (مقبوضات الشحن الفعلية: ${Utils.fmtCurrency(summary.netAmount)} | فارق الطابع: ${Utils.fmtCurrency(ecartFiscal)})`
+          : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} avec 1% timbre: ${Utils.fmtCurrency(netAmountEV)} (Recettes réelles BCH: ${Utils.fmtCurrency(summary.netAmount)} | Écart fiscal timbre: ${Utils.fmtCurrency(ecartFiscal)})`
       });
     }
 
