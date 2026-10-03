@@ -10821,6 +10821,17 @@ const PointageModule = {
     const u = Auth.getCurrentUser();
 
     // Create single charge for the monthly total
+    const paieDetailsList = fiches.map(f => ({
+      employeeId: f.userId,
+      employeeName: f.userName,
+      baseSalary: f.salaireBase || 0,
+      daysPresent: f.joursTravailles || 0,
+      absences: f.joursAbsence || 0,
+      totalWorkingDays: f.joursTotal || 0,
+      netPay: f.netPayer || 0,
+      role: f.role || '',
+      poste: f.jobTitle || f.department || ''
+    }));
     DB.insert('bank_charges', {
       type: 'auto',
       subtype: 'Salaires & Primes RH',
@@ -10830,6 +10841,10 @@ const PointageModule = {
       amount: totalNet,
       date: Utils.today(),
       recurring: false,
+      paieValidation: true,
+      month: `${y}-${String(m).padStart(2,'0')}`,
+      employeeCount: fiches.length,
+      paieDetails: paieDetailsList,
       createdBy: u?.id,
       createdByName: u?.name,
       createdAt: new Date().toISOString()
@@ -11721,9 +11736,10 @@ const ChargesModule = {
                 <td style="padding:12px 16px;font-weight:900;color:var(--danger);text-align:right">-${Utils.fmtCurrency(c.amount)}</td>
                 <td style="padding:12px 16px;font-size:12px;color:var(--text4)">${Utils.escHTML(c.createdByName || '—')}</td>
                 <td style="padding:12px 16px;text-align:right;white-space:nowrap">
-                  ${c.paieValidation ? `<button class="btn btn-xs btn-outline" onclick="ChargesModule._showPayrollDetail('${c.id}')" title="Détails Paie" style="color:#6366f1;border-color:#6366f1"><i class="fas fa-info-circle"></i></button>` : ''}
-                  <button class="btn btn-xs btn-outline" onclick="ChargesModule._editCharge('${c.id}')" title="Modifier"><i class="fas fa-edit"></i></button>
-                  <button class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="ChargesModule._deleteCharge('${c.id}')" title="Supprimer"><i class="fas fa-trash"></i></button>
+                  ${c.paieValidation ? `<button class="btn btn-xs" onclick="ChargesModule._showPayrollDetail('${c.id}')" title="Détails Paie" style="color:#6366f1;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2)"><i class="fas fa-info-circle"></i></button>` : ''}
+                  <button class="btn btn-xs" onclick="ChargesModule._exportChargePDF('${c.id}')" title="PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15)"><i class="fas fa-file-pdf"></i></button>
+                  <button class="btn btn-xs" onclick="ChargesModule._editCharge('${c.id}')" title="Modifier" style="color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2)"><i class="fas fa-edit"></i></button>
+                  <button class="btn btn-xs" onclick="ChargesModule._deleteCharge('${c.id}')" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2)"><i class="fas fa-trash"></i></button>
                 </td>
               </tr>`;
             }).join('') : `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text4)">Aucune charge enregistrée pour cette période</td></tr>`}
@@ -12144,12 +12160,48 @@ const ChargesModule = {
     const c = charges.find(x => String(x.id) === String(id));
     if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
     
-    const details = c.paieDetails || [];
+    let details = c.paieDetails || [];
     const isArray = Array.isArray(details);
-    const employees = isArray ? details : [details]; // backward compat
+    let employees = isArray ? details : (details && details.employeeName ? [details] : []);
+    
+    // Fallback: if no paieDetails, try to reconstruct from fiches_paie using the month
+    if (employees.length === 0 && c.month) {
+      const parts = c.month.split('-');
+      if (parts.length === 2) {
+        const fy = parseInt(parts[0]), fm = parseInt(parts[1]);
+        const fiches = DB.getAll('fiches_paie').filter(f => f.year === fy && f.month === fm);
+        employees = fiches.map(f => ({
+          employeeName: f.userName || '-',
+          baseSalary: f.salaireBase || 0,
+          daysPresent: f.joursTravailles || 0,
+          absences: f.joursAbsence || 0,
+          totalWorkingDays: f.joursTotal || 0,
+          netPay: f.netPayer || 0,
+          poste: f.jobTitle || f.department || ''
+        }));
+      }
+    }
+    // Another fallback: parse month from label like "Masse salariale 05/2026"
+    if (employees.length === 0 && c.label) {
+      const match = c.label.match(/(\d{2})\/(\d{4})/);
+      if (match) {
+        const fm = parseInt(match[1]), fy = parseInt(match[2]);
+        const fiches = DB.getAll('fiches_paie').filter(f => f.year === fy && f.month === fm);
+        employees = fiches.map(f => ({
+          employeeName: f.userName || '-',
+          baseSalary: f.salaireBase || 0,
+          daysPresent: f.joursTravailles || 0,
+          absences: f.joursAbsence || 0,
+          totalWorkingDays: f.joursTotal || 0,
+          netPay: f.netPayer || 0,
+          poste: f.jobTitle || f.department || ''
+        }));
+      }
+    }
+    
     const banks = DB.getSettings().banks || [];
     const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
-    const totalNet = employees.reduce((s, e) => s + (e.netPay || 0), 0);
+    const totalNet = employees.length > 0 ? employees.reduce((s, e) => s + (e.netPay || 0), 0) : c.amount;
     const totalPresent = employees.reduce((s, e) => s + (e.daysPresent || 0), 0);
     const totalAbsent = employees.reduce((s, e) => s + (e.absences || 0), 0);
     
@@ -12325,6 +12377,81 @@ const ChargesModule = {
 
     Utils.notify('Charge modifiee avec succes', 'success');
     App.loadModule('charges');
+  },
+
+  _exportChargePDF(id) {
+    const c = DB.getAll('bank_charges').find(x => String(x.id) === String(id));
+    if (!c) { Utils.notify('Charge introuvable', 'warning'); return; }
+    const banks = DB.getSettings().banks || [];
+    const bank = banks.find(b => b.id === c.bankId) || { name: c.bankId === 'caisse' ? 'Caisse Principale' : 'Banque' };
+    const settings = DB.getSettings();
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pw = doc.internal.pageSize.getWidth();
+    let y = 20;
+
+    // Header
+    doc.setFontSize(18); doc.setFont('helvetica', 'bold');
+    doc.text(settings.companyName || 'Entreprise', pw/2, y, { align: 'center' }); y += 8;
+    doc.setFontSize(12); doc.setFont('helvetica', 'normal');
+    doc.text('Reçu de Charge / Frais', pw/2, y, { align: 'center' }); y += 10;
+
+    // Line
+    doc.setDrawColor(100); doc.setLineWidth(0.5); doc.line(15, y, pw-15, y); y += 8;
+
+    // Info rows
+    doc.setFontSize(11);
+    const info = [
+      ['Libellé :', c.label || c.subtype || '-'],
+      ['Catégorie :', c.category || '-'],
+      ['Date :', Utils.fmtDate(c.date)],
+      ['Source :', bank.name],
+      ['Type :', c.type === 'auto' ? 'Automatique' : 'Manuel'],
+      ['Créé par :', c.createdByName || '-'],
+    ];
+    info.forEach(([k, v]) => {
+      doc.setFont('helvetica', 'bold'); doc.text(k, 20, y);
+      doc.setFont('helvetica', 'normal'); doc.text(String(v), 65, y);
+      y += 7;
+    });
+    y += 3;
+
+    // Amount box
+    doc.setFillColor(239, 68, 68);
+    doc.roundedRect(20, y, pw-40, 14, 3, 3, 'F');
+    doc.setTextColor(255); doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+    doc.text(`Montant : -${Utils.fmtCurrency(c.amount)}`, pw/2, y+9, { align: 'center' });
+    doc.setTextColor(0); y += 22;
+
+    // If payroll charge, show employee table
+    if (c.paieValidation) {
+      let employees = [];
+      if (c.paieDetails && Array.isArray(c.paieDetails)) {
+        employees = c.paieDetails;
+      } else if (c.month) {
+        const p = c.month.split('-');
+        if (p.length===2) employees = DB.getAll('fiches_paie').filter(f=>f.year===parseInt(p[0])&&f.month===parseInt(p[1])).map(f=>({employeeName:f.userName,baseSalary:f.salaireBase||0,daysPresent:f.joursTravailles||0,netPay:f.netPayer||0,poste:f.jobTitle||''}));
+      }
+      if (employees.length > 0) {
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+        doc.text('Détail par Employé :', 20, y); y += 6;
+        doc.autoTable({
+          startY: y,
+          head: [['Employé', 'Poste', 'Jours Prés.', 'Net à Payer']],
+          body: employees.map(e => [e.employeeName, e.poste||'-', String(e.daysPresent||0), Utils.fmtCurrency(e.netPay||0)]),
+          foot: [['TOTAL', '', '', Utils.fmtCurrency(employees.reduce((s,e)=>s+(e.netPay||0),0))]],
+          theme: 'grid',
+          styles: { fontSize: 9, cellPadding: 3 },
+          headStyles: { fillColor: [99,102,241], textColor: 255 },
+          footStyles: { fillColor: [240,240,240], fontStyle: 'bold' },
+          margin: { left: 20, right: 20 }
+        });
+      }
+    }
+
+    doc.save(`Charge_${(c.label||'').replace(/[^a-zA-Z0-9]/g,'_').substring(0,30)}_${c.date||''}.pdf`);
+    Utils.notify('PDF généré avec succès', 'success');
   },
 
   async _deleteCharge(id) {
