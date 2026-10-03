@@ -541,6 +541,14 @@ const BRModule = {
         <span class="ac-price">${Utils.fmtCurrency(a.price||0)}</span>
       </div>`
     ).join('');
+    // Position dropdown below the input (needed for fixed positioning inside modals)
+    const inp = document.getElementById(`br-des-${idx}`);
+    if (inp) {
+      const rect = inp.getBoundingClientRect();
+      dd.style.left = rect.left + 'px';
+      dd.style.top = (rect.bottom + 2) + 'px';
+      dd.style.width = rect.width + 'px';
+    }
     dd.style.display = 'block';
   },
 
@@ -1745,6 +1753,14 @@ const BLModule = {
         ${d.imm ? `<span class="ac-price">${Utils.escHTML(d.imm)}</span>` : ''}
       </div>`
     ).join('');
+    // Position dropdown below the input (needed for fixed positioning inside modals)
+    const inp = document.getElementById('bl-driver');
+    if (inp) {
+      const rect = inp.getBoundingClientRect();
+      dd.style.left = rect.left + 'px';
+      dd.style.top = (rect.bottom + 2) + 'px';
+      dd.style.width = rect.width + 'px';
+    }
     dd.style.display = 'block';
   },
   _closeDriverAC() {
