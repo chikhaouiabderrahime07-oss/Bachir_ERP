@@ -232,19 +232,29 @@
       const SLOT_W=40, SLOT_H=20;
 
       const drawLogo = (src, sx) => {
-        if(!src) return;
+        if (!src || typeof src !== 'string') return;
+        const cleanSrc = src.trim();
         try {
-          const fmt = src.startsWith('data:image/png')?'PNG':src.startsWith('data:image/gif')?'GIF':'JPEG';
-          const props = doc.getImageProperties?doc.getImageProperties(src):null;
-          const ar = (props&&props.width&&props.height)?props.width/props.height:1;
-          let w=SLOT_W, h=w/ar;
-          if(h>SLOT_H){h=SLOT_H;w=h*ar;}
-          if(w>SLOT_W){w=SLOT_W;h=w/ar;}
-          doc.addImage(src,fmt,sx+(SLOT_W-w)/2,y+(SLOT_H-h)/2,w,h,undefined,'FAST');
+          let ar = 1;
+          let fmt = 'JPEG';
+          if (cleanSrc.startsWith('data:image/png')) fmt = 'PNG';
+          else if (cleanSrc.startsWith('data:image/gif')) fmt = 'GIF';
+          else if (cleanSrc.startsWith('data:image/webp')) fmt = 'WEBP';
+          try {
+            if (doc.getImageProperties) {
+              const props = doc.getImageProperties(cleanSrc);
+              if (props && props.width && props.height) ar = props.width / props.height;
+              if (props && props.fileType) fmt = props.fileType;
+            }
+          } catch (_) {}
+          let w = SLOT_W, h = w / ar;
+          if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
+          if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
+          doc.addImage(cleanSrc, fmt, sx + Math.max(0, (SLOT_W - w) / 2), y + Math.max(0, (SLOT_H - h) / 2), w, h);
         } catch(e) {}
       };
-      drawLogo(s.logoLeft||s.leftLogo,   ML);
-      drawLogo(s.logoRight||s.rightLogo, PW-MR-SLOT_W);
+      drawLogo(s.logoLeft || s.leftLogo || s.evLogoLeft, ML);
+      drawLogo(s.logoRight || s.rightLogo || s.evLogoRight, PW - MR - SLOT_W);
 
       /* Company name — may be Arabic */
       const cName = this._t(s.companyName||'/');
@@ -780,13 +790,38 @@
         y += wl.length * 4 + 4;
       }
 
-      // Signature on page 1
+      // Signature on page 1: Only "Le Directeur" (no Caissier block as requested)
       if (y + 36 > PH - 15) { doc.addPage(); y = MT + 10; }
 
-      this._drawSigBlock(doc, [
-        { label: isAR ? 'مسؤول الصندوق / البائع' : 'Le Responsable Caisse / Vendeur', sub: this._t(createdByName || 'Caissier'), value: '', sub2: isAR ? 'التوقيع' : 'Signature' },
-        { label: isAR ? 'الإدارة العامة والمراقبة' : 'Direction Générale & Contrôle', sub: this._t(s.companyName || ''), value: '', sub2: isAR ? 'الختم والتأشيرة' : 'Cachet & Visa' }
-      ], Math.max(y + 2, PH - 55), 38);
+      const sigH = 34;
+      const sigW = 85;
+      const sigX = ML + CW - sigW; // Right-aligned
+      const sigY = Math.max(y + 3, PH - 48);
+
+      this._rect(doc, sigX, sigY, sigW, sigH, null, C.LINE);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      this._tc(doc, C.BLACK);
+      this._text(doc, isAR ? 'المدير' : 'LE DIRECTEUR', sigX + sigW / 2, sigY + 6, { align: 'center' });
+
+      if (s.companyName) {
+        if (this._hasAr(s.companyName) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+        else doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7.5);
+        this._tc(doc, C.GRAY_TXT);
+        this._text(doc, this._t(s.companyName), sigX + sigW / 2, sigY + 11, { align: 'center' });
+      }
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      this._tc(doc, C.GRAY_TXT);
+      this._text(doc, isAR ? 'الختم والتأشيرة' : 'Cachet & Visa', sigX + sigW / 2, sigY + 16, { align: 'center' });
+
+      /* dotted signature line */
+      this._fill(doc, C.GRAY_TXT);
+      const dotY = sigY + sigH - 8;
+      let lx = sigX + 6;
+      while (lx < sigX + sigW - 6) { doc.circle(lx, dotY, 0.35, 'F'); lx += 2.2; }
 
       // ══════════════════════════════════════════════════════════
       // PAGE 2+ : Détails des Bons de Livraison et Retours
@@ -954,6 +989,7 @@
 
       const rawSettings = this._settings();
       const s = {
+        ...rawSettings,
         companyName: rawSettings.evCompanyName || rawSettings.companyName || 'SOCIÉTÉ',
         address: rawSettings.evAddress || rawSettings.address || '',
         phone: rawSettings.evPhone || rawSettings.phone || '',
@@ -963,8 +999,8 @@
         nis: rawSettings.evNis || rawSettings.nis || '',
         ai: rawSettings.evAi || rawSettings.ai || '',
         capital: rawSettings.evCapital || rawSettings.capital || '',
-        logoLeft: rawSettings.evLogoLeft || rawSettings.logoLeft,
-        logoRight: rawSettings.evLogoRight || rawSettings.logoRight
+        logoLeft: rawSettings.logoLeft || rawSettings.evLogoLeft || rawSettings.leftLogo || '',
+        logoRight: rawSettings.logoRight || rawSettings.evLogoRight || rawSettings.rightLogo || (sup && sup.logo ? sup.logo : '')
       };
 
       const sup = bc.supplierId ? (DB.getById('suppliers', bc.supplierId) || {}) : (bc.brId ? (DB.getById('suppliers', (DB.getById('brs', bc.brId)||{}).supplierId) || {}) : {});
@@ -984,25 +1020,60 @@
       const blRef = bc.blRef ? this._t(bc.blRef) : (bc.partNum ? `BL-${String(bc.id).padStart(4,'0')}-P${String(bc.partNum).padStart(2,'0')}` : `BL-${String(bc.id).padStart(4,'0')}`);
       const brRef = br ? this._t(br.ref) : (bc.linkedBrId ? `BR-${bc.linkedBrId}` : 'En attente usine');
 
-      // Security verification code linking top and bottom halves against counterfeit
-      const secHash = Math.abs((Number(bc.id || 1) * 31337 + Math.round(totalTTC * 10)) % 899999 + 100000);
+      // Cryptographic verification engine linking top and bottom halves against counterfeit
+      const rawId = Number(bc.id || 1);
+      const rawTTC = Math.round(Number(totalTTC || 0) * 100);
+      const dateSeed = (bc.date || '').replace(/[^0-9]/g, '').slice(-4) || '2026';
+
+      // 1. Primary pairing security hash:
+      const secHash = Math.abs((rawId * 31337 + rawTTC * 17) % 899999 + 100000);
       const secCode = `SEC-${secHash}-${bchRef.replace(/[^a-zA-Z0-9]/g, '').slice(-6)}`;
+
+      // 2. Secret cross-check checksum (2-character hex):
+      const sumDigits = String(secHash).split('').reduce((acc, d) => acc + Number(d), 0);
+      const chkVal = (sumDigits * 37 + rawId * 13 + (rawTTC % 997)) % 256;
+      const chkHex = chkVal.toString(16).toUpperCase().padStart(2, '0');
+
+      // 3. Hidden Top Cryptographic Authenticity Key (discreet watermark on top):
+      const authScramble = Math.abs((secHash ^ 0x5A5A) * 7 + Number(dateSeed)) % 0xFFFFF;
+      const authKey = `${authScramble.toString(16).toUpperCase().padStart(5, '0')}-${chkHex}`;
 
       const drawSingleVolet = (startY, voletNum, voletTitle, voletSub, badgeColor) => {
         let y = startY;
 
+        // ── 0. Hidden Top Micro-Security Watermark (Discrete / Anti-Duplicate) ──
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(4.5);
+        this._tc(doc, [148, 163, 184]);
+        const hiddenTopText = isAR
+          ? `كود الأمان الرقمي : #${authKey} • النسخة ${voletNum}/2 الأصلية • مصفوفة التحقق : ${secCode} • وثيقة غير قابلة للتكرار`
+          : `AUTHENTICITÉ DIGITALE : #${authKey} • VOLET ${voletNum}/2 ORIGINAL • MATRICE SÉCURISÉE : ${secCode} • NON DUPLICABLE`;
+        doc.text(hiddenTopText, ML + CW - 2, y + 2.4, { align: 'right' });
+        doc.text(isAR ? 'وثيقة رسمية مؤمنة' : 'ORIGINAL SÉCURISÉ', ML + 2, y + 2.4);
+
         // 1. Company Header with Logos (Compact 12mm)
+        y += 2.2;
         const SLOT_W = 24, SLOT_H = 12;
         const drawLogo = (src, sx) => {
-          if (!src) return;
+          if (!src || typeof src !== 'string') return;
+          const cleanSrc = src.trim();
           try {
-            const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/gif') ? 'GIF' : 'JPEG';
-            const props = doc.getImageProperties ? doc.getImageProperties(src) : null;
-            const ar = (props && props.width && props.height) ? props.width / props.height : 1;
+            let ar = 1;
+            let fmt = 'JPEG';
+            if (cleanSrc.startsWith('data:image/png')) fmt = 'PNG';
+            else if (cleanSrc.startsWith('data:image/gif')) fmt = 'GIF';
+            else if (cleanSrc.startsWith('data:image/webp')) fmt = 'WEBP';
+            try {
+              if (doc.getImageProperties) {
+                const props = doc.getImageProperties(cleanSrc);
+                if (props && props.width && props.height) ar = props.width / props.height;
+                if (props && props.fileType) fmt = props.fileType;
+              }
+            } catch (_) {}
             let w = SLOT_W, h = w / ar;
             if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
             if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
-            doc.addImage(src, fmt, sx + (SLOT_W - w) / 2, y + (SLOT_H - h) / 2, w, h, undefined, 'FAST');
+            doc.addImage(cleanSrc, fmt, sx + Math.max(0, (SLOT_W - w) / 2), y + Math.max(0, (SLOT_H - h) / 2), w, h);
           } catch(e) {}
         };
         drawLogo(s.logoLeft, ML);
@@ -1081,8 +1152,8 @@
         doc.text(this._t(bc.truckIMM || '/'), ML + colW*5 + 2, y + 6.2);
         y += 9;
 
-        // 4. Entity boxes (Usine Origine & Client Destinataire) — 17mm
-        const gap = 3, cw2 = (CW - gap) / 2, boxH = 16.5;
+        // 4. Entity boxes (Usine Origine & Client Destinataire) — 21mm
+        const gap = 3, cw2 = (CW - gap) / 2, boxH = 21;
         // Left: Usine
         const supName = this._t(sup.name || bc.supplierName || 'Usine non spécifiée');
         this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
@@ -1090,11 +1161,12 @@
         doc.rect(ML, y, cw2, 4, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [51, 65, 85]);
         this._text(doc, isAR ? 'مصدر الشحن (المصنع)' : 'ORIGINE DU CHARGEMENT (USINE)', ML + 2, y + 3);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        this._text(doc, supName.slice(0, 36), ML + 2, y + 7.5);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [71, 85, 105]);
-        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || bc.driverPhone || '-'}`, ML + 2, y + 11);
-        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || '-').slice(0, 42)}`, ML + 2, y + 14.5);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
+        this._text(doc, supName.slice(0, 38), ML + 2, y + 7.5);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); this._tc(doc, [71, 85, 105]);
+        this._text(doc, `RC : ${sup.rc || s.rc || '-'}  |  NIF : ${sup.nif || s.nif || '-'}`, ML + 2, y + 11.2);
+        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || s.address || '-').slice(0, 42)}`, ML + 2, y + 14.8);
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || s.phone || bc.driverPhone || '-'}`, ML + 2, y + 18.4);
 
         // Right: Client
         const cliName = this._t(cli.name || bc.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
@@ -1104,11 +1176,12 @@
         doc.rect(ML + cw2 + gap, y, cw2, 4, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [51, 65, 85]);
         this._text(doc, isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', ML + cw2 + gap + 2, y + 3);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
-        this._text(doc, cliName.slice(0, 36), ML + cw2 + gap + 2, y + 7.5);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [71, 85, 105]);
-        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 38)}`, ML + cw2 + gap + 2, y + 11);
-        this._text(doc, `NIF : ${cli.nif || '-'}  |  ${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}`, ML + cw2 + gap + 2, y + 14.5);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
+        this._text(doc, cliName.slice(0, 38), ML + cw2 + gap + 2, y + 7.5);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); this._tc(doc, [71, 85, 105]);
+        this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 2, y + 11.2);
+        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 40)}`, ML + cw2 + gap + 2, y + 14.8);
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 2, y + 18.4);
         y += boxH + 2;
 
         // 5. Items Table (6 cols: N°, DÉSIGNATION, UNITÉ, QTÉ, P.U. HT, TOTAL HT)
@@ -1195,7 +1268,10 @@
         // 6. Anti-Counterfeit Verification Strip linking both volets (4.5mm)
         this._rect(doc, ML, y, CW, 4.2, [254, 243, 199], [251, 191, 36]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5); this._tc(doc, [146, 64, 14]);
-        this._text(doc, isAR ? `حماية ضد التزوير | رمز : ${secCode} | النسخة ${voletNum}/${voletNum === 1 ? '2' : '1'} مطابقة` : `SECURITE ANTI-FRAUDE | CODE : ${secCode} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIE`, ML + CW / 2, y + 3, { align: 'center' });
+        this._text(doc, isAR
+          ? `حماية ضد التزوير | رمز : ${secCode} | تدقيق : #${chkHex} | النسخة ${voletNum}/${voletNum === 1 ? '2' : '1'} مطابقة ومؤمنة`
+          : `SÉCURITÉ ANTI-FRAUDE | CODE : ${secCode} | CONTRÔLE : #${chkHex} | VOLET ${voletNum}/${voletNum === 1 ? '2' : '1'} APPARIÉ`,
+          ML + CW / 2, y + 3, { align: 'center' });
         y += 5.2;
 
         // 7. Signature Blocks (3 boxes: Émetteur Caisse, Chauffeur, Usine) — 13mm
@@ -1268,7 +1344,21 @@
       const br  = bl.brId ? DB.getById('brs',bl.brId) : (bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null);
       const sup = br ? (DB.getById('suppliers',br.supplierId)||{}) : (bl.supplierId ? (DB.getById('suppliers', bl.supplierId)||{}) : {});
       const cli = bl.clientId ? DB.getById('clients',bl.clientId)||{} : {};
-      const s   = this._settings();
+      const rawSettings = this._settings();
+      const s = {
+        ...rawSettings,
+        companyName: rawSettings.companyName || rawSettings.evCompanyName || 'SOCIÉTÉ',
+        address: rawSettings.address || rawSettings.evAddress || '',
+        phone: rawSettings.phone || rawSettings.evPhone || '',
+        email: rawSettings.email || rawSettings.evEmail || '',
+        nif: rawSettings.nif || rawSettings.evNif || '',
+        rc: rawSettings.rc || rawSettings.evRc || '',
+        nis: rawSettings.nis || rawSettings.evNis || '',
+        ai: rawSettings.ai || rawSettings.evAi || '',
+        capital: rawSettings.capital || rawSettings.evCapital || '',
+        logoLeft: rawSettings.logoLeft || rawSettings.leftLogo || rawSettings.evLogoLeft || '',
+        logoRight: rawSettings.logoRight || rawSettings.rightLogo || rawSettings.evLogoRight || (sup && sup.logo ? sup.logo : '')
+      };
       const doc = this._newDoc();
 
       const lines    = bl.lines||(br?br.lines||[]:[]);
@@ -1280,20 +1370,52 @@
       const bchRef = this._t(bl.ref || `BCH/${String(bl.id).padStart(4,'0')}`);
       const brRef = br ? this._t(br.ref) : (bl.linkedBrId ? `BR/${bl.linkedBrId}` : (bl.brId ? `BR/${bl.brId}` : '/'));
 
+      // Cryptographic verification engine linking BL and BCH
+      const rawId = Number(bl.id || 1);
+      const rawTTC = Math.round(Number(totalTTC || 0) * 100);
+      const dateSeed = (bl.date || '').replace(/[^0-9]/g, '').slice(-4) || '2026';
+      const secHash = Math.abs((rawId * 31337 + rawTTC * 17) % 899999 + 100000);
+      const secCode = `SEC-${secHash}-${bchRef.replace(/[^a-zA-Z0-9]/g, '').slice(-6)}`;
+      const sumDigits = String(secHash).split('').reduce((acc, d) => acc + Number(d), 0);
+      const chkVal = (sumDigits * 37 + rawId * 13 + (rawTTC % 997)) % 256;
+      const chkHex = chkVal.toString(16).toUpperCase().padStart(2, '0');
+      const authScramble = Math.abs((secHash ^ 0x5A5A) * 7 + Number(dateSeed)) % 0xFFFFF;
+      const authKey = `${authScramble.toString(16).toUpperCase().padStart(5, '0')}-${chkHex}`;
+
       let y = MT;
+
+      // ── 0. Hidden Top Micro-Security Watermark (Discrete / Anti-Duplicate) ──
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(4.5);
+      this._tc(doc, [148, 163, 184]);
+      doc.text(isAR
+        ? `كود الأمان الرقمي : #${authKey} • النسخة الأصلية • مصفوفة التحقق : ${secCode} • وثيقة غير قابلة للتكرار`
+        : `AUTHENTICITÉ DIGITALE : #${authKey} • DOCUMENT ORIGINAL FACTURE • MATRICE : ${secCode} • NON DUPLICABLE`,
+        ML + CW - 2, MT - 2.5, { align: 'right' });
+      doc.text(isAR ? 'وثيقة رسمية مؤمنة' : 'ORIGINAL SÉCURISÉ', ML, MT - 2.5);
 
       // ── 1. Company Header with Logos ──
       const SLOT_W = 28, SLOT_H = 16;
       const drawLogo = (src, sx) => {
-        if (!src) return;
+        if (!src || typeof src !== 'string') return;
+        const cleanSrc = src.trim();
         try {
-          const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/gif') ? 'GIF' : 'JPEG';
-          const props = doc.getImageProperties ? doc.getImageProperties(src) : null;
-          const ar = (props && props.width && props.height) ? props.width / props.height : 1;
+          let ar = 1;
+          let fmt = 'JPEG';
+          if (cleanSrc.startsWith('data:image/png')) fmt = 'PNG';
+          else if (cleanSrc.startsWith('data:image/gif')) fmt = 'GIF';
+          else if (cleanSrc.startsWith('data:image/webp')) fmt = 'WEBP';
+          try {
+            if (doc.getImageProperties) {
+              const props = doc.getImageProperties(cleanSrc);
+              if (props && props.width && props.height) ar = props.width / props.height;
+              if (props && props.fileType) fmt = props.fileType;
+            }
+          } catch (_) {}
           let w = SLOT_W, h = w / ar;
           if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
           if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
-          doc.addImage(src, fmt, sx + (SLOT_W - w) / 2, y + (SLOT_H - h) / 2, w, h, undefined, 'FAST');
+          doc.addImage(cleanSrc, fmt, sx + Math.max(0, (SLOT_W - w) / 2), y + Math.max(0, (SLOT_H - h) / 2), w, h);
         } catch(e) {}
       };
       drawLogo(s.logoLeft, ML);
@@ -1322,7 +1444,7 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
       this._tc(doc, C.WHITE);
-      this._text(doc, isAR ? (isRoadOnly ? 'وصل التسليم (طريق / تنقل)' : 'وصل تسليم - فاتورة') : (isRoadOnly ? 'BON DE LIVRAISON (ROUTE / CIRCULATION)' : 'BON DE LIVRAISON - FACTURE'), PW / 2, y + 7, { align: 'center' });
+      this._text(doc, isAR ? 'وصل تسليم - فاتورة' : 'BON DE LIVRAISON - FACTURE', PW / 2, y + 7, { align: 'center' });
       y += 12;
 
       // ── 3. Info Strip (N° BCH, Date, BR Ref, Chauffeur, Immat) ──
@@ -1357,7 +1479,7 @@
       y += 12;
 
       // ── 4. Entity boxes (Fournisseur & Client) ──
-      const gap = 4, cw2 = (CW - gap) / 2, boxH = 22;
+      const gap = 4, cw2 = (CW - gap) / 2, boxH = 25;
       // Left: Fournisseur
       const supName = this._t(s.companyName || sup.name || 'Fournisseur');
       this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
@@ -1368,8 +1490,9 @@
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       this._text(doc, supName.slice(0, 40), ML + 3, y + 9.5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      this._text(doc, `${isAR ? 'الهاتف' : 'Tel'} : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + 14);
-      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + 18);
+      this._text(doc, `RC : ${s.rc || sup.rc || '-'}  |  NIF : ${s.nif || sup.nif || '-'}`, ML + 3, y + 13.8);
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || sup.address || '-').slice(0, 42)}`, ML + 3, y + 17.6);
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${s.phone || sup.phone || '-'}${s.nis ? '  |  NIS : ' + s.nis : ''}`, ML + 3, y + 21.4);
 
       // Right: Client
       const cliName = this._t(cli.name || bl.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
@@ -1382,8 +1505,9 @@
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       this._text(doc, cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      this._text(doc, `${isAR ? 'وجهة التسليم' : 'Dest. livr.'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + 14);
-      this._text(doc, `NIF : ${cli.nif || '-'}  |  ${isAR ? 'الهاتف' : 'Tel'} : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + 18);
+      this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 3, y + 13.8);
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + 17.6);
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 3, y + 21.4);
       y += boxH + 3;
 
       // ── 5. Items Table ──
@@ -1458,8 +1582,11 @@
 
       // ── 7. Traceability Note ──
       this._rect(doc, ML, y, CW, 6, [254, 243, 199], [251, 191, 36]);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [146, 64, 14]);
-      doc.text(isAR ? `وثيقة تسليم - فاتورة | مرجع سند الشحن : ${bchRef} | وصل الاستلام : ${brRef}` : `DOCUMENT DE LIVRAISON - FACTURE | REF BCH : ${bchRef} | BR : ${brRef}`, ML + CW / 2, y + 4, { align: 'center' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.2); this._tc(doc, [146, 64, 14]);
+      doc.text(isAR
+        ? `وثيقة تسليم - فاتورة | مرجع سند الشحن : ${bchRef} | وصل الاستلام : ${brRef} | تدقيق أمني : #${chkHex} (${secCode})`
+        : `DOCUMENT DE LIVRAISON - FACTURE | REF BCH : ${bchRef} | BR : ${brRef} | CONTRÔLE SÉCURITÉ : #${chkHex} (${secCode})`,
+        ML + CW / 2, y + 4, { align: 'center' });
       y += 8;
 
       // ── 8. Signature Blocks ──
@@ -1507,8 +1634,21 @@
       const isAR = typeof T !== 'undefined' && T.isRTL();
       if (!br) { this._notify(isAR ? 'وصل الإرجاع غير موجود' : 'Bon de Retour introuvable','error'); return; }
       
-      const cli = br.clientId ? DB.getById('clients', br.clientId)||{} : {};
-      const s   = this._settings();
+      const rawSettings = this._settings();
+      const s = {
+        ...rawSettings,
+        companyName: rawSettings.companyName || rawSettings.evCompanyName || 'SOCIÉTÉ',
+        address: rawSettings.address || rawSettings.evAddress || '',
+        phone: rawSettings.phone || rawSettings.evPhone || '',
+        email: rawSettings.email || rawSettings.evEmail || '',
+        nif: rawSettings.nif || rawSettings.evNif || '',
+        rc: rawSettings.rc || rawSettings.evRc || '',
+        nis: rawSettings.nis || rawSettings.evNis || '',
+        ai: rawSettings.ai || rawSettings.evAi || '',
+        capital: rawSettings.capital || rawSettings.evCapital || '',
+        logoLeft: rawSettings.logoLeft || rawSettings.leftLogo || rawSettings.evLogoLeft || '',
+        logoRight: rawSettings.logoRight || rawSettings.rightLogo || rawSettings.evLogoRight || ''
+      };
       const doc = this._newDoc();
 
       const lines    = br.items || br.lines || [];
@@ -1523,15 +1663,25 @@
       // ── 1. Company Header with Logos ──
       const SLOT_W = 28, SLOT_H = 16;
       const drawLogo = (src, sx) => {
-        if (!src) return;
+        if (!src || typeof src !== 'string') return;
+        const cleanSrc = src.trim();
         try {
-          const fmt = src.startsWith('data:image/png') ? 'PNG' : src.startsWith('data:image/gif') ? 'GIF' : 'JPEG';
-          const props = doc.getImageProperties ? doc.getImageProperties(src) : null;
-          const ar = (props && props.width && props.height) ? props.width / props.height : 1;
+          let ar = 1;
+          let fmt = 'JPEG';
+          if (cleanSrc.startsWith('data:image/png')) fmt = 'PNG';
+          else if (cleanSrc.startsWith('data:image/gif')) fmt = 'GIF';
+          else if (cleanSrc.startsWith('data:image/webp')) fmt = 'WEBP';
+          try {
+            if (doc.getImageProperties) {
+              const props = doc.getImageProperties(cleanSrc);
+              if (props && props.width && props.height) ar = props.width / props.height;
+              if (props && props.fileType) fmt = props.fileType;
+            }
+          } catch (_) {}
           let w = SLOT_W, h = w / ar;
           if (h > SLOT_H) { h = SLOT_H; w = h * ar; }
           if (w > SLOT_W) { w = SLOT_W; h = w / ar; }
-          doc.addImage(src, fmt, sx + (SLOT_W - w) / 2, y + (SLOT_H - h) / 2, w, h, undefined, 'FAST');
+          doc.addImage(cleanSrc, fmt, sx + Math.max(0, (SLOT_W - w) / 2), y + Math.max(0, (SLOT_H - h) / 2), w, h);
         } catch(e) {}
       };
       drawLogo(s.logoLeft, ML);

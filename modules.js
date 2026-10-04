@@ -3680,9 +3680,9 @@ const SupplierPortalModule = {
 
       <!-- Credits Footer -->
       <div style="text-align:center;padding:20px 0 10px;margin-top:30px;border-top:1px solid var(--border)">
-        <div style="font-size:10px;color:var(--text4);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">${isAR ? 'تم التطوير بواسطة' : 'Développé par'}</div>
-        <div style="font-size:13px;font-weight:800;background:linear-gradient(135deg,#0d9488,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer" onclick="if(typeof App!=='undefined')App.showCredits()">AI ABDO — Intelligent Systems</div>
-        <div style="font-size:9px;color:var(--text4);margin-top:2px">Intelligent Business Solutions</div>
+        <div style="font-size:10px;color:var(--text4);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">${isAR ? 'تم التطوير بواسطة' : 'Conçu & Développé par'}</div>
+        <div style="font-size:14px;font-weight:900;background:linear-gradient(135deg,#0d9488,#2563eb,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer;letter-spacing:1px" onclick="if(typeof App!=='undefined')App.showCredits()">CHIKHAOUI ABDERRAHIME</div>
+        <div style="font-size:10px;font-weight:800;color:var(--primary);margin-top:2px;letter-spacing:1.5px">ABDERRAHIME INTELLIGENT SYSTEMS</div>
       </div>
 
     </div>`;
@@ -4579,6 +4579,11 @@ const CaisseModule = {
         ? `✅ تم إغلاق الصندوق بنجاح!\nكشف المبيعات: ${result?.etatDoc?.ref || ''}\nالمبلغ المحول: ${Utils.fmtCurrency(netAmt)} ← ${bankName}`
         : `✅ Caisse clôturée avec succès !\nÉtat de vente: ${result?.etatDoc?.ref || ''}\nMontant versé: ${Utils.fmtCurrency(netAmt)} → ${bankName}`, 'success', 8000);
       
+      // Automatic Day-Close Backup: archive master daily backup and purge intermediate 5-minute points
+      if (typeof API !== 'undefined' && API.closeDayBackup) {
+        API.closeDayBackup().catch(err => console.warn('[BACKUP/closeDay]', err.message));
+      }
+
       // Persistent notification for bank migration
       if (typeof NotifMgr !== 'undefined') {
         NotifMgr.add({
@@ -8671,6 +8676,9 @@ const SettingsModule = {
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._resetAllData()" style="color:#ef4444;border-color:rgba(239,68,68,.35)" title="${isAR ? 'حذف كل البيانات' : 'Effacer toutes les données'}">
             <i class="fas fa-skull-crossbones"></i> ${isAR ? 'إعادة ضبط كامل' : 'Reset TOUT'}
           </button>
+          <button class="btn btn-outline btn-sm" onclick="SettingsModule._closeDayAndPurge()" style="color:#0ea5e9;border-color:rgba(14,165,233,.35)" title="${isAR ? 'تأكيد اليومية وأرشفة النسخة الرئيسية وحذف نقاط 5 دقائق' : 'Clôturer la journée, archiver Master et purger les points 5-min'}">
+            <i class="fas fa-calendar-check"></i> ${isAR ? 'تأكيد اليومية' : 'Clôturer Journée'}
+          </button>
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._loadBackups()" id="btn-refresh-backups">
             <i class="fas fa-sync-alt"></i> ${isAR ? 'تحديث' : 'Actualiser'}
           </button>
@@ -8687,8 +8695,8 @@ const SettingsModule = {
       </div>
       <div style="padding:10px 18px;border-top:1px solid var(--border);background:var(--bg3)">
         <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text4)">
-          <i class="fas fa-info-circle" style="color:#3b82f6"></i>
-          ${isAR ? 'نسخة تلقائية كل ليلة 23:59 — تُحفظ لمدة 30 يوماً ثم تُحذف تلقائياً' : 'Sauvegarde automatique chaque nuit à 23h59 — conservée 30 jours puis supprimée automatiquement'}
+          <i class="fas fa-info-circle" style="color:#0ea5e9"></i>
+          ${isAR ? 'نسخ احتياطي فائق التردد كل 5 دقائق مستمر + نسخة ماستر نهائية عند إغلاق اليومية (23:59)' : 'Sauvegarde haute-fréquence continue toutes les 5 min + Master quotidien à la clôture (23h59)'}
         </div>
       </div>
     </div>
@@ -8783,13 +8791,20 @@ const SettingsModule = {
         const date = new Date(b.createdAt).toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' });
         const expires = new Date(b.expiresAt).toLocaleDateString('fr-FR');
         const isAuto = b.type === 'auto';
+        const isIntraday = b.type === 'intraday';
+        const icon = isIntraday ? 'fa-stopwatch' : (isAuto ? 'fa-robot' : 'fa-hand-paper');
+        const bgCol = isIntraday ? 'rgba(14,165,233,.15)' : (isAuto ? 'rgba(59,130,246,.15)' : 'rgba(139,92,246,.15)');
+        const iconCol = isIntraday ? '#0ea5e9' : (isAuto ? '#3b82f6' : '#8b5cf6');
+        const badge = isIntraday ? `<span style="${isAR?'margin-right:6px':'margin-left:6px'};padding:1px 6px;border-radius:4px;font-size:9px;font-weight:800;background:rgba(14,165,233,.12);color:#0ea5e9;border:1px solid rgba(14,165,233,.25)">5-MIN CONTINU</span>` : '';
         return `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);margin-bottom:6px">
-          <div style="width:28px;height:28px;border-radius:7px;background:${isAuto ? 'rgba(59,130,246,.15)' : 'rgba(139,92,246,.15)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-paper'}" style="font-size:11px;color:${isAuto ? '#3b82f6' : '#8b5cf6'}"></i>
+          <div style="width:28px;height:28px;border-radius:7px;background:${bgCol};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="fas ${icon}" style="font-size:11px;color:${iconCol}"></i>
           </div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${Utils.escHTML(b.label)}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center">
+              <span>${Utils.escHTML(b.label)}</span>${badge}
+            </div>
             <div style="font-size:10px;color:var(--text4)">${date} · ${isAR ? 'ينتهي' : 'Expire'}: ${expires}</div>
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0">
@@ -8900,6 +8915,28 @@ const SettingsModule = {
       this._loadBackups();
     } catch (e) {
       Utils.notify((T.isRTL() ? 'خطأ: ' : 'Erreur: ') + e.message, 'error');
+    }
+  },
+
+  // ── Clôturer la journée & Archiver Master (Purger 5-min) ────────
+  async _closeDayAndPurge() {
+    if (!window.API) return;
+    const isAR = T.isRTL();
+    const ok = await Dialog.confirm(
+      isAR ? 'تأكيد اليومية وأرشفة النسخة الرئيسية' : 'Validation Journée & Archivage Master',
+      (isAR
+        ? 'هل تريد أرشفة النسخة الاحتياطية الرسمية لهذه اليومية وحذف نقاط 5-دقائق المؤقتة السابقة؟'
+        : 'Voulez-vous valider et archiver la sauvegarde Master définitive pour aujourd\'hui, et purger automatiquement les points 5-minutes temporaires ?'),
+      'warning'
+    );
+    if (!ok) return;
+    try {
+      Utils.notify(isAR ? 'جارٍ أرشفة النسخة الرئيسية وتطهير النقاط المؤقتة…' : 'Archivage Master et nettoyage des points temporaires…', 'info');
+      const res = await API.closeDayBackup();
+      Utils.notify('✅ ' + (res.message || (isAR ? 'تمت أرشفة النسخة بنجاح' : 'Journée clôturée avec succès')), 'success');
+      this._loadBackups();
+    } catch (e) {
+      Utils.notify((isAR ? 'خطأ: ' : 'Erreur: ') + e.message, 'error');
     }
   },
 

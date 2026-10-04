@@ -213,6 +213,7 @@ const API = (() => {
   async function createBackup(lbl)  { return req('POST',   '/backup', { label: lbl }); }
   async function restoreBackup(id)  { return req('POST',   `/backup/${id}/restore`); }
   async function deleteBackup(id)   { return req('DELETE', `/backup/${id}`); }
+  async function closeDayBackup()   { return req('POST',   '/backup/close-day'); }
 
   // ── Health check & Keep-Alive ─────────────────────────────────────
   async function ping() {
@@ -233,7 +234,7 @@ const API = (() => {
     syncCloudToLocal, login, logout, isLoggedIn, getUser, initFromToken,
     get, getAll, getById, insert, update, remove, bulkSync,
     getSettings, saveSettings, getTimbreSlabs, saveTimbreSlabs,
-    listBackups, createBackup, restoreBackup, deleteBackup,
+    listBackups, createBackup, restoreBackup, deleteBackup, closeDayBackup,
     ping,
     _req: req, // exposed for admin utility calls
   };

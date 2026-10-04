@@ -1,31 +1,41 @@
 const cron = require('node-cron');
-const { createBackup, maybeDailyBackup } = require('../routes/backup');
+const { createBackup, maybeDailyBackup, maybeIntradayBackup } = require('../routes/backup');
+const Backup = require('../models/Backup');
 
 /**
- * Nightly backup at 23:59 Algeria time (22:59 UTC).
+ * High-Frequency 5-Minute Continuous Backup + Nightly 23:59 Master Consolidation.
  *
- * IMPORTANT: on Render's free tier the service sleeps after 15 min of
- * inactivity, and a sleeping process cannot run cron jobs. So we ALSO run a
- * catch-up check: shortly after every boot, hourly while awake, and on every
- * admin login (see routes/auth.js). It only creates a backup if the last
- * automatic one is older than 20 hours, so nothing is duplicated.
+ * - Every 5 minutes: automatically snapshots active database state (intraday points).
+ * - At 23:59: archives the consolidated Master Daily Backup and purges all intermediate 5-min snapshots.
+ * - On boot/wake: catches up if needed.
  */
 function startBackupCron() {
+  // 1. Nightly Master Backup at 23:59 Algeria time (22:59 UTC)
   cron.schedule('59 22 * * *', async () => {
     try {
-      const label = `Automatique — ${new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' })}`;
+      const label = `Clôture Quotidienne (Auto) — ${new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' })}`;
       const backup = await createBackup(label, 'auto', 'system');
-      console.log(`✅ [CRON] Sauvegarde automatique créée: ${backup.label} (${backup._id})`);
+      // Purge all intermediate 5-minute snapshots from the day
+      const purged = await Backup.deleteMany({ type: 'intraday' });
+      console.log(`✅ [CRON] Sauvegarde quotidienne de clôture archivée: ${backup.label} (${purged.deletedCount} points intraday nettoyés)`);
     } catch (e) {
-      console.error('❌ [CRON] Erreur sauvegarde automatique:', e.message);
+      console.error('❌ [CRON] Erreur clôture quotidienne:', e.message);
     }
   }, { timezone: 'UTC' });
 
+  // 2. High-Frequency 5-Minute Intraday Continuous Snapshot
+  setInterval(() => {
+    if (maybeIntradayBackup) {
+      maybeIntradayBackup().catch(e => console.warn('⚠️ [BACKUP/5min]', e.message));
+    }
+  }, 5 * 60 * 1000); // exactly 5 minutes!
+
+  // 3. Catch-up check on boot & hourly while awake
   const catchUp = () => maybeDailyBackup().catch(e => console.error('❌ [BACKUP/catch-up]', e.message));
-  setTimeout(catchUp, 60 * 1000);          // after boot / wake-up
+  setTimeout(catchUp, 60 * 1000);          // 1 min after boot / wake-up
   setInterval(catchUp, 60 * 60 * 1000);    // hourly while awake
 
-  console.log('⏰ [CRON] Sauvegarde automatique 23:59 (heure algérienne) + rattrapage au réveil');
+  console.log('⏰ [CRON] Sauvegardes continues 5-MINUTES activées + Clôture journalière 23:59 avec purge automatique');
 }
 
-module.exports = { startBackupCron, maybeDailyBackup };
+module.exports = { startBackupCron, maybeDailyBackup, maybeIntradayBackup };

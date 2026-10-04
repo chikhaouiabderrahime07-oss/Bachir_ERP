@@ -19,7 +19,8 @@ const adminOnly = (req, res, next) => {
 router.use(adminOnly);
 
 // Retention: bounded so backups can never fill the free 512 MB database.
-const KEEP = { auto: 7, safety: 3, manual: 10 };
+// auto: 7 daily master, safety: 3 pre-restore, manual: 10 user backups, intraday: 12 rolling 5-min snapshots (1 hour buffer)
+const KEEP = { auto: 7, safety: 3, manual: 10, intraday: 12 };
 const BACKUP_TTL_DAYS = 30;
 const MAX_BLOB_BYTES = 15 * 1024 * 1024; // MongoDB hard limit is 16 MB per document
 
@@ -85,13 +86,13 @@ async function createBackup(label, type = 'auto', createdBy = 'system') {
 // ─── Keep only the newest N backups of each kind ──────────────────
 async function pruneBackups() {
   const all = await Backup.find().select('type label createdAt').sort({ createdAt: -1 }).lean();
-  const buckets = { auto: [], safety: [], manual: [] };
+  const buckets = { auto: [], safety: [], manual: [], intraday: [] };
   for (const b of all) {
-    const kind = b.type === 'manual' ? 'manual' : (/^Avant restauration/.test(b.label) ? 'safety' : 'auto');
-    buckets[kind].push(b._id);
+    const kind = b.type === 'manual' ? 'manual' : (b.type === 'intraday' ? 'intraday' : (/^Avant restauration/.test(b.label) ? 'safety' : 'auto'));
+    if (buckets[kind]) buckets[kind].push(b._id);
   }
   const drop = [];
-  for (const kind of Object.keys(buckets)) drop.push(...buckets[kind].slice(KEEP[kind]));
+  for (const kind of Object.keys(buckets)) drop.push(...buckets[kind].slice(KEEP[kind] || 10));
   if (drop.length) await Backup.deleteMany({ _id: { $in: drop } });
 }
 
@@ -105,6 +106,32 @@ async function maybeDailyBackup() {
   const b = await createBackup(label, 'auto', 'system');
   console.log(`✅ [BACKUP] Sauvegarde de rattrapage créée: ${b.label} (${(b.sizeBytes / 1024).toFixed(0)} Ko)`);
   return b;
+}
+
+// ─── 5-Minute High-Frequency Intraday Continuous Snapshot ──────────
+let _lastDocState = null;
+async function maybeIntradayBackup() {
+  if (_running) return null;
+  try {
+    // Only snapshot if data was actually written/modified
+    const docCount = await Document.countDocuments();
+    const latestDoc = await Document.findOne().sort({ updatedAt: -1 }).select('updatedAt').lean();
+    const latestTime = latestDoc?.updatedAt ? new Date(latestDoc.updatedAt).getTime() : 0;
+    const stateKey = `${docCount}_${latestTime}`;
+    if (_lastDocState && _lastDocState === stateKey) {
+      return null; // Database unchanged in this 5-minute interval
+    }
+
+    const timeStr = new Date().toLocaleTimeString('fr-DZ', { timeZone: 'Africa/Algiers', hour: '2-digit', minute: '2-digit' });
+    const label = `Point 5-Min — ${timeStr}`;
+    const b = await createBackup(label, 'intraday', 'system');
+    _lastDocState = stateKey;
+    console.log(`⏱️ [BACKUP-5MIN] Point de restauration 5-minutes créé: ${b.label} (${(b.sizeBytes / 1024).toFixed(0)} Ko)`);
+    return b;
+  } catch (e) {
+    console.warn('⚠️ [BACKUP-5MIN]', e.message);
+    return null;
+  }
 }
 
 // .lean() returns BSON Binary for Buffer fields — normalise to a real Buffer.
@@ -232,6 +259,31 @@ router.post('/:id/restore', async (req, res) => {
   }
 });
 
+// ─── POST /api/backup/close-day (Clôture Journée: archive Master & Purge 5-min) ──
+router.post('/close-day', async (req, res) => {
+  try {
+    const dateStr = new Date().toLocaleDateString('fr-DZ', { timeZone: 'Africa/Algiers' });
+    const masterLabel = `Clôture Validée Journée — ${dateStr}`;
+    
+    // 1. Create permanent master backup of the closed journey
+    const master = await createBackup(masterLabel, 'auto', req.user?.name || 'Clôture');
+    
+    // 2. Delete all temporary 5-min intraday snapshots of this day
+    const deleted = await Backup.deleteMany({ type: 'intraday' });
+    
+    console.log(`🔒 [BACKUP/CLOSE-DAY] Journée validée: ${masterLabel}. ${deleted.deletedCount} sauvegardes intraday 5-min purgées.`);
+    res.json({
+      success: true,
+      message: `Journée validée avec succès. Sauvegarde maître archivée et ${deleted.deletedCount} points temporaires purgés.`,
+      masterId: master._id,
+      purgedCount: deleted.deletedCount
+    });
+  } catch (e) {
+    console.error('[BACKUP/close-day]', e);
+    res.status(500).json({ error: e.message || 'Erreur lors de la clôture des sauvegardes' });
+  }
+});
+
 // ─── DELETE /api/backup/:id ───────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
@@ -242,4 +294,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, createBackup, maybeDailyBackup, decodeBackup };
+module.exports = { router, createBackup, maybeDailyBackup, maybeIntradayBackup, decodeBackup };

@@ -7,7 +7,7 @@
 const T = {
   _l: localStorage.getItem('lang') || 'fr',
   fr: {
-    app_name:'ERP Fournisseur', app_by:'Développé par CHIKHAOUI ABDERRAHIME',
+    app_name:'ERP Fournisseur', app_by:'CHIKHAOUI ABDERRAHIME • Abderrahime Intelligent Systems',
     login:'Connexion', logout:'Déconnexion', username:'Identifiant', password:'Mot de passe',
     login_error:'Identifiants incorrects', login_sub:'Système de gestion — Accès sécurisé',
     // Nav
@@ -162,7 +162,7 @@ const T = {
     notif_open_tracker: 'Ouvrir le Suivi des Chargements',
   },
   ar: {
-    app_name:'نظام إدارة الموردين', app_by:'تطوير CHIKHAOUI ABDERRAHIME',
+    app_name:'نظام إدارة الموردين', app_by:'CHIKHAOUI ABDERRAHIME • أنظمة عبد الرحيم الذكية',
     login:'تسجيل الدخول', logout:'تسجيل الخروج', username:'اسم المستخدم', password:'كلمة المرور',
     login_error:'بيانات الدخول غير صحيحة', login_sub:'نظام الإدارة — دخول آمن',
     nav_dashboard:'لوحة التحكم', nav_brs:'وصولات الاستلام', nav_bls:'وصولات الشحن',
