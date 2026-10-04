@@ -1235,6 +1235,7 @@ const BLModule = {
                     <button class="btn btn-xs" onclick="PDFGen.exportBonChargement(${bl.id})" title="BCH PDF" style="color:#ef4444;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-file-pdf"></i></button>
                     <button class="btn btn-xs" onclick="PDFGen.exportBLRoute(${bl.id})" title="BL Route" style="color:#3b82f6;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-road"></i></button>
                     ${bl.status==='returned'?`<button class="btn btn-xs" onclick="PDFGen.exportBonRetour(${bl.id})" title="${T.isRTL()?'سند إرجاع':'Bon de Retour PDF'}" style="color:#fff;background:linear-gradient(135deg,#f97316,#ea580c);border:none;min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-exchange-alt"></i></button>`:''}
+                    ${bl.status==='returned' && (Auth.isAdmin() || Auth.can('canCreateBL')) ? `<button class="btn btn-xs" onclick="BLModule.regenerateFromReturned(${bl.id})" title="${T.isRTL()?'إعادة إنشاء سند شحن جديد برقم جديد':'Re-générer nouveau BCH'}" style="color:#0284c7;background:rgba(14,165,233,.12);border:1px solid rgba(14,165,233,.3);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-redo"></i></button>` : ''}
                     ${Auth.canDelete(bl)?`<button class="btn btn-xs" onclick="BLModule.deleteBL(${bl.id})" title="Supprimer" style="color:#ef4444;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);min-width:30px;min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px"><i class="fas fa-trash"></i></button>`:''}
                   </div>
                 </td>
@@ -1260,14 +1261,23 @@ const BLModule = {
   showNewBL() {
     const isAR = T.isRTL();
     const allBRs = DB.getAll('brs');
-    const openBRs = allBRs.filter(b => b.status !== 'delivered' && b.status !== 'locked');
+    // FIFO: First-in, first-out (oldest BR in stock is served first, exclude exhausted)
+    const openBRs = allBRs.filter(b => b.status !== 'delivered' && b.status !== 'locked' && !BLModule.getBRRemaining(b.id).exhausted);
     const supMap = {}; DB.getAll('suppliers').forEach(s => supMap[s.id] = s);
     const allSuppliers = DB.getAll('suppliers');
     const allClients = DB.getAll('clients');
     const allArticles = DB.searchArticles('');
     const allUsers = DB.getAll('users').filter(u => u.active !== false && (u.role === 'user' || u.role === 'admin'));
     const currentU = Auth.getCurrentUser();
-    openBRs.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+    openBRs.sort((a, b) => {
+      const dateA = a.date || (a.createdAt || '').slice(0, 10);
+      const dateB = b.date || (b.createdAt || '').slice(0, 10);
+      if (dateA !== dateB) return dateA.localeCompare(dateB); // Oldest date first (FIFO)
+      const numA = Number(a.brNum) || 0;
+      const numB = Number(b.brNum) || 0;
+      if (numA !== numB) return numA - numB;
+      return (a.createdAt || '').localeCompare(b.createdAt || '');
+    });
 
     // Modal HTML with 2 Modes
     const modalHTML = `
@@ -1398,10 +1408,15 @@ const BLModule = {
       <!-- PANEL 2: STOCK BR MODE (Existing BR) -->
       <div id="bch-panel-stock" style="display:none">
         <div class="form-group mb-2">
-          <label class="required">${isAR ? 'اختيار وصل الاستلام في المخزون' : 'Sélectionner le BR en stock'}</label>
-          <select id="newbl-br" onchange="BLModule._onNewBLBRChange(this.value)">
+          <label class="required"><i class="fas fa-boxes"></i> ${isAR ? 'اختيار وصل الاستلام في المخزون (الأقدم فالأقدم FIFO)' : 'Sélectionner le BR en stock (FIFO — Premier entré, premier servi)'}</label>
+          <select id="newbl-br" class="input" style="width:100%" onchange="BLModule._onNewBLBRChange(this.value)">
             <option value="">${isAR ? '— اختيار وصل الاستلام في المخزون —' : '— Choisir un BR en stock —'}</option>
-            ${openBRs.map(br => `<option value="${br.id}">${Utils.escHTML(br.ref)} — ${Utils.escHTML(supMap[br.supplierId]?.name||'?')} — ${Utils.fmtCurrency(br.totalTTC)}</option>`).join('')}
+            ${openBRs.map(br => {
+              const rem = BLModule.getBRRemaining(br.id);
+              const supName = supMap[br.supplierId]?.name || '?';
+              const dateStr = br.date ? Utils.fmtDate(br.date) : '';
+              return `<option value="${br.id}">\u2066${Utils.escHTML(br.ref)}\u2069 — ${Utils.escHTML(supName)} ${dateStr ? '('+dateStr+')' : ''} — ${isAR ? 'المتبقي:' : 'Reste:'} ${rem.remainingQty} — ${Utils.fmtCurrency(br.totalTTC)}</option>`;
+            }).join('')}
           </select>
         </div>
         <div id="newbl-info"></div>
@@ -1860,7 +1875,7 @@ const BLModule = {
     const partInfo = existingBLs.length ? `<span class="badge badge-warning" style="margin-left:8px">${existingBLs.length} BL(s) partiel(s)</span>` : '';
     if (info) info.innerHTML = `<div class="alert alert-info" style="margin-top:8px">
       <i class="fas fa-link"></i>
-      <strong>${Utils.escHTML(br?.ref||'')}</strong> — ${Utils.escHTML(sup?.name||'?')} — <strong>${Utils.fmtCurrency(br?.totalTTC||0)}</strong>${partInfo}
+      <strong style="direction:ltr;display:inline-block"><bdi dir="ltr" style="unicode-bidi:isolate">${Utils.escHTML(br?.ref||'')}</bdi></strong> — ${Utils.escHTML(sup?.name||'?')} — <strong>${Utils.fmtCurrency(br?.totalTTC||0)}</strong>${partInfo}
     </div>`;
     if (inner) inner.innerHTML = this._blModalBody(br, null);
     if (form)  form.style.display = 'block';
@@ -2142,16 +2157,16 @@ const BLModule = {
     <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <!-- LEFT: Our Company / Fournisseur -->
       <div style="flex:1;min-width:200px;background:linear-gradient(135deg,rgba(var(--primary-rgb),.08),rgba(var(--primary-rgb),.03));border:1px solid rgba(var(--primary-rgb),.2);border-radius:12px;padding:12px 16px">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--primary);margin-bottom:6px"><i class="fas fa-building"></i> Fournisseur / Origine</div>
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--primary);margin-bottom:6px"><i class="fas fa-building"></i> ${T.isRTL() ? 'المورد / المصدر' : 'Fournisseur / Origine'}</div>
         <div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">${Utils.escHTML(DB.getSettings().companyName||sup.name||'—')}</div>
         <div style="font-size:11px;color:var(--text3);line-height:1.8">
           ${DB.getSettings().nif?`NIF : ${Utils.escHTML(DB.getSettings().nif)}<br>`:''}${DB.getSettings().rc?`RC : ${Utils.escHTML(DB.getSettings().rc)}<br>`:''}
-          <i class="fas fa-link" style="font-size:9px"></i> BR : <strong>${Utils.escHTML(br.ref)}</strong>
+          <i class="fas fa-link" style="font-size:9px"></i> ${T.isRTL() ? 'وصل الاستلام :' : 'BR :'} <strong style="direction:ltr;display:inline-block"><bdi dir="ltr" style="unicode-bidi:isolate">${Utils.escHTML(br.ref)}</bdi></strong>
         </div>
       </div>
       <!-- RIGHT: Client details -->
       <div style="min-width:200px;background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(34,197,94,.03));border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:12px 16px" id="bl-client-credit-box">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--success);margin-bottom:6px"><i class="fas fa-user-tie"></i> Client / Destinataire</div>
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--success);margin-bottom:6px"><i class="fas fa-user-tie"></i> ${T.isRTL() ? 'الزبون / المستلم' : 'Client / Destinataire'}</div>
         <div id="bl-client-name-disp" style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">—</div>
         <div id="bl-client-details" style="font-size:11px;color:var(--text3);line-height:1.8"></div>
       </div>
@@ -2163,15 +2178,15 @@ const BLModule = {
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;background:var(--bg3);padding:10px;border-radius:8px;align-items:center">
-      <span style="font-weight:600;font-size:13px;color:var(--text1)"><i class="fas fa-truck-loading"></i> Type :</span>
-      <button class="btn btn-sm btn-outline" onclick="BLModule._fillAllQtys()"><i class="fas fa-check-double"></i> Livraison Complète</button>
-      <button class="btn btn-sm btn-outline" onclick="BLModule._clearQtys()"><i class="fas fa-eraser"></i> Vider Qtés</button>
-      <span id="bl-partial-badge" style="display:none" class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> Partielle</span>
+      <span style="font-weight:600;font-size:13px;color:var(--text1)"><i class="fas fa-truck-loading"></i> ${T.isRTL() ? 'النوع :' : 'Type :'}</span>
+      <button class="btn btn-sm btn-outline" onclick="BLModule._fillAllQtys()"><i class="fas fa-check-double"></i> ${T.isRTL() ? 'تسليم كامل' : 'Livraison Complète'}</button>
+      <button class="btn btn-sm btn-outline" onclick="BLModule._clearQtys()"><i class="fas fa-eraser"></i> ${T.isRTL() ? 'تفريغ الكميات' : 'Vider Qtés'}</button>
+      <span id="bl-partial-badge" style="display:none" class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> ${T.isRTL() ? 'جزئي' : 'Partielle'}</span>
     </div>
     <div class="form-group mb-2">
       <label class="required">${T.get('col_client')}</label>
       <select id="bl-client" required onchange="BLModule._updateClientCredit(this.value)">
-        <option value="">-- Choisir un client --</option>
+        <option value="">${T.isRTL() ? '— اختيار الزبون —' : '-- Choisir un client --'}</option>
         ${DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c=>`<option value="${c.id}" ${String(bl?.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
       </select>
     </div>
@@ -2732,6 +2747,7 @@ const BLModule = {
       <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="PDFGen.exportBonChargement(${blId})"><i class="fas fa-file-pdf" style="color:#ef4444"></i> BCH</button>
       <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="PDFGen.exportBLRoute(${blId})"><i class="fas fa-road" style="color:#3b82f6"></i> BL Route</button>
       ${isReturned ? `<button class="btn" style="background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;font-size:11px;padding:6px 10px" onclick="PDFGen.exportBonRetour(${blId})"><i class="fas fa-exchange-alt"></i> ${T.isRTL()?'سند إرجاع':'Bon Retour'}</button>` : ''}
+      ${isReturned && (Auth.isAdmin() || Auth.can('canCreateBL')) ? `<button class="btn" style="background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;font-size:12px" onclick="UI.closeModal();BLModule.regenerateFromReturned(${blId})"><i class="fas fa-redo"></i> ${T.isRTL() ? 'إعادة إنشاء سند شحن جديد' : 'Re-générer nouveau BCH'}</button>` : ''}
       <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="UI.closeModal();BCSupervisionModule.showTimeline(${blId})"><i class="fas fa-history"></i> Traçabilité</button>
       <span style="width:1px;height:24px;background:var(--border);margin:0 2px"></span>
       <button class="btn btn-secondary" style="font-size:12px" onclick="UI.closeModal()">${T.get('close')}</button>
@@ -2786,6 +2802,12 @@ const BLModule = {
     const retours = DB.getAll('bon_retours');
     const ret = retours.find(r => Number(r.blId) === Number(blId) || Number(r.bcId) === Number(blId));
     if (ret) DB.delete('bon_retours', ret.id);
+
+    // If BR is exhausted again by this restoration, mark it delivered
+    const targetBrId = bl.brId || bl.linkedBrId;
+    if (targetBrId && BLModule.getBRRemaining(targetBrId).exhausted) {
+      DB.update('brs', targetBrId, { status: 'delivered' }, 'Quantité ré-épuisée suite à annulation de retour');
+    }
     
     Utils.notify(isAR ? '✅ تم إلغاء الإرجاع بنجاح' : '✅ Retour annulé — BL restauré en "Livré"', 'success');
     App.loadModule('bls');
@@ -2927,6 +2949,24 @@ const BLModule = {
       returnReason: fullReason
     }, 'Marchandise retournée — Bon de retour ' + brRef);
 
+    // 2b. Reopen the associated BR in stock so it reappears immediately!
+    const targetBrId = bl.brId || bl.linkedBrId;
+    if (targetBrId) {
+      const associatedBR = DB.getById('brs', targetBrId);
+      if (associatedBR) {
+        // If the BR was marked 'delivered' or closed, reopen it since the returned BCH freed its stock!
+        if (associatedBR.status === 'delivered') {
+          DB.update('brs', associatedBR.id, {
+            status: 'open',
+            deliveredAt: null,
+            deliveredBy: null,
+            deliveredByName: null
+          }, `Réouverture stock suite au retour du BCH ${bl.ref}`);
+          console.log(`[processReturn] BR ${associatedBR.ref} reopened in stock`);
+        }
+      }
+    }
+
     // 3. Register caisse deduction
     DB.insert('caisse_admin', {
       type: 'withdrawal',
@@ -2961,6 +3001,91 @@ const BLModule = {
       setTimeout(() => PDFGen.exportBonRetour(brDoc.id), 400);
     }
     App.loadModule('bls');
+  },
+
+  async regenerateFromReturned(returnedBlId) {
+    const isAR = T.isRTL();
+    const oldBL = DB.getById('bls', returnedBlId);
+    if (!oldBL) {
+      Utils.notify(isAR ? 'سند الشحن غير موجود' : 'BCH introuvable', 'error');
+      return;
+    }
+
+    const ok = await Dialog.confirm(
+      isAR ? 'إعادة إصدار سند الشحن' : 'Re-générer Bon de Chargement',
+      isAR 
+        ? `هل تريد إنشاء سند شحن جديد بنفس بيانات السند المرتجع <strong>${Utils.escHTML(oldBL.ref)}</strong>؟<br><small style="color:var(--text3)">سيتم تخصيص رقم مرجعي جديد تلقائياً مع الحفاظ على السند المرتجع في الأرشيف.</small>`
+        : `Voulez-vous générer un NOUVEAU Bon de Chargement avec les données du BCH retourné <strong>${Utils.escHTML(oldBL.ref)}</strong> ?<br><small style="color:var(--text3)">Un nouveau numéro et une nouvelle référence seront attribués automatiquement.</small>`,
+      'info'
+    );
+    if (!ok) return;
+
+    // Case 1: Was created from a Stock BR
+    if (oldBL.brId) {
+      const br = DB.getById('brs', oldBL.brId);
+      if (br) {
+        BLModule.showNewBL();
+        setTimeout(() => {
+          BLModule._switchNewBCHMode('stock');
+          const sel = document.getElementById('newbl-br');
+          if (sel) {
+            sel.value = String(oldBL.brId);
+            BLModule._onNewBLBRChange(oldBL.brId);
+            setTimeout(() => {
+              const cliInp = document.getElementById('bl-client');
+              const drvInp = document.getElementById('bl-driver');
+              const trkInp = document.getElementById('bl-truck');
+              const dstInp = document.getElementById('bl-destination');
+              if (cliInp && oldBL.clientId) { cliInp.value = String(oldBL.clientId); cliInp.dispatchEvent(new Event('change')); }
+              if (drvInp && oldBL.driverName) drvInp.value = oldBL.driverName;
+              if (trkInp && oldBL.truckIMM) trkInp.value = oldBL.truckIMM;
+              if (dstInp && oldBL.destinationAddress) dstInp.value = oldBL.destinationAddress;
+              (oldBL.lines || []).forEach((l, i) => {
+                const qInp = document.getElementById(`bl-qty-${i}`);
+                if (qInp) { qInp.value = l.qtyDelivered || l.qty; qInp.dispatchEvent(new Event('input')); }
+              });
+            }, 120);
+          }
+        }, 150);
+        return;
+      }
+    }
+
+    // Case 2: Direct factory courtage
+    BLModule.showNewBL();
+    setTimeout(() => {
+      BLModule._switchNewBCHMode('direct');
+      const supInp = document.getElementById('direct-bch-supplier');
+      const cliInp = document.getElementById('direct-bch-client');
+      const drvInp = document.getElementById('direct-bch-driver');
+      const trkInp = document.getElementById('direct-bch-truck');
+      const dstInp = document.getElementById('direct-bch-dest');
+      const tvaInp = document.getElementById('direct-bch-tva-rate');
+      const tmbInp = document.getElementById('direct-bch-no-timbre');
+
+      if (supInp && oldBL.supplierId) supInp.value = String(oldBL.supplierId);
+      if (cliInp && oldBL.clientId) { cliInp.value = String(oldBL.clientId); cliInp.dispatchEvent(new Event('change')); }
+      if (drvInp && oldBL.driverName) drvInp.value = oldBL.driverName;
+      if (trkInp && oldBL.truckIMM) trkInp.value = oldBL.truckIMM;
+      if (dstInp && oldBL.destinationAddress) dstInp.value = oldBL.destinationAddress;
+      if (tvaInp && oldBL.tvaRate != null) tvaInp.value = String(oldBL.tvaRate);
+      if (tmbInp && oldBL.noTimbre != null) tmbInp.checked = Boolean(oldBL.noTimbre);
+
+      BLModule._directBCHRows = [];
+      const tbody = document.getElementById('direct-bch-rows');
+      if (tbody) tbody.innerHTML = '';
+      (oldBL.lines || []).forEach(l => {
+        BLModule._addDirectBCHRow({
+          designation: l.designation,
+          unit: l.unit,
+          qty: l.qtyDelivered || l.qty,
+          price: l.price,
+          purchasePrice: l.purchasePrice,
+          disc: l.disc
+        });
+      });
+      BLModule._recalcDirectBCHTotals();
+    }, 150);
   },
 
   async deleteBL(id) {

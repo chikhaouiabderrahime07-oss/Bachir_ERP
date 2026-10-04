@@ -892,10 +892,10 @@ const App = {
     };
     // Background sync: don't block render — localStorage already has data from last session
     if (needs[mod] && typeof DB.ensureLoaded === 'function') {
-      DB.ensureLoaded(needs[mod]).then(() => {
-        // If data changed during sync and we're still on this module, re-render
-        if (this._currentModule === mod) {
-          // Silent re-render only if module is still active (no spinner, no blocking)
+      DB.ensureLoaded(needs[mod]).then((didSync) => {
+        // If fresh data arrived from server and we're still on this module, re-render
+        if (didSync && this._currentModule === mod && !document.getElementById('modalOverlay')?.classList.contains('active')) {
+          this.reloadDebounced(mod, 60);
         }
       }).catch(() => {});
     }

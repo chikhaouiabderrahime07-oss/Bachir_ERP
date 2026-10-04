@@ -1203,20 +1203,22 @@ const DB = {
 
   async ensureLoaded(collections) {
     if (!Array.isArray(collections)) collections = [collections];
-    if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
+    if (typeof window.API === 'undefined' || location.protocol === 'file:') return false;
     
     const toLoad = collections.filter(c => {
       if (this._loaded[c]) return false;
       const lastSync = localStorage.getItem(`_sync_ts_${c}`);
-      if (lastSync && Date.now() - parseInt(lastSync) < 5 * 60 * 1000) {
+      // Fast cooldown of 15s (instead of 5 minutes!) for seamless multi-PC navigation
+      if (lastSync && Date.now() - parseInt(lastSync) < 15 * 1000) {
         this._loaded[c] = true;
         return false;
       }
       return true;
     });
 
-    if (toLoad.length === 0) return;
+    if (toLoad.length === 0) return false;
     await Promise.all(toLoad.map(c => this._syncCollection(c)));
+    return true;
   },
 
   async _syncCollection(col) {
@@ -1242,8 +1244,25 @@ const DB = {
       } else {
         let qs = isLarge ? '?limit=500' : '';
         data = await window.API.getAll(col, qs);
-        if (!data || !Array.isArray(data)) return;
+        if (!data || !Array.isArray(data)) return; // Null/failed response: NEVER touch local storage!
         
+        // ── CRITICAL SYNC GUARD: NEVER overwrite populated cache with [] on transient errors ──
+        const existingRaw = localStorage.getItem(col);
+        const existingLocal = existingRaw ? JSON.parse(existingRaw) : [];
+        if (data.length === 0 && Array.isArray(existingLocal) && existingLocal.length > 0) {
+          const u = Auth.getCurrentUser();
+          const isSupplier = u?.role === 'supplier' || u?.role === 'supplier_agent';
+          if (isSupplier) {
+            // Suppliers have an isolated/blocked view — do NOT wipe out existing admin data!
+            return;
+          }
+          const CRITICAL_COLS = ['bls', 'brs', 'clients', 'suppliers', 'caisse_admin', 'bank_transactions', 'etat_vente_docs'];
+          if (CRITICAL_COLS.includes(col) && existingLocal.length >= 1) {
+            console.warn(`[Sync Guard] Preserved ${existingLocal.length} local items for '${col}' — rejected suspicious empty server response.`);
+            return;
+          }
+        }
+
         if (isHistory) {
           const local = JSON.parse(localStorage.getItem(col) || '[]');
           const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
@@ -1261,8 +1280,9 @@ const DB = {
     }
   },
 
-  // ─── Live sync: poll MongoDB every 60s so all users see fresh data ───
-  _syncVersions: {},  // last-known version per collection
+  // ─── Live sync: poll MongoDB every 4s so all users see fresh data ───
+  _syncVersions: {},      // last-known version per collection
+  _lastServerEpoch: null, // tracks server restarts / wake-ups
 
   startLiveSync() {
     if (typeof window.API === 'undefined' || location.protocol === 'file:') return;
@@ -1277,36 +1297,43 @@ const DB = {
         // 1. Fetch lightweight version map (no DB reads, just in-memory counters)
         let changed = null;
         try {
-          const versions = await window.API.get('/data/_versions');
-          if (versions && typeof versions === 'object') {
+          const res = await window.API.get('/data/_versions');
+          if (res && typeof res === 'object') {
             changed = [];
-            for (const [col, ver] of Object.entries(versions)) {
-              if (this._syncVersions[col] !== ver) changed.push(col);
+            const verMap = res.v || res; // supports both { epoch, v: { ... } } and flat map
+            const currentEpoch = res.epoch;
+
+            // Detect server reboot / redeploy / cold-start wake
+            if (this._lastServerEpoch && currentEpoch && this._lastServerEpoch !== currentEpoch) {
+              console.log('[LiveSync] Server rebooted / woke from sleep — invalidating cache for fresh pull');
+              this._syncVersions = {};
+              changed = [...new Set([...ESSENTIAL, ...Object.keys(this._loaded)])];
+            } else {
+              for (const [col, ver] of Object.entries(verMap)) {
+                if (this._syncVersions[col] !== ver) changed.push(col);
+              }
+              // Also check essential collections that haven't been loaded yet
+              for (const c of ESSENTIAL) {
+                if (!this._loaded[c] && !changed.includes(c)) changed.push(c);
+              }
             }
-            // Also check essential collections that may not be in the version map
-            for (const c of ESSENTIAL) {
-              if (!changed.includes(c) && !this._loaded[c]) changed.push(c);
-            }
-            // Store new versions
-            Object.assign(this._syncVersions, versions);
+
+            if (currentEpoch) this._lastServerEpoch = currentEpoch;
+            Object.assign(this._syncVersions, verMap);
           }
         } catch (e) {
-          // _versions endpoint may not exist on old server — fall back to full sync
           changed = null;
         }
 
         // 2. Build list of collections to sync
-        let colsToSync;
+        let colsToSync = [];
         if (changed !== null) {
           // Differential: only re-download collections that actually changed
           const loaded = Object.keys(this._loaded);
           colsToSync = changed.filter(c => ESSENTIAL.includes(c) || loaded.includes(c));
-        } else {
-          // Fallback: sync everything (old behavior)
-          colsToSync = [...new Set([...ESSENTIAL, ...Object.keys(this._loaded)])];
         }
 
-        // 3. Serialize syncs — don't fire 15+ requests in parallel (kills Render free tier)
+        // 3. Serialize syncs — don't fire 15+ requests in parallel (protects Render free tier)
         for (const c of colsToSync) {
           await this._syncCollection(c);
         }
@@ -1323,12 +1350,16 @@ const DB = {
         const isAR = typeof T !== 'undefined' && T.isRTL();
         indicator.style.background = '#10b981';
         indicator.title = (isAR ? 'تمت المزامنة — ' : 'Synchronisé — ') + new Date().toLocaleTimeString(isAR ? 'ar-DZ' : 'fr-FR');
+        
         // Re-run migrations after sync in case new delivered BLs came in from other users
-        this.runMigrations();
+        if (colsToSync.length > 0) {
+          this.runMigrations();
+        }
+
         // Auto-reload the current view if data actually changed (and no modal is open)
         if (colsToSync.length > 0 && typeof App !== 'undefined' && App._currentModule) {
           if (!document.getElementById('modalOverlay')?.classList.contains('active')) {
-            App.reloadDebounced(App._currentModule, 500);
+            App.reloadDebounced(App._currentModule, 250);
           }
         }
       } catch (e) {
@@ -1337,8 +1368,8 @@ const DB = {
       }
     };
     // Delay first sync so UI renders from cache first (instant), then background sync
-    setTimeout(() => doSync(), 2000);
-    setInterval(doSync, 5000); // 5s — near-instant sync between users
+    setTimeout(() => doSync(), 1500);
+    setInterval(doSync, 4000); // 4s — near-instant multi-PC sync
   },
 
   _seed() {
@@ -2195,6 +2226,13 @@ const Auth = {
     if (u) WorkLog.logOut(u.id);
     localStorage.removeItem('currentUser');
     localStorage.removeItem('_erp_token');
+    // Clear sync timestamps so the next user immediately syncs fresh data from cloud
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('_sync_ts_')) localStorage.removeItem(k);
+      });
+    } catch (_) {}
+    if (typeof DB !== 'undefined') DB._loaded = {};
     if (window.API) API.logout();
     location.reload();
   },

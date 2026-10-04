@@ -29,16 +29,9 @@ async function authMiddleware(req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // ── Single Active Session Enforcement ─────────────────────
-    if (decoded.sessionId && decoded.username) {
+    // ── Multi-Session Support & Account Status Check ─────────
+    if (decoded.username) {
       const state = await getUserState(decoded.username);
-      if (state?.currentSessionId && state.currentSessionId !== decoded.sessionId) {
-        return res.status(403).json({
-          error: 'SESSION_TERMINATED',
-          code: 'SESSION_TERMINATED',
-          message: 'Votre compte s\'est connecté depuis un autre appareil ou emplacement. Cette session a été fermée.'
-        });
-      }
       if (state?.active === false && state.role !== 'admin') {
         return res.status(403).json({ error: 'Compte désactivé' });
       }

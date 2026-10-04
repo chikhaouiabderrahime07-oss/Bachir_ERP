@@ -1322,7 +1322,7 @@
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
       this._tc(doc, C.WHITE);
-      this._text(doc, isAR ? (isRoadOnly ? 'وصل التسليم (طريق / تنقل)' : 'وصل التسليم') : (isRoadOnly ? 'BON DE LIVRAISON (ROUTE / CIRCULATION)' : 'BON DE LIVRAISON'), PW / 2, y + 7, { align: 'center' });
+      this._text(doc, isAR ? (isRoadOnly ? 'وصل التسليم (طريق / تنقل)' : 'وصل تسليم - فاتورة') : (isRoadOnly ? 'BON DE LIVRAISON (ROUTE / CIRCULATION)' : 'BON DE LIVRAISON - FACTURE'), PW / 2, y + 7, { align: 'center' });
       y += 12;
 
       // ── 3. Info Strip (N° BCH, Date, BR Ref, Chauffeur, Immat) ──
@@ -1459,7 +1459,7 @@
       // ── 7. Traceability Note ──
       this._rect(doc, ML, y, CW, 6, [254, 243, 199], [251, 191, 36]);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); this._tc(doc, [146, 64, 14]);
-      doc.text(`DOCUMENT DE LIVRAISON | REF BCH : ${bchRef} | BR : ${brRef}`, ML + CW / 2, y + 4, { align: 'center' });
+      doc.text(isAR ? `وثيقة تسليم - فاتورة | مرجع سند الشحن : ${bchRef} | وصل الاستلام : ${brRef}` : `DOCUMENT DE LIVRAISON - FACTURE | REF BCH : ${bchRef} | BR : ${brRef}`, ML + CW / 2, y + 4, { align: 'center' });
       y += 8;
 
       // ── 8. Signature Blocks ──
@@ -1486,7 +1486,7 @@
       doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
       doc.text('Date, Signature et Cachet', ML + (sigW2 + 3) * 2 + 3, sigY + sigH - 2);
 
-      this._save(doc, `BL_${bchRef.replace(/[\/\\]/g,'_')}.pdf`);
+      this._save(doc, `BL_FACTURE_${bchRef.replace(/[\/\\]/g,'_')}.pdf`);
     },
 
     /* ══════════════════════════════════════════════════════════
