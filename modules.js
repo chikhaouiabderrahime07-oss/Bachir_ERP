@@ -694,7 +694,7 @@ const BRModule = {
     return `
     <div class="form-grid cols-2" style="margin-bottom:10px">
       <div class="form-group">
-        <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('br_supplier')}</span><button type="button" class="btn btn-xs btn-outline" onclick="SuppliersModule.showCreate()" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('sup_new')}</button></label>
+        <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('br_supplier')}</span><button type="button" class="btn btn-xs btn-outline" onclick="BLModule.quickAddSupplier('br-supplier')" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('sup_new')}</button></label>
         <select id="br-supplier" required
           onchange="BRModule._validateBRNum(document.getElementById('br-num').value,document.getElementById('br-year').value,${br?.id||'null'})">
           <option value="">— ${T.isRTL()?'اختر مورداً':'Choisir un fournisseur'} —</option>
@@ -971,16 +971,6 @@ const BRModule = {
       const ok2 = await Dialog.confirm(T.isRTL() ? 'يوجد BL مرتبط' : 'BL lié', (T.isRTL()?`يوجد ${linkedBLs.length} BL مرتبط. حذف الاثنين؟`:`${linkedBLs.length} BL(s) lié(s) à ce BR. Supprimer tout ?`), 'danger');
       if (!ok2) return;
       for (const bl of linkedBLs) {
-        // Create correction entry instead of silently deleting caisse history
-        const blAmount = Number(bl.totalTTC || 0);
-        if (bl.status === 'delivered' && blAmount > 0) {
-          const ru = Auth.getCurrentUser();
-          DB.insert('caisse_admin', {
-            type:'withdrawal', source:'bl_error_delete', blId:bl.id, blRef:bl.ref||'',
-            amount:blAmount, note:'Correction — suppression BR cascade '+(bl.ref||''),
-            userId:bl.createdBy||ru?.id, userName:bl.createdByName||ru?.name, date:Utils.today()
-          });
-        }
         DB.delete('bls', bl.id);
       }
     }
@@ -1305,14 +1295,14 @@ const BLModule = {
         <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
           <div class="form-row-4" style="margin-bottom:10px">
             <div class="form-group mb-0">
-              <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:4px"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</span><button type="button" class="btn btn-xs btn-outline" onclick="SuppliersModule.showCreate()" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i></button></label>
+              <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:4px"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</span><button type="button" class="btn btn-xs btn-outline" onclick="BLModule.quickAddSupplier('direct-bch-supplier')" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i></button></label>
               <select id="direct-bch-supplier" class="input" required>
                 <option value="">${isAR ? '— اختيار المصنع —' : "— Choisir l'Usine —"}</option>
                 ${allSuppliers.map(s => `<option value="${s.id}">${Utils.escHTML(s.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group mb-0">
-              <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:4px"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون المستلم' : 'Client Destinataire'}</span><button type="button" class="btn btn-xs btn-outline" onclick="ClientsModule.showCreate()" title="${T.get('cli_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i></button></label>
+              <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:4px"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون المستلم' : 'Client Destinataire'}</span><button type="button" class="btn btn-xs btn-outline" onclick="BLModule.quickAddClient('direct-bch-client')" title="${T.get('cli_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i></button></label>
               <select id="direct-bch-client" class="input" required onchange="BLModule._onDirectClientChange(this.value)">
                 <option value="">${isAR ? '— اختيار الزبون —' : '— Choisir le Client —'}</option>
                 ${allClients.map(c => `<option value="${c.id}">${Utils.escHTML(c.name)}</option>`).join('')}
@@ -1592,6 +1582,71 @@ const BLModule = {
     }
   },
 
+  async quickAddSupplier(targetSelectId = 'direct-bch-supplier') {
+    const isAR = T.isRTL();
+    const name = await Dialog.show({
+      title: isAR ? '🏢 إضافة مصنع / مورد جديد' : '🏢 Ajouter une nouvelle Usine / Fournisseur',
+      message: isAR ? 'أدخل اسم المصنع أو المورد الجديد لإضافته فوراً إلى القائمة دون مغادرة هذه الشاشة:' : 'Saisissez le nom du fournisseur pour l\'ajouter directement sans quitter ce formulaire :',
+      inputType: 'text',
+      inputPlaceholder: isAR ? 'اسم المصنع أو الشركة...' : 'Nom de l\'usine ou de la société...',
+      inputLabel: isAR ? 'الاسم التجاري' : 'Raison sociale',
+      confirmText: isAR ? 'إضافة واختيار' : 'Ajouter & Sélectionner',
+      cancelText: T.get('cancel')
+    });
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    const supAbbrev = cleanName.slice(0, 5).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const newSup = DB.insert('suppliers', {
+      name: cleanName,
+      abbrev: supAbbrev,
+      createdAt: new Date().toISOString()
+    });
+    const sel = document.getElementById(targetSelectId);
+    if (sel) {
+      const opt = document.createElement('option');
+      opt.value = newSup.id;
+      opt.textContent = newSup.name;
+      opt.selected = true;
+      sel.appendChild(opt);
+      sel.value = String(newSup.id);
+      if (typeof sel.onchange === 'function') sel.onchange();
+    }
+    Utils.notify(isAR ? `تمت إضافة المورد ${cleanName} بنجاح` : `Fournisseur ${cleanName} ajouté avec succès`, 'success');
+  },
+
+  async quickAddClient(targetSelectId = 'direct-bch-client') {
+    const isAR = T.isRTL();
+    const name = await Dialog.show({
+      title: isAR ? '👤 إضافة زبون جديد' : '👤 Ajouter un nouveau Client',
+      message: isAR ? 'أدخل اسم الزبون الجديد لإضافته فوراً إلى القائمة دون مغادرة هذه الشاشة:' : 'Saisissez le nom du client pour l\'ajouter directement sans quitter ce formulaire :',
+      inputType: 'text',
+      inputPlaceholder: isAR ? 'اسم الزبون أو الشركة...' : 'Nom du client ou de la société...',
+      inputLabel: isAR ? 'الاسم التجاري' : 'Raison sociale',
+      confirmText: isAR ? 'إضافة واختيار' : 'Ajouter & Sélectionner',
+      cancelText: T.get('cancel')
+    });
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    const newCli = DB.insert('clients', {
+      name: cleanName,
+      createdAt: new Date().toISOString()
+    });
+    const sel = document.getElementById(targetSelectId);
+    if (sel) {
+      const opt = document.createElement('option');
+      opt.value = newCli.id;
+      opt.textContent = newCli.name;
+      opt.selected = true;
+      sel.appendChild(opt);
+      sel.value = String(newCli.id);
+      if (typeof sel.onchange === 'function') sel.onchange();
+      if (targetSelectId === 'bl-client' && typeof BLModule._updateClientCredit === 'function') {
+        BLModule._updateClientCredit(newCli.id);
+      }
+    }
+    Utils.notify(isAR ? `تمت إضافة الزبون ${cleanName} بنجاح` : `Client ${cleanName} ajouté avec succès`, 'success');
+  },
+
   _onDirectDriverInput(val) {
     const dd = document.getElementById('direct-bch-driver-ac');
     if (!dd) return;
@@ -1627,6 +1682,16 @@ const BLModule = {
   },
 
   async _saveDirectBCH(andPrint = false, printType = 'bch', editId = null, adminOverride = false) {
+    if (this._isSavingDirect) return;
+    this._isSavingDirect = true;
+    try {
+      return await this._doSaveDirectBCH(andPrint, printType, editId, adminOverride);
+    } finally {
+      this._isSavingDirect = false;
+    }
+  },
+
+  async _doSaveDirectBCH(andPrint = false, printType = 'bch', editId = null, adminOverride = false) {
     const isAR = T.isRTL();
     const existing = editId ? DB.getById('bls', editId) : null;
     if (editId && !existing) return;
@@ -2189,7 +2254,7 @@ const BLModule = {
       <span id="bl-partial-badge" style="display:none" class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> ${T.isRTL() ? 'جزئي' : 'Partielle'}</span>
     </div>
     <div class="form-group mb-2">
-      <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('col_client')}</span><button type="button" class="btn btn-xs btn-outline" onclick="ClientsModule.showCreate()" title="${T.get('cli_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('cli_new')}</button></label>
+      <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('col_client')}</span><button type="button" class="btn btn-xs btn-outline" onclick="BLModule.quickAddClient('bl-client')" title="${T.get('cli_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('cli_new')}</button></label>
       <select id="bl-client" required onchange="BLModule._updateClientCredit(this.value)">
         <option value="">${T.isRTL() ? '— اختيار الزبون —' : '-- Choisir un client --'}</option>
         ${DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c=>`<option value="${c.id}" ${String(bl?.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
@@ -2444,6 +2509,16 @@ const BLModule = {
   },
 
   _saveBL(brId, editBlId, andPrint, adminOverride = false) {
+    if (this._isSavingBL) return;
+    this._isSavingBL = true;
+    try {
+      return this._doSaveBL(brId, editBlId, andPrint, adminOverride);
+    } finally {
+      this._isSavingBL = false;
+    }
+  },
+
+  _doSaveBL(brId, editBlId, andPrint, adminOverride = false) {
     const isAR = T.isRTL();
     // Permission guard: non-admin users must have canCreateBL permission
     if (!Auth.isAdmin() && !Auth.can('canCreateBL')) {
@@ -2644,35 +2719,10 @@ const BLModule = {
       }
     }
 
-    // ── Immediate caisse entry ──
-    // Use NET deposit count: deposits minus withdrawals for this BL
-    // A re-delivered BL after return has: 1 deposit + 1 withdrawal = net 0 → needs new deposit
-    const blCreatorId = bl.createdBy || u?.id;
-    const blCreator = DB.getById('users', blCreatorId);
-    const today = Utils.today();
-    const caisseEntries = DB.getAll('caisse_admin').filter(e => Number(e.blId) === Number(blId));
-    const depositCount = caisseEntries.filter(e => e.type === 'deposit' && e.source === 'bl_delivery').length;
-    const withdrawCount = caisseEntries.filter(e => e.type === 'withdrawal' && (e.source === 'bl_return' || e.source === 'bl_error_delete')).length;
-    const netDeposits = depositCount - withdrawCount;
-
-    if (netDeposits < 1 && amount > 0) {
-      DB.insert('caisse_admin', {
-        type: 'deposit',
-        source: 'bl_delivery',
-        blId,
-        blRef: bl.ref,
-        brRef: br?.ref,
-        brCreatedBy: br?.createdBy,
-        brCreatedByName: br?.createdByName,
-        userId: blCreatorId,      // ← cash goes to BL creator's caisse
-        userName: blCreator?.name || blCreator?.username || 'Utilisateur',
-        deliveredBy: u?.id,       // ← who clicked confirm
-        deliveredByName: u?.name,
-        sessionDate: today,
-        amount: Number(bl.totalTTC || br?.totalTTC || 0),
-        note: `BL ${bl.ref} (BR ${br?.ref||'?'}) — créé par ${blCreator?.name||'?'}, validé par ${u?.name||'?'}`
-      });
-    }
+    // ── STRICT FINANCIAL ARCHITECTURE ──
+    // Cash from BLs/BCH exists in the cashier's mini-caisse / session drawer.
+    // Confirming delivery (or usine delivery) does NOT deposit funds into caisse_admin.
+    // The SOLE source of funds entering caisse_admin is the cashier's shift closure (SessionMgr.closeMiniCaisse).
 
     // Brain recalibrates immediately after delivery
     DB.MasterBrain.recalibrateAll();
@@ -2986,20 +3036,11 @@ const BLModule = {
       }
     }
 
-    // 3. Register caisse deduction
-    DB.insert('caisse_admin', {
-      type: 'withdrawal',
-      source: 'bl_return',
-      blId: bl.id,
-      blRef: bl.ref,
-      returnRef: brRef,
-      userId: u?.id,
-      userName: u?.name || u?.username,
-      sessionDate: today,
-      amount: amount,
-      note: `Retour BL ${bl.ref} (${brRef}): ${fullReason}`,
-      createdAt: now.toISOString()
-    });
+    // 3. Return deduction is strictly applied to the user's active session / mini-caisse
+    // PURE CAISSE LAW: The main caisse (caisse_admin) is NEVER directly touched on returns!
+    // The return is registered in 'bon_retours' and deducted from the cashier's shift gains.
+    // At evening closure (SessionMgr.closeMiniCaisse), only the net cash (sales - returns) is deposited.
+    console.log(`[processReturn] Return ${brRef} of ${amount} DA accounted for in user #${u?.id} mini-caisse session`);
 
     // 4. Recalibrate MasterBrain
     DB.MasterBrain.recalibrateAll();
@@ -6025,7 +6066,8 @@ const SuppliersModule = {
     };
     if (id) { DB.update('suppliers',id,data); Utils.notify((T.isRTL()?'تم تعديل المورد':'Fournisseur modifié'),'success'); }
     else { DB.insert('suppliers',data); Utils.notify((T.isRTL()?'تمت إضافة المورد':'Fournisseur ajouté'),'success'); }
-    UI.closeModal(); App.loadModule('suppliers');
+    UI.closeModal(); 
+    if (typeof App !== 'undefined' && App._currentModule === 'suppliers') App.loadModule('suppliers');
   },
   async deleteSup(id) {
     if (!Auth.isAdmin() && !Auth.can('canEditSuppliers')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
@@ -6127,7 +6169,8 @@ const ClientsModule = {
     };
     if (id) { DB.update('clients',id,data); Utils.notify((T.isRTL()?'تم تعديل الزبون':'Client modifié'),'success'); }
     else { DB.insert('clients',data); Utils.notify((T.isRTL()?'تمت إضافة الزبون':'Client ajouté'),'success'); }
-    UI.closeModal(); App.loadModule('clients');
+    UI.closeModal(); 
+    if (typeof App !== 'undefined' && App._currentModule === 'clients') App.loadModule('clients');
   },
   async deleteCli(id) {
     if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
@@ -8695,7 +8738,7 @@ const SettingsModule = {
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._resetAllData()" style="color:#ef4444;border-color:rgba(239,68,68,.35)" title="${isAR ? 'حذف كل البيانات' : 'Effacer toutes les données'}">
             <i class="fas fa-skull-crossbones"></i> ${isAR ? 'إعادة ضبط كامل' : 'Reset TOUT'}
           </button>
-          <button class="btn btn-outline btn-sm" onclick="SettingsModule._closeDayAndPurge()" style="color:#0ea5e9;border-color:rgba(14,165,233,.35)" title="${isAR ? 'تأكيد اليومية وأرشفة النسخة الرئيسية وحذف نقاط 5 دقائق' : 'Clôturer la journée, archiver Master et purger les points 5-min'}">
+          <button class="btn btn-outline btn-sm" onclick="SettingsModule._closeDayAndPurge()" style="color:#0ea5e9;border-color:rgba(14,165,233,.35)" title="${isAR ? 'تأكيد اليومية وأرشفة النسخة الرئيسية وحذف نقاط دقيقتين' : 'Clôturer la journée, archiver Master et purger les points 2-min'}">
             <i class="fas fa-calendar-check"></i> ${isAR ? 'تأكيد اليومية' : 'Clôturer Journée'}
           </button>
           <button class="btn btn-outline btn-sm" onclick="SettingsModule._loadBackups()" id="btn-refresh-backups">
@@ -8715,7 +8758,7 @@ const SettingsModule = {
       <div style="padding:10px 18px;border-top:1px solid var(--border);background:var(--bg3)">
         <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text4)">
           <i class="fas fa-info-circle" style="color:#0ea5e9"></i>
-          ${isAR ? 'نسخ احتياطي فائق التردد كل 5 دقائق مستمر + نسخة ماستر نهائية عند إغلاق اليومية (23:59)' : 'Sauvegarde haute-fréquence continue toutes les 5 min + Master quotidien à la clôture (23h59)'}
+          ${isAR ? 'نسخ احتياطي فائق التردد كل دقيقتين مستمر + نسخة ماستر نهائية عند إغلاق اليومية (23:59)' : 'Sauvegarde ultra-haute fréquence continue toutes les 2 min + Master quotidien à la clôture (23h59)'}
         </div>
       </div>
     </div>
@@ -8814,7 +8857,7 @@ const SettingsModule = {
         const icon = isIntraday ? 'fa-stopwatch' : (isAuto ? 'fa-robot' : 'fa-hand-paper');
         const bgCol = isIntraday ? 'rgba(14,165,233,.15)' : (isAuto ? 'rgba(59,130,246,.15)' : 'rgba(139,92,246,.15)');
         const iconCol = isIntraday ? '#0ea5e9' : (isAuto ? '#3b82f6' : '#8b5cf6');
-        const badge = isIntraday ? `<span style="${isAR?'margin-right:6px':'margin-left:6px'};padding:1px 6px;border-radius:4px;font-size:9px;font-weight:800;background:rgba(14,165,233,.12);color:#0ea5e9;border:1px solid rgba(14,165,233,.25)">5-MIN CONTINU</span>` : '';
+        const badge = isIntraday ? `<span style="${isAR?'margin-right:6px':'margin-left:6px'};padding:1px 6px;border-radius:4px;font-size:9px;font-weight:800;background:rgba(14,165,233,.12);color:#0ea5e9;border:1px solid rgba(14,165,233,.25)">2-MIN CONTINU</span>` : '';
         return `
         <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);margin-bottom:6px">
           <div style="width:28px;height:28px;border-radius:7px;background:${bgCol};display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -8839,7 +8882,7 @@ const SettingsModule = {
         </div>`;
       }).join('');
 
-      container.innerHTML = `<div style="max-height:320px;overflow-y:auto;padding:2px">${rows}</div>`;
+      container.innerHTML = `<div style="max-height:480px;overflow-y:auto;padding:2px">${rows}</div>`;
     } catch (e) {
       container.innerHTML = `<div style="color:var(--danger);text-align:center;font-size:12px;padding:16px">
         <i class="fas fa-exclamation-circle"></i> ${e.message || 'Erreur de connexion serveur'}

@@ -19,8 +19,8 @@ const adminOnly = (req, res, next) => {
 router.use(adminOnly);
 
 // Retention: bounded so backups can never fill the free 512 MB database.
-// auto: 7 daily master, safety: 3 pre-restore, manual: 10 user backups, intraday: 12 rolling 5-min snapshots (1 hour buffer)
-const KEEP = { auto: 7, safety: 3, manual: 10, intraday: 12 };
+// auto: 14 daily master, safety: 5 pre-restore, manual: 15 user backups, intraday: 48 rolling 2-min snapshots
+const KEEP = { auto: 14, safety: 5, manual: 15, intraday: 48 };
 const BACKUP_TTL_DAYS = 30;
 const MAX_BLOB_BYTES = 15 * 1024 * 1024; // MongoDB hard limit is 16 MB per document
 
@@ -108,7 +108,7 @@ async function maybeDailyBackup() {
   return b;
 }
 
-// ─── 5-Minute High-Frequency Intraday Continuous Snapshot ──────────
+// ─── 2-Minute High-Frequency Intraday Continuous Snapshot ──────────
 let _lastDocState = null;
 async function maybeIntradayBackup() {
   if (_running) return null;
@@ -119,17 +119,17 @@ async function maybeIntradayBackup() {
     const latestTime = latestDoc?.updatedAt ? new Date(latestDoc.updatedAt).getTime() : 0;
     const stateKey = `${docCount}_${latestTime}`;
     if (_lastDocState && _lastDocState === stateKey) {
-      return null; // Database unchanged in this 5-minute interval
+      return null; // Database unchanged in this 2-minute interval
     }
 
     const timeStr = new Date().toLocaleTimeString('fr-DZ', { timeZone: 'Africa/Algiers', hour: '2-digit', minute: '2-digit' });
-    const label = `Point 5-Min — ${timeStr}`;
+    const label = `Point 2-Min — ${timeStr}`;
     const b = await createBackup(label, 'intraday', 'system');
     _lastDocState = stateKey;
-    console.log(`⏱️ [BACKUP-5MIN] Point de restauration 5-minutes créé: ${b.label} (${(b.sizeBytes / 1024).toFixed(0)} Ko)`);
+    console.log(`⏱️ [BACKUP-2MIN] Point de restauration 2-minutes créé: ${b.label} (${(b.sizeBytes / 1024).toFixed(0)} Ko)`);
     return b;
   } catch (e) {
-    console.warn('⚠️ [BACKUP-5MIN]', e.message);
+    console.warn('⚠️ [BACKUP-2MIN]', e.message);
     return null;
   }
 }

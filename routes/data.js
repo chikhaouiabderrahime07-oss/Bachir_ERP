@@ -287,6 +287,11 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
 
     if (col === 'users') await hashPasswordIfNeeded(data);
 
+    // ── STRICT PURE CAISSE LAW: Central caisse NEVER accepts direct deliveries, deletion adjustments, or return deductions ──
+    if (col === 'caisse_admin' && (data.source === 'bl_delivery' || data.source === 'bl_error_delete' || data.source === 'bl_return')) {
+      return res.status(400).json({ error: 'Opération interdite : la caisse centrale est exclusivement alimentée par les clôtures de caisse (user_cloture). Les retours sont déduits exclusivement de la mini-caisse de l\'utilisateur.' });
+    }
+
     const hasId = data.id !== undefined && data.id !== null && data.id !== '' && !isNaN(Number(data.id));
 
     // ── Idempotency guard: same id already stored → this is a retry, merge instead of duplicating ──
@@ -300,6 +305,83 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
         await existing.save();
         bump(col);
         return res.status(200).json(publicData(col, merged));
+      }
+    }
+
+    // ── Idempotency guard by document reference (prevents network retries from creating duplicate docs) ──
+    if ((col === 'bls' || col === 'brs' || col === 'bon_retours' || col === 'etat_vente_docs' || col === 'bank_transactions') && data.ref) {
+      const existingRef = await Document.findOne({ col, 'data.ref': data.ref });
+      if (existingRef) {
+        const merged = { ...existingRef.data, ...data, id: existingRef.data.id, updatedAt: now };
+        existingRef.data = merged;
+        existingRef.updatedAt = new Date();
+        await existingRef.save();
+        bump(col);
+        return res.status(200).json(publicData(col, merged));
+      }
+    }
+
+    // ── Bank transactions guard by État de Vente reference/ID ──
+    if (col === 'bank_transactions' && (data.etatVenteRef || data.etatVenteId)) {
+      const query = data.etatVenteId
+        ? { col: 'bank_transactions', 'data.etatVenteId': String(data.etatVenteId) }
+        : { col: 'bank_transactions', 'data.etatVenteRef': data.etatVenteRef };
+      const existingTx = await Document.findOne(query);
+      if (existingTx) {
+        const merged = { ...existingTx.data, ...data, id: existingTx.data.id, updatedAt: now };
+        existingTx.data = merged;
+        existingTx.updatedAt = new Date();
+        await existingTx.save();
+        bump(col);
+        return res.status(200).json(publicData(col, merged));
+      }
+    }
+
+    // ── Sessions guard: at most one session per user per day ──
+    if (col === 'sessions' && data.userId && data.date) {
+      const existingSession = await Document.findOne({
+        col: 'sessions',
+        'data.userId': { $in: [data.userId, String(data.userId), Number(data.userId)] },
+        'data.date': data.date
+      });
+      if (existingSession) {
+        const merged = { ...existingSession.data, ...data, id: existingSession.data.id, updatedAt: now };
+        existingSession.data = merged;
+        existingSession.updatedAt = new Date();
+        await existingSession.save();
+        bump(col);
+        return res.status(200).json(publicData(col, merged));
+      }
+    }
+
+    // ── Caisse Admin session closure & transfer guards: prevent duplicates ──
+    if (col === 'caisse_admin') {
+      if (data.source === 'user_cloture' || data.source === 'bch_recettes_reelles') {
+        const query = data.sessionId 
+          ? { col: 'caisse_admin', 'data.sessionId': Number(data.sessionId), 'data.source': { $in: ['user_cloture', 'bch_recettes_reelles'] } }
+          : { col: 'caisse_admin', 'data.sessionDate': data.sessionDate, 'data.userId': data.userId, 'data.source': { $in: ['user_cloture', 'bch_recettes_reelles'] } };
+        const existingCaisse = await Document.findOne(query);
+        if (existingCaisse) {
+          const merged = { ...existingCaisse.data, ...data, id: existingCaisse.data.id, updatedAt: now };
+          existingCaisse.data = merged;
+          existingCaisse.updatedAt = new Date();
+          await existingCaisse.save();
+          bump(col);
+          return res.status(200).json(publicData(col, merged));
+        }
+      } else if (data.source === 'transfert_banque_etat_vente' && (data.etatVenteRef || data.sessionId)) {
+        const query = data.etatVenteRef
+          ? { col: 'caisse_admin', 'data.source': 'transfert_banque_etat_vente', 'data.etatVenteRef': data.etatVenteRef }
+          : { col: 'caisse_admin', 'data.source': 'transfert_banque_etat_vente', 'data.sessionId': Number(data.sessionId) };
+        const existingCaisse = await Document.findOne(query);
+        if (existingCaisse) {
+          const merged = { ...existingCaisse.data, ...data, id: existingCaisse.data.id, updatedAt: now };
+          existingCaisse.data = merged;
+          existingCaisse.updatedAt = new Date();
+          await existingCaisse.save();
+          bump(col);
+          return res.status(200).json(publicData(col, merged));
+        }
       }
     }
 
@@ -490,14 +572,69 @@ router.post('/:col/dedup', async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
     const col = req.params.col;
-    const docs = await Document.find({ col }).sort({ createdAt: 1 }).select('data.id createdAt').lean();
-    const seen = new Set();
+    const docs = await Document.find({ col }).sort({ createdAt: 1 }).lean();
     const toDelete = [];
+    const seenId = new Set();
+    const seenRef = new Set();
+    const seenSessions = new Set();
+    const seenCaisseCloture = new Set();
+    const seenCaisseTransfer = new Set();
+    const seenCaisseReturn = new Set();
+
     for (const doc of docs) {
-      const key = String(doc.data?.id);
-      if (seen.has(key)) toDelete.push(doc._id);
-      else seen.add(key);
+      const d = doc.data || {};
+      const idKey = String(d.id || doc._id);
+
+      // Check 1: Duplicate ID
+      if (seenId.has(idKey)) {
+        toDelete.push(doc._id);
+        continue;
+      }
+      seenId.add(idKey);
+
+      // Check 2: Pure Caisse Law — purge illegal entries (bl_delivery, bl_error_delete, bl_return)
+      if (col === 'caisse_admin') {
+        if (d.source === 'bl_delivery' || d.source === 'bl_error_delete' || d.source === 'bl_return') {
+          toDelete.push(doc._id);
+          continue;
+        }
+        if (d.source === 'user_cloture' || d.source === 'bch_recettes_reelles') {
+          const cKey = d.sessionId ? `sess_${d.sessionId}` : `dt_${d.sessionDate || d.date}_u_${d.userId}`;
+          if (seenCaisseCloture.has(cKey)) {
+            toDelete.push(doc._id);
+            continue;
+          }
+          seenCaisseCloture.add(cKey);
+        } else if (d.source === 'transfert_banque_etat_vente' && d.etatVenteRef) {
+          if (seenCaisseTransfer.has(d.etatVenteRef)) {
+            toDelete.push(doc._id);
+            continue;
+          }
+          seenCaisseTransfer.add(d.etatVenteRef);
+        }
+      }
+
+      // Check 3: Sessions deduplication by user + date
+      if (col === 'sessions' && d.userId && d.date) {
+        const sKey = `${d.userId}_${d.date}`;
+        if (seenSessions.has(sKey)) {
+          toDelete.push(doc._id);
+          continue;
+        }
+        seenSessions.add(sKey);
+      }
+
+      // Check 4: Reference deduplication
+      if (['bls', 'brs', 'bon_retours', 'etat_vente_docs', 'bank_transactions'].includes(col) && d.ref) {
+        const refKey = String(d.ref).trim();
+        if (seenRef.has(refKey)) {
+          toDelete.push(doc._id);
+          continue;
+        }
+        seenRef.add(refKey);
+      }
     }
+
     if (toDelete.length) {
       await Document.deleteMany({ _id: { $in: toDelete } });
       bump(col);
