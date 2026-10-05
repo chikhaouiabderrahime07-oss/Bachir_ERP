@@ -362,10 +362,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=35.9"></script>
-<script src="core.js?v=35.9"></script>
-<script src="modules.js?v=35.9"></script>
-<script src="pdf.js?v=35.9"></script>
+<script src="api.js?v=36.0"></script>
+<script src="core.js?v=36.0"></script>
+<script src="modules.js?v=36.0"></script>
+<script src="pdf.js?v=36.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -977,18 +977,25 @@ const App = {
           case 'settings':     html = SettingsModule.render(); break;
           default: html = `<div style="padding:40px;text-align:center;color:var(--text3)">${T.isRTL() ? 'الوحدة' : 'Module'} "${mod}" ${T.isRTL() ? 'غير موجودة' : 'introuvable'}</div>`;
         }
+        const isSameMod = (mod === this._lastModule);
+        const prevScroll = main.scrollTop;
         main.innerHTML = html;
         main.style.opacity = '1';
-        main.scrollTop = 0;
+        if (isSameMod) {
+          main.scrollTop = prevScroll;
+        } else {
+          main.scrollTop = 0;
+        }
 
       // ── Restore focus after re-render so search inputs keep focus ──
       if (savedFocusId) {
         const restored = document.getElementById(savedFocusId);
         if (restored && (restored.tagName === 'INPUT' || restored.tagName === 'TEXTAREA' || restored.tagName === 'SELECT')) {
           restored.focus();
-          // Place cursor at end of text
           try {
-            if (restored.value && restored.setSelectionRange) {
+            if (savedSelStart !== null && savedSelEnd !== null && restored.setSelectionRange) {
+              restored.setSelectionRange(savedSelStart, savedSelEnd);
+            } else if (restored.value && restored.setSelectionRange) {
               const len = restored.value.length;
               restored.setSelectionRange(len, len);
             }
@@ -1086,7 +1093,16 @@ const App = {
   reloadCurrent() { if (this._currentModule) this.loadModule(this._currentModule); },
   reloadDebounced(mod, delay=200) {
     clearTimeout(this._reloadTimer);
-    this._reloadTimer = setTimeout(() => this.loadModule(mod||this._currentModule), delay);
+    this._reloadTimer = setTimeout(() => {
+      // Guard: do NOT reload if modal is open, or if user is typing in an input/select/textarea
+      const isModalOpen = document.getElementById('modalOverlay')?.classList.contains('active');
+      const activeEl = document.activeElement;
+      const isUserTyping = activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName);
+      if (isModalOpen || isUserTyping || (mod || this._currentModule) === 'settings') {
+        return;
+      }
+      this.loadModule(mod||this._currentModule);
+    }, delay);
   },
 
   _checkMorningSession() {

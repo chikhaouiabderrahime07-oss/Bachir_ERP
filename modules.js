@@ -694,7 +694,7 @@ const BRModule = {
     return `
     <div class="form-grid cols-2" style="margin-bottom:10px">
       <div class="form-group">
-        <label class="required">${T.get('br_supplier')}</label>
+        <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('br_supplier')}</span><button type="button" class="btn btn-xs btn-outline" onclick="SuppliersModule.showCreate()" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('sup_new')}</button></label>
         <select id="br-supplier" required
           onchange="BRModule._validateBRNum(document.getElementById('br-num').value,document.getElementById('br-year').value,${br?.id||'null'})">
           <option value="">— ${T.isRTL()?'اختر مورداً':'Choisir un fournisseur'} —</option>
@@ -1305,14 +1305,14 @@ const BLModule = {
         <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
           <div class="form-row-4" style="margin-bottom:10px">
             <div class="form-group mb-0">
-              <label class="required"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</label>
+              <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:4px"><i class="fas fa-industry"></i> ${isAR ? 'المصنع / المورد' : 'Usine / Fournisseur'}</span><button type="button" class="btn btn-xs btn-outline" onclick="SuppliersModule.showCreate()" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i></button></label>
               <select id="direct-bch-supplier" class="input" required>
                 <option value="">${isAR ? '— اختيار المصنع —' : "— Choisir l'Usine —"}</option>
                 ${allSuppliers.map(s => `<option value="${s.id}">${Utils.escHTML(s.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group mb-0">
-              <label class="required"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون المستلم' : 'Client Destinataire'}</label>
+              <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:4px"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبون المستلم' : 'Client Destinataire'}</span><button type="button" class="btn btn-xs btn-outline" onclick="ClientsModule.showCreate()" title="${T.get('cli_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i></button></label>
               <select id="direct-bch-client" class="input" required onchange="BLModule._onDirectClientChange(this.value)">
                 <option value="">${isAR ? '— اختيار الزبون —' : '— Choisir le Client —'}</option>
                 ${allClients.map(c => `<option value="${c.id}">${Utils.escHTML(c.name)}</option>`).join('')}
@@ -2189,7 +2189,7 @@ const BLModule = {
       <span id="bl-partial-badge" style="display:none" class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> ${T.isRTL() ? 'جزئي' : 'Partielle'}</span>
     </div>
     <div class="form-group mb-2">
-      <label class="required">${T.get('col_client')}</label>
+      <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('col_client')}</span><button type="button" class="btn btn-xs btn-outline" onclick="ClientsModule.showCreate()" title="${T.get('cli_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('cli_new')}</button></label>
       <select id="bl-client" required onchange="BLModule._updateClientCredit(this.value)">
         <option value="">${T.isRTL() ? '— اختيار الزبون —' : '-- Choisir un client --'}</option>
         ${DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c=>`<option value="${c.id}" ${String(bl?.clientId)===String(c.id)?'selected':''}>${Utils.escHTML(c.name)}</option>`).join('')}
@@ -5978,7 +5978,7 @@ const SuppliersModule = {
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
         <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('sup_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم المورد أو الشركة...':'Nom ou raison sociale...'}" required></div>
-        <div class="form-group"><label style="font-weight:700;color:var(--primary)">${T.isRTL()?'الاسم المختصر':'Abréviation'} <small style="color:var(--text4)">(${T.isRTL()?'رمز مختصر في السندات':'code court BR/BL'})</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="${T.isRTL()?'أقصى 5 أحرف':'MAX 5 LETTRES'}" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="form-group"><label style="font-weight:700;color:var(--primary)">${T.isRTL()?'الاسم المختصر':'Abréviation'} <small style="color:var(--text4)">(${T.isRTL()?'رمز مختصر في السندات':'code court BR/BL'})</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="${T.isRTL()?'أقصى 5 أحرف':'MAX 5 LETTRES'}" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px"></div>
         <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(${T.isRTL()?'السجل التجاري':'Registre du Commerce'})</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
@@ -6081,15 +6081,15 @@ const ClientsModule = {
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;margin-bottom:14px">
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
-        <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('cli_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم الزبون أو الشركة...':'Nom ou raison sociale du client...'}" required></div>
-        <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(${T.isRTL()?'السجل التجاري':'Registre du Commerce'})</small></label><input id="sRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
-        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'رقم المادة الضريبية (AI)':'Art. Imposition (AI)'}</label><input id="sAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
-        <div class="form-group"><label style="font-weight:600">${T.get('cli_phone')} / Fax</label><input id="sPhone" value="${Utils.escHTML(s.phone||'')}" placeholder="0X XX XX XX XX"></div>
-        <div class="form-group"><label style="font-weight:600">Email</label><input id="sEmail" type="email" value="${Utils.escHTML(s.email||'')}" placeholder="contact@client.dz"></div>
-        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'جهة الاتصال / الممثل':'Contact / Représentant'}</label><input id="sContact" value="${Utils.escHTML(s.contact||'')}" placeholder="${T.isRTL()?'اسم جهة الاتصال':'Nom du contact'}"></div>
-        <div class="form-group span-full"><label style="font-weight:600">${T.get('cli_address')} <small style="color:var(--text4)">(${T.isRTL()?'عنوان الشركة الرئيسي':'adresse du siège social'})</small></label><input id="sAddress" value="${Utils.escHTML(s.address||'')}"></div>
+        <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('cli_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="cName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم الزبون أو الشركة...':'Nom ou raison sociale du client...'}" required></div>
+        <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="cNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="cNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(${T.isRTL()?'السجل التجاري':'Registre du Commerce'})</small></label><input id="cRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
+        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'رقم المادة الضريبية (AI)':'Art. Imposition (AI)'}</label><input id="cAi" value="${Utils.escHTML(s.ai||'')}" placeholder="00000000000000" style="font-family:monospace"></div>
+        <div class="form-group"><label style="font-weight:600">${T.get('cli_phone')} / Fax</label><input id="cPhone" value="${Utils.escHTML(s.phone||'')}" placeholder="0X XX XX XX XX"></div>
+        <div class="form-group"><label style="font-weight:600">Email</label><input id="cEmail" type="email" value="${Utils.escHTML(s.email||'')}" placeholder="contact@client.dz"></div>
+        <div class="form-group"><label style="font-weight:600">${T.isRTL()?'جهة الاتصال / الممثل':'Contact / Représentant'}</label><input id="cContact" value="${Utils.escHTML(s.contact||'')}" placeholder="${T.isRTL()?'اسم جهة الاتصال':'Nom du contact'}"></div>
+        <div class="form-group span-full"><label style="font-weight:600">${T.get('cli_address')} <small style="color:var(--text4)">(${T.isRTL()?'عنوان الشركة الرئيسي':'adresse du siège social'})</small></label><input id="cAddress" value="${Utils.escHTML(s.address||'')}"></div>
       </div>
       ${_buildDeliveryAddrSection('cli', addrs, isAdmin)}
     </div>`;
@@ -6099,7 +6099,7 @@ const ClientsModule = {
     UI.showModal(`<i class="fas fa-building"></i> ${T.get('cli_new')}`, this._form(), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-primary" onclick="ClientsModule._save(null)"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
-    setTimeout(() => FormGuide.start(['sName','sNif','sRc','sPhone','sAddress']), 100);
+    setTimeout(() => FormGuide.start(['cName','cNif','cRc','cPhone','cAddress']), 100);
   },
   showEdit(id) {
     const s = DB.getById('clients', id);
@@ -6107,23 +6107,23 @@ const ClientsModule = {
     UI.showModal(`<i class="fas fa-edit"></i> ${T.get('edit')}`, this._form(s), `
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-warning" onclick="ClientsModule._save(${id})"><i class="fas fa-save"></i> ${T.get('save')}</button>`, 'md');
-    setTimeout(() => FormGuide.start(['sName','sNif','sRc','sPhone','sAddress']), 100);
+    setTimeout(() => FormGuide.start(['cName','cNif','cRc','cPhone','cAddress']), 100);
   },
   _save(id) {
     if (!Auth.isAdmin() && !Auth.can('canEditClients')) { Utils.notify(T.isRTL()?'⛔ إذن مرفوض':'⛔ Permission refusée','error'); return; }
-    const name = (document.getElementById('sName')?.value||'').trim();
+    const name = (document.getElementById('cName')?.value || document.getElementById('sName')?.value || '').trim();
     if (!name) { Utils.notify(T.get('cli_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
       name,
-      nif: document.getElementById('sNif')?.value||'',
-      nis: document.getElementById('sNis')?.value||'',
-      rc:  document.getElementById('sRc')?.value||'',
-      ai:  document.getElementById('sAi')?.value||'',
+      nif: document.getElementById('cNif')?.value || document.getElementById('sNif')?.value || '',
+      nis: document.getElementById('cNis')?.value || document.getElementById('sNis')?.value || '',
+      rc:  document.getElementById('cRc')?.value  || document.getElementById('sRc')?.value  || '',
+      ai:  document.getElementById('cAi')?.value  || document.getElementById('sAi')?.value  || '',
       deliveryAddresses: _collectDeliveryAddrs('cli'),
-      phone: document.getElementById('sPhone')?.value||'',
-      email: document.getElementById('sEmail')?.value||'',
-      contact: document.getElementById('sContact')?.value||'',
-      address: document.getElementById('sAddress')?.value||''
+      phone: document.getElementById('cPhone')?.value || document.getElementById('sPhone')?.value || '',
+      email: document.getElementById('cEmail')?.value || document.getElementById('sEmail')?.value || '',
+      contact: document.getElementById('cContact')?.value || document.getElementById('sContact')?.value || '',
+      address: document.getElementById('cAddress')?.value || document.getElementById('sAddress')?.value || ''
     };
     if (id) { DB.update('clients',id,data); Utils.notify((T.isRTL()?'تم تعديل الزبون':'Client modifié'),'success'); }
     else { DB.insert('clients',data); Utils.notify((T.isRTL()?'تمت إضافة الزبون':'Client ajouté'),'success'); }
@@ -11052,9 +11052,9 @@ const EtatVenteModule = {
       return true;
     });
 
-    // Aggregated product lines from BLs
+    // Aggregated product lines from active delivered BLs (returns excluded so items are net sold)
     const aggregated = {};
-    bls.forEach(bl => {
+    bls.filter(b => b.status !== 'returned').forEach(bl => {
       const lines = bl.lines || [];
       lines.forEach(line => {
         const key = (line.designation || '').trim();
@@ -11078,7 +11078,7 @@ const EtatVenteModule = {
       });
     });
 
-    const items = Object.values(aggregated).sort((a, b) => a.designation.localeCompare(b.designation));
+    const items = Object.values(aggregated).filter(it => it.qty > 0.0001).sort((a, b) => a.designation.localeCompare(b.designation));
 
     const grossTotalTTC = bls.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
     const returnsTotalTTC = retours.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
@@ -11100,7 +11100,7 @@ const EtatVenteModule = {
     const timbreRate = 1; // Strictly 1% fixed for État de Vente
     const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
     const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
-    const netTotalEV = Math.max(0, Math.round((totalEV_TTC - returnsTotalTTC) * 100) / 100);
+    const netTotalEV = totalEV_TTC;
     const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
 
     let html = `
@@ -11458,6 +11458,14 @@ const EtatVenteModule = {
     const u = Auth.getCurrentUser();
     
     if (selectedBankId && nNet > 0) {
+      const allTx = DB.get('bank_transactions') || [];
+      const existingDeposit = allTx.find(t => 
+        String(t.etatVenteId) === String(doc.id) || 
+        (doc.ref && t.etatVenteRef === doc.ref) ||
+        (doc.ref && t.ref === 'EV-DEP-' + doc.ref.replace(/\//g, '-')) ||
+        (doc.bankDepositId && String(t.id) === String(doc.bankDepositId))
+      );
+
       const depositData = {
         type: 'deposit',
         subtype: 'etat_vente',
@@ -11472,12 +11480,25 @@ const EtatVenteModule = {
         createdByName: u?.name,
         createdAt: now.toISOString()
       };
-      const savedDeposit = await DB.insert('bank_transactions', depositData);
-      await DB.update('etat_vente_docs', doc.id, { bankDepositId: savedDeposit.id });
+
+      let savedDeposit;
+      if (existingDeposit) {
+        savedDeposit = await DB.update('bank_transactions', existingDeposit.id, depositData);
+      } else {
+        savedDeposit = await DB.insert('bank_transactions', depositData);
+      }
+      await DB.update('etat_vente_docs', doc.id, { bankDepositId: savedDeposit?.id || existingDeposit?.id });
 
       const selBank = banks.find(b => String(b.id) === String(selectedBankId));
       const bName = selBank ? selBank.name : (isAR ? 'البنك' : 'Banque');
-      await DB.insert('caisse_admin', {
+
+      const allCaisse = DB.get('caisse_admin') || [];
+      const existingCaisse = allCaisse.find(c => 
+        c.source === 'transfert_banque_etat_vente' && 
+        (c.etatVenteRef === doc.ref || (doc.id && String(c.etatVenteId) === String(doc.id)))
+      );
+
+      const caisseData = {
         type: 'withdrawal',
         source: 'transfert_banque_etat_vente',
         userId: u?.id,
@@ -11486,11 +11507,18 @@ const EtatVenteModule = {
         amount: nNet,
         targetBankId: selectedBankId,
         etatVenteRef: doc.ref,
+        etatVenteId: doc.id,
         etatVenteTTC: nNet,
         note: isAR 
           ? `تحويل بنكي — كشف المبيعات ${doc.ref} إلى ${bName} (تأكيد الإدارة — 1% طابع: ${Utils.fmtCurrency(nNet)})` 
           : `Versement bancaire — État de Vente ${doc.ref} vers ${bName} (Validé par Admin — 1% timbre: ${Utils.fmtCurrency(nNet)})`
-      });
+      };
+
+      if (existingCaisse) {
+        await DB.update('caisse_admin', existingCaisse.id, caisseData);
+      } else {
+        await DB.insert('caisse_admin', caisseData);
+      }
 
       Utils.notify(isAR ? `✅ تم تأكيد الكشف. تم تسجيل الإيداع البنكي وخصم الصندوق بمبلغ ${Utils.fmtCurrency(nNet)}.` : `État validé. Dépôt de ${Utils.fmtCurrency(nNet)} versé en banque et déduit de la caisse.`, 'success', 5000);
     } else {
@@ -11541,6 +11569,28 @@ const EtatVenteModule = {
       netTotalTTC: nNet,
       totalTTC: nNet
     });
+
+    // Keep associated bank transaction & caisse admin in sync if already created
+    if (doc.bankDepositId || doc.ref) {
+      const allTx = DB.get('bank_transactions') || [];
+      const exDep = allTx.find(t => 
+        (doc.bankDepositId && String(t.id) === String(doc.bankDepositId)) ||
+        (t.etatVenteId && String(t.etatVenteId) === String(doc.id)) ||
+        (doc.ref && t.etatVenteRef === doc.ref)
+      );
+      if (exDep) {
+        await DB.update('bank_transactions', exDep.id, { amount: nNet });
+      }
+
+      const allC = DB.get('caisse_admin') || [];
+      const exC = allC.find(c => 
+        c.source === 'transfert_banque_etat_vente' && 
+        (c.etatVenteRef === doc.ref || (doc.id && String(c.etatVenteId) === String(doc.id)))
+      );
+      if (exC) {
+        await DB.update('caisse_admin', exC.id, { amount: nNet, etatVenteTTC: nNet });
+      }
+    }
     
     Utils.notify(isAR ? 'تم تعديل كشف المبيعات بنجاح.' : 'État de vente modifié avec succès.', 'success');
     App.loadModule('etat_vente');
@@ -11611,7 +11661,7 @@ const EtatVenteModule = {
     const timbreRate = 1; // Strictly 1% fixed for État de Vente
     const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
     const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
-    const netTotalEV = Math.max(0, Math.round((totalEV_TTC - returnsTotalTTC) * 100) / 100);
+    const netTotalEV = totalEV_TTC;
     const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
     const u = Auth.getCurrentUser();
     
@@ -11623,6 +11673,7 @@ const EtatVenteModule = {
       date: this._getDateEnd(),
       dateStart: this._getDateStart(),
       dateEnd: this._getDateEnd(),
+      items: items,
       blList: bls.map(b => ({
         id: b.id,
         ref: b.ref,
@@ -11669,8 +11720,16 @@ const EtatVenteModule = {
       return;
     }
     
-    // Deposit into bank & deduct from caisse_admin
+    // Deposit into bank & deduct from caisse_admin (update existing if found, else insert)
     if (isAdmin && selectedBankId && netTotalEV > 0) {
+       const allTx = DB.get('bank_transactions') || [];
+       const existingDeposit = allTx.find(t => 
+         (t.etatVenteRef === ref) ||
+         (t.ref === 'EV-DEP-' + ref.replace(/\//g, '-')) ||
+         (savedDoc && String(t.etatVenteId) === String(savedDoc.id))
+       );
+
+       let savedDeposit;
        const depositData = {
          type: 'deposit',
          subtype: 'etat_vente',
@@ -11687,16 +11746,27 @@ const EtatVenteModule = {
          createdByName: u?.name,
          createdAt: now.toISOString()
        };
-       const savedDeposit = await DB.insert('bank_transactions', depositData);
+
+       if (existingDeposit) {
+         savedDeposit = await DB.update('bank_transactions', existingDeposit.id, depositData);
+       } else {
+         savedDeposit = await DB.insert('bank_transactions', depositData);
+       }
        
        await DB.update('etat_vente_docs', savedDoc.id, {
-         bankDepositId: savedDeposit.id
+         bankDepositId: savedDeposit?.id || existingDeposit?.id
        });
-       savedDoc.bankDepositId = savedDeposit.id;
+       savedDoc.bankDepositId = savedDeposit?.id || existingDeposit?.id;
 
-       // Deduct from caisse_admin
+       // Deduct from caisse_admin (update existing if found, else insert)
+       const allCaisse = DB.get('caisse_admin') || [];
+       const existingCaisse = allCaisse.find(c => 
+         c.source === 'transfert_banque_etat_vente' && 
+         (c.etatVenteRef === ref || (savedDoc && String(c.etatVenteId) === String(savedDoc.id)))
+       );
+
        const bankLabel = selectedBank ? selectedBank.name : (isAR ? 'البنك' : 'Banque');
-       await DB.insert('caisse_admin', {
+       const caisseData = {
          type: 'withdrawal',
          source: 'transfert_banque_etat_vente',
          userId: u?.id,
@@ -11705,13 +11775,20 @@ const EtatVenteModule = {
          amount: netTotalEV,
          targetBankId: selectedBankId,
          etatVenteRef: ref,
+         etatVenteId: savedDoc.id,
          etatVenteTTC: netTotalEV,
          timbreAmount: timbreAmt,
          ecartFiscal: ecartFiscal,
          note: isAR 
            ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(netTotalEV)} بطابع 1% | مقبوضات BCH: ${Utils.fmtCurrency(netTotalTTC)} | فارق الطابع: ${Utils.fmtCurrency(ecartFiscal)})`
            : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Transféré: ${Utils.fmtCurrency(netTotalEV)} avec 1% timbre | Recettes réelles BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart timbre: ${Utils.fmtCurrency(ecartFiscal)})`
-       });
+       };
+
+       if (existingCaisse) {
+         await DB.update('caisse_admin', existingCaisse.id, caisseData);
+       } else {
+         await DB.insert('caisse_admin', caisseData);
+       }
        
        Utils.notify(isAR ? `✅ تم تأكيد كشف المبيعات وتحويل ${Utils.fmtCurrency(netTotalEV)} إلى حساب ${bankLabel}.` : `✅ État validé et versement de ${Utils.fmtCurrency(netTotalEV)} vers ${bankLabel} enregistré.`, 'success', 5000);
     } else if (!isAdmin) {

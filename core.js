@@ -481,10 +481,48 @@ const DB = {
         const caisse = DB.getAll('caisse_admin');
         const supPays = DB.getAll('supplier_payments');
 
+        // ── 1. DÉDOUBLONNAGE STRICT DES TRANSACTIONS BANCAIRES (Anti-Duplication) ──
+        const seenEvRefs = new Set();
+        const seenEvIds = new Set();
+        const seenCaisseTransfers = new Set();
+        let cleanedBankTxs = [];
+        const duplicateTxIds = [];
+
+        bankTxs.forEach(bt => {
+          if (bt.subtype === 'etat_vente' || (bt.ref && bt.ref.startsWith('EV-DEP-'))) {
+            const evRefKey = (bt.etatVenteRef || bt.ref?.replace('EV-DEP-', '') || '').trim();
+            const evIdKey = bt.etatVenteId ? String(bt.etatVenteId) : null;
+            if ((evRefKey && seenEvRefs.has(evRefKey)) || (evIdKey && seenEvIds.has(evIdKey))) {
+              duplicateTxIds.push(bt.id);
+              return; // DOUBLON ÉLIMINÉ
+            }
+            if (evRefKey) seenEvRefs.add(evRefKey);
+            if (evIdKey) seenEvIds.add(evIdKey);
+            cleanedBankTxs.push(bt);
+          } else if (bt.subtype === 'transfer_from_caisse') {
+            const dKey = (bt.date || bt.createdAt || '').slice(0, 10);
+            const key = `${bt.bankId}|${dKey}|${Number(bt.amount).toFixed(2)}`;
+            if (seenCaisseTransfers.has(key)) {
+              duplicateTxIds.push(bt.id);
+              return; // DOUBLON TRANSFERT ÉLIMINÉ
+            }
+            seenCaisseTransfers.add(key);
+            cleanedBankTxs.push(bt);
+          } else {
+            cleanedBankTxs.push(bt);
+          }
+        });
+
+        if (duplicateTxIds.length > 0) {
+          DB.rawSet('bank_transactions', cleanedBankTxs);
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            duplicateTxIds.forEach(id => window.API.delete('bank_transactions', id).catch(() => {}));
+          }
+        }
+
         // Cross-reconciliation: ensure every caisse bank_transfer has a corresponding bank deposit
         const caisseTransfers = caisse.filter(e => e.type === 'withdrawal' && e.source === 'bank_transfer');
         let modified = false;
-        let cleanedBankTxs = [...bankTxs];
 
         caisseTransfers.forEach(ct => {
           const amt = Number(ct.amount) || 0;
@@ -733,15 +771,21 @@ const DB = {
           if (banks.length > 0) {
             const defaultBankId = banks[0].id;
             evDocs.forEach(ev => {
-              const hasDep = bankTxs.some(bt => (bt.etatVenteId && String(bt.etatVenteId) === String(ev.id)) || (bt.ref && bt.ref.includes(ev.ref.replace(/\//g,'-'))));
-              if (!hasDep && ev.status === 'deposited') {
+              if (ev.status !== 'deposited' && ev.status !== 'validated') return;
+              const expectedRef = 'EV-DEP-' + (ev.ref || '').replace(/\//g, '-');
+              const existingDep = bankTxs.find(bt => 
+                (bt.etatVenteId && String(bt.etatVenteId) === String(ev.id)) ||
+                (bt.etatVenteRef && bt.etatVenteRef === ev.ref) ||
+                (bt.ref && bt.ref === expectedRef)
+              );
+              if (!existingDep && ev.status === 'deposited') {
                 const newTx = {
                   id: (bankTxs.reduce((m, e) => Math.max(m, e.id || 0), 0) + 1),
                   bankId: ev.bankId || defaultBankId,
                   type: 'deposit',
                   subtype: 'etat_vente',
                   amount: Number(ev.totalTTC) || 0,
-                  ref: 'EV-DEP-' + (ev.ref || '').replace(/\//g, '-'),
+                  ref: expectedRef,
                   date: (ev.date || ev.createdAt || '').slice(0, 10),
                   createdAt: ev.createdAt || new Date().toISOString(),
                   note: `Dépôt État de Vente ${ev.ref} (Auto-réconcilié)`,
@@ -754,11 +798,15 @@ const DB = {
                 if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
                   window.API.insert('bank_transactions', newTx).catch(() => {});
                 }
+              } else if (existingDep && Math.abs(Number(existingDep.amount) - Number(ev.totalTTC)) > 0.01) {
+                existingDep.amount = Number(ev.totalTTC);
+                evFixed++;
+                fixes.push(`Montant du dépôt bancaire ajusté pour État de Vente ${ev.ref} (${Utils.fmtCurrency(ev.totalTTC)})`);
               }
             });
             if (evFixed > 0) DB.rawSet('bank_transactions', bankTxs);
           }
-          checks.push({ name: 'États de Vente & Dépôts Banque', status: 'OK', detail: `${evDocs.length} états de vente vérifiés (${evFixed} dépôts créés)` });
+          checks.push({ name: 'États de Vente & Dépôts Banque', status: 'OK', detail: `${evDocs.length} états de vente vérifiés (${evFixed} ajustés/créés)` });
 
           // Check 4b: Unicité des Références BCH & Protection des Références Brûlées (Anti-Doublon)
           const allBLsRef = DB.getAll('bls');
@@ -770,8 +818,6 @@ const DB = {
           Object.keys(refCounts).forEach(r => {
             if (refCounts[r] > 1) {
               const matches = allBLsRef.filter(b => b.ref === r);
-              // L'archive retournée conserve obligatoirement la référence originale (brûlée)
-              // Le ou les BLs actifs/en cours reçoivent leur partNum distinct pour éliminer le doublon
               const returnedDoc = matches.find(b => b.status === 'returned');
               const activeDocs = matches.filter(b => b.status !== 'returned');
               const toRename = returnedDoc ? activeDocs : matches.slice(1);
@@ -797,6 +843,41 @@ const DB = {
             DB.MasterBrain.recalibrateAll();
           }
           checks.push({ name: 'Unicité des Références BCH', status: 'OK', detail: `${Object.keys(refCounts).length} références vérifiées (${bchDupsFixed} dupliquées corrigées)` });
+
+          // Check 4c: Dédoublonnage Trésorerie Caisse (Anti-Doublon Versements & Retours)
+          const allCaisse = DB.getAll('caisse_admin');
+          const seenCaisseEv = new Set();
+          const seenBlRetEntries = new Set();
+          const cleanedCaisseTreasury = [];
+          let caisseDupsFixed = 0;
+
+          allCaisse.forEach(ce => {
+            if (ce.source === 'transfert_banque_etat_vente' && ce.etatVenteRef) {
+              if (seenCaisseEv.has(ce.etatVenteRef)) {
+                caisseDupsFixed++;
+                fixes.push(`Doublon de versement caisse éliminé pour État de Vente ${ce.etatVenteRef}`);
+                return;
+              }
+              seenCaisseEv.add(ce.etatVenteRef);
+              cleanedCaisseTreasury.push(ce);
+            } else if (ce.source === 'bl_return' && ce.blId) {
+              const retKey = `bl_${ce.blId}`;
+              if (seenBlRetEntries.has(retKey)) {
+                caisseDupsFixed++;
+                fixes.push(`Doublon de retour caisse éliminé pour BL #${ce.blId}`);
+                return;
+              }
+              seenBlRetEntries.add(retKey);
+              cleanedCaisseTreasury.push(ce);
+            } else {
+              cleanedCaisseTreasury.push(ce);
+            }
+          });
+
+          if (caisseDupsFixed > 0) {
+            DB.rawSet('caisse_admin', cleanedCaisseTreasury);
+          }
+          checks.push({ name: 'Intégrité Trésorerie Caisse', status: 'OK', detail: `${allCaisse.length} opérations caisse vérifiées (${caisseDupsFixed} doublons purgés)` });
 
           // Check 5: Bank Reconciliation & Running Balances
           const bankRes = DB.MasterBrain.BankBrain.recalibrate();
@@ -1394,10 +1475,13 @@ const DB = {
           this.runMigrations();
         }
 
-        // Auto-reload the current view if data actually changed (and no modal is open)
+        // Auto-reload the current view if data actually changed (and no modal is open and user is not typing)
         if (colsToSync.length > 0 && typeof App !== 'undefined' && App._currentModule) {
-          if (!document.getElementById('modalOverlay')?.classList.contains('active')) {
-            App.reloadDebounced(App._currentModule, 250);
+          const isModalOpen = document.getElementById('modalOverlay')?.classList.contains('active');
+          const activeEl = document.activeElement;
+          const isUserTyping = activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName);
+          if (!isModalOpen && !isUserTyping && App._currentModule !== 'settings') {
+            App.reloadDebounced(App._currentModule, 350);
           }
         }
       } catch (e) {
@@ -2898,7 +2982,7 @@ const SessionMgr = {
     const bls = DB.getAll('bls').filter(b => 
       isUserMatch(b.createdBy) && 
       (normDate(b.date) === date || normDate(b.createdAt) === date) && 
-      (b.status !== 'returned' && b.status !== 'draft' && b.status !== 'cancelled')
+      (b.status !== 'draft' && b.status !== 'cancelled')
     );
     const retours = DB.getAll('bon_retours').filter(r => 
       isUserMatch(r.createdBy) && 
@@ -2906,7 +2990,7 @@ const SessionMgr = {
     );
     const totalSalesTTC = bls.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
     const totalReturnsTTC = retours.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
-    const netAmount = Math.round((totalSalesTTC - totalReturnsTTC) * 100) / 100;
+    const netAmount = Math.max(0, Math.round((totalSalesTTC - totalReturnsTTC) * 100) / 100);
 
     return {
       userId,
@@ -2955,9 +3039,9 @@ const SessionMgr = {
     let seqNum = DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1;
     const ref = `ET/${String(seqNum).padStart(3, '0')}/${month}/${year}`;
 
-    // Aggregated lines from BLs
+    // Aggregated lines from ACTIVE delivered BLs (returns are excluded so items are net delivered)
     const aggregated = {};
-    summary.bls.forEach(bl => {
+    summary.bls.filter(b => b.status !== 'returned').forEach(bl => {
       (bl.lines || []).forEach(line => {
         const key = (line.designation || '').trim();
         if (!key) return;
@@ -2971,15 +3055,15 @@ const SessionMgr = {
         aggregated[key].qty += qty;
       });
     });
-    const items = Object.values(aggregated);
-    const totalHT = items.reduce((s, it) => s + (it.qty * it.unitPrice), 0);
+    const items = Object.values(aggregated).filter(it => it.qty > 0.0001);
+    const totalHT = Math.round(items.reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
     // Etat de vente: FIXED 1% timbre (not slab-based like BCH)
     const TIMBRE_RATE_EV = 1; // 1% fixed for etat de vente
     const timbreAmount = Math.round(totalHT * TIMBRE_RATE_EV / 100 * 100) / 100;
     const totalTTCCalc = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
-    const netAmountEV = Math.max(0, Math.round((totalTTCCalc - summary.totalReturnsTTC) * 100) / 100);
+    const netAmountEV = totalTTCCalc;
     const ecartFiscal = Math.round((netAmountEV - summary.netAmount) * 100) / 100;
 
     // 1. Generate État de Vente document with BL list and Returns list
@@ -3090,20 +3174,28 @@ const SessionMgr = {
       });
     }
 
-    // 4b. Deduct returns if any
+    // 4b. Deduct returns if any (only unrecorded returns to prevent double deduction with processReturn)
     if (summary.totalReturnsTTC > 0) {
-      DB.insert('caisse_admin', {
-        type: 'withdrawal',
-        source: 'bch_retours_deduits',
-        userId,
-        userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
-        sessionId: session.id,
-        sessionDate: today,
-        amount: summary.totalReturnsTTC,
-        targetBankId,
-        etatVenteRef: ref,
-        note: isAR ? `خصم مرتجعات البضاعة (${summary.retours.length} إرجاع) — ${u?.name || ''}` : `Déduction des Retours Marchandise (${summary.retours.length} retours) — ${u?.name || ''}`
-      });
+      const alreadyDeducted = DB.getAll('caisse_admin').filter(e => 
+        e.type === 'withdrawal' && e.source === 'bl_return' &&
+        summary.retours.some(r => Number(r.id) === Number(e.blId) || String(r.ref) === String(e.returnRef) || (r.blRef && e.blRef && r.blRef === e.blRef))
+      );
+      const alreadyDeductedAmount = alreadyDeducted.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      const remainingToDeduct = Math.max(0, Math.round((summary.totalReturnsTTC - alreadyDeductedAmount) * 100) / 100);
+      if (remainingToDeduct > 0) {
+        DB.insert('caisse_admin', {
+          type: 'withdrawal',
+          source: 'bch_retours_deduits',
+          userId,
+          userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
+          sessionId: session.id,
+          sessionDate: today,
+          amount: remainingToDeduct,
+          targetBankId,
+          etatVenteRef: ref,
+          note: isAR ? `خصم مرتجعات البضاعة (${summary.retours.length} إرجاع) — ${u?.name || ''}` : `Déduction des Retours Marchandise (${summary.retours.length} retours) — ${u?.name || ''}`
+        });
+      }
     }
 
     // 4c. Withdrawal / Transfer to Bank via État de Vente (with fixed 1% timbre deducted from caisse)
