@@ -1279,7 +1279,12 @@
         this._rect(doc, ML, y, CW, 5.5, [241, 245, 249], [203, 213, 225]);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [15, 23, 42]);
         this._text(doc, `${isAR ? 'المجموع خ.ر' : 'TOTAL HT'} : ${this._fmtMoney(totalHT)}`, ML + 4, y + 3.8);
-        if (timbre > 0) this._text(doc, `${isAR ? 'الطابع' : 'TIMBRE'} : ${this._fmtMoney(timbre)}`, ML + 75, y + 3.8);
+        if (tvaAmount > 0) {
+          this._text(doc, `${isAR ? 'الرسم 19%' : 'TVA 19%'} : ${this._fmtMoney(tvaAmount)}`, ML + 58, y + 3.8);
+          if (timbre > 0) this._text(doc, `${isAR ? 'الطابع' : 'TIMBRE'} : ${this._fmtMoney(timbre)}`, ML + 112, y + 3.8);
+        } else {
+          if (timbre > 0) this._text(doc, `${isAR ? 'الطابع' : 'TIMBRE'} : ${this._fmtMoney(timbre)}`, ML + 75, y + 3.8);
+        }
         doc.setFontSize(7.5); this._tc(doc, C.PRIMARY || [13, 148, 136]);
         this._text(doc, `${isAR ? 'المجموع ك.ر' : 'TOTAL TTC'} : ${this._fmtMoney(totalTTC)}`, ML + CW - 4, y + 3.8, { align: 'right' });
         y += 6.8;
@@ -1593,10 +1598,16 @@
       // ── 6. Totals Bar ──
       this._rect(doc, ML, y, CW, 8, [241, 245, 249], [203, 213, 225]);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8); this._tc(doc, [15, 23, 42]);
-      doc.text(`TOTAL HT : ${this._fmtMoney(totalHT)}`, ML + 5, y + 5.5);
-      if (timbre > 0) doc.text(`TIMBRE : ${this._fmtMoney(timbre)}`, ML + 80, y + 5.5);
+      this._text(doc, `${isAR ? 'المجموع خ.ر' : 'TOTAL HT'} : ${this._fmtMoney(totalHT)}`, ML + 5, y + 5.5);
+      const blTva = Number(bl.tvaAmount) || (br ? Number(br.tvaAmount) : 0) || 0;
+      if (blTva > 0) {
+        this._text(doc, `${isAR ? 'الرسم 19%' : 'TVA 19%'} : ${this._fmtMoney(blTva)}`, ML + 62, y + 5.5);
+        if (timbre > 0) this._text(doc, `${isAR ? 'الطابع' : 'TIMBRE'} : ${this._fmtMoney(timbre)}`, ML + 116, y + 5.5);
+      } else {
+        if (timbre > 0) this._text(doc, `${isAR ? 'الطابع' : 'TIMBRE'} : ${this._fmtMoney(timbre)}`, ML + 80, y + 5.5);
+      }
       doc.setFontSize(9); this._tc(doc, C.PRIMARY);
-      doc.text(`TOTAL TTC : ${this._fmtMoney(totalTTC)}`, ML + CW - 5, y + 5.5, { align: 'right' });
+      this._text(doc, `${isAR ? 'المجموع ك.ر' : 'TOTAL TTC'} : ${this._fmtMoney(totalTTC)}`, ML + CW - 5, y + 5.5, { align: 'right' });
       y += 10;
 
       // ── 7. Traceability Note ──

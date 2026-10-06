@@ -173,7 +173,7 @@ const API = (() => {
     if (_token) {
       const decoded = decodeToken(_token);
       if (decoded && decoded.exp * 1000 > Date.now()) {
-        _user = { id: decoded.id, name: decoded.name, username: decoded.username, role: decoded.role };
+        _user = { id: decoded.id, name: decoded.name, username: decoded.username, role: decoded.role, supplierId: decoded.supplierId || null };
         return true;
       } else {
         clearToken();

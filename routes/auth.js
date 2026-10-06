@@ -84,8 +84,8 @@ router.post('/refresh', (req, res) => {
     const age = Date.now()/1000 - decoded.iat;
     if (age > 86400) return res.status(401).json({ error: 'Session expirée, reconnectez-vous' });
     const newToken = jwt.sign(
-      // keep sessionId so single-session enforcement still applies to refreshed tokens
-      { id: decoded.id, username: decoded.username, name: decoded.name, role: decoded.role, sessionId: decoded.sessionId },
+      // keep sessionId and supplierId so single-session enforcement and supplier portal isolation still apply to refreshed tokens
+      { id: decoded.id, username: decoded.username, name: decoded.name, role: decoded.role, supplierId: decoded.supplierId || null, sessionId: decoded.sessionId },
       process.env.JWT_SECRET,
       { expiresIn: JWT_EXPIRY }
     );

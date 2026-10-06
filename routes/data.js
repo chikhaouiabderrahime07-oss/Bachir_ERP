@@ -29,13 +29,41 @@ function adminOnlyForUsers(req, res, next) {
 }
 
 /** Suppliers can only write to collections relevant to their portal. */
-function supplierWriteGuard(req, res, next) {
+async function supplierWriteGuard(req, res, next) {
   const isSupplier = req.user?.role === 'supplier' || req.user?.role === 'supplier_agent';
   if (!isSupplier) return next();
   const col = req.params.col;
   const ALLOWED_WRITE = ['bls', 'brs', 'notifications', 'sessions'];
   if (!ALLOWED_WRITE.includes(col)) {
     return res.status(403).json({ error: 'Accès refusé pour les fournisseurs' });
+  }
+  const sid = req.user.supplierId;
+  if (!sid && (col === 'bls' || col === 'brs')) {
+    return res.status(403).json({ error: 'Fournisseur non associé' });
+  }
+  if (col === 'bls' || col === 'brs') {
+    if (req.method === 'POST' && req.body) {
+      req.body.supplierId = sid;
+      if (col === 'bls' && req.body.source === 'stock') {
+        return res.status(403).json({ error: 'Création non autorisée sur stock pour les fournisseurs' });
+      }
+    }
+    if (req.params.id) {
+      try {
+        const existing = await Document.findOne(idQuery(col, req.params.id)).lean();
+        if (existing) {
+          const docSid = existing.data?.supplierId;
+          if (docSid && String(docSid) !== String(sid) && Number(docSid) !== Number(sid)) {
+            return res.status(403).json({ error: 'Modification interdite sur ce document' });
+          }
+          if (col === 'bls' && existing.data?.source === 'stock') {
+            return res.status(403).json({ error: 'Accès refusé aux bons de déstockage' });
+          }
+        }
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de vérification des droits' });
+      }
+    }
   }
   next();
 }
@@ -208,18 +236,29 @@ router.get('/:col', async (req, res) => {
 
     // Build MongoDB query with supplier filter for relevant collections
     let filter = { col };
-    if (isSupplier && supplierSid) {
-      // For BLs and BRs: only show documents belonging to this supplier
-      if (col === 'bls' || col === 'brs') {
-        filter['data.supplierId'] = { $in: [supplierSid, String(supplierSid), Number(supplierSid)] };
-      }
-      // For notifications: only show their own
-      if (col === 'notifications') {
-        filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
-      }
-      // For sessions: only show their own
-      if (col === 'sessions') {
-        filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
+    if (isSupplier) {
+      if (supplierSid) {
+        // For BLs and BRs: only show documents belonging to this supplier
+        if (col === 'bls' || col === 'brs') {
+          filter['data.supplierId'] = { $in: [supplierSid, String(supplierSid), Number(supplierSid)] };
+          // Strictly exclude internal warehouse stock déstockage from factory suppliers
+          if (col === 'bls') {
+            filter['data.source'] = { $ne: 'stock' };
+          }
+        }
+        // For notifications: only show their own
+        if (col === 'notifications') {
+          filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
+        }
+        // For sessions: only show their own
+        if (col === 'sessions') {
+          filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
+        }
+      } else {
+        // If supplier user has no supplierId assigned, block access to BLs/BRs
+        if (col === 'bls' || col === 'brs') {
+          return res.json([]);
+        }
       }
     }
 
@@ -262,12 +301,16 @@ router.get('/:col/:id', async (req, res) => {
     const doc = await Document.findOne(idQuery(col, req.params.id)).lean();
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
 
-    // Supplier isolation: BLs/BRs must belong to this supplier
-    if (isSupplier && req.user.supplierId && (col === 'bls' || col === 'brs')) {
+    // Supplier isolation: BLs/BRs must belong to this supplier and not be internal stock
+    if (isSupplier && (col === 'bls' || col === 'brs')) {
       const sid = req.user.supplierId;
+      if (!sid) return res.status(403).json({ error: 'Accès refusé' });
       const docSid = doc.data?.supplierId;
       if (docSid && String(docSid) !== String(sid) && Number(docSid) !== Number(sid)) {
         return res.status(403).json({ error: 'Accès refusé' });
+      }
+      if (col === 'bls' && doc.data?.source === 'stock') {
+        return res.status(403).json({ error: 'Accès refusé aux bons de déstockage' });
       }
     }
 
