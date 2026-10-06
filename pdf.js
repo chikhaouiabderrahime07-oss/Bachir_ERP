@@ -865,10 +865,17 @@
           const bTimbre = Number(b.timbreAmount ?? b.timbre ?? fullB.timbreAmount ?? fullB.timbre ?? 0);
           const bTTC = Number(b.totalTTC ?? fullB.totalTTC ?? (bHT + bTVA + bTimbre)) || 0;
 
-          sumBchHT += bHT;
-          sumBchTVA += bTVA;
-          sumBchTimbre += bTimbre;
-          sumBchTTC += bTTC;
+          if (isRet) {
+            sumBchHT -= bHT;
+            sumBchTVA -= bTVA;
+            sumBchTimbre -= bTimbre;
+            sumBchTTC -= bTTC;
+          } else {
+            sumBchHT += bHT;
+            sumBchTVA += bTVA;
+            sumBchTimbre += bTimbre;
+            sumBchTTC += bTTC;
+          }
 
           const refText = this._t(b.ref || fullB.ref || '—') + (isRet ? (isAR ? ' (مرتجع)' : ' (RETOURNÉ)') : '');
           const cliText = this._t(b.clientName || fullB.clientName || (isAR ? 'زبون عادي' : 'Client Comptoir'));
@@ -885,15 +892,23 @@
           ];
         });
 
-        if (sumBchTTC === 0) sumBchTTC = effectiveGross;
+        sumBchHT = Math.round(sumBchHT * 100) / 100;
+        sumBchTVA = Math.round(sumBchTVA * 100) / 100;
+        sumBchTimbre = Math.round(sumBchTimbre * 100) / 100;
+        sumBchTTC = Math.round(sumBchTTC * 100) / 100;
+
+        if (!blList.length && sumBchTTC === 0) sumBchTTC = effectiveGross;
+
+        const bchSign = sumBchTTC >= 0 ? '+' : '-';
+        const bchColor = sumBchTTC >= 0 ? [16, 185, 129] : [220, 38, 38];
 
         // Total row for BCHs with HT, TVA, Timbre and TTC
         blRows.push([
-          { content: isAR ? 'المجموع التراكمي لسندات الشحن' : 'TOTAL CUMULÉ DES BONS DE CHARGEMENT', colSpan: 4, styles: { halign: isAR ? 'left' : 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
-          { content: this._fmtMoney(sumBchHT), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
-          { content: this._fmtMoney(sumBchTVA), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: [217, 119, 6] } },
-          { content: this._fmtMoney(sumBchTimbre), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: [124, 58, 237] } },
-          { content: '+' + this._fmtMoney(sumBchTTC), styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129], fillColor: [240, 244, 248] } }
+          { content: isAR ? 'المجموع التراكمي الصافي لسندات الشحن' : 'TOTAL CUMULÉ DES BONS DE CHARGEMENT', colSpan: 4, styles: { halign: isAR ? 'left' : 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
+          { content: (sumBchHT < 0 ? '-' : '') + this._fmtMoney(Math.abs(sumBchHT)), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: C.BLACK } },
+          { content: (sumBchTVA < 0 ? '-' : '') + this._fmtMoney(Math.abs(sumBchTVA)), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: [217, 119, 6] } },
+          { content: (sumBchTimbre < 0 ? '-' : '') + this._fmtMoney(Math.abs(sumBchTimbre)), styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248], textColor: [124, 58, 237] } },
+          { content: bchSign + this._fmtMoney(Math.abs(sumBchTTC)), styles: { halign: 'right', fontStyle: 'bold', textColor: bchColor, fillColor: [240, 244, 248] } }
         ]);
 
         const blColStyles = {};
