@@ -1129,23 +1129,46 @@ const DB = {
                 bchFixed++;
               }
             }
-            // Check mathematical integrity of lines vs totals
+            // Check mathematical integrity of lines vs totals & audit timbre fiscal
             if (b.lines && b.lines.length && b.status !== 'returned') {
               const calcHT = Math.round(b.lines.reduce((acc, l) => acc + (Number(l.total) || ((Number(l.qtyDelivered || l.qty) || 0) * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0)/100))), 0) * 100) / 100;
-              if (b.totalHT === undefined || Math.abs(Number(b.totalHT) - calcHT) > 0.05) {
+              const expectedTimbre = b.noTimbre ? 0 : DB.calcTimbre(calcHT);
+              const tva = b.tvaRate ? Math.round(calcHT * b.tvaRate / 100 * 100) / 100 : (Number(b.tvaAmount) || 0);
+              const expectedTTC = Math.round((calcHT + tva + expectedTimbre) * 100) / 100;
+
+              const htMismatch = b.totalHT === undefined || Math.abs(Number(b.totalHT) - calcHT) > 0.05;
+              const timbreMismatch = !b.noTimbre && (b.timbreAmount === undefined || Math.abs(Number(b.timbreAmount) - expectedTimbre) > 0.05);
+              const ttcMismatch = b.totalTTC === undefined || Math.abs(Number(b.totalTTC) - expectedTTC) > 0.05;
+
+              if (htMismatch || timbreMismatch || ttcMismatch) {
+                const oldTimbre = Number(b.timbreAmount) || 0;
+                const oldTTC = Number(b.totalTTC) || 0;
                 b.totalHT = calcHT;
-                const timbre = b.noTimbre ? 0 : DB.calcTimbre(calcHT);
-                const tva = b.tvaRate ? Math.round(calcHT * b.tvaRate / 100 * 100) / 100 : (Number(b.tvaAmount) || 0);
-                b.totalTTC = Math.round((calcHT + tva + timbre) * 100) / 100;
+                b.timbreAmount = expectedTimbre;
+                b.totalTTC = expectedTTC;
                 bchFixed++;
-                fixes.push(`BCH ${b.ref} recalcul mathématique HT/TTC recalculé (${Utils.fmtCurrency(b.totalTTC)})`);
+                fixes.push(`BCH ${b.ref}: timbre fiscal corrigé ${Utils.fmtCurrency(oldTimbre)} → ${Utils.fmtCurrency(expectedTimbre)}, TTC: ${Utils.fmtCurrency(oldTTC)} → ${Utils.fmtCurrency(expectedTTC)}`);
+
+                DB.update('bls', b.id, { totalHT: b.totalHT, timbreAmount: b.timbreAmount, totalTTC: b.totalTTC }, 'Auditeur: Recalibrage timbre exact');
+
+                if (b.linkedBrId) {
+                  const lbr = DB.getById('brs', b.linkedBrId);
+                  if (lbr) {
+                    const brHT = Number(lbr.totalHT) || calcHT;
+                    const brTva = Number(lbr.tvaAmount) || tva;
+                    const brTTC = Math.round((brHT + brTva + expectedTimbre) * 100) / 100;
+                    lbr.timbreAmount = expectedTimbre;
+                    lbr.totalTTC = brTTC;
+                    DB.update('brs', lbr.id, { timbreAmount: expectedTimbre, totalTTC: brTTC }, 'Auditeur: Recalibrage timbre BR lié');
+                  }
+                }
               }
             }
           });
           if (bchFixed > 0) DB.rawSet('bls', allBCHs);
-          checks.push({ name: 'Bons de Chargement & Intégrité Usine', status: 'OK', detail: `${allBCHs.length} BCH vérifiés (${bchFixed} incohérences traitées)` });
+          checks.push({ name: 'Bons de Chargement & Intégrité Usine', status: 'OK', detail: `${allBCHs.length} BCH vérifiés (${bchFixed} corrigés)` });
 
-          // Check 11: BR Mathematical Integrity & TVA Recalculation
+          // Check 11: BR Mathematical Integrity & TVA/Timbre Recalibration
           const allBRs = DB.getAll('brs');
           let brFixed = 0;
           const defaultTvaRate = Number(DB.getSettings().tvaRate) || 19;
@@ -1154,16 +1177,21 @@ const DB = {
             const calcHT = Math.round(br.lines.reduce((acc, l) => acc + (Number(l.total) || ((Number(l.qty) || 0) * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0)/100))), 0) * 100) / 100;
             const rate = Number(br.tvaRate) || defaultTvaRate;
             const calcTVA = Math.round(calcHT * rate / 100 * 100) / 100;
-            const calcTimbre = br.noTimbre ? 0 : (Number(br.timbreAmount) || DB.calcTimbre(calcHT) || 0);
-            const calcTTC = Math.round((calcHT + calcTVA + calcTimbre) * 100) / 100;
+            const expectedTimbre = br.noTimbre ? 0 : DB.calcTimbre(calcHT);
+            const expectedTTC = Math.round((calcHT + calcTVA + expectedTimbre) * 100) / 100;
             let changed = false;
             if (br.totalHT === undefined || Math.abs(Number(br.totalHT) - calcHT) > 0.05) { br.totalHT = calcHT; changed = true; }
             if (!br.tvaRate) { br.tvaRate = rate; changed = true; }
             if (br.tvaAmount === undefined || br.tvaAmount === 0 || Math.abs(Number(br.tvaAmount) - calcTVA) > 0.05) { br.tvaAmount = calcTVA; changed = true; }
-            if (br.totalTTC === undefined || Math.abs(Number(br.totalTTC) - calcTTC) > 0.05) { br.totalTTC = calcTTC; changed = true; }
+            if (!br.noTimbre && (br.timbreAmount === undefined || Math.abs(Number(br.timbreAmount) - expectedTimbre) > 0.05)) {
+              br.timbreAmount = expectedTimbre;
+              changed = true;
+            }
+            if (br.totalTTC === undefined || Math.abs(Number(br.totalTTC) - expectedTTC) > 0.05) { br.totalTTC = expectedTTC; changed = true; }
             if (changed) {
               brFixed++;
-              fixes.push(`BR ${br.ref} recalculé: HT=${Utils.fmtCurrency(calcHT)}, TVA(${rate}%)=${Utils.fmtCurrency(calcTVA)}, TTC=${Utils.fmtCurrency(calcTTC)}`);
+              fixes.push(`BR ${br.ref}: recalculé HT=${Utils.fmtCurrency(calcHT)}, Timbre=${Utils.fmtCurrency(expectedTimbre)}, TTC=${Utils.fmtCurrency(expectedTTC)}`);
+              DB.update('brs', br.id, { totalHT: br.totalHT, tvaRate: br.tvaRate, tvaAmount: br.tvaAmount, timbreAmount: br.timbreAmount, totalTTC: br.totalTTC }, 'Auditeur: Recalibrage BR');
             }
           });
           if (brFixed > 0) DB.rawSet('brs', allBRs);
@@ -1244,18 +1272,27 @@ const DB = {
 
           // Check 14: Cross-Collection Anomaly Scanner & Active Auto-Repair (Active Enforcement)
           let anomaliesFixed = 0;
-          // 14a: BLs with invalid totalTTC (0 or undefined but has lines) -> auto-repair
+          // 14a: BLs with invalid totalTTC or wrong timbre -> auto-repair & audit
           bls.forEach(bl => {
-            if (bl.lines && bl.lines.length > 0 && (!bl.totalTTC || Number(bl.totalTTC) <= 0) && bl.status !== 'draft' && bl.status !== 'cancelled') {
+            if (bl.lines && bl.lines.length > 0 && bl.status !== 'draft' && bl.status !== 'cancelled') {
               const calcHT = Math.round(bl.lines.reduce((acc, l) => acc + (Number(l.total) || ((Number(l.qtyDelivered || l.qty) || 0) * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0)/100))), 0) * 100) / 100;
-              const timbre = bl.noTimbre ? 0 : DB.calcTimbre(calcHT);
+              const expectedTimbre = bl.noTimbre ? 0 : DB.calcTimbre(calcHT);
               const tva = bl.tvaRate ? Math.round(calcHT * bl.tvaRate / 100 * 100) / 100 : (Number(bl.tvaAmount) || 0);
-              bl.totalHT = calcHT;
-              bl.timbreAmount = timbre;
-              bl.totalTTC = Math.round((calcHT + tva + timbre) * 100) / 100;
-              DB.update('bls', bl.id, { totalHT: bl.totalHT, timbreAmount: bl.timbreAmount, totalTTC: bl.totalTTC }, 'Auto-correction totale HT/TTC');
-              anomaliesFixed++;
-              fixes.push(`🔧 BL ${bl.ref || '#' + bl.id} réparé automatiquement : TTC recalculé à ${Utils.fmtCurrency(bl.totalTTC)}`);
+              const expectedTTC = Math.round((calcHT + tva + expectedTimbre) * 100) / 100;
+
+              const needsFix = (!bl.totalTTC || Number(bl.totalTTC) <= 0) ||
+                               (bl.totalHT === undefined || Math.abs(Number(bl.totalHT) - calcHT) > 0.05) ||
+                               (!bl.noTimbre && (bl.timbreAmount === undefined || Math.abs(Number(bl.timbreAmount) - expectedTimbre) > 0.05)) ||
+                               (Math.abs(Number(bl.totalTTC || 0) - expectedTTC) > 0.05);
+
+              if (needsFix) {
+                bl.totalHT = calcHT;
+                bl.timbreAmount = expectedTimbre;
+                bl.totalTTC = expectedTTC;
+                DB.update('bls', bl.id, { totalHT: bl.totalHT, timbreAmount: bl.timbreAmount, totalTTC: bl.totalTTC }, 'Auto-correction totale HT/Timbre/TTC');
+                anomaliesFixed++;
+                fixes.push(`🔧 BL ${bl.ref || '#' + bl.id} réconcilié : Timbre=${Utils.fmtCurrency(expectedTimbre)}, TTC=${Utils.fmtCurrency(expectedTTC)}`);
+              }
             }
           });
           // 14b: BRs with totalTTC = 0 but has lines -> auto-repair
@@ -1691,6 +1728,7 @@ const DB = {
       timbreRate: 0.0119,         // taux de calcul des tranches
       timbrePerTranche: 1.5,      // DA par tranche
       timbreMin: 0,               // pas de minimum légal imposé
+      timbreUseCeil: false,       // false = calcul proportionnel (HT * rate * DA/tranche); true = Math.ceil des tranches
       timbreEnabled: true,        // timbre activé par défaut
       timbreSlabs: [],            // slab table (empty = use global rate)
       // ── Banks ─────────────────────────────────────────────────────
@@ -1706,6 +1744,7 @@ const DB = {
       const merged = { ...def, ...s };
       if (merged.timbreRate === undefined) merged.timbreRate = def.timbreRate;
       if (merged.timbrePerTranche === undefined) merged.timbrePerTranche = def.timbrePerTranche;
+      if (merged.timbreUseCeil === undefined) merged.timbreUseCeil = false;
       if (merged.timbreEnabled === undefined) merged.timbreEnabled = def.timbreEnabled;
       // Read slabs from DEDICATED key (not from settings — avoids Mixed-type cloud issues)
       try {
@@ -2280,8 +2319,9 @@ const DB = {
   // Formule officielle:
   //   tranches = HT × 0.0119
   //   timbre   = ceil(tranches) × 1.5 DA
-  // Exemple: 38 894,80 DA → ceil(38894.8 × 0.0119)=463 tranches × 1,5 = 694,50 DA
-  // (affichage: 462.84 × 1,5 = 694,27 si sans ceil — les deux modes pris en charge)
+  // Formule officielle et paramétrable:
+  //   tranches = useCeil ? ceil(HT × rate) : (HT × rate)
+  //   timbre   = tranches × DA/tranche
   calcTimbre(amountHT) {
     const settings = this.getSettings();
     const amt = Number(amountHT) || 0;
@@ -2291,6 +2331,7 @@ const DB = {
     const globalPerTranche = Number(settings.timbrePerTranche) || 1.5;
     const timbreMin        = Number(settings.timbreMin)        || 0;
     const timbreMax        = Number(settings.timbreMax)        || 0;
+    const useCeil          = settings.timbreUseCeil === true;
 
     // Slab lookup: find matching bracket by HT amount
     const slabs = settings.timbreSlabs || [];
@@ -2308,8 +2349,8 @@ const DB = {
       }
     }
 
-    // Official formula: timbre = HT x rate x perTranche
-    const tranches = Math.ceil(amt * rate);
+    // Calculation: tranches x perTranche
+    const tranches = useCeil ? Math.ceil(amt * rate) : (amt * rate);
     let timbre   = tranches * perTranche;
     if (timbreMin > 0) timbre = Math.max(timbreMin, timbre);
     if (slabCap > 0)   timbre = Math.min(slabCap, timbre);
@@ -2324,6 +2365,7 @@ const DB = {
     const globalPerTranche = Number(settings.timbrePerTranche) || 1.5;
     const timbreMin        = Number(settings.timbreMin)        || 0;
     const timbreMax        = Number(settings.timbreMax)        || 0;
+    const useCeil          = settings.timbreUseCeil === true;
     const slabs = settings.timbreSlabs || [];
     let rate = globalRate, perTranche = globalPerTranche;
     let slabCap = 0;
@@ -2338,13 +2380,13 @@ const DB = {
         slabCap    = Number(slab.cap)        || 0;
       }
     }
-    const tranches = Math.ceil(amt * rate);
+    const tranches = useCeil ? Math.ceil(amt * rate) : (amt * rate);
     let timbre   = tranches * perTranche;
     if (timbreMin > 0) timbre = Math.max(timbreMin, timbre);
     if (slabCap > 0)   timbre = Math.min(slabCap, timbre);
     else if (timbreMax > 0) timbre = Math.min(timbreMax, timbre);
     timbre = Math.round(timbre * 100) / 100;
-    return { tranches: Math.round(tranches * 100) / 100, perTranche, rate, timbre, cap: slabCap || timbreMax || null };
+    return { tranches: Math.round(tranches * 100) / 100, perTranche, rate, timbre, cap: slabCap || timbreMax || null, useCeil };
   },
 
   previewTimbre(amt) {
