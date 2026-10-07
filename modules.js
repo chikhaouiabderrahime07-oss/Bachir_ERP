@@ -592,14 +592,14 @@ const BRModule = {
     const extra    = parseFloat(document.getElementById('br-extra')?.value)||0;
     const totalHT  = ht + extra;
     const tvaRate  = parseFloat(document.getElementById('br-tva-rate')?.value) ?? 19;
-    const tva      = totalHT * tvaRate / 100;
+    const tva      = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('br-no-timbre')?.checked;
-    const autoTimbre = noTimbre ? 0 : DB.calcTimbre(totalHT);
-    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(totalHT);
+    const autoTimbre = noTimbre ? 0 : DB.calcTimbre(totalHT, tva);
+    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(totalHT, tva);
     const timbreInput = document.getElementById('br-timbre');
     if (timbreInput && (!timbreInput.dataset.manual || noTimbre)) timbreInput.value = autoTimbre.toFixed(2);
     const timbre   = noTimbre ? 0 : (parseFloat(timbreInput?.value)||0);
-    const totalTTC = totalHT + tva + timbre;
+    const totalTTC = Math.round((totalHT + tva + timbre) * 100) / 100;
 
     const el = id => document.getElementById(id);
     if (el('br-total-ht'))       el('br-total-ht').textContent       = Utils.fmtCurrency(totalHT);
@@ -608,8 +608,9 @@ const BRModule = {
     if (el('br-total-timbre-disp')) el('br-total-timbre-disp').textContent = Utils.fmtCurrency(timbre);
     if (el('br-total-ttc'))      el('br-total-ttc').textContent      = Utils.fmtCurrency(totalTTC);
     // Show calculation detail
+    const baseAmt = Math.round((totalHT + tva) * 100) / 100;
     const detailStr = noTimbre ? '' : timbreDetail
-      ? `${timbreDetail.useCeil ? 'ceil(' : ''}${Utils.fmtCurrency(totalHT).replace(' DA','')} × ${timbreDetail.rate}${timbreDetail.useCeil ? ')' : ''} = ${timbreDetail.tranches} tranches × ${timbreDetail.perTranche} DA`
+      ? `${timbreDetail.useCeil ? 'ceil(' : ''}${Utils.fmtCurrency(baseAmt).replace(' DA','')} (Base) × ${timbreDetail.rate}${timbreDetail.useCeil ? ')' : ''} = ${timbreDetail.tranches} tranches × ${timbreDetail.perTranche} DA`
       : '';
     if (el('br-timbre-auto'))  el('br-timbre-auto').textContent  = detailStr;
     if (el('br-timbre-auto2')) el('br-timbre-auto2').textContent  = detailStr ? `(${detailStr})` : '';
@@ -1561,8 +1562,8 @@ const BLModule = {
     const tvaRate = parseFloat(document.getElementById('direct-bch-tva-rate')?.value) ?? 19;
     const tvaAmt = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('direct-bch-no-timbre')?.checked || false;
-    const timbreAmt = noTimbre ? 0 : DB.calcTimbre(totalHT);
-    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(totalHT);
+    const timbreAmt = noTimbre ? 0 : DB.calcTimbre(totalHT, tvaAmt);
+    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(totalHT, tvaAmt);
     const totalTTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
 
     const el = id => document.getElementById(id);
@@ -1576,7 +1577,8 @@ const BLModule = {
       if (noTimbre || totalHT <= 0 || timbreAmt <= 0) {
         el('direct-bch-timbre-detail').textContent = '';
       } else {
-        const effPct = ((timbreAmt / totalHT) * 100).toFixed(2);
+        const baseAmt = Math.round((totalHT + tvaAmt) * 100) / 100;
+        const effPct = ((timbreAmt / (baseAmt || 1)) * 100).toFixed(2);
         el('direct-bch-timbre-detail').textContent = `(${effPct}% | ${timbreDetail?.tranches||0} tranches × ${timbreDetail?.perTranche||1.5} DA)`;
       }
     }
@@ -1761,7 +1763,7 @@ const BLModule = {
     const tvaRate = parseFloat(document.getElementById('direct-bch-tva-rate')?.value) ?? 19;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('direct-bch-no-timbre')?.checked || false;
-    const timbreAmount = noTimbre ? 0 : DB.calcTimbre(totalHT);
+    const timbreAmount = noTimbre ? 0 : DB.calcTimbre(totalHT, tvaAmount);
     const totalTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
 
     const sup = DB.getById('suppliers', Number(supplierId));
@@ -2458,23 +2460,24 @@ const BLModule = {
       i++;
     }
     const tvaRate  = parseFloat(document.getElementById('bl-tva-rate')?.value) ?? 19;
-    const tva      = ht * tvaRate / 100;
+    const tva      = Math.round(ht * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('bl-no-timbre')?.checked;
-    const autoTimbre = noTimbre ? 0 : DB.calcTimbre(ht);
+    const autoTimbre = noTimbre ? 0 : DB.calcTimbre(ht, tva);
     const timbreInput = document.getElementById('bl-tot-timbre');
     if (timbreInput && (!timbreInput.dataset.manual || noTimbre)) timbreInput.value = autoTimbre.toFixed(2);
     const timbre = noTimbre ? 0 : (parseFloat(timbreInput?.value)||0);
-    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(ht);
+    const timbreDetail = noTimbre ? null : DB.calcTimbreDetail(ht, tva);
     const el = n => document.getElementById(n);
     if (el('bl-tot-ht'))     el('bl-tot-ht').textContent     = Utils.fmtCurrency(ht);
     if (el('bl-tot-tva'))    el('bl-tot-tva').textContent    = Utils.fmtCurrency(tva);
     if (el('bl-tva-pct'))    el('bl-tva-pct').textContent    = tvaRate + '%';
-    if (el('bl-tot-ttc'))    el('bl-tot-ttc').textContent    = Utils.fmtCurrency(ht + tva + timbre);
+    if (el('bl-tot-ttc'))    el('bl-tot-ttc').textContent    = Utils.fmtCurrency(Math.round((ht + tva + timbre) * 100) / 100);
     if (el('bl-timbre-pct')) {
       if (noTimbre || ht <= 0 || timbre <= 0) {
         el('bl-timbre-pct').textContent = '';
       } else {
-        const effPct = ((timbre / ht) * 100).toFixed(2);
+        const baseAmt = Math.round((ht + tva) * 100) / 100;
+        const effPct = ((timbre / (baseAmt || 1)) * 100).toFixed(2);
         el('bl-timbre-pct').textContent = `(${effPct}% | ${timbreDetail?.tranches||0} tr. × ${timbreDetail?.perTranche||1.5} DA)`;
       }
     }
@@ -2587,7 +2590,7 @@ const BLModule = {
     const tvaRate  = parseFloat(document.getElementById('bl-tva-rate')?.value) ?? DB.getSettings().tvaRate ?? 19;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const noTimbre = document.getElementById('bl-no-timbre')?.checked || false;
-    const timbre   = noTimbre ? 0 : (parseFloat(document.getElementById('bl-tot-timbre')?.value) || DB.calcTimbre(totalHT));
+    const timbre   = noTimbre ? 0 : (parseFloat(document.getElementById('bl-tot-timbre')?.value) || DB.calcTimbre(totalHT, tvaAmount));
     const totalTTC = Math.round((totalHT + tvaAmount + timbre) * 100) / 100;
 
     /* Build reference */
@@ -8931,15 +8934,15 @@ const SettingsModule = {
 
   _tabTimbre(s) {
     const slabs = s.timbreSlabs && s.timbreSlabs.length ? s.timbreSlabs : [];
-    const globalRate       = s.timbreRate       ?? 0.0119;
-    const globalPerTranche = s.timbrePerTranche ?? 1.5;
+    const globalRate       = s.timbreRate       ?? 0.01;
+    const globalPerTranche = s.timbrePerTranche ?? 1.0;
     const timbreMin        = s.timbreMin        ?? 0;
     const isAR = T.isRTL();
 
     const slabRows = slabs.length ? slabs.map((sl,i) => `
       <div class="slab-row" id="slab-${i}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
-        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label><input type="number" class="slab-min" value="${sl.min??0}" min="0"></div>
-        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'الى (DA)' : 'Max (DA)'}</label><input type="number" class="slab-max" value="${sl.max!==null&&sl.max!==undefined?sl.max:''}" placeholder="∞"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (Base DA)' : 'Min Base (DA)'}</label><input type="number" class="slab-min" value="${sl.min??0}" min="0"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'الى (Base DA)' : 'Max Base (DA)'}</label><input type="number" class="slab-max" value="${sl.max!==null&&sl.max!==undefined?sl.max:''}" placeholder="∞"></div>
         <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'معامل (rate)' : 'Taux (rate)'}</label><input type="number" class="slab-rate" value="${sl.rate??globalRate}" step="0.0001" oninput="SettingsModule._previewTimbre()"></div>
         <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'DA/شريحة' : 'DA/tranche'}</label><input type="number" class="slab-pt" value="${sl.perTranche??globalPerTranche}" step="0.01" oninput="SettingsModule._previewTimbre()"></div>
         <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove();SettingsModule._previewTimbre()" style="height:36px;margin-bottom:1px"><i class="fas fa-times"></i></button>
@@ -8949,10 +8952,10 @@ const SettingsModule = {
     <style>
       .timbre-law-card{background:linear-gradient(135deg,#0f2027 0%,#1e3a5f 50%,#0f4c75 100%);border-radius:16px;padding:20px;margin-bottom:20px;color:#e0f2fe;border:1px solid rgba(56,189,248,.2)}
       .timbre-sim-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
-      .timbre-sim-result{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
-      .timbre-sim-cell{background:var(--bg3,var(--bg));border-radius:10px;padding:14px;text-align:center}
-      .timbre-sim-cell .label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px}
-      .timbre-sim-cell .value{font-size:22px;font-weight:900}
+      .timbre-sim-result{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:14px}
+      .timbre-sim-cell{background:var(--bg3,var(--bg));border-radius:10px;padding:12px;text-align:center}
+      .timbre-sim-cell .label{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);margin-bottom:4px}
+      .timbre-sim-cell .value{font-size:18px;font-weight:900}
       .timbre-sim-step{background:var(--bg3,var(--bg));border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px;color:var(--text3);border-left:3px solid var(--primary)}
     </style>
 
@@ -8960,28 +8963,41 @@ const SettingsModule = {
     <div class="timbre-law-card">
       <h3 style="margin:0 0 6px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px">
         <i class="fas fa-stamp" style="color:#38bdf8"></i>
-        ${isAR ? 'الطابع الجبائي — صيغة الحساب بالشرائح' : 'Timbre Fiscal — Calcul par tranches'}
+        ${isAR ? 'الطابع الجبائي — القاعدة: المبلغ الإجمالي (HT + TVA)' : 'Timbre Fiscal — Assiette d\'imposition : Base = HT + TVA'}
       </h3>
-      <div style="font-size:11px;opacity:.65;margin-bottom:12px;font-style:italic">
-        ${isAR ? 'الصيغة: timbre = HT × rate × DA/tranche (لكل شريحة)' : 'Formule : timbre = HT × taux × DA/tranche (par slab)'}
+      <div style="font-size:11px;opacity:.85;margin-bottom:12px;line-height:1.4">
+        ${isAR ? 'القاعدة الرسمية: يُحسب الطابع الجبائي على مجموع المبلغ الخام بالإضافة إلى الرسم على القيمة المضافة (HT + TVA). يتم فحص الشريحة والنسبة بناءً على هذا المجموع الإجمالي.' : 'Règle légale & fiscale : le timbre est calculé sur la somme <strong>(HT + TVA)</strong>. C\'est ce montant total qui détermine l\'intervalle (tranche) et le pourcentage applicable.'}
       </div>
       <div style="background:rgba(0,0,0,.3);border-radius:10px;padding:12px;font-size:12px">
-        <code style="background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc">tranches = HT × rate</code>
+        <code style="background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc">Base = HT + TVA</code>
+        &nbsp;→&nbsp;
+        <code style="background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc">tranches = Base × rate</code>
         &nbsp;→&nbsp;
         <code style="background:rgba(56,189,248,.2);padding:2px 8px;border-radius:4px;color:#7dd3fc">timbre = tranches × DA/tranche</code>
-        <br><small style="opacity:.7;margin-top:8px;display:block">${isAR ? 'كل شريحة تعرّف نطاق HT ومعامل خاص. إذا لا توجد شرائح يستخدم المعامل الافتراضي.' : 'Chaque slab définit un intervalle HT avec son propre taux. Sans slabs : taux global.'}</small>
+        <br><small style="opacity:.75;margin-top:8px;display:block">${isAR ? 'ملاحظة: معامل 0.01 يعني شريحة لكل 100 دج. قيمة 1 DA/شريحة تعادل 1%، وقيمة 2 DA/شريحة تعادل 2%.' : 'Note : le taux 0.01 correspond à 1 tranche par 100 DA. 1 DA/tranche = 1%, 2 DA/tranche = 2%.'}</small>
       </div>
     </div>
 
     <!-- LIVE SIMULATOR -->
     <div class="timbre-sim-wrap">
-      <div style="font-weight:800;font-size:15px;margin-bottom:4px;color:var(--text)">
+      <div style="font-weight:800;font-size:15px;margin-bottom:8px;color:var(--text);display:flex;align-items:center;gap:8px">
         <i class="fas fa-calculator" style="color:var(--primary)"></i>
-        ${isAR ? 'حاسبة الطابع الفورية' : 'Simulateur de timbre en temps réel'}
+        ${isAR ? 'حاسبة الطابع الفورية (محاكاة دقيقة)' : 'Simulateur de timbre en temps réel'}
       </div>
-      <input type="number" id="timbre-sim-amt" min="0" step="100" placeholder="${isAR ? 'مثال: 38894' : 'ex: 38 894'}"
-        style="width:100%;padding:10px 14px;font-size:18px;font-weight:700;border-radius:10px;border:2px solid var(--border);background:var(--bg);color:var(--text);margin-top:10px"
-        oninput="SettingsModule._previewTimbre()">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:10px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'المبلغ HT (DA)' : 'Montant HT (DA)'}</label>
+          <input type="number" id="timbre-sim-ht" min="0" step="100" placeholder="${isAR ? 'مثال: 111128' : 'ex: 111 128'}"
+            style="width:100%;padding:10px 14px;font-size:16px;font-weight:700;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text)"
+            oninput="SettingsModule._previewTimbre()">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'نسبة الرسم TVA (%)' : 'Taux TVA (%)'}</label>
+          <input type="number" id="timbre-sim-tva" min="0" max="100" step="1" value="19"
+            style="width:100%;padding:10px 14px;font-size:16px;font-weight:700;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text)"
+            oninput="SettingsModule._previewTimbre()">
+        </div>
+      </div>
       <div id="timbre-sim-result" style="margin-top:14px;color:var(--text3);font-size:13px">
         ${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}
       </div>
@@ -8999,14 +9015,14 @@ const SettingsModule = {
           <input type="number" id="timbre-rate-input" value="${globalRate}" min="0" step="0.0001"
             style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px"
             oninput="SettingsModule._previewTimbre()">
-          <small style="color:var(--text4);font-size:10px">Ex: 0.0119</small>
+          <small style="color:var(--text4);font-size:10px">0.01 = 1 tranche / 100 DA</small>
         </div>
         <div class="form-group" style="margin:0">
           <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'DA/شريحة افتراضي' : 'DA/tranche global'}</label>
           <input type="number" id="timbre-per-tranche-input" value="${globalPerTranche}" min="0" step="0.01"
             style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-weight:700;font-size:14px"
             oninput="SettingsModule._previewTimbre()">
-          <small style="color:var(--text4);font-size:10px">Ex: 1.5</small>
+          <small style="color:var(--text4);font-size:10px">Ex: 1.0 (1%) ou 2.0 (2%)</small>
         </div>
         <div class="form-group" style="margin:0">
           <label style="font-size:11px;font-weight:700;color:var(--text3)">${isAR ? 'الحد الأدنى (DA)' : 'Minimum (DA)'}</label>
@@ -9029,7 +9045,7 @@ const SettingsModule = {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <h4 style="margin:0;font-size:13px;font-weight:800;color:var(--text)">
           <i class="fas fa-layer-group" style="color:var(--primary);margin-right:6px"></i>
-          ${isAR ? 'جدول الشرائح (اختياري)' : 'Tableau des tranches (optionnel)'}
+          ${isAR ? 'جدول الشرائح على المبلغ الإجمالي (HT + TVA)' : 'Tableau des tranches sur la Base (HT + TVA)'}
         </h4>
         <button class="btn btn-sm btn-outline" onclick="SettingsModule._addSlab()">
           <i class="fas fa-plus"></i> ${isAR ? 'إضافة شريحة' : 'Ajouter slab'}
@@ -9037,7 +9053,7 @@ const SettingsModule = {
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
         <i class="fas fa-info-circle" style="color:var(--primary)"></i>
-        ${isAR ? 'إذا تركت الجدول فارغاً سيستخدم المعامل الافتراضي. الشرائح تُحدد نطاقات HT مع معاملات خاصة.' : 'Laissez vide pour utiliser uniquement le taux global. Les slabs définissent des intervalles HT avec des taux personnalisés.'}
+        ${isAR ? 'الشرائح تحدد مجالات المبلغ الإجمالي (HT + TVA) مع معاملات خاصة (مثال: > 100 000 DA يُطبّق 2%). إذا تُرك الجدول فارغاً يُستخدم المعامل الافتراضي.' : 'Les tranches définissent des intervalles de montant <strong>Base (HT + TVA)</strong> avec des taux personnalisés (ex: &gt; 100 000 DA applique 2%). Laissez vide pour utiliser uniquement le taux global.'}
       </div>
       <div id="slabsContainer">${slabRows}</div>
       ${!slabs.length ? `<div style="text-align:center;padding:20px;color:var(--text4);font-size:12px"><i class="fas fa-th-list" style="font-size:24px;margin-bottom:8px;display:block;opacity:.3"></i>${isAR ? 'لا توجد شرائح — يستخدم المعامل الافتراضي' : 'Aucun slab — taux global utilisé'}</div>` : ''}
@@ -9058,12 +9074,12 @@ const SettingsModule = {
     if (!c) return;
     const idx = Date.now();
     const isAR = T.isRTL();
-    const defRate = parseFloat(document.getElementById('timbre-rate-input')?.value) || 0.0119;
-    const defPT   = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
+    const defRate = parseFloat(document.getElementById('timbre-rate-input')?.value) || 0.01;
+    const defPT   = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.0;
     c.insertAdjacentHTML('beforeend', `
     <div class="slab-row" id="slab-${idx}" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px">
-      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (DA)' : 'Min (DA)'}</label><input type="number" class="slab-min" value="0" min="0"></div>
-      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'الى (DA)' : 'Max (DA)'}</label><input type="number" class="slab-max" placeholder="∞"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'من (Base DA)' : 'Min Base (DA)'}</label><input type="number" class="slab-min" value="0" min="0"></div>
+      <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'الى (Base DA)' : 'Max Base (DA)'}</label><input type="number" class="slab-max" placeholder="∞"></div>
       <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'معامل (rate)' : 'Taux'}</label><input type="number" class="slab-rate" value="${defRate}" step="0.0001" oninput="SettingsModule._previewTimbre()"></div>
       <div class="form-group" style="margin:0"><label style="font-size:10px;color:var(--text3);font-weight:700">${isAR ? 'DA/شريحة' : 'DA/tranche'}</label><input type="number" class="slab-pt" value="${defPT}" step="0.01" oninput="SettingsModule._previewTimbre()"></div>
       <button class="btn btn-xs btn-danger" onclick="this.parentElement.remove();SettingsModule._previewTimbre()" style="height:36px;margin-bottom:1px"><i class="fas fa-times"></i></button>
@@ -9071,18 +9087,28 @@ const SettingsModule = {
   },
 
   _previewTimbre() {
-    const amt = parseFloat(document.getElementById('timbre-sim-amt')?.value) || 0;
+    const ht = parseFloat(document.getElementById('timbre-sim-ht')?.value) || parseFloat(document.getElementById('timbre-sim-amt')?.value) || 0;
+    const tvaPct = parseFloat(document.getElementById('timbre-sim-tva')?.value) ?? 19;
     const el  = document.getElementById('timbre-sim-result');
     if (!el) return;
     const isAR = T.isRTL();
-    if (!amt || amt < 0) {
+    if (!ht || ht < 0) {
       el.innerHTML = `<span style="color:var(--text3)">${isAR ? '← أدخل مبلغًا لرؤية النتيجة' : '← Saisissez un montant pour voir le calcul'}</span>`;
       return;
     }
-    const globalRate = parseFloat(document.getElementById('timbre-rate-input')?.value) || 0.0119;
-    const globalPT   = parseFloat(document.getElementById('timbre-per-tranche-input')?.value) || 1.5;
-    const useCeil    = document.getElementById('timbre-use-ceil-input')?.checked ?? (DB.getSettings().timbreUseCeil === true);
-    // Find matching slab
+    const tva = Math.round(ht * tvaPct / 100 * 100) / 100;
+    const baseAmt = Math.round((ht + tva) * 100) / 100;
+
+    let globalRate = parseFloat(document.getElementById('timbre-rate-input')?.value);
+    if (isNaN(globalRate) || globalRate <= 0) globalRate = 0.01;
+    if (Math.abs(globalRate - 0.0119) < 0.0001) globalRate = 0.01;
+
+    let globalPT = parseFloat(document.getElementById('timbre-per-tranche-input')?.value);
+    if (isNaN(globalPT) || globalPT <= 0) globalPT = 1.0;
+
+    const useCeil = document.getElementById('timbre-use-ceil-input')?.checked ?? (DB.getSettings().timbreUseCeil === true);
+
+    // Find matching slab using baseAmt (HT + TVA)
     const rows = Array.from(document.querySelectorAll('#slabsContainer .slab-row'));
     const slabs = rows.map(row => ({
       min: parseFloat(row.querySelector('.slab-min')?.value)||0,
@@ -9093,23 +9119,34 @@ const SettingsModule = {
 
     let rate = globalRate, perTranche = globalPT, slabLabel = isAR ? 'المعامل الافتراضي' : 'Taux global';
     if (slabs.length) {
-      const slab = slabs.find(sl => amt >= sl.min && (sl.max === null || sl.max === undefined || amt <= sl.max));
+      const slab = slabs.find(sl => baseAmt >= sl.min && (sl.max === null || sl.max === undefined || baseAmt <= sl.max));
       if (slab) {
-        rate = slab.rate; perTranche = slab.perTranche;
+        let r = slab.rate;
+        if (Math.abs(r - 0.0119) < 0.0001) r = 0.01;
+        rate = r;
+        perTranche = slab.perTranche;
         slabLabel = `${isAR?'شريحة':'Slab'} ${slab.min.toLocaleString('fr-FR')} – ${slab.max!==null&&slab.max!==undefined ? slab.max.toLocaleString('fr-FR') : '∞'} DA`;
       }
     }
 
-    const tranches = useCeil ? Math.ceil(amt * rate) : (amt * rate);
+    const tranches = useCeil ? Math.ceil(baseAmt * rate) : (baseAmt * rate);
     const timbre   = Math.round(tranches * perTranche * 100) / 100;
-    const ttc      = amt + timbre;
+    const ttc      = Math.round((baseAmt + timbre) * 100) / 100;
     const fmtDA    = v => Utils.fmtCurrency(v);
 
     el.innerHTML = `
       <div class="timbre-sim-result">
         <div class="timbre-sim-cell">
           <div class="label">${isAR ? 'المبلغ HT' : 'Montant HT'}</div>
-          <div class="value" style="color:var(--text)">${fmtDA(amt)}</div>
+          <div class="value" style="color:var(--text)">${fmtDA(ht)}</div>
+        </div>
+        <div class="timbre-sim-cell">
+          <div class="label">TVA (${tvaPct}%)</div>
+          <div class="value" style="color:var(--text2)">${fmtDA(tva)}</div>
+        </div>
+        <div class="timbre-sim-cell" style="background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3)">
+          <div class="label" style="color:var(--primary);font-weight:700">${isAR ? 'القاعدة (HT+TVA)' : 'Base (HT+TVA)'}</div>
+          <div class="value" style="color:var(--primary)">${fmtDA(baseAmt)}</div>
         </div>
         <div class="timbre-sim-cell">
           <div class="label">${isAR ? 'الطابع الجبائي' : 'Timbre fiscal'}</div>
@@ -9123,7 +9160,7 @@ const SettingsModule = {
       <div class="timbre-sim-step">
         <strong>${isAR ? 'تفاصيل:' : 'Détail :'}</strong>
         <span style="color:var(--primary);font-weight:700">${slabLabel}</span>
-        &nbsp;— ${useCeil ? 'ceil(' : ''}${amt.toLocaleString('fr-FR')} &times; ${rate}${useCeil ? ')' : ''} = <strong>${Math.round(tranches*100)/100}</strong> ${isAR ? 'شريحة' : 'tranches'}
+        &nbsp;— ${useCeil ? 'ceil(' : ''}${baseAmt.toLocaleString('fr-FR')} &times; ${rate}${useCeil ? ')' : ''} = <strong>${Math.round(tranches*100)/100}</strong> ${isAR ? 'شريحة' : 'tranches'}
         &nbsp;&times;&nbsp; <strong>${perTranche} DA</strong>
         = <strong style="color:var(--primary)">${fmtDA(timbre)}</strong>
       </div>
@@ -9132,17 +9169,22 @@ const SettingsModule = {
 
   _saveTimbre() {
     const _n = (v, fb) => { const p = parseFloat(v); return isNaN(p) ? fb : p; }; // safe: 0 stays 0
-    const rate       = _n(document.getElementById('timbre-rate-input')?.value, 0.0119);
-    const perTranche = _n(document.getElementById('timbre-per-tranche-input')?.value, 1.5);
+    let rate         = _n(document.getElementById('timbre-rate-input')?.value, 0.01);
+    if (Math.abs(rate - 0.0119) < 0.0001) rate = 0.01;
+    const perTranche = _n(document.getElementById('timbre-per-tranche-input')?.value, 1.0);
     const timbreMin  = _n(document.getElementById('timbre-min-input')?.value, 0);
     const useCeil    = document.getElementById('timbre-use-ceil-input')?.checked || false;
     const rows = document.querySelectorAll('#slabsContainer .slab-row');
-    const slabs = Array.from(rows).map(row => ({
-      min:        _n(row.querySelector('.slab-min')?.value, 0),
-      max:        row.querySelector('.slab-max')?.value.trim() ? _n(row.querySelector('.slab-max').value, null) : null,
-      rate:       _n(row.querySelector('.slab-rate')?.value, rate),
-      perTranche: _n(row.querySelector('.slab-pt')?.value, perTranche),
-    })).sort((a,b) => a.min - b.min);
+    const slabs = Array.from(rows).map(row => {
+      let r = _n(row.querySelector('.slab-rate')?.value, rate);
+      if (Math.abs(r - 0.0119) < 0.0001) r = 0.01;
+      return {
+        min:        _n(row.querySelector('.slab-min')?.value, 0),
+        max:        row.querySelector('.slab-max')?.value.trim() ? _n(row.querySelector('.slab-max').value, null) : null,
+        rate:       r,
+        perTranche: _n(row.querySelector('.slab-pt')?.value, perTranche),
+      };
+    }).sort((a,b) => a.min - b.min);
 
     // Save rate/perTranche/min via settings (simple scalar values — work fine)
     DB.saveSettings({ timbreRate: rate, timbrePerTranche: perTranche, timbreMin, timbreUseCeil: useCeil });
