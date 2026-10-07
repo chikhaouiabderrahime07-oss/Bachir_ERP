@@ -3469,6 +3469,9 @@ const SupplierPortalModule = {
     const isAR = T.isRTL();
     const curUser = Auth.getCurrentUser();
     const isSupplier = curUser?.role === 'supplier' || curUser?.role === 'supplier_agent';
+    if (!Auth.isAdmin() && !isSupplier && !Auth.can('canViewUsine')) {
+      return `<div style="padding:40px;text-align:center"><i class="fas fa-lock" style="font-size:48px;color:#ef4444;margin-bottom:16px"></i><h3>${isAR ? 'غير مصرح بالدخول' : 'Accès non autorisé'}</h3><p style="color:var(--text3)">${isAR ? 'ليس لديك إذن للوصول إلى بوابة المصانع.' : "Vous n'avez pas l'autorisation d'accéder au portail usines."}</p></div>`;
+    }
     const supplierId = isSupplier ? curUser.supplierId : this._filterSupplierId;
     const allSuppliers = DB.getAll('suppliers');
     const allBLs = DB.getAll('bls');
@@ -3526,7 +3529,7 @@ const SupplierPortalModule = {
 
         <div style="display:flex;gap:10px;align-items:center">
           <button class="btn btn-outline" onclick="App.loadModule('bls')"><i class="fas fa-arrow-left"></i> ${isAR ? 'وصل التحميل' : 'Bons de Chargement'}</button>
-          <button class="btn btn-primary" onclick="App.loadModule('bc_supervision')"><i class="fas fa-stream"></i> ${isAR ? 'متابعة خط الإنتاج' : 'Pipeline Suivi'}</button>
+          ${(Auth.isAdmin() || Auth.can('canViewSuivi') || isSupplier) ? `<button class="btn btn-primary" onclick="App.loadModule('bc_supervision')"><i class="fas fa-stream"></i> ${isAR ? 'متابعة خط الإنتاج' : 'Pipeline Suivi'}</button>` : ''}
         </div>
       </div>`}
 
@@ -3941,6 +3944,9 @@ const BCSupervisionModule = {
     // Auto-filter for supplier/supplier_agent users — only see their own BCH
     const curUser = Auth.getCurrentUser();
     const isSupplierUser = curUser?.role === 'supplier' || curUser?.role === 'supplier_agent';
+    if (!Auth.isAdmin() && !isSupplierUser && !Auth.can('canViewSuivi')) {
+      return `<div style="padding:40px;text-align:center"><i class="fas fa-lock" style="font-size:48px;color:#ef4444;margin-bottom:16px"></i><h3>${isAR ? 'غير مصرح بالدخول' : 'Accès non autorisé'}</h3><p style="color:var(--text3)">${isAR ? 'ليس لديك إذن لمتابعة الشحن.' : "Vous n'avez pas l'autorisation d'accéder au suivi des chargements."}</p></div>`;
+    }
     if (isSupplierUser && curUser.supplierId) {
       items = items.filter(b => String(b.supplierId) === String(curUser.supplierId));
     }
@@ -3982,7 +3988,7 @@ const BCSupervisionModule = {
 
         <div style="display:flex;gap:10px;align-items:center">
           <button class="btn btn-outline" onclick="App.loadModule('bls')"><i class="fas fa-list"></i> ${isAR ? 'قائمة الوصولات' : 'Liste des Bons'}</button>
-          <button class="btn btn-primary" onclick="App.loadModule('supplier_portal')"><i class="fas fa-industry"></i> ${isAR ? 'بوابة المصانع' : 'Portail Usines'}</button>
+          ${(Auth.isAdmin() || Auth.can('canViewUsine') || isSupplierUser) ? `<button class="btn btn-primary" onclick="App.loadModule('supplier_portal')"><i class="fas fa-industry"></i> ${isAR ? 'بوابة المصانع' : 'Portail Usines'}</button>` : ''}
         </div>
       </div>
 
@@ -7902,6 +7908,8 @@ const UsersModule = {
       canCreateBL:{label: isAR ? 'إنشاء وصولات التسليم (BL)' : 'Créer des BL', icon:'fa-file-export'},
       canViewBRs:{label: isAR ? 'عرض وصولات الاستلام' : 'Voir les BR', icon:'fa-eye'},
       canViewBLs:{label: isAR ? 'عرض وصولات التسليم' : 'Voir les BL', icon:'fa-eye'},
+      canViewUsine:{label: isAR ? 'بوابة المصانع / الموردين' : 'Portail Usines / Fournisseurs', icon:'fa-industry'},
+      canViewSuivi:{label: isAR ? 'متابعة الشحن والتفريغ' : 'Suivi des Chargements', icon:'fa-stream'},
       canViewCaisse:{label: isAR ? 'عرض الصندوق الخاص' : 'Voir sa mini caisse', icon:'fa-cash-register'},
       canViewSuppliers:{label: isAR ? 'عرض الموردين' : 'Voir fournisseurs', icon:'fa-building'},
       canViewClients:{label: isAR ? 'عرض الزبائن' : 'Voir clients', icon:'fa-users'},

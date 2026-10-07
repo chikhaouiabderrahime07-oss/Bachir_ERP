@@ -768,8 +768,8 @@ const App = {
         ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [{ mod:'dashboard', icon:'fa-tachometer-alt', label:T.get('nav_dashboard') }] : []),
         ...(u.role !== 'supplier' && u.role !== 'supplier_agent' && (isAdmin || Auth.can('canViewBRs')) ? [{ mod:'brs', icon:'fa-file-import', label:T.get('nav_brs') }] : []),
         ...(u.role !== 'supplier' && u.role !== 'supplier_agent' && (isAdmin || Auth.can('canViewBLs')) ? [{ mod:'bls', icon:'fa-truck-loading', label:T.get('nav_bls') }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'supplier_portal', icon:'fa-industry', label:T.get('nav_supplier_portal') || (T.isRTL() ? 'بوابة المصانع' : 'Portail Usines') }] : []),
-        ...(isAdmin || Auth.can('canViewBLs') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'bc_supervision', icon:'fa-stream', label:T.get('nav_bc_tracker') || (T.isRTL() ? 'متابعة الشحن' : 'Suivi Chargements') }] : []),
+        ...(isAdmin || Auth.can('canViewUsine') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'supplier_portal', icon:'fa-industry', label:T.get('nav_supplier_portal') || (T.isRTL() ? 'بوابة المصانع' : 'Portail Usines') }] : []),
+        ...(isAdmin || Auth.can('canViewSuivi') || u.role === 'supplier' || u.role === 'supplier_agent' ? [{ mod:'bc_supervision', icon:'fa-stream', label:T.get('nav_bc_tracker') || (T.isRTL() ? 'متابعة الشحن' : 'Suivi Chargements') }] : []),
         ...(u.role !== 'supplier' && u.role !== 'supplier_agent' && (isAdmin || Auth.can('canViewBLs')) ? [{ mod:'etat_vente', icon:'fa-file-invoice-dollar', label:T.get('nav_etat_vente') }] : []),
       ]},
       ...(u.role !== 'supplier' && u.role !== 'supplier_agent' ? [
@@ -871,7 +871,7 @@ const App = {
     }
 
     // Permission guard
-    const modPerms = {brs:'canViewBRs', bls:'canViewBLs', supplier_portal:'canViewBLs', bc_supervision:'canViewBLs', caisse:'canViewCaisse', bank:'canViewBank', suppliers:'canViewSuppliers', clients:'canViewClients', partners:'canViewClients', stats:'canViewStats', catalogue:'canViewCatalogue'};
+    const modPerms = {brs:'canViewBRs', bls:'canViewBLs', supplier_portal:'canViewUsine', bc_supervision:'canViewSuivi', caisse:'canViewCaisse', bank:'canViewBank', suppliers:'canViewSuppliers', clients:'canViewClients', partners:'canViewClients', stats:'canViewStats', catalogue:'canViewCatalogue'};
     const isSupplierRole = u?.role === 'supplier' || u?.role === 'supplier_agent';
     const supplierAllowed = isSupplierRole && (mod === 'supplier_portal' || mod === 'bc_supervision');
     if (u && u.role !== 'admin' && !supplierAllowed && modPerms[mod] && !Auth.can(modPerms[mod])) {

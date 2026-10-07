@@ -2596,6 +2596,8 @@ const Auth = {
       canViewStats: false,
       canViewCatalogue: false,
       canViewBank: false,
+      canViewUsine: false,
+      canViewSuivi: false,
       canEditSuppliers: false,
       canEditClients: false,
       canDeleteBR: false,
@@ -2626,7 +2628,9 @@ const Auth = {
         canCreateBL: false,
         canDeleteBR: false,
         canDeleteBL: false,
-        requireDailyLiquid: false
+        requireDailyLiquid: false,
+        canViewUsine: true,
+        canViewSuivi: true
       };
     }
     // Read LIVE user data from DB (not stale localStorage copy)
