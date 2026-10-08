@@ -367,7 +367,15 @@ const BRModule = {
 
     let items = DB.getAll('brs');
     // All users see all BRs — no isolation. Traceability via createdByName/updatedByName.
-    if (q) { const ql=q.toLowerCase(); items=items.filter(b=>(b.ref+' '+(supMap[b.supplierId]?.name||'')+' '+(b.notes||'')).toLowerCase().includes(ql)); }
+    if (q) {
+      const ql = q.toLowerCase();
+      items = items.filter(b => {
+        const supName = supMap[b.supplierId]?.name || '';
+        const lineText = (b.lines || []).map(l => l.designation || '').join(' ');
+        const full = `${b.ref||''} ${supName} ${b.notes||''} ${b.ticketPesee||''} ${b.driverName||''} ${b.truckIMM||''} ${b.createdByName||''} ${b.bcRef||''} ${lineText}`.toLowerCase();
+        return full.includes(ql);
+      });
+    }
     if (status !== 'all') items = items.filter(b=>(b.status||'open')===status);
     if (supplierId !== 'all') items = items.filter(b=>String(b.supplierId)===String(supplierId));
     if (year !== 'all') items = items.filter(b=>String(b.year)===String(year));
@@ -1111,7 +1119,17 @@ const BLModule = {
         return String(b.createdBy) === String(curUser.id) || String(b.deliveredBy) === String(curUser.id);
       });
     }
-    if (q) { const ql=q.toLowerCase(); items=items.filter(b=>(b.ref+' '+(b.driverName||'')+' '+(b.truckIMM||'')+' '+(b.linkedBrRef||'')+' '+(brMap[b.brId]?.ref||'')+' '+(cliMap[b.clientId]?.name||'')+' '+(DB.getById('suppliers', b.supplierId)?.name||'')).toLowerCase().includes(ql)); }
+    if (q) {
+      const ql = q.toLowerCase();
+      items = items.filter(b => {
+        const cliName = cliMap[b.clientId]?.name || b.clientName || '';
+        const supName = DB.getById('suppliers', b.supplierId)?.name || b.supplierName || '';
+        const brRef = brMap[b.brId]?.ref || b.linkedBrRef || '';
+        const lineText = (b.lines || []).map(l => (l.designation || l.articleName || '')).join(' ');
+        const full = `${b.ref||''} ${b.driverName||''} ${b.truckIMM||''} ${b.destinationAddress||''} ${brRef} ${cliName} ${supName} ${b.createdByName||''} ${b.notes||''} ${lineText}`.toLowerCase();
+        return full.includes(ql);
+      });
+    }
     if (status!=='all') items=items.filter(b=>(b.status||'open')===status);
     if (this._filters.clientId && this._filters.clientId!=='all') items=items.filter(b=>String(b.clientId)===String(this._filters.clientId));
     if (this._filters.supplierId && this._filters.supplierId!=='all') items=items.filter(b=>String(b.supplierId)===String(this._filters.supplierId));
@@ -3348,7 +3366,18 @@ const BLModule = {
 
   updateHistory() {
     const c = document.getElementById('bl-history-container');
-    if (c) c.innerHTML = this._renderHistoryHTML();
+    if (!c) return;
+    const input = document.getElementById('bl-history-search-input');
+    const selStart = input?.selectionStart;
+    const selEnd = input?.selectionEnd;
+    c.innerHTML = this._renderHistoryHTML();
+    const restored = document.getElementById('bl-history-search-input');
+    if (restored) {
+      restored.focus();
+      try {
+        if (selStart !== null && selStart !== undefined) restored.setSelectionRange(selStart, selEnd);
+      } catch(e) {}
+    }
   },
 
   exportHistory() {
@@ -3415,7 +3444,7 @@ const BLModule = {
       <div class="smart-filters">
         <div class="sf-search">
           <i class="fas fa-search sf-search-icon"></i>
-          <input type="text" class="sf-search-input" value="${Utils.escHTML(f.q)}" placeholder="${isAR ? 'بحث بالمرجع، الزبون، المادة...' : 'Rechercher réf, client, article...'}" oninput="BLModule._historyFilters.q=this.value;BLModule.updateHistory()">
+          <input type="text" id="bl-history-search-input" class="sf-search-input" value="${Utils.escHTML(f.q)}" placeholder="${isAR ? 'بحث بالمرجع، الزبون، المادة...' : 'Rechercher réf, client, article...'}" oninput="BLModule._historyFilters.q=this.value;BLModule.updateHistory()">
         </div>
         <div class="sf-chips">
           <select class="sf-chip-select" onchange="BLModule._historyFilters.clientId=this.value;BLModule.updateHistory()">
@@ -3464,6 +3493,7 @@ const SupplierPortalModule = {
   _filterSupplierId: 'all',
   _filterStatus: 'all',
   _activeTab: 'validation',
+  _searchQ: '',
   _suiviDateFrom: '',
   _suiviDateTo: '',
   _suiviSearch: '',
@@ -3498,6 +3528,17 @@ const SupplierPortalModule = {
     else if (this._filterStatus === 'delivered') items = deliveredItems;
     else if (this._filterStatus === 'returned') items = returnedItems;
     else if (this._filterStatus !== 'all') items = allSupplierItems.filter(b => b.status === this._filterStatus);
+
+    if (this._searchQ) {
+      const q = this._searchQ.toLowerCase();
+      items = items.filter(b => {
+        const cliName = DB.getById('clients', b.clientId)?.name || b.clientName || '';
+        const supName = allSuppliers.find(s => s.id === b.supplierId)?.name || b.supplierName || '';
+        const lineText = (b.lines || []).map(l => l.designation || '').join(' ');
+        const full = `${b.ref||''} ${b.driverName||''} ${b.truckIMM||''} ${b.linkedBrRef||''} ${b.ticketPesee||''} ${cliName} ${supName} ${b.createdByName||''} ${lineText}`.toLowerCase();
+        return full.includes(q);
+      });
+    }
 
     items.sort((a,b) => String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 
@@ -3567,6 +3608,12 @@ const SupplierPortalModule = {
       ${this._activeTab === 'validation' ? `
       <div class="card" style="margin-bottom:16px">
         <div class="filters-bar" style="padding:14px 18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <div class="filter-group" style="flex:2;min-width:180px">
+            <label>${isAR ? 'بحث سريع' : 'Recherche rapide'}</label>
+            <input type="text" id="supplier-portal-search-input" value="${Utils.escHTML(this._searchQ||'')}" placeholder="${isAR ? 'بحث بالمرجع، السائق، الشاحنة، المادة...' : 'Réf, Chauffeur, Camion, Article...'}"
+              oninput="SupplierPortalModule._searchQ=this.value;App.reloadDebounced('supplier_portal')">
+          </div>
+
           ${!isSupplier ? `
           <div class="filter-group" style="min-width:200px">
             <label>${isAR ? 'مصنع / مورد' : 'Usine / Fournisseur'}</label>
@@ -3763,7 +3810,7 @@ const SupplierPortalModule = {
         <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${this._suiviDateFrom}" onchange="SupplierPortalModule._suiviDateFrom=this.value;App.loadModule(App._currentModule)">
         <span style="color:var(--text4);font-size:12px">→</span>
         <input type="date" class="input" style="padding:6px 10px;font-size:12px" value="${this._suiviDateTo}" onchange="SupplierPortalModule._suiviDateTo=this.value;App.loadModule(App._currentModule)">
-        <input type="text" class="input" style="padding:6px 10px;font-size:12px;flex:1;min-width:180px" value="${Utils.escHTML(this._suiviSearch||'')}" onchange="SupplierPortalModule._suiviSearch=this.value;App.loadModule(App._currentModule)" placeholder="${isAR ? '🔍 بحث (المرجع، المادة...)' : '🔍 Rechercher (réf, produit...)'}">
+        <input type="text" id="suivi-search-input" class="input" style="padding:6px 10px;font-size:12px;flex:1;min-width:180px" value="${Utils.escHTML(this._suiviSearch||'')}" oninput="SupplierPortalModule._suiviSearch=this.value;App.reloadDebounced(App._currentModule)" placeholder="${isAR ? '🔍 بحث (المرجع، المادة...)' : '🔍 Rechercher (réf, produit...)'}">
         <button class="btn btn-outline" style="font-size:12px" onclick="SupplierPortalModule._suiviDateFrom='';SupplierPortalModule._suiviDateTo='';SupplierPortalModule._suiviSearch='';App.loadModule(App._currentModule)"><i class="fas fa-times"></i> ${isAR ? 'إعادة ضبط' : 'Reset'}</button>
       </div>
       <div style="margin-bottom:16px">
@@ -3956,7 +4003,13 @@ const BCSupervisionModule = {
 
     if (q) {
       const ql = q.toLowerCase();
-      items = items.filter(b => (b.ref + ' ' + (b.driverName||'') + ' ' + (b.truckIMM||'') + ' ' + (b.linkedBrRef||'') + ' ' + (cliMap[b.clientId]?.name||'') + ' ' + (supMap[b.supplierId]?.name||'')).toLowerCase().includes(ql));
+      items = items.filter(b => {
+        const cliName = cliMap[b.clientId]?.name || b.clientName || '';
+        const supName = supMap[b.supplierId]?.name || b.supplierName || '';
+        const lineText = (b.lines || []).map(l => (l.designation || l.articleName || '')).join(' ');
+        const full = `${b.ref||''} ${b.driverName||''} ${b.truckIMM||''} ${b.linkedBrRef||''} ${b.ticketPesee||''} ${cliName} ${supName} ${b.createdByName||''} ${b.notes||''} ${lineText}`.toLowerCase();
+        return full.includes(ql);
+      });
     }
     if (supplierId !== 'all') items = items.filter(b => String(b.supplierId) === String(supplierId));
     if (driver !== 'all') items = items.filter(b => (b.driverName||'') === driver);
@@ -4022,7 +4075,7 @@ const BCSupervisionModule = {
         <div class="filters-bar" style="padding:14px 18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
           <div class="filter-group" style="flex:2;min-width:180px">
             <label>${isAR ? 'بحث سريع' : 'Recherche rapide'}</label>
-            <input type="text" value="${Utils.escHTML(q)}" placeholder="${isAR ? 'مرجع BCH، سائق، شاحنة...' : 'Réf BCH, Chauffeur, Camion, BR...'}"
+            <input type="text" id="bc-supervision-search-input" value="${Utils.escHTML(q)}" placeholder="${isAR ? 'مرجع BCH، سائق، شاحنة...' : 'Réf BCH, Chauffeur, Camion, BR...'}"
               oninput="BCSupervisionModule._filters.q=this.value;App.reloadDebounced('bc_supervision')">
           </div>
           <div class="filter-group">
@@ -4892,7 +4945,7 @@ const AdminCaisseModule = {
   _adminTab: 'overview',  /* overview | deposits | withdrawals | mini_caisses */
   _miniCaisseSubView: 'daily', /* daily | sessions | caissiers */
   _miniCaisseStatusFilter: 'all', /* all | closed | open */
-  _filters: { dateFrom:'', dateTo:'', userId:'all' },
+  _filters: { q:'', dateFrom:'', dateTo:'', userId:'all' },
   _charts: {},
 
   render() {
@@ -4922,10 +4975,12 @@ const AdminCaisseModule = {
     const totalBCH_expected = allBLs.filter(b=>b.status!=='cancelled'&&b.status!=='returned').reduce((t,b)=>t+(Number(b.totalTTC)||0),0);
 
     // ── Filtered data (for Deposits / Withdrawals tabs) ──
+    const qf = (this._filters.q || '').toLowerCase().trim();
     const df = this._filters.dateFrom;
     const dt = this._filters.dateTo;
     const fu = this._filters.userId;
     let filteredCa = [...caAll];
+    if (qf) filteredCa = filteredCa.filter(t => (t.note||'' + ' ' + (t.destination||'') + ' ' + (t.source||'') + ' ' + (t.userName||'') + ' ' + (t.bankRef||'')).toLowerCase().includes(qf));
     if (df) filteredCa = filteredCa.filter(t=>(t.createdAt||'').slice(0,10)>=df);
     if (dt) filteredCa = filteredCa.filter(t=>(t.createdAt||'').slice(0,10)<=dt);
     if (fu && fu!=='all') filteredCa = filteredCa.filter(t=>String(t.userId)===String(fu));
@@ -5006,6 +5061,11 @@ const AdminCaisseModule = {
     // ── Filters bar (for Deposits / Withdrawals) ──
     const filtersBar = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:14px;background:var(--bg2);border-radius:12px;border:1px solid var(--border);margin-bottom:16px">
+      <div class="filter-group" style="flex:1;min-width:180px">
+        <label>${isAR?'بحث':'Recherche'}</label>
+        <input type="text" id="admin-caisse-search-input" value="${Utils.escHTML(this._filters.q||'')}" placeholder="${isAR?'بحث في المعاملات...':'Rechercher transaction...'}"
+          oninput="AdminCaisseModule._filters.q=this.value;App.reloadDebounced('admin_caisse')">
+      </div>
       <div class="filter-group">
         <label>${isAR?'من تاريخ':'Du'}</label>
         <input type="date" value="${df||''}" onchange="AdminCaisseModule._filters.dateFrom=this.value;App.loadModule('admin_caisse')">
@@ -5021,7 +5081,7 @@ const AdminCaisseModule = {
           ${allUsers.map(u=>`<option value="${u.id}" ${String(fu)===String(u.id)?'selected':''}>${Utils.escHTML(u.name)}</option>`).join('')}
         </select>
       </div>
-      <button class="btn btn-outline" onclick="AdminCaisseModule._filters={dateFrom:'',dateTo:'',userId:'all'};App.loadModule('admin_caisse')"><i class="fas fa-times"></i></button>
+      <button class="btn btn-outline" onclick="AdminCaisseModule._filters={q:'',dateFrom:'',dateTo:'',userId:'all'};App.loadModule('admin_caisse')"><i class="fas fa-times"></i></button>
       <div style="margin-left:auto;display:flex;gap:8px">
         <span style="font-size:12px;color:var(--text3);align-self:center">
           ${isAR?'إجمالي مصفى:':'Filtré:'} <strong>${filteredCa.length}</strong> ${isAR?'معاملة':'opérations'}
@@ -6494,8 +6554,13 @@ const AdminCaisseModule = {
 // SUPPLIERS MODULE
 // ═══════════════════════════════════════════════════════════════
 const SuppliersModule = {
+  _q: '',
   render() {
-    const items = DB.getAll('suppliers').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    let items = DB.getAll('suppliers').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    if (this._q) {
+      const q = this._q.toLowerCase();
+      items = items.filter(s => `${s.name||''} ${s.abbrev||''} ${s.phone||''} ${s.wilaya||''} ${s.address||''} ${s.contact||''} ${s.nif||''} ${s.rc||''}`.toLowerCase().includes(q));
+    }
     const brMap = {};
     DB.getAll('brs').forEach(b=>{ if(!brMap[b.supplierId]) brMap[b.supplierId]=0; brMap[b.supplierId]++; });
     return `<div style="padding:24px">
@@ -6505,6 +6570,13 @@ const SuppliersModule = {
         <div class="card-actions">
           <span class="badge badge-secondary">${items.length}</span>
           <button class="btn btn-primary" onclick="SuppliersModule.showCreate()"><i class="fas fa-plus"></i> ${T.get('sup_new')}</button>
+        </div>
+      </div>
+      <div class="filters-bar" style="padding:12px 18px">
+        <div class="filter-group" style="flex:1">
+          <label>${T.isRTL() ? 'بحث عن مورد / مصنع' : 'Rechercher fournisseur / usine'}</label>
+          <input type="text" id="sup-search-input" value="${Utils.escHTML(this._q)}" placeholder="${T.isRTL() ? 'بحث بالاسم، الرمز، الهاتف، الولاية...' : 'Rechercher par nom, abréviation, téléphone, wilaya...'}"
+            oninput="SuppliersModule._q=this.value;App.reloadDebounced('suppliers')">
         </div>
       </div>
       <div class="table-wrap">
@@ -6600,8 +6672,13 @@ const SuppliersModule = {
 };
 
 const ClientsModule = {
+  _q: '',
   render() {
-    const items = DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    let items = DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    if (this._q) {
+      const q = this._q.toLowerCase();
+      items = items.filter(c => `${c.name||''} ${c.phone||''} ${c.wilaya||''} ${c.address||''} ${c.contact||''} ${c.nif||''} ${c.rc||''}`.toLowerCase().includes(q));
+    }
     const brMap = {};
     DB.getAll('brs').forEach(b=>{ if(!brMap[b.supplierId]) brMap[b.supplierId]=0; brMap[b.supplierId]++; });
     return `<div style="padding:24px">
@@ -6611,6 +6688,13 @@ const ClientsModule = {
         <div class="card-actions">
           <span class="badge badge-secondary">${items.length}</span>
           <button class="btn btn-primary" onclick="ClientsModule.showCreate()"><i class="fas fa-plus"></i> ${T.get('cli_new')}</button>
+        </div>
+      </div>
+      <div class="filters-bar" style="padding:12px 18px">
+        <div class="filter-group" style="flex:1">
+          <label>${T.isRTL() ? 'بحث عن زبون' : 'Rechercher un client'}</label>
+          <input type="text" id="cli-search-input" value="${Utils.escHTML(this._q)}" placeholder="${T.isRTL() ? 'بحث بالاسم، الهاتف، الولاية، العنوان...' : 'Rechercher par nom, téléphone, wilaya, adresse...'}"
+            oninput="ClientsModule._q=this.value;App.reloadDebounced('clients')">
         </div>
       </div>
       <div class="table-wrap">
@@ -7813,10 +7897,15 @@ const CatalogueModule = {
 // USERS MODULE
 // ═══════════════════════════════════════════════════════════════
 const UsersModule = {
+  _q: '',
   render() {
     if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> ${T.isRTL() ? 'وصول المسؤول فقط' : 'Accès administrateur'}</div></div>`;
     const isAR = T.isRTL();
-    const users = DB.getAll('users');
+    let users = DB.getAll('users');
+    if (this._q) {
+      const q = this._q.toLowerCase();
+      users = users.filter(u => `${u.name||''} ${u.username||''} ${u.phone||''} ${u.department||''} ${u.jobTitle||''} ${u.role||''}`.toLowerCase().includes(q));
+    }
     const sessions = DB.getAll('sessions');
     return `<div style="padding:24px">
     <div class="card">
@@ -7826,6 +7915,13 @@ const UsersModule = {
           <p style="font-size:12px;color:var(--text4);margin:4px 0 0">${isAR ? 'إدارة ملفات الموظفين، الصور، الأقسام، الرواتب والصلاحيات' : 'Gestion des profils employés, photos, départements, salaires et permissions'}</p>
         </div>
         <button class="btn btn-primary" onclick="UsersModule.showCreate()"><i class="fas fa-user-plus"></i> ${T.get('usr_new')}</button>
+      </div>
+      <div class="filters-bar" style="padding:12px 18px">
+        <div class="filter-group" style="flex:1">
+          <label>${isAR ? 'بحث عن مستخدم / موظف' : 'Rechercher un collaborateur / utilisateur'}</label>
+          <input type="text" id="user-search-input" value="${Utils.escHTML(this._q)}" placeholder="${isAR ? 'بحث بالاسم، المعرف، الهاتف، القسم، المنصب...' : 'Rechercher par nom, identifiant, téléphone, département, poste...'}"
+            oninput="UsersModule._q=this.value;App.reloadDebounced('users')">
+        </div>
       </div>
       <div class="table-wrap">
         <table class="data-table" style="font-size:13px">
@@ -9707,13 +9803,22 @@ const SettingsModule = {
 // ═══════════════════════════════════════════════════════════════
 const RecycleBinModule = {
   _filter: 'all',
+  _q: '',
 
   render() {
     if (!Auth.isAdmin()) return `<div style="padding:60px;text-align:center;color:var(--text3)"><i class="fas fa-lock" style="font-size:48px;opacity:.2;display:block;margin-bottom:12px"></i>${T.isRTL()?'للمسؤول فقط':'Réservé à l\'administrateur'}</div>`;
     const isAR = T.isRTL();
     const all = DB.getAll('recycle_bin').slice().reverse();
     const filter = this._filter || 'all';
-    const items = filter === 'all' ? all : all.filter(e => e.collection === filter);
+    let items = filter === 'all' ? all : all.filter(e => e.collection === filter);
+    if (this._q) {
+      const q = this._q.toLowerCase();
+      items = items.filter(e => {
+        const item = e.item || {};
+        const str = `${item.ref||''} ${item.name||''} ${item.username||''} ${item.supplier||''} ${item.client||''} ${item.designation||''} ${e.deletedByName||''}`.toLowerCase();
+        return str.includes(q);
+      });
+    }
     const collections = [...new Set(all.map(e=>e.collection))];
     const pending = all.filter(e=>!e.restored).length;
     const restored = all.filter(e=>e.restored).length;
@@ -9849,8 +9954,9 @@ const RecycleBinModule = {
         </div>
       </div>
 
-      <!-- ─── FILTER TABS + SELECT ALL ─── -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;align-items:center">
+      <!-- ─── FILTER TABS + SEARCH + SELECT ALL ─── -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;align-items:center">
+        <input type="text" id="rb-search-input" value="${Utils.escHTML(this._q||'')}" placeholder="${isAR ? '🔍 بحث في المحذوفات...' : '🔍 Rechercher dans la corbeille...'}" oninput="RecycleBinModule._q=this.value;App.reloadDebounced('recycle_bin')" style="padding:6px 14px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg2);color:var(--text);font-size:12px;min-width:200px">
         ${filterTabs}
         ${items.length ? `<button onclick="RecycleBinModule.selectAll()"
           style="margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;
@@ -10365,7 +10471,7 @@ const BankModule = {
           <option value="deposit" ${f.type==='deposit'?'selected':''}>${isAR ? 'واردات (+)' : 'Entrants (+)'}</option>
           <option value="payment" ${f.type==='payment'?'selected':''}>${isAR ? 'صادرات (−)' : 'Sortants (−)'}</option>
         </select>
-        <input type="text" placeholder="${isAR ? '🔍 بحث...' : '🔍 Recherche...'}" value="${Utils.escHTML(f.q)}" onkeyup="if(event.key==='Enter')updateBankFilter('q',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:150px">
+        <input type="text" id="bank-search-input" placeholder="${isAR ? '🔍 بحث...' : '🔍 Recherche...'}" value="${Utils.escHTML(f.q||'')}" oninput="BankModule._filters.q=this.value;BankModule._page=0;App.reloadDebounced('bank')" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:150px">
         <button class="btn btn-xs" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="BankModule.exportExcel()">
           <i class="fas fa-file-excel"></i> Excel
         </button>
@@ -11170,7 +11276,7 @@ const PartnersModule = {
 
     if (f.q) {
       const q = f.q.toLowerCase();
-      clientStats = clientStats.filter(c => (c.name||'').toLowerCase().includes(q) || (c.phone||'').toLowerCase().includes(q));
+      clientStats = clientStats.filter(c => `${c.name||''} ${c.phone||''} ${c.wilaya||''} ${c.address||''} ${c.contact||''} ${c.nif||''} ${c.rc||''}`.toLowerCase().includes(q));
     }
     if (f.wilaya && f.wilaya !== 'all') {
       clientStats = clientStats.filter(c => c.wilaya === f.wilaya);
@@ -11185,7 +11291,7 @@ const PartnersModule = {
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <div style="position:relative">
           <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text4)"></i>
-          <input type="text" placeholder="${isAR?'بحث...':'Rechercher...'}" value="${Utils.escHTML(f.q)}" oninput="PartnersModule._listFilters.q=this.value;App.loadModule('partners')" style="padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:240px;background:var(--bg);color:var(--text);outline:none" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='var(--border)'">
+          <input type="text" id="partner-client-search" placeholder="${isAR?'بحث...':'Rechercher...'}" value="${Utils.escHTML(f.q)}" oninput="PartnersModule._listFilters.q=this.value;App.reloadDebounced('partners')" style="padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:240px;background:var(--bg);color:var(--text);outline:none" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='var(--border)'">
         </div>
         <select onchange="PartnersModule._listFilters.wilaya=this.value;App.loadModule('partners')" style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);outline:none;cursor:pointer">
           <option value="all">${isAR?'كل الولايات':'Toutes les wilayas'}</option>
@@ -11242,7 +11348,7 @@ const PartnersModule = {
 
     if (f.q) {
       const q = f.q.toLowerCase();
-      supStats = supStats.filter(s => (s.name||'').toLowerCase().includes(q) || (s.phone||'').toLowerCase().includes(q));
+      supStats = supStats.filter(s => `${s.name||''} ${s.abbrev||''} ${s.phone||''} ${s.wilaya||''} ${s.address||''} ${s.contact||''} ${s.nif||''} ${s.rc||''}`.toLowerCase().includes(q));
     }
     if (f.supStatus === 'paid') {
       supStats = supStats.filter(s => s.remaining <= 0 && s.totalPurchase > 0);
@@ -11259,7 +11365,7 @@ const PartnersModule = {
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <div style="position:relative">
           <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text4)"></i>
-          <input type="text" placeholder="${isAR?'بحث...':'Rechercher...'}" value="${Utils.escHTML(f.q)}" oninput="PartnersModule._listFilters.q=this.value;App.loadModule('partners')" style="padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:240px;background:var(--bg);color:var(--text);outline:none" onfocus="this.style.borderColor='#8b5cf6'" onblur="this.style.borderColor='var(--border)'">
+          <input type="text" id="partner-supplier-search" placeholder="${isAR?'بحث...':'Rechercher...'}" value="${Utils.escHTML(f.q)}" oninput="PartnersModule._listFilters.q=this.value;App.reloadDebounced('partners')" style="padding:10px 14px 10px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;width:240px;background:var(--bg);color:var(--text);outline:none" onfocus="this.style.borderColor='#8b5cf6'" onblur="this.style.borderColor='var(--border)'">
         </div>
         <select onchange="PartnersModule._listFilters.supStatus=this.value;App.loadModule('partners')" style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);outline:none;cursor:pointer">
           <option value="all" ${f.supStatus==='all'?'selected':''}>${isAR?'كل الحالات':'Tous les statuts'}</option>
@@ -12687,7 +12793,7 @@ const PointageModule = {
       </div>
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
-        <input type="text" class="input" style="padding:6px 12px;font-size:12px;max-width:300px" value="${Utils.escHTML(this._searchQ||'')}" onchange="PointageModule._searchQ=this.value;PointageModule._page=0;App.loadModule('pointage')" placeholder="${isAR ? '🔍 البحث عن موظف...' : '🔍 Rechercher un collaborateur...'}">
+        <input type="text" id="pointage-search-input" class="input" style="padding:6px 12px;font-size:12px;max-width:300px" value="${Utils.escHTML(this._searchQ||'')}" oninput="PointageModule._searchQ=this.value;PointageModule._page=0;App.reloadDebounced('pointage')" placeholder="${isAR ? '🔍 البحث عن موظف...' : '🔍 Rechercher un collaborateur...'}">
         <div style="display:flex;gap:6px;align-items:center;font-size:12px">
           <span style="color:var(--text4)">${filteredData.length} ${isAR ? 'موظف · صفحة' : 'employé(s) · Page'} ${this._page+1}/${totalPages}</span>
           <button class="btn btn-outline btn-sm" ${this._page<=0?'disabled':''} onclick="PointageModule._page--;App.loadModule('pointage')"><i class="fas ${isAR ? 'fa-chevron-right' : 'fa-chevron-left'}"></i></button>
@@ -13801,6 +13907,7 @@ const ChargesModule = {
   _filter: 'all',
   _dateStart: null,
   _dateEnd: null,
+  _q: '',
   _displayLimit: 50,
   
   render() {
@@ -13849,6 +13956,10 @@ const ChargesModule = {
     
     charges = charges.filter(c => (c.date||'') >= ds && (c.date||'') <= de);
     if (this._filter !== 'all') charges = charges.filter(c => c.type === this._filter);
+    if (this._q) {
+      const q = this._q.toLowerCase();
+      charges = charges.filter(c => `${c.label||''} ${c.subtype||''} ${c.category||''} ${c.createdByName||''}`.toLowerCase().includes(q));
+    }
     
     const total = charges.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
     const totalAuto = charges.filter(c => c.type === 'auto').reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
@@ -13874,7 +13985,8 @@ const ChargesModule = {
 
       <!-- Filters Bar -->
       <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:12px 16px;border-radius:12px;border:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap;gap:10px">
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="charges-search-input" value="${Utils.escHTML(this._q||'')}" placeholder="${isAR ? '🔍 بحث في التكاليف...' : '🔍 Rechercher une charge...'}" oninput="ChargesModule._q=this.value;App.reloadDebounced('charges')" style="padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:180px">
           <button class="btn btn-sm ${this._filter==='all'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='all';App.loadModule('charges')">${isAR ? 'الكل' : 'Toutes'}</button>
           <button class="btn btn-sm ${this._filter==='auto'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='auto';App.loadModule('charges')">${isAR ? 'تلقائية' : 'Automatiques'}</button>
           <button class="btn btn-sm ${this._filter==='manual'?'btn-primary':'btn-outline'}" onclick="ChargesModule._filter='manual';App.loadModule('charges')">${isAR ? 'يدوية' : 'Manuelles'}</button>

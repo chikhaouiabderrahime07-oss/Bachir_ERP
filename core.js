@@ -3633,3 +3633,456 @@ const SessionMgr = {
     return updated;
   }
 };
+
+// ─── GLOBAL OMNI-SEARCH (Spotlight & Quick Jump) ──────────────
+const GlobalSearch = {
+  _isOpen: false,
+  _activeIdx: -1,
+  _results: [],
+  _activeCategory: 'all',
+
+  init() {
+    if (this._inited) return;
+    this._inited = true;
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        this.toggle();
+      } else if (e.key === 'Escape' && this._isOpen) {
+        this.close();
+      }
+    });
+  },
+
+  toggle() {
+    if (this._isOpen) this.close();
+    else this.open();
+  },
+
+  open(defaultQuery = '') {
+    if (!Auth.isLoggedIn()) return;
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+    let modal = document.getElementById('globalSearchModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'globalSearchModal';
+      modal.className = 'omni-search-backdrop';
+      modal.onclick = (e) => {
+        if (e.target === modal) GlobalSearch.close();
+      };
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="omni-search-dialog ${isAR ? 'rtl' : ''}" onclick="event.stopPropagation()">
+        <div class="omni-search-header">
+          <i class="fas fa-search omni-search-icon"></i>
+          <input type="text" id="global-omni-search-input" 
+            class="omni-search-input" 
+            placeholder="${isAR ? 'ابحث عن أي شيء (سندات، زبائن، موردين، مواد، سائقين)...' : 'Rechercher partout (BR, BL, clients, fournisseurs, articles, chauffeurs)...'}"
+            autocomplete="off"
+            value="${Utils.escHTML(defaultQuery)}"
+            oninput="GlobalSearch.handleInput(this.value)"
+            onkeydown="GlobalSearch.handleKeydown(event)">
+          <div class="omni-search-kbd-hint"><kbd>ESC</kbd></div>
+          <button class="omni-search-close" onclick="GlobalSearch.close()" title="${isAR ? 'إغلاق' : 'Fermer'}"><i class="fas fa-times"></i></button>
+        </div>
+
+        <div class="omni-search-categories">
+          <button class="omni-cat-btn ${this._activeCategory==='all'?'active':''}" onclick="GlobalSearch.setCategory('all')">${isAR ? 'الكل' : 'Tout'}</button>
+          <button class="omni-cat-btn ${this._activeCategory==='brs'?'active':''}" onclick="GlobalSearch.setCategory('brs')"><i class="fas fa-receipt"></i> BR</button>
+          <button class="omni-cat-btn ${this._activeCategory==='bls'?'active':''}" onclick="GlobalSearch.setCategory('bls')"><i class="fas fa-truck"></i> BL/BCH</button>
+          <button class="omni-cat-btn ${this._activeCategory==='clients'?'active':''}" onclick="GlobalSearch.setCategory('clients')"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبائن' : 'Clients'}</button>
+          <button class="omni-cat-btn ${this._activeCategory==='suppliers'?'active':''}" onclick="GlobalSearch.setCategory('suppliers')"><i class="fas fa-industry"></i> ${isAR ? 'الموردون' : 'Fournisseurs'}</button>
+          <button class="omni-cat-btn ${this._activeCategory==='articles'?'active':''}" onclick="GlobalSearch.setCategory('articles')"><i class="fas fa-box"></i> ${isAR ? 'المواد' : 'Articles'}</button>
+          <button class="omni-cat-btn ${this._activeCategory==='drivers'?'active':''}" onclick="GlobalSearch.setCategory('drivers')"><i class="fas fa-id-card"></i> ${isAR ? 'السائقون' : 'Chauffeurs'}</button>
+          <button class="omni-cat-btn ${this._activeCategory==='users'?'active':''}" onclick="GlobalSearch.setCategory('users')"><i class="fas fa-users"></i> ${isAR ? 'المستخدمون' : 'Utilisateurs'}</button>
+        </div>
+
+        <div class="omni-search-body" id="omni-search-results">
+        </div>
+
+        <div class="omni-search-footer">
+          <div class="omni-footer-hints">
+            <span><kbd>↑</kbd> <kbd>↓</kbd> ${isAR ? 'للتنقل' : 'pour naviguer'}</span>
+            <span><kbd>↵</kbd> ${isAR ? 'للاختيار' : 'pour ouvrir'}</span>
+            <span><kbd>ESC</kbd> ${isAR ? 'للإغلاق' : 'pour quitter'}</span>
+          </div>
+          <div class="omni-footer-brand">
+            <span>Abderrahime Intelligent ERP</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    modal.style.display = 'flex';
+    this._isOpen = true;
+    this._activeIdx = -1;
+    
+    setTimeout(() => {
+      const inp = document.getElementById('global-omni-search-input');
+      if (inp) {
+        inp.focus();
+        if (defaultQuery) this.handleInput(defaultQuery);
+        else this.renderEmptyState();
+      }
+    }, 50);
+  },
+
+  close() {
+    const modal = document.getElementById('globalSearchModal');
+    if (modal) modal.style.display = 'none';
+    this._isOpen = false;
+  },
+
+  setCategory(cat) {
+    this._activeCategory = cat;
+    const input = document.getElementById('global-omni-search-input');
+    const q = input ? input.value : '';
+    this.open(q);
+  },
+
+  handleInput(query) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) {
+      this.renderEmptyState();
+      return;
+    }
+    this.search(q);
+  },
+
+  search(q) {
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+    const results = [];
+    const cat = this._activeCategory;
+
+    // 1. Search BRs
+    if (cat === 'all' || cat === 'brs') {
+      const brs = DB.getAll('brs') || [];
+      brs.forEach(br => {
+        const linesStr = (br.lines || []).map(l => `${l.designation||''} ${l.code||''}`).join(' ');
+        const text = `${br.ref||''} ${br.brNumber||''} ${br.supplierName||''} ${linesStr} ${br.ticketPesee||''} ${br.chauffeur||''} ${br.camion||''} ${br.createdByName||''} ${br.notes||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'br',
+            category: 'Bons de Réception',
+            categoryAR: 'وصولات الاستلام',
+            icon: 'fa-receipt',
+            color: '#3b82f6',
+            title: `BR #${br.ref || br.brNumber || br.id}`,
+            subtitle: `${br.supplierName || 'Fournisseur'} · ${Utils.fmtDate(br.date)} · ${Utils.fmtCurrency(br.totalTTC || br.totalHT || 0)}`,
+            detail: (br.lines || []).map(l => l.designation).slice(0, 3).join(', ') + ((br.lines || []).length > 3 ? '...' : ''),
+            action: () => {
+              App.loadModule('brs');
+              setTimeout(() => { if (typeof BRModule !== 'undefined' && BRModule.viewBR) BRModule.viewBR(br.id); }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    // 2. Search BLs / BCH
+    if (cat === 'all' || cat === 'bls') {
+      const bls = DB.getAll('bls') || [];
+      bls.forEach(bl => {
+        const linesStr = (bl.lines || []).map(l => `${l.designation||''}`).join(' ');
+        const text = `${bl.ref||''} ${bl.blNumber||''} ${bl.clientName||''} ${bl.supplierName||''} ${linesStr} ${bl.ticketPesee||''} ${bl.driverName||''} ${bl.truckPlate||''} ${bl.destination||''} ${bl.createdByName||''} ${bl.notes||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'bl',
+            category: 'Bons de Chargement',
+            categoryAR: 'سندات الشحن',
+            icon: 'fa-truck',
+            color: '#10b981',
+            title: `BL/BCH #${bl.ref || bl.blNumber || bl.id}`,
+            subtitle: `${bl.clientName || bl.supplierName || 'Client'} · ${Utils.fmtDate(bl.date)} · ${Utils.fmtCurrency(bl.totalTTC || bl.total || 0)} · ${bl.driverName || bl.truckPlate || ''}`,
+            detail: (bl.lines || []).map(l => l.designation).slice(0, 3).join(', ') + ((bl.lines || []).length > 3 ? '...' : ''),
+            action: () => {
+              App.loadModule('bls');
+              setTimeout(() => { if (typeof BLModule !== 'undefined' && BLModule.viewBL) BLModule.viewBL(bl.id); }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    // 3. Search Clients
+    if (cat === 'all' || cat === 'clients') {
+      const clients = DB.getAll('clients') || [];
+      clients.forEach(c => {
+        const text = `${c.name||''} ${c.abbrev||''} ${c.phone||''} ${c.wilaya||''} ${c.address||''} ${c.contact||''} ${c.rc||''} ${c.nif||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'client',
+            category: 'Clients',
+            categoryAR: 'الزبائن',
+            icon: 'fa-user-tie',
+            color: '#8b5cf6',
+            title: c.name || 'Client',
+            subtitle: `${c.phone || ''} ${c.wilaya ? '· Wilaya: ' + c.wilaya : ''} ${c.address ? '· ' + c.address : ''}`,
+            detail: c.contact ? `Contact: ${c.contact}` : (c.nif ? `NIF: ${c.nif}` : ''),
+            action: () => {
+              App.loadModule('clients');
+              setTimeout(() => {
+                if (typeof ClientsModule !== 'undefined') {
+                  ClientsModule._q = c.name;
+                  App.reload('clients');
+                }
+              }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    // 4. Search Suppliers
+    if (cat === 'all' || cat === 'suppliers') {
+      const suppliers = DB.getAll('suppliers') || [];
+      suppliers.forEach(s => {
+        const text = `${s.name||''} ${s.abbrev||''} ${s.phone||''} ${s.wilaya||''} ${s.address||''} ${s.contact||''} ${s.rc||''} ${s.nif||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'supplier',
+            category: 'Fournisseurs',
+            categoryAR: 'الموردون',
+            icon: 'fa-industry',
+            color: '#f59e0b',
+            title: s.name || 'Fournisseur',
+            subtitle: `${s.phone || ''} ${s.wilaya ? '· Wilaya: ' + s.wilaya : ''} ${s.address ? '· ' + s.address : ''}`,
+            detail: s.contact ? `Contact: ${s.contact}` : (s.nif ? `NIF: ${s.nif}` : ''),
+            action: () => {
+              App.loadModule('suppliers');
+              setTimeout(() => {
+                if (typeof SuppliersModule !== 'undefined') {
+                  SuppliersModule._q = s.name;
+                  App.reload('suppliers');
+                }
+              }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    // 5. Search Articles (Catalogue)
+    if (cat === 'all' || cat === 'articles') {
+      const articles = DB.getAll('articles') || [];
+      articles.forEach(a => {
+        const text = `${a.name||a.designation||''} ${a.code||''} ${a.unit||''} ${a.category||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'article',
+            category: 'Articles / Produits',
+            categoryAR: 'المواد والمنتجات',
+            icon: 'fa-box',
+            color: '#06b6d4',
+            title: a.name || a.designation || 'Article',
+            subtitle: `${a.unit ? 'Unité: ' + a.unit : ''} ${a.price ? '· Prix: ' + Utils.fmtCurrency(a.price) : ''}`,
+            detail: a.code ? `Code: ${a.code}` : '',
+            action: () => {
+              App.loadModule('catalogue');
+              setTimeout(() => {
+                if (typeof CatalogueModule !== 'undefined') {
+                  CatalogueModule._tab = 'articles';
+                  CatalogueModule._q = a.name || a.designation || '';
+                  App.reload('catalogue');
+                }
+              }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    // 6. Search Drivers / Trucks
+    if (cat === 'all' || cat === 'drivers') {
+      const drivers = DB.getAll('drivers') || [];
+      drivers.forEach(d => {
+        const text = `${d.name||''} ${d.imm||d.truckPlate||''} ${d.phone||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'driver',
+            category: 'Chauffeurs & Camions',
+            categoryAR: 'السائقون والشاحنات',
+            icon: 'fa-id-card',
+            color: '#ec4899',
+            title: d.name || 'Chauffeur',
+            subtitle: `${d.imm || d.truckPlate ? 'Camion: ' + (d.imm || d.truckPlate) : ''} ${d.phone ? '· Tél: ' + d.phone : ''}`,
+            detail: '',
+            action: () => {
+              App.loadModule('catalogue');
+              setTimeout(() => {
+                if (typeof CatalogueModule !== 'undefined') {
+                  CatalogueModule._tab = 'drivers';
+                  CatalogueModule._q = d.name || '';
+                  App.reload('catalogue');
+                }
+              }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    // 7. Search Users
+    if (cat === 'all' || cat === 'users') {
+      const users = DB.getAll('users') || [];
+      users.forEach(u => {
+        const text = `${u.name||''} ${u.username||''} ${u.phone||''} ${u.department||''} ${u.jobTitle||''} ${u.role||''}`.toLowerCase();
+        if (text.includes(q)) {
+          results.push({
+            type: 'user',
+            category: 'Utilisateurs',
+            categoryAR: 'المستخدمون',
+            icon: 'fa-users',
+            color: '#6366f1',
+            title: u.name || u.username,
+            subtitle: `@${u.username} · ${u.role} · ${u.department || u.jobTitle || ''}`,
+            detail: u.phone ? `Tél: ${u.phone}` : '',
+            action: () => {
+              App.loadModule('users');
+              setTimeout(() => {
+                if (typeof UsersModule !== 'undefined') {
+                  UsersModule._q = u.name || u.username;
+                  App.reload('users');
+                }
+              }, 120);
+            }
+          });
+        }
+      });
+    }
+
+    this._results = results.slice(0, 40);
+    this._activeIdx = this._results.length > 0 ? 0 : -1;
+    this.renderResults(q);
+  },
+
+  renderResults(query) {
+    const container = document.getElementById('omni-search-results');
+    if (!container) return;
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+
+    if (!this._results.length) {
+      container.innerHTML = `
+        <div class="omni-empty-state">
+          <i class="fas fa-search-minus" style="font-size:36px;opacity:.3;margin-bottom:12px;display:block"></i>
+          <h4>${isAR ? 'لا توجد نتائج مطابقة' : 'Aucun résultat trouvé'}</h4>
+          <p>${isAR ? `لم نتمكن من العثور على أي بيانات تطابق "${Utils.escHTML(query)}"` : `Aucun document ou contact ne correspond à "${Utils.escHTML(query)}"`}</p>
+        </div>
+      `;
+      return;
+    }
+
+    const grouped = {};
+    this._results.forEach((item, idx) => {
+      const cat = isAR ? (item.categoryAR || item.category) : item.category;
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push({ item, idx });
+    });
+
+    let html = '';
+    for (const [catName, items] of Object.entries(grouped)) {
+      html += `<div class="omni-result-group-title">${Utils.escHTML(catName)} <span class="omni-group-count">${items.length}</span></div>`;
+      items.forEach(({ item, idx }) => {
+        const isSelected = idx === this._activeIdx;
+        html += `
+          <div class="omni-result-item ${isSelected ? 'selected' : ''}" 
+               id="omni-item-${idx}" 
+               onclick="GlobalSearch.select(${idx})"
+               onmousemove="GlobalSearch.setActiveIdx(${idx})">
+            <div class="omni-item-icon" style="background:${item.color}15;color:${item.color}">
+              <i class="fas ${item.icon}"></i>
+            </div>
+            <div class="omni-item-content">
+              <div class="omni-item-title">${Utils.escHTML(item.title)}</div>
+              <div class="omni-item-sub">${Utils.escHTML(item.subtitle)}</div>
+              ${item.detail ? `<div class="omni-item-detail">${Utils.escHTML(item.detail)}</div>` : ''}
+            </div>
+            <div class="omni-item-enter">
+              <i class="fas fa-level-down-alt" style="transform:rotate(90deg)"></i>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    container.innerHTML = html;
+  },
+
+  renderEmptyState() {
+    const container = document.getElementById('omni-search-results');
+    if (!container) return;
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+
+    container.innerHTML = `
+      <div class="omni-empty-state">
+        <div class="omni-quick-hints">
+          <div class="omni-hint-title">${isAR ? 'عمليات بحث سريعة شائعة:' : 'Recherches rapides suggérées :'}</div>
+          <div class="omni-tags-row">
+            <span class="omni-tag" onclick="GlobalSearch.setQuery('BR-')"><i class="fas fa-receipt"></i> BR-</span>
+            <span class="omni-tag" onclick="GlobalSearch.setQuery('BCH-')"><i class="fas fa-truck"></i> BCH-</span>
+            <span class="omni-tag" onclick="GlobalSearch.setCategory('clients')"><i class="fas fa-user-tie"></i> ${isAR ? 'الزبائن' : 'Clients'}</span>
+            <span class="omni-tag" onclick="GlobalSearch.setCategory('suppliers')"><i class="fas fa-industry"></i> ${isAR ? 'الموردون' : 'Fournisseurs'}</span>
+            <span class="omni-tag" onclick="GlobalSearch.setCategory('articles')"><i class="fas fa-box"></i> ${isAR ? 'المواد' : 'Articles'}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  setQuery(q) {
+    const inp = document.getElementById('global-omni-search-input');
+    if (inp) {
+      inp.value = q;
+      inp.focus();
+      this.handleInput(q);
+    }
+  },
+
+  setActiveIdx(idx) {
+    if (this._activeIdx === idx) return;
+    this._activeIdx = idx;
+    document.querySelectorAll('.omni-result-item').forEach((el, i) => {
+      el.classList.toggle('selected', i === idx);
+    });
+  },
+
+  handleKeydown(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (this._results.length > 0) {
+        this._activeIdx = (this._activeIdx + 1) % this._results.length;
+        this.updateSelection();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (this._results.length > 0) {
+        this._activeIdx = (this._activeIdx - 1 + this._results.length) % this._results.length;
+        this.updateSelection();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (this._activeIdx >= 0 && this._activeIdx < this._results.length) {
+        this.select(this._activeIdx);
+      }
+    }
+  },
+
+  updateSelection() {
+    document.querySelectorAll('.omni-result-item').forEach((el, i) => {
+      const isSel = i === this._activeIdx;
+      el.classList.toggle('selected', isSel);
+      if (isSel) el.scrollIntoView({ block: 'nearest' });
+    });
+  },
+
+  select(idx) {
+    const item = this._results[idx];
+    if (item && item.action) {
+      this.close();
+      item.action();
+    }
+  }
+};
+

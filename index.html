@@ -209,6 +209,11 @@
         <i class="fas fa-bars"></i>
       </button>
       <span class="breadcrumb-text" id="breadcrumb">Tableau de Bord</span>
+      <button class="topbar-search-trigger" id="topbarSearchTrigger" onclick="GlobalSearch.open()" title="Recherche globale (Ctrl+K)">
+        <i class="fas fa-search"></i>
+        <span class="topbar-search-text" id="topbarSearchText">Rechercher...</span>
+        <kbd class="topbar-search-kbd">Ctrl K</kbd>
+      </button>
     </div>
     <div class="topbar-right">
       <!-- Session indicator (non-admin users with open session) -->
@@ -537,6 +542,7 @@ const App = {
     }
     this._checkMorningSession();
     if (typeof NotifMgr !== 'undefined') NotifMgr.updateUI();
+    if (typeof GlobalSearch !== 'undefined') GlobalSearch.init();
     // Start live background sync so concurrent users see each other's changes
     DB.startLiveSync();
     // ── Recycle bin overflow notification (admin only) ──
@@ -752,6 +758,10 @@ const App = {
     const nc = document.getElementById('lblNotifCenter'); if (nc) nc.textContent = T.get('notif_center');
     const nma = document.getElementById('lblNotifMarkAll'); if (nma) nma.textContent = T.get('notif_mark_all');
     const not = document.getElementById('lblNotifTracker'); if (not) not.textContent = T.get('notif_open_tracker');
+    const stt = document.getElementById('topbarSearchTrigger');
+    if (stt) stt.title = lang === 'ar' ? 'بحث شامل في النظام (Ctrl+K)' : 'Recherche globale (Ctrl+K)';
+    const stxt = document.getElementById('topbarSearchText');
+    if (stxt) stxt.textContent = lang === 'ar' ? 'بحث شامل...' : 'Rechercher...';
   },
 
   buildSidebar() {
@@ -1094,11 +1104,9 @@ const App = {
   reloadDebounced(mod, delay=200) {
     clearTimeout(this._reloadTimer);
     this._reloadTimer = setTimeout(() => {
-      // Guard: do NOT reload if modal is open, or if user is typing in an input/select/textarea
-      const isModalOpen = document.getElementById('modalOverlay')?.classList.contains('active');
-      const activeEl = document.activeElement;
-      const isUserTyping = activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName);
-      if (isModalOpen || isUserTyping || (mod || this._currentModule) === 'settings') {
+      // Guard: do NOT reload if a form modal / dialog is active
+      const isModalOpen = document.getElementById('modalOverlay')?.classList.contains('active') || !!document.querySelector('.dlg-overlay');
+      if (isModalOpen || (mod || this._currentModule) === 'settings') {
         return;
       }
       this.loadModule(mod||this._currentModule);
