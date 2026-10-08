@@ -4544,26 +4544,35 @@ const CaisseModule = {
     const totalReturns = summary.totalReturnsTTC;
     const netCaisse = summary.netAmount; // caisseBrut - totalReturns
     
-    // Etat de vente with timbre: aggregate articles from BCH
+    // Etat de vente with timbre & article benefit margin (calculated as % of each article's base price)
+    const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
     const aggregated = {};
-    summary.bls.forEach(bl => {
+    summary.bls.filter(b => b.status !== 'returned').forEach(bl => {
       (bl.lines || []).forEach(line => {
         const key = (line.designation || '').trim();
         if (!key) return;
         const qty = Number(line.qtyDelivered || line.qty) || 0;
         const price = Number(line.price) || 0;
         const disc = Number(line.disc) || 0;
-        const ep = price * (1 - disc / 100);
-        if (!aggregated[key]) aggregated[key] = { qty: 0, unitPrice: ep };
+        const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+        const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+        const ep = Math.round((basePrice + marginPerUnit) * 100) / 100;
+        if (!aggregated[key]) aggregated[key] = { qty: 0, basePrice, unitPrice: ep, marginPerUnit, marginRate };
         aggregated[key].qty += qty;
+        if (basePrice > aggregated[key].basePrice) {
+          aggregated[key].basePrice = basePrice;
+          aggregated[key].marginPerUnit = marginPerUnit;
+          aggregated[key].unitPrice = ep;
+        }
       });
     });
-    const totalHT = Object.values(aggregated).reduce((s, it) => s + (it.qty * it.unitPrice), 0);
+    const totalHT = Math.round(Object.values(aggregated).reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
+    const totalMargin = Math.round(Object.values(aggregated).reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const timbreAmount = Math.round(totalHT * 1 / 100 * 100) / 100; // Fixed 1% for etat de vente
     const etatVenteTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
-    const netEtatVenteTTC = Math.max(0, Math.round((etatVenteTTC - totalReturns) * 100) / 100);
+    const netEtatVenteTTC = etatVenteTTC;
     const difference = Math.round((netEtatVenteTTC - netCaisse) * 100) / 100;
 
     // Build BCH detail rows
@@ -4655,8 +4664,9 @@ const CaisseModule = {
             </div>
             <!-- Right: Etat de Vente -->
             <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px">
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7c3aed;margin-bottom:6px"><i class="fas fa-file-invoice-dollar"></i> ${isAR?'كشف المبيعات (1% طابع)':'État de Vente (1% Timbre)'}</div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7c3aed;margin-bottom:6px"><i class="fas fa-file-invoice-dollar"></i> ${isAR?'كشف المبيعات (1% طابع + هامش)':'État de Vente (1% Timbre + Marge)'}</div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'المجموع HT:':'Total HT :'}</span><span style="font-weight:700">${Utils.fmtCurrency(Math.round(totalHT*100)/100)}</span></div>
+              ${marginPerUnit > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'هامش الربح الإضافي:':'Marge bénéficiaire :'}</span><span style="font-weight:700;color:#10b981">+${Utils.fmtCurrency(totalMargin)} <small style="font-size:9px">(+${Utils.fmtNum(marginPerUnit)} DA/u)</small></span></div>` : ''}
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الرسم على القيمة المضافة':'TVA'} (${tvaRate}%) :</span><span style="font-weight:700">${Utils.fmtCurrency(tvaAmount)}</span></div>
               <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${isAR?'الطابع الجبائي (1% ثابت):':'Timbre Fiscal (1% fixe) :'}</span><span style="font-weight:700">${Utils.fmtCurrency(timbreAmount)}</span></div>
               <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;margin-top:4px;border-top:1px solid var(--border);font-weight:900"><span>${isAR?'الصافي للبنك:':'Net Versement :'}</span><span style="color:#7c3aed">${Utils.fmtCurrency(netEtatVenteTTC)}</span></div>
@@ -4666,8 +4676,8 @@ const CaisseModule = {
           <!-- Difference -->
           <div style="background:${difference >= 0 ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'};border:1px solid ${difference >= 0 ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
             <div>
-              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR?'فارق الطابع الجبائي (كشف المبيعات 1% − مقبوضات BCH)':'Écart Fiscal Timbre (État de Vente 1% − Recettes BCH)'}</div>
-              <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR?'= فارق الطابع المحتسب قانونياً':'= Écart entre timbre variable BCH et 1% fixe'}</div>
+              <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR?'الفارق الإجمالي (كشف المبيعات مع الهامش والطابع − مقبوضات BCH)':'Écart Total (État de Vente avec Marge & 1% Timbre − Recettes BCH)'}</div>
+              <div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR?'= فارق الطابع الجبائي وهامش الربح المحتسب قانونياً':'= Écart entre timbre BCH, 1% fixe et marge bénéficiaire'}</div>
             </div>
             <div style="font-size:16px;font-weight:900;color:${difference >= 0 ? 'var(--success)' : 'var(--danger)'}">${difference >= 0 ? '+' : ''}${Utils.fmtCurrency(difference)}</div>
           </div>
@@ -8988,12 +8998,35 @@ const SettingsModule = {
       ${logoBox('evLogoRight', isAR?'شعار يميني (Etat Vente)':'Logo droit (EV)', s.evLogoRight)}
     </div>
 
+    ${sectionBox('coins','#f59e0b','rgba(245,158,11,.1)',isAR?'نسبة هامش الربح الإضافي لكشف المبيعات (البنك)':'Taux de Marge Bénéficiaire État de Vente (Banque)',`
+      <div style="margin-bottom:12px;font-size:12px;color:var(--text3);line-height:1.6">
+        ${isAR
+          ? 'تُحسب هذه النسبة (مثلاً <code>0.5%</code>) كزيادة ربح على السعر الفردي لكل مادة في كشف المبيعات الرسمي :<br><span style="font-family:monospace;font-weight:700;color:var(--primary)">سعر كشف المبيعات = سعر BCH + (سعر BCH × 0.5%)</span><br><em style="color:var(--text2)">مثال توضيحي: مادة بسعر 1 000 د.ج ➔ السعر الرسمي = 1 005 د.ج (+5 د.ج/و). مادة بسعر 100 د.ج ➔ 100.50 د.ج (+0.50 د.ج/و).</em>'
+          : 'Ce taux de marge (ex: <code>0.5%</code>) s\'applique en pourcentage sur le prix unitaire réel de chaque article dans l\'État de Vente :<br><span style="font-family:monospace;font-weight:700;color:var(--primary)">P.U État de Vente = P.U BCH + (P.U BCH × 0.5%)</span><br><em style="color:var(--text2)">Exemple : Pour un article à 1 000 DA ➔ P.U = 1 005 DA (+5 DA/u). Pour 100 DA ➔ P.U = 100.50 DA (+0.50 DA/u).</em>'}
+      </div>
+      <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:11.5px;color:var(--text2);display:flex;align-items:center;gap:8px">
+        <i class="fas fa-shield-alt" style="color:#10b981;font-size:15px;flex-shrink:0"></i>
+        <span>${isAR 
+          ? '<strong>حماية السجلات المصرح بها :</strong> هذا التعديل يطبق <u>حصرياً</u> على كشوفات المبيعات المستقبلية. جميع الكشوفات والإيداعات البنكية السابقة مقفلة ومحمية تماماً ولا تتأثر بأي شكل منعاً لأي تعارض مع البنك.' 
+          : '<strong>Protection stricte des données déclarées :</strong> Ce réglage s\'applique <u>exclusivement</u> aux futurs états de vente. Tous les états et dépôts bancaires passés sont scellés et restent strictement inchangés pour éviter tout écart bancaire.'}</span>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text4);margin-bottom:5px">${isAR ? 'نسبة الهامش المضافة لكل مادة (%)' : 'Taux de marge par article (%)'}</div>
+        <div style="display:flex;align-items:center;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:0 12px;max-width:320px">
+          <span style="font-weight:700;color:#f59e0b;margin-inline-end:8px">+</span>
+          <input type="number" step="0.01" min="0" id="evMarginRate" value="${s.evMarginRate != null ? s.evMarginRate : (s.evMarginPercent != null ? s.evMarginPercent : (s.evMarginAmount != null ? s.evMarginAmount : 0))}" placeholder="0.50" style="font-family:'Courier New',monospace;font-size:15px;font-weight:800;background:transparent;border:none;outline:none;padding:10px 0;color:var(--text);width:100%">
+          <span style="font-size:14px;font-weight:800;color:var(--primary);margin-inline-start:6px">%</span>
+        </div>
+      </div>
+    `)}
+
     <button class="btn btn-primary" onclick="SettingsModule._saveEtatVente()" style="width:100%;padding:12px;font-size:14px;font-weight:800;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6)">
       <i class="fas fa-save"></i> ${isAR ? 'حفظ إعدادات كشف المبيعات' : "Enregistrer les paramètres de l'État de Vente"}
     </button>`;
   },
 
   _saveEtatVente() {
+    const marginVal = Number(document.getElementById('evMarginRate')?.value) || 0;
     DB.saveSettings({
       evCompanyName: document.getElementById('evCompName')?.value||'',
       evAddress: document.getElementById('evAddr')?.value||'',
@@ -9005,6 +9038,9 @@ const SettingsModule = {
       evNis: document.getElementById('evNis')?.value||'',
       evAi: document.getElementById('evAi')?.value||'',
       evCapital: document.getElementById('evCapital')?.value||'',
+      evMarginRate: marginVal,
+      evMarginPercent: marginVal,
+      evMarginAmount: marginVal
     });
     Utils.notify(T.isRTL() ? 'تم حفظ إعدادات كشف المبيعات' : 'Paramètres de l\'État de Vente enregistrés', 'success');
   },
@@ -11750,6 +11786,8 @@ const EtatVenteModule = {
     const ds = this._getDateStart();
     const de = this._getDateEnd();
     const uf = this._userFilter;
+    const settings = DB.getSettings();
+    const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
 
     // Filter BLs (Delivered, locked, and returned — so returned BCHs appear with their reference)
     const allBLs = DB.getAll('bls');
@@ -11772,6 +11810,7 @@ const EtatVenteModule = {
     });
 
     // Aggregated product lines from active delivered BLs (returns excluded so items are net sold)
+    // Unit price includes the configurable client benefit margin (calculated as % of article base price)
     const aggregated = {};
     bls.filter(b => b.status !== 'returned').forEach(bl => {
       const lines = bl.lines || [];
@@ -11779,19 +11818,27 @@ const EtatVenteModule = {
         const key = (line.designation || line.articleName || line.name || '').trim();
         if (!key) return;
         const qty = Number(line.qtyDelivered || line.qty) || 0;
-        const price = Number(line.price) || 0;
+        const price = Number(line.price || line.unitPrice) || 0;
         const disc = Number(line.disc) || 0;
-        const effectivePrice = price * (1 - disc / 100);
+        const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+        const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+        const effectivePrice = Math.round((basePrice + marginPerUnit) * 100) / 100;
         if (!aggregated[key]) {
           aggregated[key] = {
             designation: key,
             unit: line.unit || 'U',
             qty: 0,
+            basePrice: basePrice,
+            marginRate: marginRate,
+            marginPerUnit: marginPerUnit,
             unitPrice: effectivePrice
           };
         }
         aggregated[key].qty += qty;
-        if (effectivePrice > aggregated[key].unitPrice) {
+        if (basePrice > aggregated[key].basePrice) {
+          aggregated[key].basePrice = basePrice;
+          aggregated[key].marginRate = marginRate;
+          aggregated[key].marginPerUnit = marginPerUnit;
           aggregated[key].unitPrice = effectivePrice;
         }
       });
@@ -11799,22 +11846,27 @@ const EtatVenteModule = {
 
     const items = Object.values(aggregated).filter(it => it.qty > 0.0001).sort((a, b) => a.designation.localeCompare(b.designation));
 
+    let totalMargin = 0;
+    items.forEach(it => { totalMargin += (it.qty || 0) * (it.marginPerUnit || (it.basePrice * marginRate / 100)); });
+    totalMargin = Math.round(totalMargin * 100) / 100;
+
     const grossTotalTTC = bls.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
     const returnsTotalTTC = retours.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
     const netTotalTTC = Math.max(0, Math.round((grossTotalTTC - returnsTotalTTC) * 100) / 100);
 
-    return { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC };
+    return { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC, marginRate, totalMargin };
   },
   
   _renderGenerateView() {
     const isAR = T.isRTL();
-    const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC } = this._getFilteredData();
+    const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC, marginRate, totalMargin } = this._getFilteredData();
     const settings = DB.getSettings();
     const tvaRate = Number(settings.tvaRate) || 19;
     const allUsers = DB.getAll('users');
 
     let totalHT = 0;
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
+    totalHT = Math.round(totalHT * 100) / 100;
     const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
     const timbreRate = 1; // Strictly 1% fixed for État de Vente
     const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
@@ -11862,6 +11914,11 @@ const EtatVenteModule = {
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--danger);margin-bottom:4px">${isAR ? 'المرتجعات المخصومة (−)' : 'Retours Déduits (−)'}</div>
         <div style="font-size:20px;font-weight:900;color:var(--danger)">-${Utils.fmtCurrency(returnsTotalTTC)} <span style="font-size:12px;font-weight:600;color:var(--text4)">(${retours.length} ${isAR ? 'سند إرجاع' : 'BR'})</span></div>
       </div>
+      ${marginRate > 0 ? `
+      <div style="background:var(--bg2);border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:16px 18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#d97706;margin-bottom:4px">${isAR ? 'هامش بنكي إضافي (+)' : 'Marge Bénéfice Banque (+)'}</div>
+        <div style="font-size:20px;font-weight:900;color:#d97706">+${Utils.fmtCurrency(totalMargin)} <span style="font-size:11px;font-weight:600;color:var(--text4)">(+${marginRate}%)</span></div>
+      </div>` : ''}
       <div style="background:linear-gradient(135deg,rgba(13,148,136,.12),rgba(20,184,166,.05));border:1px solid rgba(13,148,136,.25);border-radius:14px;padding:16px 18px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0d9488;margin-bottom:4px">${isAR ? 'صافي كشف المبيعات (1% طابع)' : 'Net État de Vente (1% Timbre)'}</div>
         <div style="font-size:22px;font-weight:900;color:#0d9488">${Utils.fmtCurrency(netTotalEV)}</div>
@@ -11913,7 +11970,10 @@ const EtatVenteModule = {
               <td style="padding:10px 16px;font-weight:700;color:var(--text)">${Utils.escHTML(item.designation)}</td>
               <td style="padding:10px 16px;text-align:center;color:var(--text3)">${Utils.escHTML(item.unit)}</td>
               <td style="padding:10px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:#0ea5e9">${Number(item.qty).toLocaleString(isAR?'ar-DZ':'fr-FR')}</td>
-              <td style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text2)">${Utils.fmtCurrency(item.unitPrice)}</td>
+              <td style="padding:10px 16px;text-align:${isAR?'left':'right'};color:var(--text2)">
+                ${Utils.fmtCurrency(item.unitPrice)}
+                ${marginRate > 0 ? `<div style="font-size:9.5px;color:#d97706;font-weight:600">(base: ${Utils.fmtCurrency(item.basePrice || 0)} + ${marginRate}%)</div>` : ''}
+              </td>
               <td style="padding:10px 16px;text-align:${isAR?'left':'right'};font-weight:800;color:var(--text)">${Utils.fmtCurrency(item.qty * item.unitPrice)}</td>
             </tr>`).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد مواد مباعة خلال هذه الفترة' : 'Aucun article vendu pour cette période'}</td></tr>`}
           </tbody>
@@ -12026,9 +12086,14 @@ const EtatVenteModule = {
             <span style="font-size:12px;color:var(--text3)">${isAR ? 'المرتجعات :' : 'Retours :'}</span>
             <strong style="color:var(--danger);font-size:14px;${isAR?'margin-right:4px':'margin-left:4px'}">-${Utils.fmtCurrency(returnsTotalTTC)}</strong>
           </div>
+          ${marginRate > 0 ? `
+          <div>
+            <span style="font-size:12px;color:#d97706;font-weight:700">${isAR ? 'الهامش البنكي :' : 'Marge Banque :'}</span>
+            <strong style="color:#d97706;font-size:14px;${isAR?'margin-right:4px':'margin-left:4px'}">+${Utils.fmtCurrency(totalMargin)}</strong>
+          </div>` : ''}
           <div style="${isAR?'border-right:2px solid var(--border);padding-right:16px':'border-left:2px solid var(--border);padding-left:16px'}">
-            <span style="font-size:13px;color:var(--text);font-weight:700">${isAR ? 'الصافي المقبوض للإيداع :' : 'NET ENCAISSÉ À VERSER :'}</span>
-            <span style="font-size:26px;font-weight:900;color:var(--primary);${isAR?'margin-right:8px':'margin-left:8px'}">${Utils.fmtCurrency(netTotalTTC)}</span>
+            <span style="font-size:13px;color:var(--text);font-weight:700">${isAR ? 'المحول للبنك (1% طابع):' : 'VERSÉ EN BANQUE (1% Timbre) :'}</span>
+            <span style="font-size:26px;font-weight:900;color:var(--primary);${isAR?'margin-right:8px':'margin-left:8px'}">${Utils.fmtCurrency(netTotalEV)}</span>
           </div>
         </div>
       </div>
@@ -12048,6 +12113,17 @@ const EtatVenteModule = {
     const isAR = T.isRTL();
     
     let html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div style="font-size:13px;color:var(--text3);font-weight:600">
+        <i class="fas fa-archive" style="color:var(--primary);margin-inline-end:6px"></i>
+        ${isAR ? `إجمالي الكشوفات المسجلة: <strong>${docs.length}</strong>` : `Total des états archivés : <strong>${docs.length}</strong>`}
+      </div>
+      <div style="font-size:11.5px;color:var(--text4);display:flex;align-items:center;gap:6px">
+        <i class="fas fa-lock" style="color:#10b981"></i>
+        <span>${isAR ? 'السجلات مؤرشفة ومقفلة بنكياً' : 'Archives scellées et verrouillées'}</span>
+      </div>
+    </div>
+
     <div style="background:var(--bg2);border-radius:14px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,.03)">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
@@ -12086,6 +12162,7 @@ const EtatVenteModule = {
         const gross = doc.totalBLsTTC || doc.grossTotalTTC || doc.totalTTC || 0;
         const retVal = doc.totalReturnsTTC || doc.returnsTotalTTC || 0;
         const netVal = doc.totalTTC || 0;
+        const marginRateDoc = Number(doc.marginRate != null ? doc.marginRate : (typeof doc.marginPerUnit === 'string' ? parseFloat(doc.marginPerUnit) : doc.marginPerUnit)) || 0;
 
         html += `
         <tr style="border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
@@ -12098,7 +12175,10 @@ const EtatVenteModule = {
           </td>
           <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--success)">+${Utils.fmtCurrency(gross)}</td>
           <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--danger)">${retVal > 0 ? '-' + Utils.fmtCurrency(retVal) : '—'}</td>
-          <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--primary)">${Utils.fmtCurrency(netVal)}</td>
+          <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:900;color:var(--primary)">
+            ${Utils.fmtCurrency(netVal)}
+            ${marginRateDoc > 0 ? `<div style="font-size:10px;font-weight:700;color:#d97706">+${marginRateDoc}%</div>` : ''}
+          </td>
           <td style="padding:12px 16px;text-align:center">${stBadge}</td>
           <td style="padding:12px 16px;text-align:${isAR?'left':'right'};white-space:nowrap">`;
           
@@ -12317,7 +12397,7 @@ const EtatVenteModule = {
 
   async _saveAndGenerate() {
     const isAR = T.isRTL();
-    const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC } = this._getFilteredData();
+    const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC, marginRate, totalMargin } = this._getFilteredData();
     if (!bls.length && !retours.length) {
       Utils.notify(isAR ? 'لا توجد سندات شحن أو مرتجعات ضمن هذا التحديد.' : 'Aucun bon de chargement ni retour pour cette sélection.', 'warning');
       return;
@@ -12349,12 +12429,23 @@ const EtatVenteModule = {
 
     const selectedBank = banks.find(b => String(b.id) === String(selectedBankId));
 
+    const tvaRate = Number(settings.tvaRate) || 19;
+    let totalHT = 0;
+    items.forEach(item => { totalHT += item.qty * item.unitPrice; });
+    totalHT = Math.round(totalHT * 100) / 100;
+    const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
+    const timbreRate = 1; // Strictly 1% fixed for État de Vente
+    const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
+    const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
+    const netTotalEV = totalEV_TTC;
+    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
+
     // Double confirmation to avoid miss clicks
     const confirmed = await Utils.confirm2(
       isAR ? 'تأكيد وحفظ كشف المبيعات؟' : `Valider et enregistrer l'État de Vente ?`,
       isAR
-        ? `المجموع الخام لسندات التسليم : +${Utils.fmtCurrency(grossTotalTTC)}\nمرتجعات السلع : -${Utils.fmtCurrency(returnsTotalTTC)}\nالصافي المودع بالبنك : ${Utils.fmtCurrency(netTotalTTC)}${selectedBank ? '\nالبنك المختار : ' + selectedBank.name : ''}`
-        : `Montant Brut des BLs : +${Utils.fmtCurrency(grossTotalTTC)}\nRetours Marchandise : -${Utils.fmtCurrency(returnsTotalTTC)}\nNet Versé en Banque : ${Utils.fmtCurrency(netTotalTTC)}${selectedBank ? '\nBanque cible : ' + selectedBank.name : ''}`
+        ? `المجموع الخام لسندات التسليم : +${Utils.fmtCurrency(grossTotalTTC)}\nمرتجعات السلع : -${Utils.fmtCurrency(returnsTotalTTC)}${marginRate>0?`\nهامش بنكي إضافي : +${Utils.fmtCurrency(totalMargin)} (+${marginRate}%)`:''}\nالصافي المحول للبنك (بطابع 1%) : ${Utils.fmtCurrency(netTotalEV)}${selectedBank ? '\nالبنك المختار : ' + selectedBank.name : ''}`
+        : `Montant Brut des BLs : +${Utils.fmtCurrency(grossTotalTTC)}\nRetours Marchandise : -${Utils.fmtCurrency(returnsTotalTTC)}${marginRate>0?`\nMarge Bénéfice Banque : +${Utils.fmtCurrency(totalMargin)} (+${marginRate}%)`:''}\nNet Versé en Banque (1% Timbre) : ${Utils.fmtCurrency(netTotalEV)}${selectedBank ? '\nBanque cible : ' + selectedBank.name : ''}`
     );
     if (!confirmed) return;
     
@@ -12373,17 +12464,7 @@ const EtatVenteModule = {
     }
     
     const ref = `ET/${String(seqNum).padStart(3, '0')}/${month}/${year}`;
-    const tvaRate = Number(settings.tvaRate) || 19;
-    let totalHT = 0;
-    items.forEach(item => { totalHT += item.qty * item.unitPrice; });
-    const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
-    const timbreRate = 1; // Strictly 1% fixed for État de Vente
-    const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
-    const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
-    const netTotalEV = totalEV_TTC;
-    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
     const u = Auth.getCurrentUser();
-    
     const initialStatus = isAdmin ? 'validated' : 'pending_admin';
     
     const etatData = {
@@ -12392,6 +12473,9 @@ const EtatVenteModule = {
       date: this._getDateEnd(),
       dateStart: this._getDateStart(),
       dateEnd: this._getDateEnd(),
+      marginRate: marginRate,
+      marginPerUnit: marginRate > 0 ? `${marginRate}%` : '0%',
+      totalMargin: totalMargin,
       items: items,
       blList: bls.map(b => ({
         id: b.id,
@@ -12457,8 +12541,8 @@ const EtatVenteModule = {
          date: this._getDateEnd(),
          ref: 'EV-DEP-' + ref.replace(/\//g, '-'),
          note: isAR 
-           ? `إيداع كشف المبيعات ${ref} — ${bls.length} سند (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} إرجاع (-${Utils.fmtCurrency(returnsTotalTTC)}) — صافي 1% طابع: ${Utils.fmtCurrency(netTotalEV)}` 
-           : `Dépôt État de Vente ${ref} — ${bls.length} BLs (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} Retours (-${Utils.fmtCurrency(returnsTotalTTC)}) — Net 1% timbre: ${Utils.fmtCurrency(netTotalEV)}`,
+           ? `إيداع كشف المبيعات ${ref} — ${bls.length} سند (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} إرجاع (-${Utils.fmtCurrency(returnsTotalTTC)})${marginRate>0?` [هامش: +${marginRate}% (+${Utils.fmtCurrency(totalMargin)})]`:''} — صافي 1% طابع: ${Utils.fmtCurrency(netTotalEV)}` 
+           : `Dépôt État de Vente ${ref} — ${bls.length} BLs (${Utils.fmtCurrency(grossTotalTTC)}), ${retours.length} Retours (-${Utils.fmtCurrency(returnsTotalTTC)})${marginRate>0?` [Marge: +${marginRate}% (+${Utils.fmtCurrency(totalMargin)})]`:''} — Net 1% timbre: ${Utils.fmtCurrency(netTotalEV)}`,
          etatVenteId: savedDoc.id,
          etatVenteRef: ref,
          createdBy: u?.id,
@@ -12499,8 +12583,8 @@ const EtatVenteModule = {
          timbreAmount: timbreAmt,
          ecartFiscal: ecartFiscal,
          note: isAR 
-           ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(netTotalEV)} بطابع 1% | مقبوضات BCH: ${Utils.fmtCurrency(netTotalTTC)} | فارق الطابع: ${Utils.fmtCurrency(ecartFiscal)})`
-           : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Transféré: ${Utils.fmtCurrency(netTotalEV)} avec 1% timbre | Recettes réelles BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart timbre: ${Utils.fmtCurrency(ecartFiscal)})`
+           ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(netTotalEV)} بطابع 1%${marginRate>0?` وهامش +${marginRate}%`:''} | مقبوضات BCH: ${Utils.fmtCurrency(netTotalTTC)} | فارق الطابع والهامش: ${Utils.fmtCurrency(ecartFiscal)})`
+           : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Transféré: ${Utils.fmtCurrency(netTotalEV)} avec 1% timbre${marginRate>0?` et marge +${marginRate}%`:''} | Recettes réelles BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart fiscal/marge: ${Utils.fmtCurrency(ecartFiscal)})`
        };
 
        if (existingCaisse) {
@@ -12549,6 +12633,7 @@ const EtatVenteModule = {
     if ((!docItems.length) && (doc.blList || []).length > 0) {
       console.warn('[EtatVente] doc.items is empty — re-aggregating from BLs');
       const aggregated = {};
+      const docMarginRate = Number(doc.marginRate != null ? doc.marginRate : (typeof doc.marginPerUnit === 'string' ? parseFloat(doc.marginPerUnit) : doc.marginPerUnit)) || 0;
       (doc.blList || []).forEach(blEntry => {
         // blEntry may just be a summary {id, ref, ...} — fetch the full BL from DB
         const fullBL = blEntry.id ? DB.getById('bls', blEntry.id) : null;
@@ -12560,12 +12645,19 @@ const EtatVenteModule = {
           const qty = Number(line.qtyDelivered || line.qty) || 0;
           const price = Number(line.price) || 0;
           const disc = Number(line.disc) || 0;
-          const effectivePrice = price * (1 - disc / 100);
+          const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+          const marginPerUnit = Math.round(basePrice * (docMarginRate / 100) * 100) / 100;
+          const effectivePrice = Math.round((basePrice + marginPerUnit) * 100) / 100;
           if (!aggregated[key]) {
-            aggregated[key] = { designation: key, unit: line.unit || 'U', qty: 0, unitPrice: effectivePrice };
+            aggregated[key] = { designation: key, unit: line.unit || 'U', qty: 0, basePrice: basePrice, marginRate: docMarginRate, marginPerUnit: marginPerUnit, unitPrice: effectivePrice };
           }
           aggregated[key].qty += qty;
-          if (effectivePrice > aggregated[key].unitPrice) aggregated[key].unitPrice = effectivePrice;
+          if (basePrice > aggregated[key].basePrice) {
+            aggregated[key].basePrice = basePrice;
+            aggregated[key].marginRate = docMarginRate;
+            aggregated[key].marginPerUnit = marginPerUnit;
+            aggregated[key].unitPrice = effectivePrice;
+          }
         });
       });
       docItems = Object.values(aggregated).filter(it => it.qty > 0.0001)
@@ -12599,6 +12691,20 @@ const EtatVenteModule = {
       bankName: bank ? bank.name : ''
     };
     PDFGen.exportEtatVente(data);
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // RETROACTIVE PROTECTION (Strict Non-Retroactivity & Data Immutability)
+  // ═══════════════════════════════════════════════════════════════
+  showRetroactiveRecalibrateModal() {
+    const isAR = T.isRTL();
+    Utils.notify(
+      isAR 
+        ? '⚠️ التعديل بأثر رجعي معطل تماماً لحماية المطابقة مع الحسابات البنكية والسجلات المصرح بها.' 
+        : '⚠️ La modification rétroactive est strictement verrouillée pour garantir la conformité avec les dépôts bancaires et les déclarations.',
+      'warning',
+      6000
+    );
   }
 };
 window.EtatVenteModule = EtatVenteModule;

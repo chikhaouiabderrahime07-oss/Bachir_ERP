@@ -3386,6 +3386,8 @@ const SessionMgr = {
     }
 
     // Aggregated lines from ACTIVE delivered BLs (returns are excluded so items are net delivered)
+    // Client Benefit Margin: calculated as a percentage rate on article base price (e.g. 1000 + 1000 * 0.5% = 1005)
+    const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
     const aggregated = {};
     summary.bls.filter(b => b.status !== 'returned').forEach(bl => {
       (bl.lines || []).forEach(line => {
@@ -3394,15 +3396,24 @@ const SessionMgr = {
         const qty = Number(line.qtyDelivered || line.qty) || 0;
         const price = Number(line.price || line.unitPrice) || 0;
         const disc = Number(line.disc) || 0;
-        const effectivePrice = price * (1 - disc / 100);
+        const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+        const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+        const effectivePrice = Math.round((basePrice + marginPerUnit) * 100) / 100;
         if (!aggregated[key]) {
-          aggregated[key] = { designation: key, unit: line.unit || 'U', qty: 0, unitPrice: effectivePrice };
+          aggregated[key] = { designation: key, unit: line.unit || 'U', qty: 0, basePrice, marginRate, marginPerUnit, unitPrice: effectivePrice };
         }
         aggregated[key].qty += qty;
+        if (basePrice > aggregated[key].basePrice) {
+          aggregated[key].basePrice = basePrice;
+          aggregated[key].marginRate = marginRate;
+          aggregated[key].marginPerUnit = marginPerUnit;
+          aggregated[key].unitPrice = effectivePrice;
+        }
       });
     });
     const items = Object.values(aggregated).filter(it => it.qty > 0.0001);
     const totalHT = Math.round(items.reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
+    const totalMargin = Math.round(items.reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
     // Etat de vente: FIXED 1% timbre (not slab-based like BCH)
@@ -3422,6 +3433,10 @@ const SessionMgr = {
       dateEnd: today,
       userId,
       userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
+      marginRate,
+      marginPerUnit: marginRate > 0 ? `${marginRate}%` : '0%',
+      totalMargin,
+      items,
       blList: summary.bls.map(b => ({
         id: b.id,
         ref: b.ref,
