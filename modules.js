@@ -4570,7 +4570,7 @@ const CaisseModule = {
     const totalMargin = Math.round(Object.values(aggregated).reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
-    const timbreAmount = Math.round(totalHT * 1 / 100 * 100) / 100; // Fixed 1% for etat de vente
+    const timbreAmount = Math.round((totalHT + tvaAmount) * 1 / 100 * 100) / 100; // Fixed 1% of (HT + TVA) for etat de vente
     const etatVenteTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
     const netEtatVenteTTC = etatVenteTTC;
     const difference = Math.round((netEtatVenteTTC - netCaisse) * 100) / 100;
@@ -11868,8 +11868,8 @@ const EtatVenteModule = {
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
     totalHT = Math.round(totalHT * 100) / 100;
     const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
-    const timbreRate = 1; // Strictly 1% fixed for État de Vente
-    const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
+    const timbreRate = 1; // Strictly 1% fixed on (HT + TVA) for État de Vente
+    const timbreAmt = Math.round((totalHT + tvaAmt) * 0.01 * 100) / 100;
     const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
     const netTotalEV = totalEV_TTC;
     const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
@@ -12434,8 +12434,8 @@ const EtatVenteModule = {
     items.forEach(item => { totalHT += item.qty * item.unitPrice; });
     totalHT = Math.round(totalHT * 100) / 100;
     const tvaAmt = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
-    const timbreRate = 1; // Strictly 1% fixed for État de Vente
-    const timbreAmt = Math.round(totalHT * 0.01 * 100) / 100;
+    const timbreRate = 1; // Strictly 1% fixed on (HT + TVA) for État de Vente
+    const timbreAmt = Math.round((totalHT + tvaAmt) * 0.01 * 100) / 100;
     const totalEV_TTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
     const netTotalEV = totalEV_TTC;
     const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
@@ -12616,16 +12616,31 @@ const EtatVenteModule = {
     const bank = banks.find(b => String(b.id) === String(doc.bankId));
 
     const totalHT = Number(doc.totalHT) || 0;
-    const timbreAmt = (Number(doc.timbreAmount) > 0)
+    const tvaRate = Number(doc.tvaRate) || Number(settings.tvaRate) || 19;
+    const tvaAmt = (Number(doc.tvaAmount) > 0) ? Number(doc.tvaAmount) : Math.round(totalHT * tvaRate / 100 * 100) / 100;
+    const expectedTimbre = Math.round((totalHT + tvaAmt) * 0.01 * 100) / 100;
+    const timbreAmt = (Number(doc.timbreAmount) > 0 && Math.abs(Number(doc.timbreAmount) - expectedTimbre) < 0.01)
       ? Number(doc.timbreAmount)
-      : (totalHT > 0 ? Math.round(totalHT * 0.01 * 100) / 100 : 0);
-    const timbreRate = 1; // Strictly 1% fixed for État de Vente
+      : expectedTimbre;
+    const timbreRate = 1; // Strictly 1% fixed on (HT + TVA) for État de Vente
+    const calculatedTTC = Math.round((totalHT + tvaAmt + timbreAmt) * 100) / 100;
 
-    // Auto-heal old documents missing timbreAmount in the DB
-    if (doc.id && (!doc.timbreAmount || Number(doc.timbreAmount) <= 0 || doc.timbreRate !== 1) && timbreAmt > 0) {
+    // Auto-heal old documents missing or with old timbre in the DB
+    if (doc.id && (doc.timbreAmount !== timbreAmt || doc.totalTTC !== calculatedTTC || doc.timbreRate !== 1)) {
       doc.timbreAmount = timbreAmt;
       doc.timbreRate = 1;
-      DB.update('etat_vente_docs', doc.id, { timbreAmount: timbreAmt, timbreRate: 1 });
+      doc.tvaAmount = tvaAmt;
+      doc.totalTTC = calculatedTTC;
+      doc.netTotalTTC = calculatedTTC;
+      doc.totalTTCFiscal = calculatedTTC;
+      DB.update('etat_vente_docs', doc.id, { 
+        timbreAmount: timbreAmt, 
+        timbreRate: 1, 
+        tvaAmount: tvaAmt, 
+        totalTTC: calculatedTTC, 
+        netTotalTTC: calculatedTTC, 
+        totalTTCFiscal: calculatedTTC 
+      });
     }
 
     // ── Self-heal: re-aggregate items from BLs if doc.items is missing/empty ──

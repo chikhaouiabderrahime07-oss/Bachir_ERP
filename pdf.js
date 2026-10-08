@@ -719,13 +719,11 @@
       });
       if(!bodyRows.length) bodyRows.push(['01','Aucune ligne','U','0',this._fmtMoney(0),this._fmtMoney(0)]);
       
-      // Fiscal TTC = HT + TVA + Timbre (for the articles summary table)
+      // Fiscal TTC = HT + TVA + Timbre (calculated on HT + TVA sum)
       const ht = Number(totalHT) || 0;
-      const effectiveTimbreAmt = (Number(timbreAmt) > 0)
-        ? Number(timbreAmt)
-        : (ht > 0 ? Math.round(ht * 0.01 * 100) / 100 : 0);
-      const effectiveTimbreRate = 1; // Strictly 1% fixed for État de Vente
       const effectiveTva = (Number(tvaAmt) > 0) ? Number(tvaAmt) : Math.round(ht * (Number(tvaRate) || 19) / 100 * 100) / 100;
+      const effectiveTimbreAmt = Math.round((ht + effectiveTva) * 0.01 * 100) / 100;
+      const effectiveTimbreRate = 1; // Strictly 1% fixed for État de Vente on (HT + TVA)
       const fiscalTTC = Math.round((ht + effectiveTva + effectiveTimbreAmt) * 100) / 100;
 
       let tEndY = this._buildTable(doc, y, COLS, bodyRows, {

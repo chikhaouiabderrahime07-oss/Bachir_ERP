@@ -1360,27 +1360,33 @@ const DB = {
           });
           checks.push({ name: 'Contrôleur Actif & Auto-Réparation', status: anomaliesFixed > 0 ? 'FIXED' : 'OK', detail: anomaliesFixed > 0 ? `${anomaliesFixed} anomalie(s) réparée(s) immédiatement` : 'Intégrité parfaite' });
 
-          // Check 15: État de Vente Timbre Fiscal Recalculation (Fixed 1%)
+          // Check 15: État de Vente Timbre Fiscal Recalculation (Fixed 1% on HT + TVA sum)
           const allEVDocs = DB.getAll('etat_vente_docs');
           let evTimbreFixed = 0;
           allEVDocs.forEach(ev => {
             const ht = Number(ev.totalHT) || 0;
-            if (ht > 0 && (!ev.timbreAmount || Number(ev.timbreAmount) <= 0)) {
-              const timbre = Math.round(ht * 0.01 * 100) / 100;
-              ev.timbreAmount = timbre;
-              ev.timbreRate = 1;
+            if (ht > 0) {
               const tvaRate = Number(ev.tvaRate) || 19;
               const tvaAmt = Number(ev.tvaAmount) || Math.round(ht * tvaRate / 100 * 100) / 100;
-              ev.totalTTCFiscal = Math.round((ht + tvaAmt + timbre) * 100) / 100;
-              evTimbreFixed++;
-              fixes.push(`État de Vente ${ev.ref}: 1% timbre fiscal ajouté (${Utils.fmtCurrency(timbre)}), TTC fiscal = ${Utils.fmtCurrency(ev.totalTTCFiscal)}`);
-              if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-                window.API.update('etat_vente_docs', ev.id, ev).catch(e => console.warn('[cloud] EV autocorrect err:', e));
+              const expectedTimbre = Math.round((ht + tvaAmt) * 0.01 * 100) / 100;
+              const expectedTTC = Math.round((ht + tvaAmt + expectedTimbre) * 100) / 100;
+              if (Math.abs(Number(ev.timbreAmount || 0) - expectedTimbre) > 0.001 || Math.abs(Number(ev.totalTTC || 0) - expectedTTC) > 0.001) {
+                ev.timbreAmount = expectedTimbre;
+                ev.timbreRate = 1;
+                ev.tvaAmount = tvaAmt;
+                ev.totalTTC = expectedTTC;
+                ev.netTotalTTC = expectedTTC;
+                ev.totalTTCFiscal = expectedTTC;
+                evTimbreFixed++;
+                fixes.push(`État de Vente ${ev.ref}: 1% timbre fiscal (HT+TVA) = ${Utils.fmtCurrency(expectedTimbre)}, TTC fiscal = ${Utils.fmtCurrency(expectedTTC)}`);
+                if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+                  window.API.update('etat_vente_docs', ev.id, ev).catch(e => console.warn('[cloud] EV autocorrect err:', e));
+                }
               }
             }
           });
           if (evTimbreFixed > 0) DB.rawSet('etat_vente_docs', allEVDocs);
-          checks.push({ name: 'Timbre Fiscal États de Vente (1%)', status: evTimbreFixed > 0 ? 'FIXED' : 'OK', detail: evTimbreFixed > 0 ? `${evTimbreFixed} état(s) corrigé(s)` : 'Tous les états ont le timbre 1%' });
+          checks.push({ name: 'Timbre Fiscal États de Vente (1% sur HT + TVA)', status: evTimbreFixed > 0 ? 'FIXED' : 'OK', detail: evTimbreFixed > 0 ? `${evTimbreFixed} état(s) corrigé(s)` : 'Tous les états ont le timbre 1% conforme' });
 
           if (fixes.length > 0) {
             DB.insert('audit_log', {
@@ -1514,28 +1520,73 @@ const DB = {
     if (window._ERP_DEBUG) console.log('[Migration M003] Upgraded timbre slabs to LF2025 Algerian law format.');
   },
 
-  // Migration M004: Ensure all historical État de Vente documents have 1% timbre fiscal & fiscal TTC
+  // Migration M004: Ensure all historical État de Vente documents have 1% timbre fiscal on (HT + TVA) sum & sync ledger
   _migrateEtatVenteTimbre() {
     const docs = this.getAll('etat_vente_docs');
+    const allTx = this.getAll('bank_transactions');
+    const allCaisse = this.getAll('caisse_admin');
     let fixed = false;
+    let txFixed = false;
+    let caisseFixed = false;
+
     docs.forEach(ev => {
       const ht = Number(ev.totalHT) || 0;
-      if (ht > 0 && (!ev.timbreAmount || Number(ev.timbreAmount) <= 0)) {
-        const timbre = Math.round(ht * 0.01 * 100) / 100;
-        ev.timbreAmount = timbre;
-        ev.timbreRate = 1;
+      if (ht > 0) {
         const tvaRate = Number(ev.tvaRate) || 19;
         const tvaAmt = Number(ev.tvaAmount) || Math.round(ht * tvaRate / 100 * 100) / 100;
-        ev.totalTTCFiscal = Math.round((ht + tvaAmt + timbre) * 100) / 100;
-        fixed = true;
-        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-          window.API.update('etat_vente_docs', ev.id, ev).catch(e => console.warn('[cloud] EV migrate err:', e));
+        const expectedTimbre = Math.round((ht + tvaAmt) * 0.01 * 100) / 100;
+        const expectedTTC = Math.round((ht + tvaAmt + expectedTimbre) * 100) / 100;
+
+        if (Math.abs(Number(ev.timbreAmount || 0) - expectedTimbre) > 0.001 || Math.abs(Number(ev.totalTTC || 0) - expectedTTC) > 0.001) {
+          ev.timbreAmount = expectedTimbre;
+          ev.timbreRate = 1;
+          ev.tvaAmount = tvaAmt;
+          ev.totalTTC = expectedTTC;
+          ev.netTotalTTC = expectedTTC;
+          ev.totalTTCFiscal = expectedTTC;
+          fixed = true;
+
+          // Sync bank_transactions
+          const bTx = allTx.find(t => 
+            (ev.bankDepositId && String(t.id) === String(ev.bankDepositId)) ||
+            (ev.ref && t.etatVenteRef === ev.ref) ||
+            (ev.id && String(t.etatVenteId) === String(ev.id))
+          );
+          if (bTx && Math.abs(Number(bTx.amount || 0) - expectedTTC) > 0.001) {
+            bTx.amount = expectedTTC;
+            txFixed = true;
+            if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+              window.API.update('bank_transactions', bTx.id, bTx).catch(() => {});
+            }
+          }
+
+          // Sync caisse_admin
+          const cTx = allCaisse.find(c => 
+            c.source === 'transfert_banque_etat_vente' && 
+            (c.etatVenteRef === ev.ref || (ev.id && String(c.etatVenteId) === String(ev.id)))
+          );
+          if (cTx && Math.abs(Number(cTx.amount || 0) - expectedTTC) > 0.001) {
+            cTx.amount = expectedTTC;
+            cTx.etatVenteTTC = expectedTTC;
+            cTx.timbreAmount = expectedTimbre;
+            caisseFixed = true;
+            if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+              window.API.update('caisse_admin', cTx.id, cTx).catch(() => {});
+            }
+          }
+
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            window.API.update('etat_vente_docs', ev.id, ev).catch(e => console.warn('[cloud] EV migrate err:', e));
+          }
         }
       }
     });
+
     if (fixed) {
       this.rawSet('etat_vente_docs', docs);
-      if (window._ERP_DEBUG) console.log('[Migration M004] Recalculated 1% timbre fiscal on historical États de Vente.');
+      if (txFixed) this.rawSet('bank_transactions', allTx);
+      if (caisseFixed) this.rawSet('caisse_admin', allCaisse);
+      if (window._ERP_DEBUG) console.log('[Migration M004] Recalculated 1% timbre on (HT + TVA) for all historical États de Vente.');
     }
   },
 
@@ -3416,9 +3467,9 @@ const SessionMgr = {
     const totalMargin = Math.round(items.reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;
     const tvaAmount = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
-    // Etat de vente: FIXED 1% timbre (not slab-based like BCH)
+    // Etat de vente: FIXED 1% timbre on (HT + TVA) sum
     const TIMBRE_RATE_EV = 1; // 1% fixed for etat de vente
-    const timbreAmount = Math.round(totalHT * TIMBRE_RATE_EV / 100 * 100) / 100;
+    const timbreAmount = Math.round((totalHT + tvaAmount) * TIMBRE_RATE_EV / 100 * 100) / 100;
     const totalTTCCalc = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
     const netAmountEV = totalTTCCalc;
     const ecartFiscal = Math.round((netAmountEV - summary.netAmount) * 100) / 100;
