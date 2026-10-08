@@ -4728,24 +4728,6 @@ const CaisseModule = {
     }
     if (typeof EtatVenteModule !== 'undefined' && EtatVenteModule._doPDF) {
       EtatVenteModule._doPDF(etatDoc, DB.getSettings());
-    } else if (window.PDFGen && PDFGen.exportEtatVente) {
-      // Fallback: wrap raw doc with settings for the PDF generator
-      const settings = DB.getSettings();
-      const period = etatDoc.dateStart === etatDoc.dateEnd ? Utils.fmtDate(etatDoc.dateStart) : `Du ${Utils.fmtDate(etatDoc.dateStart)} au ${Utils.fmtDate(etatDoc.dateEnd)}`;
-      const banks = settings.banks || [];
-      const bank = banks.find(b => String(b.id) === String(etatDoc.bankId));
-      PDFGen.exportEtatVente({
-        ref: etatDoc.ref, createdByName: etatDoc.createdByName || etatDoc.userName,
-        createdAt: etatDoc.createdAt, items: etatDoc.items || [],
-        totalHT: etatDoc.totalHT, tvaAmt: etatDoc.tvaAmount, tvaRate: etatDoc.tvaRate,
-        timbreAmt: (Number(etatDoc.timbreAmount) > 0) ? Number(etatDoc.timbreAmount) : ((Number(etatDoc.totalHT)||0) > 0 ? Math.round((Number(etatDoc.totalHT)||0) * 0.01 * 100) / 100 : 0),
-        timbreRate: etatDoc.timbreRate || 1,
-        totalTTC: etatDoc.totalTTC,
-        period, settings, blList: etatDoc.blList || [], returnList: etatDoc.returnList || [],
-        grossTotalTTC: etatDoc.totalBLsTTC || etatDoc.totalTTC,
-        returnsTotalTTC: etatDoc.totalReturnsTTC || 0,
-        netTotalTTC: etatDoc.totalTTC, bankName: bank?.name || ''
-      });
     } else {
       App.loadModule('etat_vente');
     }
@@ -5658,7 +5640,7 @@ const AdminCaisseModule = {
                     </span>
                   </td>
                   <td style="text-align:center;white-space:nowrap">
-                    ${firstEV ? `<button class="btn btn-xs btn-outline" onclick="PDFGen.exportEtatVente(DB.getById('etat_vente_docs', ${firstEV.id}))" title="PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> PDF</button>` : ''}
+                    ${firstEV ? `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._reprint('${firstEV.id}')" title="PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> PDF</button>` : ''}
                     <button class="btn btn-xs btn-outline" onclick="AdminCaisseModule._miniCaisseSubView='sessions';AdminCaisseModule._filters.dateFrom='${day.date}';AdminCaisseModule._filters.dateTo='${day.date}';App.loadModule('admin_caisse')" title="${isAR ? 'عرض جلسات هذا اليوم' : 'Voir sessions de ce jour'}">
                       <i class="fas fa-eye"></i>
                     </button>
@@ -5731,7 +5713,7 @@ const AdminCaisseModule = {
                   </td>
                   <td style="text-align:right;font-weight:800;color:#10b981">${Utils.fmtCurrency(d.caisseAdminAmount)}</td>
                   <td style="text-align:center">
-                    ${d.evDoc ? `<button class="btn btn-xs btn-outline" onclick="PDFGen.exportEtatVente(DB.getById('etat_vente_docs', ${d.evDoc.id}))" title="Voir PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> ${Utils.escHTML(d.evDoc.ref)}</button>` : `<span style="color:var(--text4)">${s.etatVenteRef ? Utils.escHTML(s.etatVenteRef) : '—'}</span>`}
+                    ${d.evDoc ? `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._reprint('${d.evDoc.id}')" title="Voir PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> ${Utils.escHTML(d.evDoc.ref)}</button>` : `<span style="color:var(--text4)">${s.etatVenteRef ? Utils.escHTML(s.etatVenteRef) : '—'}</span>`}
                   </td>
                   <td style="text-align:center;white-space:nowrap">
                     <button class="btn btn-xs btn-outline" onclick="AdminCaisseModule.showSessionBCHDetails(${s.id})" title="${isAR ? 'تفاصيل سندات الجلسة' : 'Détail des Bons de la session'}">
@@ -11688,7 +11670,7 @@ const EtatVenteModule = {
     bls.filter(b => b.status !== 'returned').forEach(bl => {
       const lines = bl.lines || [];
       lines.forEach(line => {
-        const key = (line.designation || '').trim();
+        const key = (line.designation || line.articleName || line.name || '').trim();
         if (!key) return;
         const qty = Number(line.qtyDelivered || line.qty) || 0;
         const price = Number(line.price) || 0;
@@ -12456,11 +12438,45 @@ const EtatVenteModule = {
       DB.update('etat_vente_docs', doc.id, { timbreAmount: timbreAmt, timbreRate: 1 });
     }
 
+    // ── Self-heal: re-aggregate items from BLs if doc.items is missing/empty ──
+    let docItems = doc.items || [];
+    if ((!docItems.length) && (doc.blList || []).length > 0) {
+      console.warn('[EtatVente] doc.items is empty — re-aggregating from BLs');
+      const aggregated = {};
+      (doc.blList || []).forEach(blEntry => {
+        // blEntry may just be a summary {id, ref, ...} — fetch the full BL from DB
+        const fullBL = blEntry.id ? DB.getById('bls', blEntry.id) : null;
+        if (!fullBL || fullBL.status === 'returned') return;
+        const lines = fullBL.lines || [];
+        lines.forEach(line => {
+          const key = (line.designation || line.articleName || line.name || '').trim();
+          if (!key) return;
+          const qty = Number(line.qtyDelivered || line.qty) || 0;
+          const price = Number(line.price) || 0;
+          const disc = Number(line.disc) || 0;
+          const effectivePrice = price * (1 - disc / 100);
+          if (!aggregated[key]) {
+            aggregated[key] = { designation: key, unit: line.unit || 'U', qty: 0, unitPrice: effectivePrice };
+          }
+          aggregated[key].qty += qty;
+          if (effectivePrice > aggregated[key].unitPrice) aggregated[key].unitPrice = effectivePrice;
+        });
+      });
+      docItems = Object.values(aggregated).filter(it => it.qty > 0.0001)
+                        .sort((a, b) => a.designation.localeCompare(b.designation));
+      // Persist healed items back to DB so future reprints don't need re-aggregation
+      if (docItems.length > 0 && doc.id) {
+        doc.items = docItems;
+        DB.update('etat_vente_docs', doc.id, { items: docItems });
+        console.log('[EtatVente] Self-healed: restored', docItems.length, 'items from BLs');
+      }
+    }
+
     const data = {
       ref: doc.ref,
       createdByName: doc.createdByName || doc.userName,
       createdAt: doc.createdAt,
-      items: doc.items || [],
+      items: docItems,
       totalHT: totalHT,
       tvaAmt: doc.tvaAmount,
       tvaRate: doc.tvaRate,
