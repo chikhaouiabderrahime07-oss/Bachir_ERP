@@ -1024,6 +1024,7 @@
       const s = {
         ...rawSettings,
         companyName: rawSettings.evCompanyName || rawSettings.companyName || 'SOCIÉTÉ',
+        activityType: rawSettings.evActivityType || rawSettings.activityType || '',
         address: rawSettings.evAddress || rawSettings.address || '',
         phone: rawSettings.evPhone || rawSettings.phone || '',
         email: rawSettings.evEmail || rawSettings.email || '',
@@ -1386,6 +1387,7 @@
       const s = {
         ...rawSettings,
         companyName: rawSettings.companyName || rawSettings.evCompanyName || 'SOCIÉTÉ',
+        activityType: rawSettings.activityType || rawSettings.evActivityType || '',
         address: rawSettings.address || rawSettings.evAddress || '',
         phone: rawSettings.phone || rawSettings.evPhone || '',
         email: rawSettings.email || rawSettings.evEmail || '',
@@ -1674,6 +1676,7 @@
       const s = {
         ...rawSettings,
         companyName: rawSettings.companyName || rawSettings.evCompanyName || 'SOCIÉTÉ',
+        activityType: rawSettings.activityType || rawSettings.evActivityType || '',
         address: rawSettings.address || rawSettings.evAddress || '',
         phone: rawSettings.phone || rawSettings.evPhone || '',
         email: rawSettings.email || rawSettings.evEmail || '',
