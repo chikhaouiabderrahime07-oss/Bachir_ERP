@@ -936,7 +936,7 @@ const BRModule = {
     <table class="detail-table">
       <tr><th>${T.get('col_ref')}</th><td><strong>${Utils.escHTML(br.ref||'')}</strong></td></tr>
       <tr><th>${T.get('br_date')}</th><td>${Utils.fmtDate(br.date)} <span style="color:var(--text4);font-size:10px">${br.createdAt?new Date(br.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td></tr>
-      <tr><th>${T.get('br_supplier')}</th><td>${Utils.escHTML(sup?.name||'-')}</td></tr>
+      <tr><th>${T.get('br_supplier')}</th><td>${Utils.escHTML(sup?.name||'-')}${sup?.activityType ? ` <span style="font-size:11px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:600">${Utils.escHTML(sup.activityType)}</span>` : ''}</td></tr>
       ${bl?`<tr><th>${T.isRTL()?"BL مرتبط":"BL lié"}</th><td><strong>${Utils.escHTML(bl.ref||'')}</strong></td></tr>`:''}
       <tr><th>${T.get('br_total_ht')}</th><td>${Utils.fmtCurrency(br.totalHT)}</td></tr>
       <tr><th>${T.get('br_timbre')}</th><td>${Utils.fmtCurrency(br.timbreAmount)}</td></tr>
@@ -2829,7 +2829,7 @@ const BLModule = {
       <tr><th>${T.isRTL()?"مرجع BL":"Référence BL"}</th><td><strong>${Utils.escHTML(bl.ref||'')}</strong></td></tr>
       <tr><th>${T.get('bl_linked_br')}</th><td>${br?`<strong>${Utils.escHTML(br.ref)}</strong>`:'-'}</td></tr>
       <tr><th>${T.get('col_date')}</th><td>${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td></tr>
-      <tr><th>${T.get('col_client')}</th><td>${Utils.escHTML(cli?.name||'-')}</td></tr>
+      <tr><th>${T.get('col_client')}</th><td>${Utils.escHTML(cli?.name||'-')}${cli?.activityType ? ` <span style="font-size:11px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:600">${Utils.escHTML(cli.activityType)}</span>` : ''}</td></tr>
       <tr><th>${T.get('bl_driver')}</th><td>${Utils.escHTML(bl.driverName||'-')}</td></tr>
       <tr><th>${T.get('bl_truck')}</th><td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td></tr>
       <tr><th>${T.get('col_total_ttc')}</th><td class="fw-bold text-primary" style="font-size:15px">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td></tr>

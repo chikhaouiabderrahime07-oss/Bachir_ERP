@@ -263,13 +263,18 @@
       doc.setFontSize(12);
       this._tc(doc,C.PRIMARY);
       doc.text(cName, PW/2, y+5.2, {align:'center'});
-      doc.setFont('helvetica','normal');
+      const isAR = typeof T !== 'undefined' && T.isRTL();
 
       /* Activity type — shown right below company name */
-      if (s.activityType) {
+      const compActivity = s.activityType || s.evActivityType || '';
+      if (compActivity) {
         doc.setFontSize(8);
-        this._tc(doc, [107, 114, 128]);
-        doc.text(s.activityType, PW/2, y+9, {align:'center'});
+        this._tc(doc, [100, 116, 139]);
+        const actLabel = isAR ? ('النشاط : ' + compActivity) : ('Activité : ' + compActivity);
+        const actT = this._t(actLabel);
+        if (this._hasAr(actT) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+        else doc.setFont('helvetica', 'bold');
+        doc.text(actT, PW / 2, y + 9.2, { align: 'center' });
       }
 
       doc.setFontSize(7.3);
@@ -282,7 +287,7 @@
         s.email?`E-mail : ${s.email}`:'',
       ].filter(Boolean);
 
-      let ly=y+(s.activityType ? 12 : 9);
+      let ly = y + (compActivity ? 12.5 : 9);
       infoLines.forEach(line => {
         const lt = this._t(line);
         if (this._hasAr(lt) && _arFontB64) doc.setFont(AR_FONT_NAME,'normal');
@@ -566,7 +571,7 @@
       const gap=4, cw2=(CW-gap)/2, boxH=42;
       const supLines = [
         this._t(sup.name||'/'),
-        ...(sup.activityType ? [sup.activityType] : []),
+        ...(sup.activityType ? [isAR ? ('النشاط : ' + sup.activityType) : ('Activité : ' + sup.activityType)] : []),
         `NIF : ${sup.nif||'-'}`,
         `NIS : ${sup.nis||'-'}`,
         `RC  : ${sup.rc||'-'}`,
@@ -1115,14 +1120,26 @@
         this._tc(doc, C.PRIMARY || [13, 148, 136]);
         doc.text(cName.toUpperCase(), PW / 2, y + 4.5, { align: 'center' });
 
+        const bchCompAct = s.activityType || s.evActivityType || '';
+        if (bchCompAct) {
+          doc.setFontSize(6.5);
+          this._tc(doc, [100, 116, 139]);
+          const actLabel = isAR ? ('النشاط : ' + bchCompAct) : ('Activité : ' + bchCompAct);
+          const actT = this._t(actLabel);
+          if (this._hasAr(actT) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+          else doc.setFont('helvetica', 'bold');
+          doc.text(actT, PW / 2, y + 7.5, { align: 'center' });
+        }
+
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6.5);
         this._tc(doc, [71, 85, 105]);
+        const bchLegY = bchCompAct ? (y + 10.5) : (y + 8);
         const leg1 = [s.nif && `NIF : ${s.nif}`, s.rc && `RC : ${s.rc}`, s.nis && `NIS : ${s.nis}`, s.ai && `AI : ${s.ai}`].filter(Boolean).join('  |  ');
-        if (leg1) doc.text(leg1, PW / 2, y + 8, { align: 'center' });
+        if (leg1) doc.text(leg1, PW / 2, bchLegY, { align: 'center' });
         const leg2 = [s.address && `Adresse : ${this._t(s.address)}`, s.phone && `Tél : ${s.phone}`].filter(Boolean).join('  |  ');
-        if (leg2) doc.text(leg2, PW / 2, y + 11.5, { align: 'center' });
-        y += 13.5;
+        if (leg2) doc.text(leg2, PW / 2, bchLegY + 3.2, { align: 'center' });
+        y += bchCompAct ? 16 : 13.5;
 
         // 2. Banner with Title & Volet Badge (7mm)
         doc.setFillColor(241, 245, 249);
@@ -1181,8 +1198,8 @@
         doc.text(this._t(bc.truckIMM || '/'), ML + colW*5 + 2, y + 6.2);
         y += 9;
 
-        // 4. Entity boxes (Usine Origine & Client Destinataire) — 21mm
-        const gap = 3, cw2 = (CW - gap) / 2, boxH = 21;
+        // 4. Entity boxes (Usine Origine & Client Destinataire) — 22mm
+        const gap = 3, cw2 = (CW - gap) / 2, boxH = 22;
         // Left: Usine
         const supName = this._t(sup.name || bc.supplierName || 'Usine non spécifiée');
         this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
@@ -1192,12 +1209,15 @@
         this._text(doc, isAR ? 'مصدر الشحن (المصنع)' : 'ORIGINE DU CHARGEMENT (USINE)', ML + 2, y + 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
         this._text(doc, supName.slice(0, 38), ML + 2, y + 7.5);
-        const bchSupActivity = sup.activityType || '';
-        if (bchSupActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); this._tc(doc, [107, 114, 128]); this._text(doc, bchSupActivity, ML + 2, y + 10); }
+        const bchSupActivity = sup.activityType || s.activityType || s.evActivityType || '';
+        if (bchSupActivity) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); this._tc(doc, [100, 116, 139]);
+          this._text(doc, (isAR ? 'النشاط : ' : 'Activité : ') + bchSupActivity, ML + 2, y + 10.2);
+        }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); this._tc(doc, [71, 85, 105]);
-        this._text(doc, `RC : ${sup.rc || s.rc || '-'}  |  NIF : ${sup.nif || s.nif || '-'}`, ML + 2, y + (bchSupActivity ? 12.5 : 11.2));
-        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || s.address || '-').slice(0, 42)}`, ML + 2, y + (bchSupActivity ? 15.5 : 14.8));
-        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || s.phone || bc.driverPhone || '-'}`, ML + 2, y + (bchSupActivity ? 18.5 : 18.4));
+        this._text(doc, `RC : ${sup.rc || s.rc || '-'}  |  NIF : ${sup.nif || s.nif || '-'}`, ML + 2, y + (bchSupActivity ? 13 : 11.2));
+        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || s.address || '-').slice(0, 42)}`, ML + 2, y + (bchSupActivity ? 16 : 14.8));
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || s.phone || bc.driverPhone || '-'}`, ML + 2, y + (bchSupActivity ? 19 : 18.4));
 
         // Right: Client
         const cliName = this._t(cli.name || bc.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
@@ -1210,11 +1230,14 @@
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
         this._text(doc, cliName.slice(0, 38), ML + cw2 + gap + 2, y + 7.5);
         const bchCliActivity = cli.activityType || '';
-        if (bchCliActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); this._tc(doc, [107, 114, 128]); this._text(doc, bchCliActivity, ML + cw2 + gap + 2, y + 10); }
+        if (bchCliActivity) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); this._tc(doc, [100, 116, 139]);
+          this._text(doc, (isAR ? 'النشاط : ' : 'Activité : ') + bchCliActivity, ML + cw2 + gap + 2, y + 10.2);
+        }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); this._tc(doc, [71, 85, 105]);
-        this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 12.5 : 11.2));
-        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 40)}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 15.5 : 14.8));
-        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 18.5 : 18.4));
+        this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 13 : 11.2));
+        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 40)}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 16 : 14.8));
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 19 : 18.4));
         y += boxH + 2;
 
         // 5. Items Table (6 cols: N°, DÉSIGNATION, UNITÉ, QTÉ, P.U. HT, TOTAL HT)
@@ -1468,14 +1491,26 @@
       this._tc(doc, C.PRIMARY);
       doc.text(cName.toUpperCase(), PW / 2, y + 6, { align: 'center' });
 
+      const compAct = s.activityType || s.evActivityType || '';
+      if (compAct) {
+        doc.setFontSize(8);
+        this._tc(doc, [100, 116, 139]);
+        const actLabel = isAR ? ('النشاط : ' + compAct) : ('Activité : ' + compAct);
+        const actT = this._t(actLabel);
+        if (this._hasAr(actT) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+        else doc.setFont('helvetica', 'bold');
+        doc.text(actT, PW / 2, y + 9.8, { align: 'center' });
+      }
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       this._tc(doc, [71, 85, 105]);
+      const legY = compAct ? (y + 13.5) : (y + 10.5);
       const leg1 = [s.nif && `NIF : ${s.nif}`, s.rc && `RC : ${s.rc}`, s.nis && `NIS : ${s.nis}`, s.ai && `AI : ${s.ai}`].filter(Boolean).join('  |  ');
-      if (leg1) doc.text(leg1, PW / 2, y + 10.5, { align: 'center' });
+      if (leg1) doc.text(leg1, PW / 2, legY, { align: 'center' });
       const leg2 = [s.address && `Adresse : ${this._t(s.address)}`, s.phone && `Tel : ${s.phone}`].filter(Boolean).join('  |  ');
-      if (leg2) doc.text(leg2, PW / 2, y + 14.5, { align: 'center' });
-      y += 18;
+      if (leg2) doc.text(leg2, PW / 2, legY + 4, { align: 'center' });
+      y += compAct ? 22 : 18;
 
       // ── 2. Title Banner ──
       doc.setFillColor(...C.PRIMARY);
@@ -1518,7 +1553,7 @@
       y += 12;
 
       // ── 4. Entity boxes (Fournisseur & Client) ──
-      const gap = 4, cw2 = (CW - gap) / 2, boxH = 25;
+      const gap = 4, cw2 = (CW - gap) / 2, boxH = 26;
       // Left: Fournisseur
       const supName = this._t(s.companyName || sup.name || 'Fournisseur');
       this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [226, 232, 240]);
@@ -1528,12 +1563,15 @@
       this._text(doc, isAR ? 'المورد / المرسل' : 'FOURNISSEUR / EXPEDITEUR', ML + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       this._text(doc, supName.slice(0, 40), ML + 3, y + 9.5);
-      const supActivity = sup.activityType || '';
-      if (supActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [107, 114, 128]); this._text(doc, supActivity, ML + 3, y + 12.8); }
+      const supActivity = sup.activityType || s.activityType || s.evActivityType || '';
+      if (supActivity) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
+        this._text(doc, (isAR ? 'النشاط : ' : 'Activité : ') + supActivity, ML + 3, y + 13);
+      }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      this._text(doc, `RC : ${s.rc || sup.rc || '-'}  |  NIF : ${s.nif || sup.nif || '-'}`, ML + 3, y + (supActivity ? 16 : 13.8));
-      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || sup.address || '-').slice(0, 42)}`, ML + 3, y + (supActivity ? 19.3 : 17.6));
-      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${s.phone || sup.phone || '-'}${s.nis ? '  |  NIS : ' + s.nis : ''}`, ML + 3, y + (supActivity ? 22.6 : 21.4));
+      this._text(doc, `RC : ${s.rc || sup.rc || '-'}  |  NIF : ${s.nif || sup.nif || '-'}`, ML + 3, y + (supActivity ? 16.5 : 13.8));
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || sup.address || '-').slice(0, 42)}`, ML + 3, y + (supActivity ? 19.8 : 17.6));
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${s.phone || sup.phone || '-'}${s.nis ? '  |  NIS : ' + s.nis : ''}`, ML + 3, y + (supActivity ? 23.2 : 21.4));
 
       // Right: Client
       const cliName = this._t(cli.name || bl.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
@@ -1546,11 +1584,14 @@
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       this._text(doc, cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
       const cliActivity = cli.activityType || '';
-      if (cliActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [107, 114, 128]); this._text(doc, cliActivity, ML + cw2 + gap + 3, y + 12.8); }
+      if (cliActivity) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
+        this._text(doc, (isAR ? 'النشاط : ' : 'Activité : ') + cliActivity, ML + cw2 + gap + 3, y + 13);
+      }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 3, y + (cliActivity ? 16 : 13.8));
-      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + (cliActivity ? 19.3 : 17.6));
-      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 3, y + (cliActivity ? 22.6 : 21.4));
+      this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 3, y + (cliActivity ? 16.5 : 13.8));
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + (cliActivity ? 19.8 : 17.6));
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 3, y + (cliActivity ? 23.2 : 21.4));
       y += boxH + 3;
 
       // ── 5. Items Table ──
@@ -1733,14 +1774,26 @@
       this._tc(doc, [239, 68, 68]); // Red theme for Bon de Retour
       doc.text(cName.toUpperCase(), PW / 2, y + 6, { align: 'center' });
 
+      const retCompAct = s.activityType || s.evActivityType || '';
+      if (retCompAct) {
+        doc.setFontSize(8);
+        this._tc(doc, [100, 116, 139]);
+        const actLabel = isAR ? ('النشاط : ' + retCompAct) : ('Activité : ' + retCompAct);
+        const actT = this._t(actLabel);
+        if (this._hasAr(actT) && _arFontB64) doc.setFont(AR_FONT_NAME, 'normal');
+        else doc.setFont('helvetica', 'bold');
+        doc.text(actT, PW / 2, y + 9.8, { align: 'center' });
+      }
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       this._tc(doc, [71, 85, 105]);
+      const retLegY = retCompAct ? (y + 13.5) : (y + 10.5);
       const leg1 = [s.nif && `NIF : ${s.nif}`, s.rc && `RC : ${s.rc}`, s.nis && `NIS : ${s.nis}`, s.ai && `AI : ${s.ai}`].filter(Boolean).join('  |  ');
-      if (leg1) doc.text(leg1, PW / 2, y + 10.5, { align: 'center' });
+      if (leg1) doc.text(leg1, PW / 2, retLegY, { align: 'center' });
       const leg2 = [s.address && `Adresse : ${this._t(s.address)}`, s.phone && `Tel : ${s.phone}`].filter(Boolean).join('  |  ');
-      if (leg2) doc.text(leg2, PW / 2, y + 14.5, { align: 'center' });
-      y += 18;
+      if (leg2) doc.text(leg2, PW / 2, retLegY + 4, { align: 'center' });
+      y += retCompAct ? 22 : 18;
 
       // ── 2. Title Banner ──
       doc.setFillColor(239, 68, 68); // Red
@@ -1794,7 +1847,7 @@
       }
 
       // ── 4. Entity boxes ──
-      const gap = 4, cw2 = (CW - gap) / 2, boxH = 22;
+      const gap = 4, cw2 = (CW - gap) / 2, boxH = 26;
       // Left: Entreprise
       const supName = this._t(s.companyName || 'Entreprise');
       this._rect(doc, ML, y, cw2, boxH, [255, 255, 255], [252, 165, 165]);
@@ -1804,9 +1857,14 @@
       doc.text('RECEPTEUR (ENTREPRISE)', ML + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       doc.text(supName.slice(0, 40), ML + 3, y + 9.5);
+      const retSupAct = s.activityType || s.evActivityType || '';
+      if (retSupAct) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [153, 27, 27]);
+        this._text(doc, (isAR ? 'النشاط : ' : 'Activité : ') + retSupAct, ML + 3, y + 13);
+      }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      doc.text(`Tel : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + 14);
-      doc.text(`Adresse : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + 18);
+      this._text(doc, `Tel : ${s.phone || '-'}  |  RC : ${s.rc || '-'}`, ML + 3, y + (retSupAct ? 16.5 : 14));
+      this._text(doc, `Adresse : ${this._t(s.address || '-').slice(0, 45)}`, ML + 3, y + (retSupAct ? 20 : 18));
 
       // Right: Client
       const cliName = this._t(cli.name || br.clientName || 'Client');
@@ -1817,9 +1875,14 @@
       doc.text('CLIENT / EXPEDITEUR DU RETOUR', ML + cw2 + gap + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       doc.text(cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
+      const retCliAct = cli.activityType || '';
+      if (retCliAct) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [153, 27, 27]);
+        this._text(doc, (isAR ? 'النشاط : ' : 'Activité : ') + retCliAct, ML + cw2 + gap + 3, y + 13);
+      }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      doc.text(`NIF : ${cli.nif || '-'}  |  Tel : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + 14);
-      doc.text(`Adresse : ${this._t(cli.address || '-').slice(0, 42)}`, ML + cw2 + gap + 3, y + 18);
+      this._text(doc, `NIF : ${cli.nif || '-'}  |  Tel : ${cli.phone || '-'}`, ML + cw2 + gap + 3, y + (retCliAct ? 16.5 : 14));
+      this._text(doc, `Adresse : ${this._t(cli.address || '-').slice(0, 42)}`, ML + cw2 + gap + 3, y + (retCliAct ? 20 : 18));
       y += boxH + 3;
 
       // ── 5. Items Table ──
