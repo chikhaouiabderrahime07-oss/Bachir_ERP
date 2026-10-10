@@ -29,11 +29,15 @@ async function authMiddleware(req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // ── Multi-Session Support & Account Status Check ─────────
+    // ── Single-Session Enforcement & Account Status Check ─────────
     if (decoded.username) {
       const state = await getUserState(decoded.username);
       if (state?.active === false && state.role !== 'admin') {
         return res.status(403).json({ error: 'Compte désactivé' });
+      }
+      // Enforce single-session: if the user logged in elsewhere, this token's sessionId is stale
+      if (decoded.sessionId && state?.currentSessionId && decoded.sessionId !== state.currentSessionId) {
+        return res.status(403).json({ error: 'SESSION_TERMINATED', code: 'SESSION_TERMINATED', message: 'Session terminée — connexion depuis un autre appareil' });
       }
     }
 

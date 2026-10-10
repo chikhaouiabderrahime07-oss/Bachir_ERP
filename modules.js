@@ -5335,7 +5335,7 @@ const AdminCaisseModule = {
         const items = Object.values(aggregated);
         etatVenteHT = Math.round(items.reduce((acc, it) => acc + (it.qty * it.price), 0) * 100) / 100;
         etatVenteTVA = Math.round(etatVenteHT * (tvaRate / 100) * 100) / 100;
-        etatVenteTimbre = Math.round(etatVenteHT * 0.01 * 100) / 100;
+        etatVenteTimbre = Math.round((etatVenteHT + etatVenteTVA) * 0.01 * 100) / 100;
         etatVenteTTC = Math.round((etatVenteHT + etatVenteTVA + etatVenteTimbre) * 100) / 100;
       }
 

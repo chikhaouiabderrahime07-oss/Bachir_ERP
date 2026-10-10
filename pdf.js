@@ -722,9 +722,11 @@
       // Fiscal TTC = HT + TVA + Timbre (calculated on HT + TVA sum)
       const ht = Number(totalHT) || 0;
       const effectiveTva = (Number(tvaAmt) > 0) ? Number(tvaAmt) : Math.round(ht * (Number(tvaRate) || 19) / 100 * 100) / 100;
-      const effectiveTimbreAmt = Math.round((ht + effectiveTva) * 0.01 * 100) / 100;
+      // Use passed timbreAmt from core.js when available (respects any caps/rules); fallback to 1% on (HT+TVA)
+      const effectiveTimbreAmt = (Number(timbreAmt) > 0) ? Number(timbreAmt) : Math.round((ht + effectiveTva) * 0.01 * 100) / 100;
       const effectiveTimbreRate = 1; // Strictly 1% fixed for État de Vente on (HT + TVA)
-      const fiscalTTC = Math.round((ht + effectiveTva + effectiveTimbreAmt) * 100) / 100;
+      // Use passed totalTTC from core.js when available; fallback to recalculation
+      const fiscalTTC = (Number(totalTTC) > 0) ? Number(totalTTC) : Math.round((ht + effectiveTva + effectiveTimbreAmt) * 100) / 100;
 
       let tEndY = this._buildTable(doc, y, COLS, bodyRows, {
         totalHT: ht,
@@ -861,7 +863,7 @@
           const bHT = Number(b.totalHT ?? fullB.totalHT ?? 0);
           const bTVA = Number(b.tvaAmount ?? b.tva ?? fullB.tvaAmount ?? fullB.tva ?? 0);
           const bTimbre = Number(b.timbreAmount ?? b.timbre ?? fullB.timbreAmount ?? fullB.timbre ?? 0);
-          const bTTC = Number(b.totalTTC ?? fullB.totalTTC ?? (bHT + bTVA + bTimbre)) || 0;
+          const bTTC = Number(b.totalTTC ?? fullB.totalTTC ?? Math.round((bHT + bTVA + bTimbre) * 100) / 100) || 0;
 
           if (isRet) {
             sumBchHT -= bHT;

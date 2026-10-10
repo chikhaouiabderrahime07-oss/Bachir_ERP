@@ -102,7 +102,7 @@ router.post('/logout', async (req, res) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
     if (decoded?.id) {
-      invalidateUser(decoded.id);
+      invalidateUser(decoded.username);
       await Document.findOneAndUpdate(
         { col: 'users', 'data.id': decoded.id },
         { $unset: { 'data.currentSessionId': '' } }

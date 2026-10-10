@@ -472,7 +472,7 @@ const DB = {
             dep.userId = s.userId;
             dep.userName = userName;
             if (s.etatVenteRef && !dep.etatVenteRef) dep.etatVenteRef = s.etatVenteRef;
-            if (expectedRealBchNet > 0 && Math.abs(Number(dep.amount || 0) - expectedRealBchNet) > 0.01) {
+            if (Math.abs(Number(dep.amount || 0) - expectedRealBchNet) > 0.01) {
               dep.amount = expectedRealBchNet;
               modified = true;
               if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -566,7 +566,7 @@ const DB = {
             wit.userId = s.userId;
             wit.userName = userName;
             if (evRef && !wit.etatVenteRef) wit.etatVenteRef = evRef;
-            if (expectedEvTTC > 0 && (Math.abs(Number(wit.amount || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01)) {
+            if (Math.abs(Number(wit.amount || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01) {
               wit.amount = expectedEvTTC;
               wit.etatVenteTTC = expectedEvTTC;
               wit.timbreAmount = expectedTimbre;
@@ -3610,7 +3610,18 @@ const SessionMgr = {
       if (savedEtat) ref = savedEtat.ref;
     }
     if (!ref) {
-      const seqNum = DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1;
+      let seqNum;
+      try {
+        // Use server-side atomic counter to avoid duplicate refs when two sessions close simultaneously
+        if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+          const res = await window.API.get(`/data/next-num/etat_vente?year=${year}`);
+          seqNum = res?.num || (DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1);
+        } else {
+          seqNum = DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1;
+        }
+      } catch (_) {
+        seqNum = DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1;
+      }
       ref = `ET/${String(seqNum).padStart(3, '0')}/${month}/${year}`;
     }
 
@@ -3877,6 +3888,13 @@ const SessionMgr = {
         amount: Number(newNet),
         etatVenteTTC: Number(newNet),
         note: (caisseWit.note || '') + ` [Rectifié de ${Utils.fmtCurrency(oldNet)} à ${Utils.fmtCurrency(newNet)} par Admin]`
+      });
+    }
+    // Also update the deposit entry to keep caisse balanced
+    if (caisseDep) {
+      DB.update('caisse_admin', caisseDep.id, {
+        amount: Number(newNet),
+        note: (caisseDep.note || '') + ` [Rectifié de ${Utils.fmtCurrency(oldNet)} à ${Utils.fmtCurrency(newNet)} par Admin]`
       });
     }
 
