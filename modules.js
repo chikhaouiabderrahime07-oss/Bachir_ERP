@@ -4970,6 +4970,9 @@ const AdminCaisseModule = {
       this._adminTab = 'mini_caisses';
     }
 
+    // ── Auto-reconcile caisse with all closed sessions & 1% timbre États de Vente ──
+    try { DB.recalibrateCaisse?.(); } catch(e) {}
+
     // ── Raw data (no filter applied to globals) ──
     const caAll = DB.getAll('caisse_admin').sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     const allDeposits   = caAll.filter(t=>t.type==='deposit');
@@ -5643,6 +5646,123 @@ const AdminCaisseModule = {
         </div>
       </div>`}
 
+      <!-- FORMULE DE CALCUL & RAPPROCHEMENT DU SOLDE CAISSE -->
+      <div class="card" style="margin-bottom:22px;border:1px solid rgba(2,132,199,.25);background:var(--bg2);border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.03)">
+        <div style="background:linear-gradient(135deg,rgba(2,132,199,.08),rgba(14,165,233,.02));padding:16px 20px;border-bottom:1px solid rgba(2,132,199,.15);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#0284c7,#0ea5e9);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(2,132,199,.3)">
+              <i class="fas fa-calculator"></i>
+            </div>
+            <div>
+              <h4 style="margin:0;font-size:15px;font-weight:900;color:var(--text)">
+                ${isAR ? 'معادلة احتساب وتسوية رصيد الصندوق' : 'Formule de Calcul & Rapprochement du Solde Caisse'}
+              </h4>
+              <div style="font-size:11.5px;color:var(--text4);margin-top:2px">
+                ${isAR ? 'توضيح تدفق الأموال بين مقبوضات سندات الشحن (BCH)، كشف المبيعات (1% طابع)، والتحويل البنكي' : 'Flux financier : Ventes réelles BCH, État de Vente (timbre 1%), Versements bancaires & Solde du coffre'}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-xs btn-outline" onclick="DB.MasterBrain.CaisseBrain.recalibrate();App.loadModule('admin_caisse')" style="gap:6px;font-weight:700" title="${isAR ? 'إعادة مزامنة الصندوق' : 'Synchroniser la caisse'}">
+              <i class="fas fa-sync-alt"></i> ${isAR ? 'مزامنة فورية' : 'Synchroniser'}
+            </button>
+            <span class="badge" style="background:rgba(2,132,199,.12);color:#0284c7;font-weight:800;padding:5px 10px;border-radius:8px">
+              ${isAR ? 'رصيد الخزينة :' : 'Solde Coffre :'} ${Utils.fmtCurrency(balance)}
+            </span>
+          </div>
+        </div>
+
+        <div style="padding:18px 20px">
+          <!-- Live Mathematical Formula Bar -->
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:18px">
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--text4);margin-bottom:8px">
+              <i class="fas fa-equals" style="color:var(--primary)"></i> ${isAR ? 'المعادلة المحاسبية الأساسية' : 'Équation Comptable Fondamentale'}
+            </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:clamp(13px,1.2vw,15px);font-weight:800;font-family:var(--font-mono)">
+              <div style="color:var(--primary);background:rgba(2,132,199,.1);padding:6px 12px;border-radius:8px">
+                ${isAR ? 'رصيد الصندوق' : 'Solde Caisse'}
+              </div>
+              <span style="color:var(--text4);font-size:18px">=</span>
+              <div style="color:var(--success);background:rgba(34,197,94,.1);padding:6px 12px;border-radius:8px">
+                + ${isAR ? 'إجمالي المقبوضات الفعلية (BCH)' : 'Total Dépôts (BCH Réel)'}
+              </div>
+              <span style="color:var(--text4);font-size:18px">−</span>
+              <div style="color:var(--danger);background:rgba(239,68,68,.1);padding:6px 12px;border-radius:8px">
+                − ${isAR ? 'المحول للبنك (كشف المبيعات 1%)' : 'Total Retraits (État de Vente 1%)'}
+              </div>
+              <span style="color:var(--text4);font-size:18px">=</span>
+              <div style="color:#d97706;background:rgba(245,158,11,.1);padding:6px 12px;border-radius:8px">
+                ${isAR ? 'الفائض المالي المتبقي في الخزينة' : 'Écart / Surplus Restant au Coffre'}
+              </div>
+            </div>
+          </div>
+
+          <!-- 3-Step Practical Execution Flow -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:16px">
+            <!-- Step 1 -->
+            <div style="background:var(--bg3);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:14px;position:relative">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--success);display:flex;align-items:center;gap:6px">
+                  <span style="width:20px;height:20px;border-radius:50%;background:var(--success);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">1</span>
+                  ${isAR ? 'المقبوضات الفعلية (إيداع)' : '1. Recettes Réelles (Dépôt)'}
+                </span>
+                <span class="badge badge-success" style="font-size:10px">+${Utils.fmtCurrency(totalNetRealBCH)}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text3);line-height:1.45">
+                ${isAR 
+                  ? 'المبلغ النقدي الفعلي المحصل من مبيعات الشحن (BCH) مطروحاً منه المرتجعات. يُسلَّم بالكامل إلى الصندوق المركزي عند إغلاق الجلسة.'
+                  : 'Total net réellement encaissé des clients (Ventes BCH Brut − Retours). Ce montant entre intégralement dans la Caisse Centrale à la clôture.'}
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div style="background:var(--bg3);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px;position:relative">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--danger);display:flex;align-items:center;gap:6px">
+                  <span style="width:20px;height:20px;border-radius:50%;background:var(--danger);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">2</span>
+                  ${isAR ? 'التحويل للبنك (سحب)' : '2. Versement Banque (Retrait)'}
+                </span>
+                <span class="badge badge-danger" style="font-size:10px">-${Utils.fmtCurrency(totalEV_TTC)}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text3);line-height:1.45">
+                ${isAR 
+                  ? 'المبلغ الرسمي المصرح به في كشف المبيعات مع طابع 1% الإجباري (HT + TVA). يُسحب من الصندوق ويودع في الحساب البنكي.'
+                  : 'Montant officiel de l\'État de Vente incluant le timbre fiscal légal de 1% sur (HT + TVA). Ce montant sort de la caisse pour dépôt à la banque.'}
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div style="background:var(--bg3);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:14px;position:relative">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:#d97706;display:flex;align-items:center;gap:6px">
+                  <span style="width:20px;height:20px;border-radius:50%;background:#d97706;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">3</span>
+                  ${isAR ? 'الرصيد المتبقي بالخزينة' : '3. Reste Physique au Coffre'}
+                </span>
+                <span class="badge" style="background:rgba(245,158,11,.15);color:#d97706;font-size:10px;font-weight:900">
+                  ${(totalNetRealBCH - totalEV_TTC) >= 0 ? '+' : ''}${Utils.fmtCurrency(totalNetRealBCH - totalEV_TTC)}
+                </span>
+              </div>
+              <div style="font-size:11.5px;color:var(--text3);line-height:1.45">
+                ${isAR 
+                  ? 'الفارق الإيجابي الناتج بين المقبوضات الفعلية وكشف المبيعات المحول للبنك. يمثل الفائض المحاسبي والسيولة النقدية المتواجدة فعلياً في الخزينة.'
+                  : 'Différence nette entre encaissement réel et déclaration banque. Représente l\'excédent de liquidités restant physiquement dans la caisse.'}
+              </div>
+            </div>
+          </div>
+
+          <!-- Legal & Timbre Note -->
+          <div style="background:linear-gradient(135deg,rgba(13,148,136,.06),rgba(13,148,136,.02));border:1px solid rgba(13,148,136,.2);border-radius:10px;padding:12px 16px;display:flex;gap:12px;align-items:flex-start">
+            <i class="fas fa-info-circle" style="color:#0d9488;margin-top:2px;font-size:15px;flex-shrink:0"></i>
+            <div style="font-size:11.5px;color:var(--text2);line-height:1.5">
+              <strong>${isAR ? 'ملاحظة قانونية وجبائية :' : 'Précision Réglementaire & Fiscale :'}</strong>
+              ${isAR 
+                ? 'يتم احتساب الطابع الجبائي لكشف المبيعات بدقة 1% على مجموع (HT + TVA). أي هامش ربح محدد في الإعدادات يدمج مباشرة في سعر الوحدة دون أثر رجعي على الكشوفات السابقة المقفلة.'
+                : 'Le timbre fiscal des États de Vente est calculé à 1% fixe sur la somme (HT + TVA). La marge bénéficiaire paramétrée dans les réglages est directement intégrée dans le prix unitaire sans aucun impact rétroactif sur les anciens états clôturés.'}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Sub-View Switcher Pills -->
       <div style="display:flex;gap:8px;margin-bottom:16px;background:var(--bg2);padding:6px;border-radius:12px;border:1px solid var(--border);width:fit-content">
         <button class="btn btn-sm ${mcSubView==='daily'?'btn-primary':'btn-outline'}" onclick="AdminCaisseModule._miniCaisseSubView='daily';App.loadModule('admin_caisse')" style="font-weight:700;border-radius:8px">
@@ -5674,8 +5794,8 @@ const AdminCaisseModule = {
                 <th style="text-align:right;background:rgba(2,132,199,.04)">${isAR ? 'الصافي الفعلي BCH' : 'Net Réel BCH (Caisse)'}</th>
                 <th style="text-align:right;background:rgba(13,148,136,.04)">${isAR ? 'كشف المبيعات (1%)' : 'État de Vente TTC (1%)'}</th>
                 <th style="text-align:right;font-weight:800">${isAR ? 'الفارق الجبائي TTC' : 'Écart Fiscal TTC (Diff)'}</th>
-                <th style="text-align:right">${isAR ? 'المحول للبنك' : 'Versé Banque'}</th>
-                <th style="text-align:right">${isAR ? 'الصندوق المركزي' : 'Caisse Centrale'}</th>
+                <th style="text-align:right">${isAR ? 'المحول للبنك (سحب)' : 'Versé Banque (Sortie)'}</th>
+                <th style="text-align:right">${isAR ? 'الصندوق المركزي (إيداع)' : 'Caisse Centrale (Dépôt)'}</th>
                 <th style="text-align:center">${isAR ? 'الحالة' : 'Statut'}</th>
                 <th style="text-align:center">${isAR ? 'الإجراءات' : 'Actions'}</th>
               </tr>
@@ -5718,6 +5838,25 @@ const AdminCaisseModule = {
                 </tr>`;
               }).join('') : `<tr><td colspan="11" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
+            <tfoot>
+              <tr style="background:var(--bg3);font-weight:800;border-top:2px solid var(--border)">
+                <td colspan="2" style="font-weight:900;text-transform:uppercase">${isAR ? 'المجموع الإجمالي' : 'TOTAL GÉNÉRAL'}</td>
+                <td style="text-align:right;color:var(--success)">+${Utils.fmtCurrency(totalGrossBCH)}</td>
+                <td style="text-align:right;color:var(--danger)">-${Utils.fmtCurrency(totalReturnsTTC)}</td>
+                <td style="text-align:right;color:var(--primary);background:rgba(2,132,199,.06)">${Utils.fmtCurrency(totalNetRealBCH)}</td>
+                <td style="text-align:right;color:#0d9488;background:rgba(13,148,136,.06)">${Utils.fmtCurrency(totalEV_TTC)}</td>
+                <td style="text-align:right">
+                  <span class="badge" style="background:${Math.abs(totalEcartFiscal)<0.01?'rgba(16,185,129,.15)':totalEcartFiscal>0?'rgba(14,165,233,.15)':'rgba(239,68,68,.15)'};color:${Math.abs(totalEcartFiscal)<0.01?'#10b981':totalEcartFiscal>0?'#0284c7':'#ef4444'};font-weight:900">
+                    ${totalEcartFiscal>=0?'+':''}${Utils.fmtCurrency(totalEcartFiscal)}
+                  </span>
+                </td>
+                <td style="text-align:right;color:#8b5cf6">${Utils.fmtCurrency(totalBankVersed)}</td>
+                <td style="text-align:right;color:#10b981">${Utils.fmtCurrency(totalCaisseAdmin)}</td>
+                <td colspan="2" style="text-align:center">
+                  <span class="badge badge-info" style="font-size:10px">${closedCount} / ${sessionDetails.length} ${isAR ? 'مغلقة' : 'clôturées'}</span>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>` : ''}
@@ -5741,8 +5880,8 @@ const AdminCaisseModule = {
                 <th style="text-align:right;background:rgba(2,132,199,.04)">${isAR ? 'الصافي الفعلي BCH' : 'Net Réel BCH (Caisse)'}</th>
                 <th style="text-align:right;background:rgba(13,148,136,.04)">${isAR ? 'كشف المبيعات (1%)' : 'État de Vente TTC'}</th>
                 <th style="text-align:right">${isAR ? 'الفارق الجبائي TTC' : 'Écart Fiscal TTC'}</th>
-                <th style="text-align:right">${isAR ? 'المحول للبنك' : 'Versé Banque'}</th>
-                <th style="text-align:right">${isAR ? 'الصندوق المركزي' : 'Caisse Admin'}</th>
+                <th style="text-align:right">${isAR ? 'المحول للبنك (سحب)' : 'Versé Banque (Sortie)'}</th>
+                <th style="text-align:right">${isAR ? 'الصندوق المركزي (إيداع)' : 'Caisse Admin (Dépôt)'}</th>
                 <th style="text-align:center">${isAR ? 'كشف المبيعات' : 'Réf État Vente'}</th>
                 <th style="text-align:center">${isAR ? 'الإجراءات' : 'Actions'}</th>
               </tr>
@@ -5794,6 +5933,25 @@ const AdminCaisseModule = {
                 </tr>`;
               }).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
+            <tfoot>
+              <tr style="background:var(--bg3);font-weight:800;border-top:2px solid var(--border)">
+                <td colspan="3" style="font-weight:900;text-transform:uppercase">${isAR ? 'المجموع الإجمالي' : 'TOTAL GÉNÉRAL'}</td>
+                <td style="text-align:right;color:var(--success)">+${Utils.fmtCurrency(totalGrossBCH)}</td>
+                <td style="text-align:right;color:var(--danger)">-${Utils.fmtCurrency(totalReturnsTTC)}</td>
+                <td style="text-align:right;color:var(--primary);background:rgba(2,132,199,.06)">${Utils.fmtCurrency(totalNetRealBCH)}</td>
+                <td style="text-align:right;color:#0d9488;background:rgba(13,148,136,.06)">${Utils.fmtCurrency(totalEV_TTC)}</td>
+                <td style="text-align:right">
+                  <span class="badge" style="background:${Math.abs(totalEcartFiscal)<0.01?'rgba(16,185,129,.15)':totalEcartFiscal>0?'rgba(14,165,233,.15)':'rgba(239,68,68,.15)'};color:${Math.abs(totalEcartFiscal)<0.01?'#10b981':totalEcartFiscal>0?'#0284c7':'#ef4444'};font-weight:900">
+                    ${totalEcartFiscal>=0?'+':''}${Utils.fmtCurrency(totalEcartFiscal)}
+                  </span>
+                </td>
+                <td style="text-align:right;color:#8b5cf6">${Utils.fmtCurrency(totalBankVersed)}</td>
+                <td style="text-align:right;color:#10b981">${Utils.fmtCurrency(totalCaisseAdmin)}</td>
+                <td colspan="2" style="text-align:center">
+                  <span class="badge badge-info" style="font-size:10px">${closedCount} / ${sessionDetails.length} ${isAR ? 'مغلقة' : 'clôturées'}</span>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>` : ''}

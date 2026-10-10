@@ -440,6 +440,171 @@ const DB = {
           return true;
         });
 
+        // ── Rule 4: Synchronize all closed sessions & États de Vente in caisse_admin ──
+        const closedSessions = (DB.getAll('sessions') || []).filter(s => s.status === 'closed');
+        const allEvDocs = DB.getAll('etat_vente_docs') || [];
+        const allUsers = DB.getAll('users') || [];
+
+        closedSessions.forEach(s => {
+          const sUser = allUsers.find(u => u.id === s.userId);
+          const userName = sUser?.name || sUser?.username || s.userName || 'Caissier';
+          const sessionDate = s.date || (s.closedAt || s.createdAt || '').slice(0, 10);
+
+          // Calculate or fetch expected net BCH cash collected:
+          let expectedRealBchNet = Number(s.realBchNet);
+          if (isNaN(expectedRealBchNet) || expectedRealBchNet <= 0) {
+            const summ = (typeof SessionMgr !== 'undefined' && SessionMgr.getUserDaySummary) ? SessionMgr.getUserDaySummary(s.userId, sessionDate) : null;
+            expectedRealBchNet = summ ? summ.netAmount : (Number(s.closedEspeces) || Number(s.closedNet) || 0);
+          }
+
+          // 4a. Synchronize Deposit (Recettes réelles BCH)
+          let dep = cleaned.find(e => 
+            e.type === 'deposit' && 
+            (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles') && 
+            (Number(e.sessionId) === Number(s.id) || 
+             (s.etatVenteRef && e.etatVenteRef === s.etatVenteRef) || 
+             ((e.sessionDate === sessionDate || (e.date || '').slice(0, 10) === sessionDate) && String(e.userId) === String(s.userId)))
+          );
+
+          if (dep) {
+            dep.sessionId = s.id;
+            dep.sessionDate = sessionDate;
+            dep.userId = s.userId;
+            dep.userName = userName;
+            if (s.etatVenteRef && !dep.etatVenteRef) dep.etatVenteRef = s.etatVenteRef;
+            if (expectedRealBchNet > 0 && Math.abs(Number(dep.amount || 0) - expectedRealBchNet) > 0.01) {
+              dep.amount = expectedRealBchNet;
+              modified = true;
+              if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+                window.API.update('caisse_admin', dep.id, dep).catch(() => {});
+              }
+            }
+          } else if (expectedRealBchNet > 0) {
+            // Auto-create missing deposit for this closed session
+            const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
+            dep = {
+              id: maxId + 1,
+              type: 'deposit',
+              source: 'user_cloture',
+              userId: s.userId,
+              userName,
+              sessionId: s.id,
+              sessionDate,
+              amount: expectedRealBchNet,
+              targetBankId: s.targetBankId || null,
+              etatVenteRef: s.etatVenteRef || null,
+              note: `Recettes réelles de la caisse BCH — Clôture session #${s.id} (${sessionDate})`,
+              createdAt: s.closedAt || s.createdAt || new Date().toISOString()
+            };
+            cleaned.push(dep);
+            modified = true;
+            if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+              window.API.insert('caisse_admin', dep).catch(() => {});
+            }
+          }
+
+          // 4b. Synchronize Withdrawal (Transfert Banque État de Vente)
+          let evDoc = s.etatVenteId ? allEvDocs.find(d => d.id === s.etatVenteId) : null;
+          if (!evDoc && s.etatVenteRef) {
+            evDoc = allEvDocs.find(d => d.ref === s.etatVenteRef);
+          }
+          if (!evDoc) {
+            evDoc = allEvDocs.find(d => (d.date === sessionDate || d.dateEnd === sessionDate) && String(d.userId) === String(s.userId));
+          }
+
+          let expectedEvTTC = 0;
+          let expectedTimbre = 0;
+          if (evDoc && Number(evDoc.totalTTC) > 0) {
+            expectedEvTTC = Number(evDoc.totalTTC);
+            expectedTimbre = Number(evDoc.timbreAmount || 0);
+          } else if (Number(s.etatVenteTTC) > 0) {
+            expectedEvTTC = Number(s.etatVenteTTC);
+            expectedTimbre = Number(s.timbreAmount || 0);
+          } else if (Number(s.closedNet) > 0) {
+            expectedEvTTC = Number(s.closedNet);
+          }
+
+          if (expectedEvTTC === 0 && expectedRealBchNet > 0 && typeof SessionMgr !== 'undefined' && typeof SessionMgr.getUserDaySummary === 'function') {
+            const sum = SessionMgr.getUserDaySummary(s.userId, sessionDate);
+            const tvaRate = Number(DB.getSettings().tvaRate) || 19;
+            const aggregated = {};
+            (sum.bls || []).filter(b => b.status !== 'returned').forEach(bl => {
+              (bl.lines || []).forEach(line => {
+                const key = (line.designation || '').trim();
+                if (!key) return;
+                const qty = Number(line.qtyDelivered || line.qty) || 0;
+                const price = Number(line.price) || 0;
+                const disc = Number(line.disc) || 0;
+                const effPrice = price * (1 - disc / 100);
+                if (!aggregated[key]) aggregated[key] = { qty: 0, price: effPrice };
+                aggregated[key].qty += qty;
+              });
+            });
+            const items = Object.values(aggregated);
+            const ht = Math.round(items.reduce((acc, it) => acc + (it.qty * it.price), 0) * 100) / 100;
+            const tva = Math.round(ht * (tvaRate / 100) * 100) / 100;
+            const tim = Math.round((ht + tva) * 0.01 * 100) / 100;
+            expectedEvTTC = Math.round((ht + tva + tim) * 100) / 100;
+            expectedTimbre = tim;
+          }
+
+          const expectedEcart = Math.round((expectedEvTTC - expectedRealBchNet) * 100) / 100;
+          const evRef = evDoc?.ref || s.etatVenteRef || `ET/SESS-${s.id}`;
+
+          let wit = cleaned.find(e => 
+            e.type === 'withdrawal' && 
+            e.source === 'transfert_banque_etat_vente' && 
+            (Number(e.sessionId) === Number(s.id) || 
+             (evRef && e.etatVenteRef === evRef) || 
+             (evDoc && (e.etatVenteRef === evDoc.ref || String(e.etatVenteId) === String(evDoc.id))) ||
+             ((e.sessionDate === sessionDate || (e.date || '').slice(0, 10) === sessionDate) && String(e.userId) === String(s.userId)))
+          );
+
+          if (wit) {
+            wit.sessionId = s.id;
+            wit.sessionDate = sessionDate;
+            wit.userId = s.userId;
+            wit.userName = userName;
+            if (evRef && !wit.etatVenteRef) wit.etatVenteRef = evRef;
+            if (expectedEvTTC > 0 && (Math.abs(Number(wit.amount || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01)) {
+              wit.amount = expectedEvTTC;
+              wit.etatVenteTTC = expectedEvTTC;
+              wit.timbreAmount = expectedTimbre;
+              wit.ecartFiscal = expectedEcart;
+              modified = true;
+              if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+                window.API.update('caisse_admin', wit.id, wit).catch(() => {});
+              }
+            }
+          } else if (expectedEvTTC > 0) {
+            // Auto-create missing withdrawal for this État de Vente transfer
+            const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
+            wit = {
+              id: maxId + 1,
+              type: 'withdrawal',
+              source: 'transfert_banque_etat_vente',
+              userId: s.userId,
+              userName,
+              sessionId: s.id,
+              sessionDate,
+              amount: expectedEvTTC,
+              targetBankId: s.targetBankId || evDoc?.bankId || null,
+              etatVenteRef: evRef,
+              etatVenteId: evDoc?.id || s.etatVenteId || null,
+              etatVenteTTC: expectedEvTTC,
+              timbreAmount: expectedTimbre,
+              ecartFiscal: expectedEcart,
+              note: `Versement bancaire — État de Vente ${evRef} (Session #${s.id})`,
+              createdAt: s.closedAt || s.createdAt || new Date().toISOString()
+            };
+            cleaned.push(wit);
+            modified = true;
+            if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+              window.API.insert('caisse_admin', wit).catch(() => {});
+            }
+          }
+        });
+
         // ── Commit cleanups ──
         if (modified) {
           DB.rawSet('caisse_admin', cleaned);
@@ -450,7 +615,7 @@ const DB = {
 
         const totalIn = cleaned.filter(e => e.type === 'deposit').reduce((s, e) => s + (Number(e.amount) || 0), 0);
         const totalOut = cleaned.filter(e => e.type === 'withdrawal').reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        return { ok: true, balance: Math.round((totalIn - totalOut) * 100) / 100, totalIn, totalOut, cleanedCount: toRemoveCloud.length };
+        return { ok: true, balance: Math.round((totalIn - totalOut) * 100) / 100, totalIn, totalOut, modified, cleanedCount: toRemoveCloud.length };
       }
     },
 
@@ -1388,6 +1553,18 @@ const DB = {
           if (evTimbreFixed > 0) DB.rawSet('etat_vente_docs', allEVDocs);
           checks.push({ name: 'Timbre Fiscal États de Vente (1% sur HT + TVA)', status: evTimbreFixed > 0 ? 'FIXED' : 'OK', detail: evTimbreFixed > 0 ? `${evTimbreFixed} état(s) corrigé(s)` : 'Tous les états ont le timbre 1% conforme' });
 
+          // Check 16: Caisse Admin & Mini-Caisses Full Reconciliation
+          const caisseSyncRes = DB.MasterBrain.CaisseBrain.recalibrate();
+          if (caisseSyncRes && caisseSyncRes.modified) {
+            anomaliesFixed++;
+            fixes.push(`🏛️ Caisse Centrale resynchronisée avec les sessions de caisse (Solde réconcilié: ${Utils.fmtCurrency(caisseSyncRes.balance)})`);
+          }
+          checks.push({ 
+            name: 'Rapprochement Caisse Centrale & Mini-Caisses', 
+            status: (caisseSyncRes && caisseSyncRes.modified) ? 'FIXED' : 'OK', 
+            detail: (caisseSyncRes && caisseSyncRes.modified) ? `Caisse synchronisée (Solde: ${Utils.fmtCurrency(caisseSyncRes.balance)})` : `Solde parfaitement synchronisé (${Utils.fmtCurrency(caisseSyncRes?.balance || 0)})` 
+          });
+
           if (fixes.length > 0) {
             DB.insert('audit_log', {
               action: 'AUTOCORRECT',
@@ -1563,7 +1740,8 @@ const DB = {
           // Sync caisse_admin
           const cTx = allCaisse.find(c => 
             c.source === 'transfert_banque_etat_vente' && 
-            (c.etatVenteRef === ev.ref || (ev.id && String(c.etatVenteId) === String(ev.id)))
+            (c.etatVenteRef === ev.ref || (ev.id && String(c.etatVenteId) === String(ev.id)) ||
+             ((c.sessionDate === ev.date || (c.date || '').slice(0, 10) === ev.date) && String(c.userId) === String(ev.userId)))
           );
           if (cTx && Math.abs(Number(cTx.amount || 0) - expectedTTC) > 0.001) {
             cTx.amount = expectedTTC;
@@ -3688,11 +3866,17 @@ const SessionMgr = {
     }
 
     // Update caisse_admin
-    const caisseDep = DB.getAll('caisse_admin').find(e => e.sessionId === session.id);
-    if (caisseDep) {
-      DB.update('caisse_admin', caisseDep.id, {
+    const caisseDep = DB.getAll('caisse_admin').find(e => Number(e.sessionId) === Number(session.id) && (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles'));
+    const caisseWit = DB.getAll('caisse_admin').find(e => 
+      e.type === 'withdrawal' && 
+      e.source === 'transfert_banque_etat_vente' && 
+      (Number(e.sessionId) === Number(session.id) || (session.etatVenteRef && e.etatVenteRef === session.etatVenteRef))
+    );
+    if (caisseWit) {
+      DB.update('caisse_admin', caisseWit.id, {
         amount: Number(newNet),
-        note: caisseDep.note + ` [Rectifié de ${Utils.fmtCurrency(oldNet)} à ${Utils.fmtCurrency(newNet)} par Admin]`
+        etatVenteTTC: Number(newNet),
+        note: (caisseWit.note || '') + ` [Rectifié de ${Utils.fmtCurrency(oldNet)} à ${Utils.fmtCurrency(newNet)} par Admin]`
       });
     }
 
