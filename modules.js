@@ -6727,7 +6727,7 @@ const SuppliersModule = {
     let items = DB.getAll('suppliers').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     if (this._q) {
       const q = this._q.toLowerCase();
-      items = items.filter(s => `${s.name||''} ${s.abbrev||''} ${s.phone||''} ${s.wilaya||''} ${s.address||''} ${s.contact||''} ${s.nif||''} ${s.rc||''}`.toLowerCase().includes(q));
+      items = items.filter(s => `${s.name||''} ${s.activityType||''} ${s.abbrev||''} ${s.phone||''} ${s.wilaya||''} ${s.address||''} ${s.contact||''} ${s.nif||''} ${s.rc||''}`.toLowerCase().includes(q));
     }
     const brMap = {};
     DB.getAll('brs').forEach(b=>{ if(!brMap[b.supplierId]) brMap[b.supplierId]=0; brMap[b.supplierId]++; });
@@ -6749,10 +6749,11 @@ const SuppliersModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>${T.get('sup_name')}</th><th>${T.isRTL()?'اختصار':'Abrév.'}</th><th>${T.get('sup_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('sup_address')}</th><th>${T.get('sup_contact')}</th><th>${T.isRTL()?"عدد سندات الاستلام":"Nombre de BR"}</th><th>${T.get('col_actions')}</th></tr></thead>
+          <thead><tr><th>${T.get('sup_name')}</th><th>${T.isRTL()?'النشاط':'Activité'}</th><th>${T.isRTL()?'اختصار':'Abrév.'}</th><th>${T.get('sup_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('sup_address')}</th><th>${T.get('sup_contact')}</th><th>${T.isRTL()?"عدد سندات الاستلام":"Nombre de BR"}</th><th>${T.get('col_actions')}</th></tr></thead>
           <tbody>
             ${items.length ? items.map(s=>`<tr>
               <td><strong>${Utils.escHTML(s.name)}</strong></td>
+              <td>${s.activityType ? `<span style="font-size:11px;background:#ede9fe;color:#6d28d9;padding:2px 8px;border-radius:12px;font-weight:600">${Utils.escHTML(s.activityType)}</span>` : '<span style="color:var(--text4)">-</span>'}</td>
               <td><span style="font-family:monospace;font-weight:700;background:var(--bg2);padding:2px 6px;border-radius:4px">${Utils.escHTML(s.abbrev||'-')}</span></td>
               <td>${Utils.escHTML(s.phone||'-')}</td>
               <td><span style="font-size:11px;background:var(--bg2);padding:2px 8px;border-radius:12px;font-weight:600">${Utils.escHTML(s.wilaya||'-')}</span></td>
@@ -6764,7 +6765,7 @@ const SuppliersModule = {
                 <button class="btn btn-xs btn-outline" onclick="SuppliersModule.showEdit(${s.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="SuppliersModule.deleteSup(${s.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>
               </td>
-            </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -6779,6 +6780,7 @@ const SuppliersModule = {
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
         <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('sup_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="sName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم المورد أو الشركة...':'Nom ou raison sociale...'}" required></div>
+        <div class="form-group"><label style="font-weight:700;color:#8b5cf6"><i class="fas fa-briefcase"></i> ${T.isRTL()?'نوع النشاط / الشكل القانوني':'Type d\'activité / Forme juridique'}</label><input id="sActivityType" value="${Utils.escHTML(s.activityType||'')}" placeholder="${T.isRTL()?'مثال: SPA, SARL, EURL, شركة مقاولات...':'Ex: SPA, SARL, EURL, Production...'}"></div>
         <div class="form-group"><label style="font-weight:700;color:var(--primary)">${T.isRTL()?'الاسم المختصر':'Abréviation'} <small style="color:var(--text4)">(${T.isRTL()?'رمز مختصر في السندات':'code court BR/BL'})</small></label><input id="sAbbrev" value="${Utils.escHTML(s.abbrev||'')}" placeholder="${T.isRTL()?'أقصى 5 أحرف':'MAX 5 LETTRES'}" maxlength="5" style="font-family:monospace;font-weight:800;text-transform:uppercase;letter-spacing:2px"></div>
         <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="sNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="sNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
@@ -6813,6 +6815,7 @@ const SuppliersModule = {
     if (!name) { Utils.notify(T.get('sup_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
       name,
+      activityType: (document.getElementById('sActivityType')?.value||'').trim(),
       abbrev: (document.getElementById('sAbbrev')?.value||'').trim().toUpperCase().slice(0,5),
       nif: document.getElementById('sNif')?.value||'',
       nis: document.getElementById('sNis')?.value||'',
@@ -6845,7 +6848,7 @@ const ClientsModule = {
     let items = DB.getAll('clients').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     if (this._q) {
       const q = this._q.toLowerCase();
-      items = items.filter(c => `${c.name||''} ${c.phone||''} ${c.wilaya||''} ${c.address||''} ${c.contact||''} ${c.nif||''} ${c.rc||''}`.toLowerCase().includes(q));
+      items = items.filter(c => `${c.name||''} ${c.activityType||''} ${c.phone||''} ${c.wilaya||''} ${c.address||''} ${c.contact||''} ${c.nif||''} ${c.rc||''}`.toLowerCase().includes(q));
     }
     const brMap = {};
     DB.getAll('brs').forEach(b=>{ if(!brMap[b.supplierId]) brMap[b.supplierId]=0; brMap[b.supplierId]++; });
@@ -6867,10 +6870,11 @@ const ClientsModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>${T.get('cli_name')}</th><th>${T.get('cli_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('cli_address')}</th><th>${T.get('cli_contact')}</th><th>${T.isRTL()?"عدد سندات التسليم":"Nombre de BL"}</th><th>${T.get('col_actions')}</th></tr></thead>
+          <thead><tr><th>${T.get('cli_name')}</th><th>${T.isRTL()?'النشاط':'Activité'}</th><th>${T.get('cli_phone')}</th><th>${T.isRTL()?'الولاية':'Wilaya'}</th><th>${T.get('cli_address')}</th><th>${T.get('cli_contact')}</th><th>${T.isRTL()?"عدد سندات التسليم":"Nombre de BL"}</th><th>${T.get('col_actions')}</th></tr></thead>
           <tbody>
             ${items.length ? items.map(s=>`<tr>
               <td><strong>${Utils.escHTML(s.name)}</strong></td>
+              <td>${s.activityType ? `<span style="font-size:11px;background:#ede9fe;color:#6d28d9;padding:2px 8px;border-radius:12px;font-weight:600">${Utils.escHTML(s.activityType)}</span>` : '<span style="color:var(--text4)">-</span>'}</td>
               <td>${Utils.escHTML(s.phone||'-')}</td>
               <td><span style="font-size:11px;background:var(--bg2);padding:2px 8px;border-radius:12px;font-weight:600">${Utils.escHTML(s.wilaya||'-')}</span></td>
               <td>${Utils.escHTML(s.address||'-')}</td>
@@ -6881,7 +6885,7 @@ const ClientsModule = {
                 <button class="btn btn-xs btn-outline" onclick="ClientsModule.showEdit(${s.id})" title="${T.get('edit')}"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-xs btn-danger" onclick="ClientsModule.deleteCli(${s.id})" title="${T.get('delete')}"><i class="fas fa-trash"></i></button>
               </td>
-            </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><i class="fas fa-building"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -6896,6 +6900,7 @@ const ClientsModule = {
       <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px"><i class="fas fa-id-card"></i> ${T.isRTL()?'بيانات التعريف الرسمية':'Identification Officielle'}</div>
       <div class="form-grid cols-2">
         <div class="form-group span-full"><label class="required" style="font-weight:600">${T.get('cli_name')} / ${T.isRTL()?'الاسم التجاري':'Raison Sociale'}</label><input id="cName" value="${Utils.escHTML(s.name||'')}" placeholder="${T.isRTL()?'اسم الزبون أو الشركة...':'Nom ou raison sociale du client...'}" required></div>
+        <div class="form-group"><label style="font-weight:700;color:#8b5cf6"><i class="fas fa-briefcase"></i> ${T.isRTL()?'نوع النشاط / الشكل القانوني':'Type d\'activité / Forme juridique'}</label><input id="cActivityType" value="${Utils.escHTML(s.activityType||'')}" placeholder="${T.isRTL()?'مثال: SPA, SARL, EURL, تاجر...':'Ex: SPA, SARL, EURL, Commerce...'}"></div>
         <div class="form-group"><label style="font-weight:600">NIF <small style="color:var(--text4)">(${T.isRTL()?'رقم التعريف الجبائي':'Numéro d\'Identification Fiscale'})</small></label><input id="cNif" value="${Utils.escHTML(s.nif||'')}" placeholder="000012345678900" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">NIS <small style="color:var(--text4)">(${T.isRTL()?'الرقم الإحصائي':'Identif. Statistique'})</small></label><input id="cNis" value="${Utils.escHTML(s.nis||'')}" placeholder="000012345678901" style="font-family:monospace"></div>
         <div class="form-group"><label style="font-weight:600">RC <small style="color:var(--text4)">(${T.isRTL()?'السجل التجاري':'Registre du Commerce'})</small></label><input id="cRc" value="${Utils.escHTML(s.rc||'')}" placeholder="00/00-XXXXXXX"></div>
@@ -6929,6 +6934,7 @@ const ClientsModule = {
     if (!name) { Utils.notify(T.get('cli_name')+(T.isRTL()?' مطلوب':' requis'), 'error'); return; }
     const data = {
       name,
+      activityType: (document.getElementById('cActivityType')?.value||'').trim(),
       nif: document.getElementById('cNif')?.value || document.getElementById('sNif')?.value || '',
       nis: document.getElementById('cNis')?.value || document.getElementById('sNis')?.value || '',
       rc:  document.getElementById('cRc')?.value  || document.getElementById('sRc')?.value  || '',
@@ -11510,7 +11516,7 @@ const PartnersModule = {
           <div style="display:flex;align-items:center;gap:12px">
             <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;flex-shrink:0;box-shadow:0 4px 8px rgba(14,165,233,0.3)">${(c.name||'?')[0].toUpperCase()}</div>
             <div>
-              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(c.name)}</div>
+              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(c.name)}${c.activityType ? ` <span style="font-size:10px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-weight:600">${Utils.escHTML(c.activityType)}</span>` : ''}</div>
               <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-phone" style="margin-right:4px"></i>${Utils.escHTML(c.phone||'-')}</div>
             </div>
           </div>
@@ -11587,7 +11593,7 @@ const PartnersModule = {
           <div style="display:flex;align-items:center;gap:12px">
             <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:900;flex-shrink:0;box-shadow:0 4px 8px rgba(139,92,246,0.3)">${(s.name||'?')[0].toUpperCase()}</div>
             <div>
-              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(s.name)}</div>
+              <div style="font-weight:700;font-size:14px;color:var(--text)">${Utils.escHTML(s.name)}${s.activityType ? ` <span style="font-size:10px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-weight:600">${Utils.escHTML(s.activityType)}</span>` : ''}</div>
               <div style="font-size:11px;color:var(--text4);margin-top:2px"><i class="fas fa-phone" style="margin-right:4px"></i>${Utils.escHTML(s.phone||'-')}</div>
             </div>
           </div>
@@ -11650,7 +11656,7 @@ const PartnersModule = {
       <div style="position:absolute;top:-20px;right:-20px;width:120px;height:120px;background:rgba(255,255,255,.06);border-radius:50%"></div>
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
         <div style="width:60px;height:60px;border-radius:16px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900">${(c.name||'?')[0].toUpperCase()}</div>
-        <div style="flex:1"><div style="font-size:22px;font-weight:900">${Utils.escHTML(c.name)}</div><div style="font-size:12px;opacity:.7;margin-top:4px">${[c.phone,c.email,c.wilaya,c.address].filter(Boolean).map(v=>Utils.escHTML(v)).join(' · ')}</div></div>
+        <div style="flex:1"><div style="font-size:22px;font-weight:900">${Utils.escHTML(c.name)}${c.activityType ? ` <span style="font-size:12px;background:rgba(255,255,255,.2);padding:2px 10px;border-radius:12px;font-weight:600;vertical-align:middle">${Utils.escHTML(c.activityType)}</span>` : ''}</div><div style="font-size:12px;opacity:.7;margin-top:4px">${[c.phone,c.email,c.wilaya,c.address].filter(Boolean).map(v=>Utils.escHTML(v)).join(' · ')}</div></div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:none" onclick="ClientsModule.showEdit(${c.id})"><i class="fas fa-edit"></i> ${isAR?'تعديل':'Modifier'}</button>
         </div>
@@ -11747,7 +11753,7 @@ const PartnersModule = {
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
         <div style="width:60px;height:60px;border-radius:16px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900">${(s.name||'?')[0].toUpperCase()}</div>
         <div style="flex:1">
-          <div style="font-size:22px;font-weight:900">${Utils.escHTML(s.name)}</div>
+          <div style="font-size:22px;font-weight:900">${Utils.escHTML(s.name)}${s.activityType ? ` <span style="font-size:12px;background:rgba(255,255,255,.2);padding:2px 10px;border-radius:12px;font-weight:600;vertical-align:middle">${Utils.escHTML(s.activityType)}</span>` : ''}</div>
           <div style="font-size:12px;opacity:.7;margin-top:4px">${[s.phone,s.email,s.address].filter(Boolean).map(v=>Utils.escHTML(v)).join(' · ')}</div>
           ${s.nif?`<div style="font-size:11px;opacity:.6;margin-top:2px">NIF: ${Utils.escHTML(s.nif)}</div>`:''}
         </div>

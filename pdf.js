@@ -559,6 +559,7 @@
       const gap=4, cw2=(CW-gap)/2, boxH=42;
       const supLines = [
         this._t(sup.name||'/'),
+        ...(sup.activityType ? [sup.activityType] : []),
         `NIF : ${sup.nif||'-'}`,
         `NIS : ${sup.nis||'-'}`,
         `RC  : ${sup.rc||'-'}`,
@@ -1182,10 +1183,12 @@
         this._text(doc, isAR ? 'مصدر الشحن (المصنع)' : 'ORIGINE DU CHARGEMENT (USINE)', ML + 2, y + 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
         this._text(doc, supName.slice(0, 38), ML + 2, y + 7.5);
+        const bchSupActivity = sup.activityType || '';
+        if (bchSupActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); this._tc(doc, [107, 114, 128]); this._text(doc, bchSupActivity, ML + 2, y + 10); }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); this._tc(doc, [71, 85, 105]);
-        this._text(doc, `RC : ${sup.rc || s.rc || '-'}  |  NIF : ${sup.nif || s.nif || '-'}`, ML + 2, y + 11.2);
-        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || s.address || '-').slice(0, 42)}`, ML + 2, y + 14.8);
-        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || s.phone || bc.driverPhone || '-'}`, ML + 2, y + 18.4);
+        this._text(doc, `RC : ${sup.rc || s.rc || '-'}  |  NIF : ${sup.nif || s.nif || '-'}`, ML + 2, y + (bchSupActivity ? 12.5 : 11.2));
+        this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(sup.address || s.address || '-').slice(0, 42)}`, ML + 2, y + (bchSupActivity ? 15.5 : 14.8));
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${sup.phone || s.phone || bc.driverPhone || '-'}`, ML + 2, y + (bchSupActivity ? 18.5 : 18.4));
 
         // Right: Client
         const cliName = this._t(cli.name || bc.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
@@ -1197,10 +1200,12 @@
         this._text(doc, isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', ML + cw2 + gap + 2, y + 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
         this._text(doc, cliName.slice(0, 38), ML + cw2 + gap + 2, y + 7.5);
+        const bchCliActivity = cli.activityType || '';
+        if (bchCliActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); this._tc(doc, [107, 114, 128]); this._text(doc, bchCliActivity, ML + cw2 + gap + 2, y + 10); }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); this._tc(doc, [71, 85, 105]);
-        this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 2, y + 11.2);
-        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 40)}`, ML + cw2 + gap + 2, y + 14.8);
-        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 2, y + 18.4);
+        this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 12.5 : 11.2));
+        this._text(doc, `${isAR ? 'الوجهة' : 'Destination'} : ${destAddr.slice(0, 40)}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 15.5 : 14.8));
+        this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 2, y + (bchCliActivity ? 18.5 : 18.4));
         y += boxH + 2;
 
         // 5. Items Table (6 cols: N°, DÉSIGNATION, UNITÉ, QTÉ, P.U. HT, TOTAL HT)
@@ -1513,10 +1518,12 @@
       this._text(doc, isAR ? 'المورد / المرسل' : 'FOURNISSEUR / EXPEDITEUR', ML + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       this._text(doc, supName.slice(0, 40), ML + 3, y + 9.5);
+      const supActivity = sup.activityType || '';
+      if (supActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [107, 114, 128]); this._text(doc, supActivity, ML + 3, y + 12.8); }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      this._text(doc, `RC : ${s.rc || sup.rc || '-'}  |  NIF : ${s.nif || sup.nif || '-'}`, ML + 3, y + 13.8);
-      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || sup.address || '-').slice(0, 42)}`, ML + 3, y + 17.6);
-      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${s.phone || sup.phone || '-'}${s.nis ? '  |  NIS : ' + s.nis : ''}`, ML + 3, y + 21.4);
+      this._text(doc, `RC : ${s.rc || sup.rc || '-'}  |  NIF : ${s.nif || sup.nif || '-'}`, ML + 3, y + (supActivity ? 16 : 13.8));
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address || sup.address || '-').slice(0, 42)}`, ML + 3, y + (supActivity ? 19.3 : 17.6));
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${s.phone || sup.phone || '-'}${s.nis ? '  |  NIS : ' + s.nis : ''}`, ML + 3, y + (supActivity ? 22.6 : 21.4));
 
       // Right: Client
       const cliName = this._t(cli.name || bl.clientName || (isAR ? 'الزبون المستلم' : 'Client Destinataire'));
@@ -1528,10 +1535,12 @@
       this._text(doc, isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE', ML + cw2 + gap + 3, y + 3.5);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
       this._text(doc, cliName.slice(0, 40), ML + cw2 + gap + 3, y + 9.5);
+      const cliActivity = cli.activityType || '';
+      if (cliActivity) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [107, 114, 128]); this._text(doc, cliActivity, ML + cw2 + gap + 3, y + 12.8); }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
-      this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 3, y + 13.8);
-      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + 17.6);
-      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 3, y + 21.4);
+      this._text(doc, `RC : ${cli.rc || '-'}  |  NIF : ${cli.nif || '-'}`, ML + cw2 + gap + 3, y + (cliActivity ? 16 : 13.8));
+      this._text(doc, `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(wilayaDest).slice(0, 42)}`, ML + cw2 + gap + 3, y + (cliActivity ? 19.3 : 17.6));
+      this._text(doc, `${isAR ? 'الهاتف' : 'Tél'} : ${cli.phone || '-'}${cli.nis ? '  |  NIS : ' + cli.nis : ''}`, ML + cw2 + gap + 3, y + (cliActivity ? 22.6 : 21.4));
       y += boxH + 3;
 
       // ── 5. Items Table ──
@@ -1619,29 +1628,15 @@
         ML + CW / 2, y + 4, { align: 'center' });
       y += 8;
 
-      // ── 8. Signature Blocks ──
-      const sigW2 = (CW - 6) / 3, sigH = 28;
+      // ── 8. Company Cachet — Single box, company only ──
+      const sigW = 70, sigH = 30;
       const sigY = Math.max(y + 4, PH - 50);
-      // Sig 1: Expediteur
-      this._rect(doc, ML, sigY, sigW2, sigH, [255, 255, 255], [203, 213, 225]);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [51, 65, 85]);
-      doc.text('L\'EXPEDITEUR', ML + 3, sigY + 4);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
-      doc.text('Cachet et Signature', ML + 3, sigY + sigH - 2);
-
-      // Sig 2: Chauffeur
-      this._rect(doc, ML + sigW2 + 3, sigY, sigW2, sigH, [255, 255, 255], [203, 213, 225]);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [51, 65, 85]);
-      doc.text('LE CHAUFFEUR / LIVREUR', ML + sigW2 + 6, sigY + 4);
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
-      doc.text('Pris en charge pour livraison', ML + sigW2 + 6, sigY + sigH - 2);
-
-      // Sig 3: Client
-      this._rect(doc, ML + (sigW2 + 3) * 2, sigY, sigW2, sigH, [255, 255, 255], [203, 213, 225]);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [51, 65, 85]);
-      doc.text('LE CLIENT / DESTINATAIRE', ML + (sigW2 + 3) * 2 + 3, sigY + 4);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
-      doc.text('Date, Signature et Cachet', ML + (sigW2 + 3) * 2 + 3, sigY + sigH - 2);
+      const sigX = ML + CW - sigW; // Right-aligned
+      this._rect(doc, sigX, sigY, sigW, sigH, [255, 255, 255], [203, 213, 225]);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); this._tc(doc, [15, 23, 42]);
+      doc.text((s.companyName || '').slice(0, 35), sigX + sigW / 2, sigY + 6, { align: 'center' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [107, 114, 128]);
+      doc.text(isAR ? 'الختم والتوقيع' : 'Cachet et Signature', sigX + sigW / 2, sigY + sigH - 2, { align: 'center' });
 
       this._save(doc, `BL_FACTURE_${bchRef.replace(/[\/\\]/g,'_')}.pdf`);
     },
