@@ -9004,6 +9004,7 @@ const SettingsModule = {
     ${sectionBox('building','#3b82f6','rgba(59,130,246,.06)',isAR?'هوية الشركة':'Identité de la société',`
       <div style="display:grid;grid-template-columns:1fr;gap:0">
         ${field('sCompName', isAR?'اسم الشركة':'Raison sociale', s.companyName, 'style="font-size:16px;font-weight:800" placeholder="SPA ..."', 'fa-building')}
+        ${field('sCompActivity', isAR?'نوع النشاط / الشكل القانوني':'Type d\'activité / Forme juridique', s.activityType, 'placeholder="' + (isAR?'مثال: SPA, SARL, EURL...':'Ex: SPA, SARL, EURL, Production...') + '"', 'fa-briefcase')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           ${field('sPhone', isAR?'الهاتف':'Téléphone', s.phone, 'type="tel"', 'fa-phone')}
           ${field('sFax', isAR?'الفاكس':'Fax', s.fax, 'type="tel"', 'fa-fax')}
@@ -9067,6 +9068,7 @@ const SettingsModule = {
   _saveCompany() {
     DB.saveSettings({
       companyName: document.getElementById('sCompName')?.value||'',
+      activityType: document.getElementById('sCompActivity')?.value||'',
       address: document.getElementById('sAddr')?.value||'',
       phone: document.getElementById('sPhone')?.value||'',
       fax: document.getElementById('sFax')?.value||'',
@@ -9123,6 +9125,7 @@ const SettingsModule = {
     ${sectionBox('building','#0d9488','rgba(13,148,136,.1)',isAR?'هوية الشركة (كشف المبيعات)':'Identité de la société (État de Vente)',`
       <div style="display:grid;grid-template-columns:1fr;gap:0">
         ${field('evCompName', isAR?'اسم الشركة':'Raison sociale', s.evCompanyName, 'style="font-size:16px;font-weight:800" placeholder="SPA ..."', 'fa-building')}
+        ${field('evCompActivity', isAR?'نوع النشاط / الشكل القانوني':'Type d\'activité / Forme juridique', s.evActivityType, 'placeholder="' + (isAR?'مثال: SPA, SARL, EURL...':'Ex: SPA, SARL, EURL, Production...') + '"', 'fa-briefcase')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           ${field('evPhone', isAR?'الهاتف':'Téléphone', s.evPhone, 'type="tel"', 'fa-phone')}
           ${field('evFax', isAR?'الفاكس':'Fax', s.evFax, 'type="tel"', 'fa-fax')}
@@ -9193,6 +9196,7 @@ const SettingsModule = {
     const marginVal = Number(document.getElementById('evMarginRate')?.value) || 0;
     DB.saveSettings({
       evCompanyName: document.getElementById('evCompName')?.value||'',
+      evActivityType: document.getElementById('evCompActivity')?.value||'',
       evAddress: document.getElementById('evAddr')?.value||'',
       evPhone: document.getElementById('evPhone')?.value||'',
       evFax: document.getElementById('evFax')?.value||'',

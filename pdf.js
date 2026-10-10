@@ -265,6 +265,13 @@
       doc.text(cName, PW/2, y+5.2, {align:'center'});
       doc.setFont('helvetica','normal');
 
+      /* Activity type — shown right below company name */
+      if (s.activityType) {
+        doc.setFontSize(8);
+        this._tc(doc, [107, 114, 128]);
+        doc.text(s.activityType, PW/2, y+9, {align:'center'});
+      }
+
       doc.setFontSize(7.3);
       this._tc(doc,C.BLACK);
       const infoLines = [
@@ -275,7 +282,7 @@
         s.email?`E-mail : ${s.email}`:'',
       ].filter(Boolean);
 
-      let ly=y+9;
+      let ly=y+(s.activityType ? 12 : 9);
       infoLines.forEach(line => {
         const lt = this._t(line);
         if (this._hasAr(lt) && _arFontB64) doc.setFont(AR_FONT_NAME,'normal');
@@ -663,6 +670,7 @@
 
       const s = {
         companyName: settings.evCompanyName || settings.companyName || '',
+        activityType: settings.evActivityType || settings.activityType || '',
         address: settings.evAddress || settings.address,
         phone: settings.evPhone || settings.phone,
         fax: settings.evFax,
