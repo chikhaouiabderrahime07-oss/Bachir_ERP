@@ -1086,31 +1086,40 @@ const BRModule = {
   },
 
   _validateBRNum(num, year, excludeId=null) {
+    const isAR = T.isRTL();
     const fb   = document.getElementById('br-num-feedback');
     const prev = document.getElementById('br-ref-preview');
-    if (!num || isNaN(num) || Number(num)<1) {
-      if (fb) fb.innerHTML = `<span style="color:var(--danger)"><i class="fas fa-times-circle"></i> Numéro invalide</span>`;
+    const res = DB.checkDocNum(num, year, { excludeBrId: excludeId });
+
+    if (!num || (!res.valid && res.reason === 'invalid')) {
+      if (fb) fb.innerHTML = `<span style="color:var(--danger);font-weight:700"><i class="fas fa-times-circle"></i> ${isAR ? 'رقم غير صالح' : 'Numéro invalide'}</span>`;
       if (prev) prev.textContent = '';
-      return;
+      return false;
     }
-    const taken = DB.isBRNumTaken(Number(num), year, excludeId);
-    if (fb) fb.innerHTML = taken
-      ? `<span style="color:var(--danger)"><i class="fas fa-times-circle"></i> Déjà utilisé</span>`
-      : `<span style="color:var(--success)"><i class="fas fa-check-circle"></i> Disponible</span>`;
+
+    if (!res.valid) {
+      const msg = res.reason === 'taken_bch'
+        ? (isAR ? `مستخدم بالفعل في سند شحن (${res.ref})` : `Déjà utilisé dans BCH (${res.ref})`)
+        : (isAR ? `مستخدم بالفعل في وصل استلام (${res.ref})` : `Déjà utilisé dans BR (${res.ref})`);
+      if (fb) fb.innerHTML = `<span style="color:var(--danger);font-weight:700"><i class="fas fa-times-circle"></i> ${msg}</span>`;
+    } else {
+      if (fb) fb.innerHTML = `<span style="color:var(--success);font-weight:700"><i class="fas fa-check-circle"></i> ${isAR ? 'متاح (BR & BCH)' : 'Disponible (BR & BCH)'}</span>`;
+    }
+
     // Read abbreviation from currently selected supplier
     const suppId   = parseInt(document.getElementById('br-supplier')?.value)||0;
     const suppAbbr = suppId ? (DB.getById('suppliers', suppId)?.abbrev||'') : '';
-    const ref = DB.buildBRRef(Number(num), year, suppAbbr);
+    const ref = DB.buildBRRef(num, year, suppAbbr);
     if (prev) {
       prev.innerHTML = `<span style="font-weight:800;color:var(--primary);font-size:13px">${ref}</span>`;
     }
+    return res.valid;
   },
 
   async _modalBody(br=null) {
     const year = new Date().getFullYear();
-    // Editing an existing BR never needs a new number → skip the server round-trip (it made Edit look dead when slow)
-    const nextNum = br ? br.brNum : await DB.getNextBRNum();
-    const brNum = br ? br.brNum : nextNum;
+    const nextDoc = br ? null : await DB.getNextDocNum();
+    const brNum = br ? String(br.brNum).padStart(4, '0') : nextDoc.formatted;
     const brYear = br ? br.year : year;
     const initLines = br ? (br.lines||[]) : [{}];
     return `
@@ -1130,7 +1139,7 @@ const BRModule = {
       <div class="form-group">
         <label class="required">${T.isRTL()?'رقم الوصل':'N° BR'}</label>
         <div style="display:flex;gap:6px;align-items:center">
-          <input type="number" id="br-num" value="${brNum}" min="1" style="width:100px"
+          <input type="text" id="br-num" value="${brNum}" placeholder="0001" style="width:110px;text-align:center;font-weight:700"
             oninput="BRModule._validateBRNum(this.value,document.getElementById('br-year').value,${br?.id||'null'})">
           <span id="br-ref-preview" style="font-size:13px;font-weight:800;color:var(--primary)">${DB.buildBRRef(brNum,brYear,br?DB.getById('suppliers',br.supplierId)?.abbrev||'':'')}</span>
         </div>
@@ -1269,7 +1278,8 @@ const BRModule = {
       Utils.notify(isAR ? '⛔ إذن مرفوض : إنشاء وصل الاستلام' : '⛔ Permission refusée : création BR', 'error');
       UI.closeModal(); return;
     }
-    const brNum    = parseInt(document.getElementById('br-num')?.value);
+    const brNumRaw = (document.getElementById('br-num')?.value || '').trim();
+    const brNum    = parseInt(brNumRaw);
     const year     = parseInt(document.getElementById('br-year')?.value) || new Date().getFullYear();
     const supplierId = parseInt(document.getElementById('br-supplier')?.value);
     const date     = document.getElementById('br-date')?.value || Utils.today();
@@ -1284,7 +1294,11 @@ const BRModule = {
 
     if (!supplierId) { Utils.notify(isAR ? 'يرجى اختيار المورد' : 'Sélectionnez un fournisseur', 'error'); return; }
     if (!brNum || brNum<1) { Utils.notify(isAR ? 'رقم وصل الاستلام غير صالح' : 'Numéro BR invalide', 'error'); return; }
-    if (DB.isBRNumTaken(brNum, year, editId)) { Utils.notify(isAR ? 'رقم وصل الاستلام هذا مستخدم بالفعل' : 'Ce numéro BR est déjà utilisé', 'error'); return; }
+    const checkRes = DB.checkDocNum(brNumRaw, year, { excludeBrId: editId });
+    if (!checkRes.valid) {
+      Utils.notify(isAR ? (`رقم وصل الاستلام غير متاح : ${checkRes.message}`) : (`Ce numéro BR n'est pas disponible : ${checkRes.message}`), 'error');
+      return;
+    }
 
     const lines = this._getLines();
     if (!lines.length) { Utils.notify(isAR ? 'أضف منتجاً واحداً على الأقل' : 'Ajoutez au moins un article', 'error'); return; }
@@ -1293,7 +1307,7 @@ const BRModule = {
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const totalTTC = Math.round((totalHT + tvaAmount + timbre) * 100) / 100;
     const suppAbbrev = DB.getById('suppliers', supplierId)?.abbrev || '';
-    const ref      = DB.buildBRRef(brNum, year, suppAbbrev);
+    const ref      = DB.buildBRRef(brNumRaw, year, suppAbbrev);
 
     const data = {
       ref, brNum, year, supplierId, date, lines, extraFees,
@@ -1701,7 +1715,7 @@ const BLModule = {
   },
 
 
-  showNewBL() {
+  async showNewBL() {
     const isAR = T.isRTL();
     const allBRs = DB.getAll('brs');
     // FIFO: First-in, first-out (oldest BR in stock is served first, exclude exhausted, reserved, auto-generated, and returned BRs)
@@ -1730,6 +1744,10 @@ const BLModule = {
       if (numA !== numB) return numA - numB;
       return (a.createdAt || '').localeCompare(b.createdAt || '');
     });
+
+    const nextDoc = await DB.getNextDocNum();
+    const nextBCHNum = nextDoc.formatted;
+    const currentYear = new Date().getFullYear();
 
     // Modal HTML with 2 Modes
     const modalHTML = `
@@ -1771,18 +1789,27 @@ const BLModule = {
               </select>
             </div>
             <div class="form-group mb-0">
-              <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
-              <input type="date" id="direct-bch-date" class="input" value="${Utils.today()}">
+              <label class="required"><i class="fas fa-hashtag"></i> ${isAR ? 'رقم سند الشحن (BCH)' : 'N° BCH'}</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" inputmode="numeric" id="direct-bch-num" class="input" value="${nextBCHNum}" placeholder="0001" style="width:110px;text-align:center;font-weight:700"
+                  oninput="BLModule._validateBCHNum(this.value, document.getElementById('direct-bch-date')?.value, null, 'direct')">
+                <span id="direct-bch-ref-preview" style="font-size:13px;font-weight:800;color:var(--primary)">${DB.buildBCHRef(nextBCHNum, currentYear)}</span>
+              </div>
+              <div id="direct-bch-num-feedback" style="font-size:11px;margin-top:2px"></div>
             </div>
+            <div class="form-group mb-0">
+              <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
+              <input type="date" id="direct-bch-date" class="input" value="${Utils.today()}" onchange="BLModule._validateBCHNum(document.getElementById('direct-bch-num')?.value, this.value, null, 'direct')">
+            </div>
+          </div>
+
+          <div class="form-row-4">
             <div class="form-group mb-0">
               <label><i class="fas fa-cash-register"></i> ${isAR ? 'الصندوق / البائع' : 'Caisse / Caissier'}</label>
               <select id="direct-bch-user" class="input">
                 ${allUsers.map(u => `<option value="${u.id}" ${String(u.id) === String(currentU?.id) ? 'selected' : ''}>${Utils.escHTML(u.name || u.username)} ${String(u.id) === String(currentU?.id) ? (isAR ? '(أنا)' : '(Moi)') : ''}</option>`).join('')}
               </select>
             </div>
-          </div>
-
-          <div class="form-row-3">
             <div class="form-group mb-0">
               <label class="required"><i class="fas fa-id-card"></i> ${isAR ? 'اسم السائق' : 'Nom du Chauffeur'}</label>
               <div class="autocomplete-wrap" style="position:relative">
@@ -1896,6 +1923,9 @@ const BLModule = {
     // Initialize with 1 default empty line in Direct mode
     BLModule._directBCHRows = [];
     BLModule._addDirectBCHRow();
+    setTimeout(() => {
+      BLModule._validateBCHNum(nextBCHNum, Utils.today(), null, 'direct');
+    }, 50);
   },
 
   _switchNewBCHMode(mode) {
@@ -2046,6 +2076,38 @@ const BLModule = {
     }
   },
 
+  _validateBCHNum(num, dateOrYear = null, excludeBlId = null, mode = 'direct', parentBrId = null) {
+    const isAR = T.isRTL();
+    const prefix = mode === 'direct' ? 'direct-bch' : 'bl';
+    const fb = document.getElementById(`${prefix}-num-feedback`);
+    const prev = document.getElementById(`${prefix}-ref-preview`);
+
+    let year = new Date().getFullYear();
+    if (dateOrYear) {
+      const s = String(dateOrYear).trim();
+      const parsedY = parseInt(s.length === 4 ? s : s.substring(0, 4));
+      if (parsedY > 2000) year = parsedY;
+    }
+
+    const res = DB.checkDocNum(num, year, { excludeBlId, parentBrId });
+    if (!num || (!res.valid && res.reason === 'invalid')) {
+      if (fb) fb.innerHTML = `<span style="color:var(--danger);font-weight:700"><i class="fas fa-times-circle"></i> ${isAR ? 'رقم غير صالح' : 'Numéro invalide'}</span>`;
+      if (prev) prev.textContent = '';
+      return false;
+    }
+    if (!res.valid) {
+      const msg = res.reason === 'taken_bch'
+        ? (isAR ? `مستخدم بالفعل في سند شحن (${res.ref})` : `Déjà utilisé dans BCH (${res.ref})`)
+        : (isAR ? `مستخدم بالفعل في وصل استلام (${res.ref})` : `Déjà utilisé dans BR (${res.ref})`);
+      if (fb) fb.innerHTML = `<span style="color:var(--danger);font-weight:700"><i class="fas fa-times-circle"></i> ${msg}</span>`;
+    } else {
+      if (fb) fb.innerHTML = `<span style="color:var(--success);font-weight:700"><i class="fas fa-check-circle"></i> ${isAR ? 'متاح (BCH & BR)' : 'Disponible (BCH & BR)'}</span>`;
+    }
+    const ref = DB.buildBCHRef(num, year);
+    if (prev) prev.innerHTML = `<span style="font-weight:800;color:var(--primary);font-size:13px">${ref}</span>`;
+    return res.valid;
+  },
+
   _onDirectClientChange(clientId) {
     if (!clientId) return;
     const cli = DB.getById('clients', Number(clientId));
@@ -2184,6 +2246,30 @@ const BLModule = {
     const driverName = (document.getElementById('direct-bch-driver')?.value||'').trim();
     const truckIMM   = (document.getElementById('direct-bch-truck')?.value||'').trim();
     const destAddr   = (document.getElementById('direct-bch-dest')?.value||'').trim();
+    const numInput   = document.getElementById('direct-bch-num');
+    const rawNumStr  = (numInput?.value || '').trim();
+    const docYear    = date ? (parseInt(date.substring(0, 4)) || new Date().getFullYear()) : new Date().getFullYear();
+
+    if (!rawNumStr) {
+      Utils.notify(isAR ? 'يرجى إدخال رقم سند الشحن' : 'Veuillez saisir le numéro du BCH', 'error');
+      numInput?.focus();
+      return;
+    }
+
+    const check = DB.checkDocNum(rawNumStr, docYear, { excludeBlId: editId });
+    if (!check.valid) {
+      const msg = check.reason === 'taken_bch'
+        ? (isAR ? `رقم سند الشحن مستخدم بالفعل (${check.ref})` : `Numéro BCH déjà utilisé dans ${check.ref}`)
+        : (check.reason === 'taken_br'
+          ? (isAR ? `رقم سند الشحن مستخدم بالفعل في وصل استلام (${check.ref})` : `Numéro déjà utilisé dans un BR (${check.ref})`)
+          : (isAR ? 'رقم سند الشحن غير صالح' : 'Numéro de BCH invalide'));
+      Utils.notify(`⛔ ${msg}`, 'error', 5000);
+      numInput?.focus();
+      return;
+    }
+
+    const bchNum = parseInt(rawNumStr);
+    const ref = DB.buildBCHRef(rawNumStr, docYear);
 
     if (!supplierId) { Utils.notify(isAR ? 'يرجى اختيار المصنع / المورد' : 'Veuillez sélectionner une Usine / Fournisseur', 'error'); return; }
     if (!clientId)   { Utils.notify(isAR ? 'يرجى اختيار الزبون' : 'Veuillez sélectionner un Client', 'error'); return; }
@@ -2251,6 +2337,9 @@ const BLModule = {
 
     if (existing) {
       const updateDoc = {
+        ref,
+        bchNum,
+        year: docYear,
         date,
         supplierId: Number(supplierId),
         supplierName: sup?.name || existing.supplierName || 'Usine',
@@ -2291,6 +2380,9 @@ const BLModule = {
           const brTvaAmount = Math.round(brTotalHT * tvaRate / 100 * 100) / 100;
           const brTotalTTC = Math.round((brTotalHT + brTvaAmount + timbreAmount) * 100) / 100;
           DB.update('brs', existing.linkedBrId, {
+            ref: DB.buildBRRef(rawNumStr, docYear, sup?.abbrev || sup?.refAbbrev || ''),
+            brNum: bchNum,
+            year: docYear,
             supplierId: Number(supplierId),
             supplierName: sup?.name || linkedBR.supplierName,
             date,
@@ -2306,7 +2398,7 @@ const BLModule = {
         }
       }
 
-      Utils.notify(isAR ? `تم حفظ تعديلات سند الشحن ${existing.ref} بنجاح` : `BCH ${existing.ref} mis à jour avec succès`, 'success', 4000);
+      Utils.notify(isAR ? `تم حفظ تعديلات سند الشحن ${ref} بنجاح` : `BCH ${ref} mis à jour avec succès`, 'success', 4000);
       UI.closeModal();
       if (typeof App !== 'undefined' && App.currentModule === 'caisse') {
         App.loadModule('caisse');
@@ -2326,19 +2418,10 @@ const BLModule = {
       return;
     }
 
-    const year = new Date().getFullYear();
-    let nextBCHNum = await DB.getNextBCHNum();
-    let ref = DB.buildBCHRef(nextBCHNum, year, null, sup?.refAbbrev || '');
-    const allBLs = DB.getAll('bls');
-    while (allBLs.some(b => b.ref === ref)) {
-      nextBCHNum++;
-      ref = DB.buildBCHRef(nextBCHNum, year, null, sup?.refAbbrev || '');
-    }
-
     const bchDoc = {
       ref,
-      bchNum: nextBCHNum,
-      year,
+      bchNum,
+      year: docYear,
       date,
       supplierId: Number(supplierId),
       supplierName: sup?.name || 'Usine',
@@ -2430,7 +2513,11 @@ const BLModule = {
     if (form)  form.style.display = 'block';
     if (btn1)  btn1.style.display = 'inline-flex';
     if (btn2)  btn2.style.display = 'inline-flex';
-    setTimeout(() => BLModule._recalcBLTotals(), 80);
+    setTimeout(() => {
+      BLModule._recalcBLTotals();
+      const numVal = document.getElementById('bl-num')?.value || '';
+      BLModule._validateBCHNum(numVal, document.getElementById('bl-date')?.value || Utils.today(), null, 'stock', Number(brId));
+    }, 80);
   },
 
   _saveFromNewBL(andPrint) {
@@ -2467,7 +2554,12 @@ const BLModule = {
       <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
       <button class="btn btn-outline" onclick="BLModule._saveBL(${brId},null,true)"><i class="fas fa-print"></i> ${isAR ? 'حفظ و PDF' : 'Sauver & PDF'}</button>
       <button class="btn btn-success" onclick="BLModule._saveBL(${brId},null,false)"><i class="fas fa-truck"></i> ${isAR ? 'توليد سند الشحن' : 'Générer BCH'}</button>`, 'xl');
-    setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
+    setTimeout(() => {
+      BLModule._recalcBLTotals();
+      const numVal = document.getElementById('bl-num')?.value || '';
+      BLModule._validateBCHNum(numVal, document.getElementById('bl-date')?.value || Utils.today(), null, 'stock', Number(brId));
+      FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']);
+    }, 100);
   },
 
   showEdit(blId, adminOverride = false) {
@@ -2497,7 +2589,12 @@ const BLModule = {
         : `<button class="btn btn-warning" onclick="BLModule._saveBL(${bl.brId},${blId},false)"><i class="fas fa-save"></i> ${T.get('save')}</button>`
       }
       ${(bl.status !== 'delivered' && bl.status !== 'locked') ? `<button class="btn btn-success" onclick="BLModule._saveBL(${bl.brId},${blId},false);setTimeout(()=>BLModule.confirmDelivery(${blId}),500)"><i class="fas fa-check-circle"></i> ${isAR ? 'حفظ وتأكيد' : 'Sauver & Valider'}</button>` : ''}`, 'xl');
-    setTimeout(() => { BLModule._recalcBLTotals(); FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']); }, 100);
+    setTimeout(() => {
+      BLModule._recalcBLTotals();
+      const numVal = document.getElementById('bl-num')?.value || '';
+      BLModule._validateBCHNum(numVal, document.getElementById('bl-date')?.value || bl?.date || Utils.today(), blId, 'stock', bl.brId || null);
+      FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']);
+    }, 100);
   },
 
   showEditDirectBCH(blId, adminOverride = false) {
@@ -2518,6 +2615,8 @@ const BLModule = {
     const allClients = DB.getAll('clients');
     const allArticles = DB.searchArticles('');
     const allUsers = DB.getAll('users').filter(u => u.active !== false && (u.role === 'user' || u.role === 'admin'));
+    const blNum = bl.bchNum ? String(bl.bchNum).padStart(4, '0') : (bl.ref ? (bl.ref.match(/(\d+)/) || [])[1] : '0001');
+    const blYear = bl.year || (bl.date ? parseInt(bl.date.substring(0, 4)) : new Date().getFullYear());
 
     const modalHTML = `
     <div style="margin-bottom:12px">
@@ -2538,18 +2637,27 @@ const BLModule = {
             </select>
           </div>
           <div class="form-group mb-0">
-            <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
-            <input type="date" id="direct-bch-date" class="input" value="${bl.date || Utils.today()}">
+            <label class="required"><i class="fas fa-hashtag"></i> ${isAR ? 'رقم سند الشحن (BCH)' : 'N° BCH'}</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="text" inputmode="numeric" id="direct-bch-num" class="input" value="${blNum}" placeholder="0001" style="width:110px;text-align:center;font-weight:700"
+                oninput="BLModule._validateBCHNum(this.value, document.getElementById('direct-bch-date')?.value, ${blId}, 'direct')">
+              <span id="direct-bch-ref-preview" style="font-size:13px;font-weight:800;color:var(--primary)">${bl.ref || DB.buildBCHRef(blNum, blYear)}</span>
+            </div>
+            <div id="direct-bch-num-feedback" style="font-size:11px;margin-top:2px"></div>
           </div>
+          <div class="form-group mb-0">
+            <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
+            <input type="date" id="direct-bch-date" class="input" value="${bl.date || Utils.today()}" onchange="BLModule._validateBCHNum(document.getElementById('direct-bch-num')?.value, this.value, ${blId}, 'direct')">
+          </div>
+        </div>
+
+        <div class="form-row-4">
           <div class="form-group mb-0">
             <label><i class="fas fa-cash-register"></i> ${isAR ? 'الصندوق / البائع' : 'Caisse / Caissier'}</label>
             <select id="direct-bch-user" class="input">
               ${allUsers.map(u => `<option value="${u.id}" ${(String(u.id) === String(bl.createdBy) || (bl.createdBy == null && String(u.id) === String(currentU?.id))) ? 'selected' : ''}>${Utils.escHTML(u.name || u.username)}</option>`).join('')}
             </select>
           </div>
-        </div>
-
-        <div class="form-row-3">
           <div class="form-group mb-0">
             <label class="required"><i class="fas fa-id-card"></i> ${isAR ? 'اسم السائق' : 'Nom du Chauffeur'}</label>
             <div class="autocomplete-wrap" style="position:relative">
@@ -2652,6 +2760,9 @@ const BLModule = {
       BLModule._addDirectBCHRow();
     }
     BLModule._recalcDirectBCHTotals();
+    setTimeout(() => {
+      BLModule._validateBCHNum(blNum, bl.date || Utils.today(), blId, 'direct');
+    }, 50);
   },
 
   _onDriverInput(val) {
@@ -2689,8 +2800,15 @@ const BLModule = {
   },
 
   _blModalBody(br, bl=null) {
+    const isAR = T.isRTL();
     const lines = br?.lines || [];
-    const sup = DB.getById('suppliers', br.supplierId) || {};
+    const sup = DB.getById('suppliers', br?.supplierId) || {};
+    const blYear = bl?.year || (bl?.date ? parseInt(bl.date.substring(0, 4)) : (br?.year || new Date().getFullYear()));
+    let blNum = bl?.bchNum ? String(bl.bchNum).padStart(4, '0') : (bl?.ref ? (bl.ref.match(/(\d+)/) || [])[1] : null);
+    if (!blNum) {
+      const nextDoc = DB.getNextDocNumSync(blYear);
+      blNum = nextDoc.formatted;
+    }
     
     // Calculate already-delivered quantities for this BR (from existing active BLs)
     const existingBLs = bl ? [] : DB.getAll('bls').filter(b => Number(b.brId) === Number(br.id) && b.status !== 'returned');
@@ -2755,6 +2873,20 @@ const BLModule = {
     </div>
     <div class="form-grid cols-2" style="margin-bottom:12px">
       <div class="form-group">
+        <label class="required"><i class="fas fa-hashtag"></i> ${isAR ? 'رقم سند الشحن (BCH)' : 'N° BCH'}</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" inputmode="numeric" id="bl-num" value="${blNum}" placeholder="0001" style="width:110px;text-align:center;font-weight:700" class="input"
+            oninput="BLModule._validateBCHNum(this.value, document.getElementById('bl-date')?.value, ${bl?.id || 'null'}, 'stock', ${br?.id || 'null'})">
+          <span id="bl-ref-preview" style="font-size:13px;font-weight:800;color:var(--primary)">${bl?.ref || DB.buildBCHRef(blNum, blYear)}</span>
+        </div>
+        <div id="bl-num-feedback" style="font-size:11px;margin-top:2px"></div>
+      </div>
+      <div class="form-group">
+        <label class="required">${T.get('col_date')}</label>
+        <input type="date" id="bl-date" value="${bl?.date||Utils.today()}"
+          onchange="BLModule._validateBCHNum(document.getElementById('bl-num')?.value, this.value, ${bl?.id || 'null'}, 'stock', ${br?.id || 'null'})">
+      </div>
+      <div class="form-group">
         <label class="required">${T.get('bl_driver')} <small>${T.get('bl_driver_hint')}</small></label>
         <div class="autocomplete-wrap">
           <input type="text" id="bl-driver" value="${Utils.escHTML(bl?.driverName||'')}"
@@ -2769,11 +2901,7 @@ const BLModule = {
         <label class="required">${T.get('bl_truck')}</label>
         <input type="text" id="bl-truck" value="${Utils.escHTML(bl?.truckIMM||'')}" placeholder="Ex: 17-123-16">
       </div>
-      <div class="form-group">
-        <label class="required">${T.get('col_date')}</label>
-        <input type="date" id="bl-date" value="${bl?.date||Utils.today()}">
-      </div>
-      <div class="form-group">
+      <div class="form-group" style="grid-column: span 2">
         <label>${T.get('br_notes')}</label>
         <input type="text" id="bl-notes" value="${Utils.escHTML(bl?.notes||'')}" placeholder="${T.get('br_notes')}">
       </div>
@@ -3044,6 +3172,10 @@ const BLModule = {
     const date       = document.getElementById('bl-date')?.value || Utils.today();
     const notes      = document.getElementById('bl-notes')?.value||'';
     const clientId   = document.getElementById('bl-client')?.value;
+    const numInput   = document.getElementById('bl-num');
+    const rawNumStr  = (numInput?.value || '').trim();
+    const docYear    = date ? (parseInt(date.substring(0, 4)) || new Date().getFullYear()) : new Date().getFullYear();
+
     const br = DB.getById('brs', brId);
     // ── Guard: block BL generation if BR was deleted (moved to recycle bin) ──
     if (!br) {
@@ -3052,9 +3184,27 @@ const BLModule = {
       return;
     }
     if (!clientId)   { Utils.notify(T.get('col_client')+(isAR?' مطلوب':' requis'), 'error'); return; }
+    if (!rawNumStr)  {
+      Utils.notify(isAR ? 'يرجى إدخال رقم سند الشحن' : 'Veuillez saisir le numéro du BCH', 'error');
+      numInput?.focus();
+      return;
+    }
     if (!driverName) { Utils.notify(T.get('bl_driver')+(isAR?' مطلوب':' requis'), 'error'); return; }
     if (!truckIMM)   { Utils.notify(T.get('bl_truck')+(isAR?' مطلوب':' requis'), 'error'); return; }
 
+    const check = DB.checkDocNum(rawNumStr, docYear, { excludeBlId: editBlId, parentBrId: brId });
+    if (!check.valid) {
+      const msg = check.reason === 'taken_bch'
+        ? (isAR ? `رقم سند الشحن مستخدم بالفعل (${check.ref})` : `Numéro BCH déjà utilisé dans ${check.ref}`)
+        : (check.reason === 'taken_br'
+          ? (isAR ? `رقم سند الشحن مستخدم بالفعل في وصل استلام (${check.ref})` : `Numéro déjà utilisé dans un BR (${check.ref})`)
+          : (isAR ? 'رقم سند الشحن غير صالح' : 'Numéro de BCH invalide'));
+      Utils.notify(`⛔ ${msg}`, 'error', 5000);
+      numInput?.focus();
+      return;
+    }
+
+    const bchNum = parseInt(rawNumStr);
 
     /* Collect lines with their delivered quantities */
     const brLines = br.lines || [];
@@ -3106,17 +3256,17 @@ const BLModule = {
     let ref, partNum = null;
     if (editBlId) {
       const existing = DB.getById('bls', editBlId);
-      ref = existing?.ref || DB.buildBCHRef(br.brNum, br.year);
       partNum = existing?.partNum || null;
+      ref = DB.buildBCHRef(rawNumStr, docYear, partNum);
     } else {
       // Find ANY previous BCH created for this BR (active, delivered, locked, or returned!)
       const allPrevForBR = DB.getAll('bls').filter(b => Number(b.brId) === Number(brId) && (!editBlId || Number(b.id) !== Number(editBlId)));
       
       if (isPartial || allPrevForBR.length > 0) {
         partNum = DB.getNextBLPartNum(brId);
-        ref = DB.buildBCHRef(br.brNum, br.year, partNum);
+        ref = DB.buildBCHRef(rawNumStr, docYear, partNum);
       } else {
-        ref = DB.buildBCHRef(br.brNum, br.year);
+        ref = DB.buildBCHRef(rawNumStr, docYear);
       }
 
       // ── STRICT ANTI-DUPLICATION / BURNED-REFERENCE GUARD ──
@@ -3125,7 +3275,7 @@ const BLModule = {
       const allBLs = DB.getAll('bls');
       while (allBLs.some(b => b.ref === ref && (!editBlId || Number(b.id) !== Number(editBlId)))) {
         partNum = (partNum || 0) + 1;
-        ref = DB.buildBCHRef(br.brNum, br.year, partNum);
+        ref = DB.buildBCHRef(rawNumStr, docYear, partNum);
       }
     }
 
@@ -3133,7 +3283,7 @@ const BLModule = {
     DB.saveDriver(driverName, truckIMM);
 
     const data = {
-      ref, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
+      ref, bchNum, year: docYear, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
       destinationAddress: (document.getElementById('bl-destination')?.value||'').trim(),
       lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       isPartial, partNum,
@@ -3409,6 +3559,10 @@ const BLModule = {
     const isAR = T.isRTL();
     const bl = DB.getById('bls', blId);
     if (!bl) return;
+    if (!Auth.canReturn(bl)) {
+      Utils.notify(isAR ? '⛔ ليس لديك إذن لإنشاء سندات الإرجاع' : '⛔ Vous n’avez pas la permission de créer des Bons de Retour', 'error');
+      return;
+    }
     if (bl.status === 'returned') {
       Utils.notify(isAR ? 'تم إرجاع سند الشحن هذا مسبقاً.' : 'Ce bon de chargement a déjà été retourné.', 'warning');
       return;
@@ -4839,7 +4993,7 @@ const CaisseModule = {
           ${Auth.canEdit(b) ? `<button class="btn btn-xs" onclick="BLModule.showEdit(${b.id},${Auth.isAdmin()})" title="${isAR ? 'تعديل' : 'Modifier'}" style="color:#f59e0b;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);min-width:28px;min-height:28px;border-radius:6px;margin:0 2px"><i class="fas fa-edit"></i></button>` : ''}
           <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBonChargement(${b.id})" title="${isAR ? 'طباعة سند الشحن (نسختان)' : 'Imprimer BCH (2 Volets)'}"><i class="fas fa-print"></i></button>
           <button class="btn btn-xs btn-outline" onclick="PDFGen.exportBLRoute(${b.id})" title="${isAR ? 'سند التسليم للطريق' : 'BL pour la route'}"><i class="fas fa-truck"></i></button>
-          ${!isClosed ? `<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${b.id})" title="${isAR ? 'إرجاع بضاعة' : 'Retour Marchandise'}"><i class="fas fa-undo"></i></button>` : ''}
+          ${(!isClosed && Auth.canReturn(b)) ? `<button class="btn btn-xs btn-danger" style="background:#ef4444;color:#fff;border:none" onclick="BLModule.processReturn(${b.id})" title="${isAR ? 'إرجاع بضاعة' : 'Retour Marchandise'}"><i class="fas fa-undo"></i></button>` : ''}
         </td>
       </tr>`;
     }).join('') : `<tr><td colspan="6" style="padding:30px;text-align:center;color:var(--text-muted)"><i class="fas fa-inbox" style="font-size:24px;opacity:.3;display:block;margin-bottom:8px"></i>${isAR ? 'لا توجد وصولات شحن اليوم' : 'Aucun bon de livraison validé aujourd\'hui'}</td></tr>`;
@@ -8981,6 +9135,7 @@ const UsersModule = {
     const pl = {
       canCreateBR:{label: isAR ? 'إنشاء وصولات الاستلام (BR)' : 'Créer des BR', icon:'fa-file-import'},
       canCreateBL:{label: isAR ? 'إنشاء وصولات التسليم (BL)' : 'Créer des BL', icon:'fa-file-export'},
+      canReturnBL:{label: isAR ? 'سند الإرجاع (إرجاع البضاعة)' : 'Bon de Retour / Retours', icon:'fa-undo'},
       canViewBRs:{label: isAR ? 'عرض وصولات الاستلام' : 'Voir les BR', icon:'fa-eye'},
       canViewBLs:{label: isAR ? 'عرض وصولات التسليم' : 'Voir les BL', icon:'fa-eye'},
       canViewUsine:{label: isAR ? 'بوابة المصانع / الموردين' : 'Portail Usines / Fournisseurs', icon:'fa-industry'},

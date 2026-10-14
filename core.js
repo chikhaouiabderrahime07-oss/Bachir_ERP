@@ -2272,59 +2272,179 @@ const DB = {
     return { ok: true, item: restored, refWarning };
   },
 
-  // ─── BR Numbering ─────────────────────────────────────────
-  // Returns the lowest available (gap-filling) BR number for the year.
-  // Asks server for the real list to avoid stale localStorage.
-  async getNextBRNum() {
-    const year = new Date().getFullYear();
-    try {
-      let takenNums;
-      if (window.API) {
-        const serverBrs = await API.getAll('brs').catch(() => null);
-        takenNums = (serverBrs || this.getAll('brs'))
-          .filter(b => b.year === year)
-          .map(b => parseInt(b.brNum) || 0)
-          .filter(n => n > 0);
-      } else {
-        takenNums = this.getAll('brs').filter(b => b.year === year).map(b => parseInt(b.brNum) || 0).filter(n => n > 0);
+  // ─── Unified Sequential Document Numbering & Cross-Checker ───────
+  // Rule: Starts from 1 (0001 / 00001), next number is always (highest used + 1).
+  // Cross-checks both BR and BCH collections so Option 1 pairs and doc numbers never collide.
+  getNextDocNumSync(year = null) {
+    const y = year || new Date().getFullYear();
+    const takenSet = new Set();
+    let maxPad = 4; // default minimum 4 digits (e.g. 0001)
+
+    // 1. Collect from BRs
+    this.getAll('brs').forEach(b => {
+      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+      if (bYear !== y) return;
+      const n = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
+      if (n > 0) {
+        takenSet.add(n);
+        const m = (b.ref || '').match(/(\d+)/);
+        if (m && m[1].length > maxPad) maxPad = m[1].length;
+        else if (String(b.brNum || '').length > maxPad) maxPad = String(b.brNum).length;
       }
-      if (!takenNums.length) return 100;
-      const takenSet = new Set(takenNums);
-      // Find lowest gap starting from 100
-      let candidate = 100;
-      while (takenSet.has(candidate)) candidate++;
-      return candidate;
-    } catch (e) {
-      const brs = this.getAll('brs').filter(b => b.year === year);
-      if (!brs.length) return 100;
-      const nums = brs.map(b => parseInt(b.brNum) || 0).filter(n => n > 0);
-      if (!nums.length) return 100;
-      const takenSet = new Set(nums);
-      let candidate = 100;
-      while (takenSet.has(candidate)) candidate++;
-      return candidate;
+    });
+
+    // 2. Collect from BLs / BCHs
+    this.getAll('bls').forEach(b => {
+      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+      if (bYear !== y) return;
+      const n = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
+      if (n > 0) {
+        takenSet.add(n);
+        const m = (b.ref || '').match(/BCH-(\d+)/) || (b.ref || '').match(/(\d+)/);
+        if (m && m[1].length > maxPad) maxPad = m[1].length;
+      }
+    });
+
+    let candidate = 1;
+    if (takenSet.size > 0) {
+      const maxNum = Math.max(...takenSet);
+      candidate = maxNum + 1;
     }
+    if (candidate < 1) candidate = 1;
+    while (takenSet.has(candidate)) candidate++;
+
+    const formatted = String(candidate).padStart(maxPad, '0');
+    return { num: candidate, formatted, maxPad, takenSet };
   },
+
+  async getNextDocNum(year = null) {
+    const y = year || new Date().getFullYear();
+    const local = this.getNextDocNumSync(y);
+    const takenSet = new Set(local.takenSet);
+    let maxPad = local.maxPad;
+
+    // 3. Online server sync check if available
+    if (window.API) {
+      try {
+        const [sBrs, sBls] = await Promise.all([
+          API.getAll('brs').catch(() => null),
+          API.getAll('bls').catch(() => null)
+        ]);
+        (sBrs || []).forEach(b => {
+          const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+          if (bYear !== y) return;
+          const n = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
+          if (n > 0) takenSet.add(n);
+        });
+        (sBls || []).forEach(b => {
+          const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+          if (bYear !== y) return;
+          const n = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
+          if (n > 0) takenSet.add(n);
+        });
+      } catch(e) {}
+    }
+
+    // 4. Calculate candidate:
+    // Starts at 1 if none exist.
+    // If numbers exist, next is (max + 1).
+    let candidate = 1;
+    if (takenSet.size > 0) {
+      const maxNum = Math.max(...takenSet);
+      candidate = maxNum + 1;
+    }
+    if (candidate < 1) candidate = 1;
+    while (takenSet.has(candidate)) candidate++;
+
+    const formatted = String(candidate).padStart(maxPad, '0');
+    return { num: candidate, formatted, maxPad };
+  },
+
+  async getNextBRNum() {
+    const res = await this.getNextDocNum();
+    return res.num;
+  },
+
+  async getNextBCHNum() {
+    const res = await this.getNextDocNum();
+    return res.num;
+  },
+  getNextBCNum() {
+    return this.getNextBCHNum();
+  },
+  getNextBLNum() {
+    return this.getNextBCHNum();
+  },
+
+  checkDocNum(num, year = null, { excludeBrId = null, excludeBlId = null, parentBrId = null } = {}) {
+    const n = parseInt(num);
+    const y = parseInt(year) || new Date().getFullYear();
+    if (!num || isNaN(n) || n < 1) {
+      return { valid: false, reason: 'invalid', message: 'Numéro invalide' };
+    }
+
+    // Check in BRs
+    const takenBR = this.getAll('brs').find(b => {
+      if (excludeBrId && Number(b.id) === Number(excludeBrId)) return false;
+      if (parentBrId && Number(b.id) === Number(parentBrId)) return false;
+      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+      if (bYear !== y) return false;
+      const bNum = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
+      return bNum === n;
+    });
+
+    if (takenBR) {
+      return { valid: false, reason: 'taken_br', ref: takenBR.ref, doc: takenBR, message: `Déjà utilisé dans BR (${takenBR.ref})` };
+    }
+
+    // Check in BLs / BCHs
+    const takenBL = this.getAll('bls').find(b => {
+      if (excludeBlId && Number(b.id) === Number(excludeBlId)) return false;
+      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+      if (bYear !== y) return false;
+      const bNum = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
+      return bNum === n;
+    });
+
+    if (takenBL) {
+      return { valid: false, reason: 'taken_bch', ref: takenBL.ref, doc: takenBL, message: `Déjà utilisé dans BCH (${takenBL.ref})` };
+    }
+
+    return { valid: true, reason: 'available', message: 'Disponible' };
+  },
+
+  isDocNumTaken(num, year = null, opts = {}) {
+    return !this.checkDocNum(num, year, opts).valid;
+  },
+
   isBRNumTaken(num, year, excludeId = null) {
-    return this.getAll('brs').some(b => b.brNum == num && b.year == year && b.id !== excludeId);
+    return !this.checkDocNum(num, year, { excludeBrId: excludeId }).valid;
   },
+
   buildBRRef(num, year, abbrev) {
-    const n = String(num).padStart(3,'0');
-    if (abbrev && abbrev.trim()) return `${n}/BR/${abbrev.trim().toUpperCase()}/${year}`;
-    return `BR/${n}/${year}`;
+    const s = String(num != null ? num : '').trim();
+    const n = s ? s.padStart(Math.max(4, s.length), '0') : '0001';
+    const y = year || new Date().getFullYear();
+    if (abbrev && abbrev.trim()) return `${n}/BR/${abbrev.trim().toUpperCase()}/${y}`;
+    return `BR/${n}/${y}`;
   },
+
   buildBCHRef(num, year, partNum, abbrev) {
-    const n = String(num).padStart(4,'0');
+    const s = String(num != null ? num : '').trim();
+    const n = s ? s.padStart(Math.max(4, s.length), '0') : '0001';
     const base = `BCH-${n}`;
     if (partNum) return `${base}-P${String(partNum).padStart(2,'0')}`;
     return base;
   },
+
   buildBLRef(num, year, partNum, abbrev) {
     return this.buildBCHRef(num, year, partNum, abbrev);
   },
+
   buildBCRef(num, year, partNum, abbrev) {
     return this.buildBCHRef(num, year, partNum, abbrev);
   },
+
   // Get next part number for a partial BCH/BC (for a given brId)
   getNextBLPartNum(brId) {
     const existing = this.getAll('bls').filter(b => Number(b.brId) === Number(brId));
@@ -2335,40 +2455,9 @@ const DB = {
     }, 0);
     return maxPart + 1;
   },
+
   getNextBCHPartNum(brId) {
     return this.getNextBLPartNum(brId);
-  },
-  async getNextBCHNum() {
-    const year = new Date().getFullYear();
-    try {
-      const allBCs = this.getAll('bls');
-      const takenNums = allBCs
-        .filter(b => (b.year === year || (b.date && b.date.startsWith(String(year)))))
-        .map(b => {
-          if (b.bchNum) return parseInt(b.bchNum);
-          if (b.bcNum) return parseInt(b.bcNum);
-          if (b.blNum) return parseInt(b.blNum);
-          if (b.ref) {
-            const m = b.ref.match(/(\d+)/);
-            if (m) return parseInt(m[1]);
-          }
-          return 0;
-        })
-        .filter(n => n > 0);
-      if (!takenNums.length) return 100;
-      const takenSet = new Set(takenNums);
-      let candidate = 100;
-      while (takenSet.has(candidate)) candidate++;
-      return candidate;
-    } catch(e) {
-      return 100;
-    }
-  },
-  getNextBCNum() {
-    return this.getNextBCHNum();
-  },
-  getNextBLNum() {
-    return this.getNextBCHNum();
   },
 
   // ─── Auto-BR Generation upon Supplier / Usine Validation ────────
@@ -2379,8 +2468,9 @@ const DB = {
     if (bc.linkedBrId && this.getById('brs', bc.linkedBrId)) {
       return this.getById('brs', bc.linkedBrId);
     }
-    const year = new Date().getFullYear();
-    const brNum = await this.getNextBRNum();
+    const year = bc.year || new Date().getFullYear();
+    // Use the exact BCH number for the linked BR so numbers match 1-to-1
+    const brNum = bc.bchNum ? parseInt(bc.bchNum) : (await this.getNextBRNum());
     const supplier = this.getById('suppliers', bc.supplierId) || { id: bc.supplierId, name: bc.supplierName || 'Usine' };
     const ref = this.buildBRRef(brNum, year, supplier?.refAbbrev || '');
     
@@ -2454,8 +2544,8 @@ const DB = {
       }
       return existingBR;
     }
-    const year = new Date().getFullYear();
-    const brNum = await this.getNextBRNum();
+    const year = bc.year || new Date().getFullYear();
+    const brNum = bc.bchNum ? parseInt(bc.bchNum) : (await this.getNextBRNum());
     const supplier = this.getById('suppliers', bc.supplierId) || { id: bc.supplierId, name: bc.supplierName || 'Usine / Fournisseur' };
     const ref = this.buildBRRef(brNum, year, supplier?.refAbbrev || '');
     
@@ -2970,7 +3060,7 @@ const Auth = {
   canReturn(bl) {
     const u = this.getCurrentUser();
     if (!u) return false;
-    // Any user can return any non-returned active Bon de Chargement even from past days or other users
+    if (u.role !== 'admin' && !this.can('canReturnBL')) return false;
     return bl && bl.status !== 'returned' && bl.status !== 'cancelled';
   },
 
@@ -2979,6 +3069,7 @@ const Auth = {
     return {
       canCreateBR: true,
       canCreateBL: true,
+      canReturnBL: false,
       canViewBRs: true,
       canViewBLs: true,
       canViewCaisse: true,
@@ -3018,6 +3109,7 @@ const Auth = {
         canEditClients: false,
         canCreateBR: false,
         canCreateBL: false,
+        canReturnBL: false,
         canDeleteBR: false,
         canDeleteBL: false,
         canManageCharges: false,
