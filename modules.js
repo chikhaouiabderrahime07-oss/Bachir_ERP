@@ -62,6 +62,388 @@ const UI = {
 };
 
 // ═══════════════════════════════════════════════════════════════
+// QUANTITY PALETTE MULTIPLIER (حاسبة الطبالي والطرود)
+// ═══════════════════════════════════════════════════════════════
+const QtyPaletteCalc = {
+  _activeInputId: null,
+  _onRecalcFn: null,
+  _maxQty: null,
+  _unit: '',
+
+  parseVal(v) {
+    if (v == null) return 0;
+    if (typeof v === 'number') return isNaN(v) ? 0 : v;
+    const s = String(v).trim().replace(',', '.');
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)$/);
+    if (m) {
+      return Math.round(parseFloat(m[1]) * parseFloat(m[2]) * 1000) / 1000;
+    }
+    const num = parseFloat(s);
+    return isNaN(num) ? 0 : num;
+  },
+
+  renderField(opts) {
+    const isAR = T.isRTL();
+    const id = opts.id;
+    const val = opts.value != null ? opts.value : '';
+    const formula = opts.formula || (opts.count && opts.unitQty ? `${opts.count} × ${Utils.fmtNum(opts.unitQty)}` : '');
+    const count = opts.count || null;
+    const unitQty = opts.unitQty || null;
+    const min = opts.min != null ? opts.min : 0;
+    const max = opts.max != null ? opts.max : null;
+    const step = opts.step || 'any';
+    const onRecalcStr = opts.onRecalc || '';
+    const unit = opts.unit || '';
+    const extraAttrs = opts.extraAttrs || '';
+    const inputClass = opts.inputClass || '';
+    const inputStyle = opts.inputStyle || '';
+
+    const hasVal = (typeof val === 'number' && val > 0) || (typeof val === 'string' && val.trim() !== '' && val.trim() !== '0');
+
+    return `
+    <div class="qty-calc-wrap">
+      <div class="qty-calc-input-box">
+        <input type="text" inputmode="decimal" id="${id}" class="qty-calc-input ${inputClass}"
+          value="${val}" ${min != null ? `min="${min}"` : ''} ${max != null ? `max="${max}"` : ''} step="${step}"
+          placeholder="0" style="${inputStyle}"
+          ${formula ? `data-formula="${Utils.escHTML(formula)}"` : ''}
+          ${count ? `data-count="${count}"` : ''}
+          ${unitQty ? `data-unitqty="${unitQty}"` : ''}
+          ${extraAttrs}
+          oninput="QtyPaletteCalc.onInputChange(this, '${id}', '${onRecalcStr}')"
+          onkeydown="QtyPaletteCalc.onInputKeydown(event, this, '${onRecalcStr}')"
+          onblur="QtyPaletteCalc.onInputBlur(this, '${id}', '${onRecalcStr}')">
+        <button type="button" tabindex="-1" class="qty-calc-btn ${hasVal ? 'has-value' : ''}" id="btn-${id}"
+          onclick="QtyPaletteCalc.open(this, '${id}', '${onRecalcStr}', ${max != null ? max : 'null'}, '${Utils.escHTML(unit)}')"
+          title="${isAR ? 'حاسبة الطبالي والطرود (مضاعف ×)' : 'Calculateur Palettes / Multiplicateur (×)'}">
+          <span class="qty-calc-arrow">▾</span>
+        </button>
+      </div>
+      <div id="tag-${id}" class="qty-eq-tag" style="${formula ? '' : 'display:none'}"
+        onclick="QtyPaletteCalc.open(document.getElementById('btn-${id}'), '${id}', '${onRecalcStr}', ${max != null ? max : 'null'}, '${Utils.escHTML(unit)}')"
+        title="${isAR ? 'انقر لتعديل المعادلة' : 'Cliquer pour modifier l\'équation'}">
+        ${formula ? `🧮 ${Utils.escHTML(formula)}` : ''}
+      </div>
+    </div>`;
+  },
+
+  onInputChange(input, id, onRecalcStr) {
+    const val = input.value.trim();
+    const btn = document.getElementById('btn-' + id);
+    const tag = document.getElementById('tag-' + id);
+
+    if (val && val !== '0') {
+      if (btn) btn.classList.add('has-value');
+    } else {
+      if (btn) btn.classList.remove('has-value');
+      if (tag) tag.style.display = 'none';
+      delete input.dataset.formula;
+      delete input.dataset.count;
+      delete input.dataset.unitqty;
+    }
+
+    // Check if user is typing a live formula, e.g. 4*5121
+    const s = val.replace(',', '.');
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)$/);
+    if (m && tag) {
+      const p1 = parseFloat(m[1]);
+      const p2 = parseFloat(m[2]);
+      const count = Math.min(p1, p2);
+      const uQty = Math.max(p1, p2);
+      const tot = Math.round(count * uQty * 1000) / 1000;
+      tag.innerHTML = `🧮 ${count} × ${Utils.fmtNum(uQty)} = <strong>${Utils.fmtNum(tot)}</strong>`;
+      tag.style.display = 'inline-flex';
+    }
+
+    if (onRecalcStr) {
+      try { (new Function(onRecalcStr))(); } catch(e) {}
+    }
+  },
+
+  onInputKeydown(e, input, onRecalcStr) {
+    if (e.key === 'Enter') {
+      this.evaluateFormula(input, onRecalcStr);
+    }
+  },
+
+  onInputBlur(input, id, onRecalcStr) {
+    this.evaluateFormula(input, onRecalcStr);
+  },
+
+  evaluateFormula(input, onRecalcStr) {
+    const val = (input.value || '').trim().replace(',', '.');
+    const m = val.match(/^(\d+(?:\.\d+)?)\s*[*xX×]\s*(\d+(?:\.\d+)?)$/);
+    if (m) {
+      const p1 = parseFloat(m[1]);
+      const p2 = parseFloat(m[2]);
+      const count = Math.min(p1, p2);
+      const uQty = Math.max(p1, p2);
+      const tot = Math.round(count * uQty * 1000) / 1000;
+      input.value = tot;
+      input.dataset.formula = `${count} × ${Utils.fmtNum(uQty)} = ${Utils.fmtNum(tot)}`;
+      input.dataset.count = count;
+      input.dataset.unitqty = uQty;
+
+      const tag = document.getElementById('tag-' + input.id);
+      if (tag) {
+        tag.innerHTML = `🧮 ${input.dataset.formula}`;
+        tag.style.display = 'inline-flex';
+      }
+
+      if (onRecalcStr) {
+        try { (new Function(onRecalcStr))(); } catch(e) {}
+      }
+    }
+  },
+
+  open(btn, inputId, onRecalcStr, maxQty = null, unit = '') {
+    this._activeInputId = inputId;
+    this._onRecalcFn = onRecalcStr;
+    this._maxQty = maxQty;
+    this._unit = unit;
+
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    let baseQty = 0;
+    let count = 4; // user request: default 4 pallets
+
+    if (input.dataset.unitqty && input.dataset.count) {
+      baseQty = parseFloat(input.dataset.unitqty) || 0;
+      count = parseFloat(input.dataset.count) || 4;
+    } else {
+      const parsed = this.parseVal(input.value);
+      if (parsed > 0) {
+        baseQty = parsed;
+      }
+    }
+
+    let pop = document.getElementById('qty-palette-popover');
+    if (!pop) {
+      pop = document.createElement('div');
+      pop.id = 'qty-palette-popover';
+      pop.className = 'qty-palette-popover';
+      document.body.appendChild(pop);
+    }
+
+    const isAR = T.isRTL();
+    const tot = Math.round(baseQty * count * 1000) / 1000;
+
+    pop.innerHTML = `
+    <div class="popover-header">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="popover-icon"><i class="fas fa-boxes"></i></div>
+        <div>
+          <div class="popover-title">${isAR ? '📦 حاسبة ومضاعف الطبالي والطرود' : '📦 Calculateur Palettes / Colis'}</div>
+          <div class="popover-subtitle">${isAR ? 'حساب الكمية الإجمالية بدقة وسهولة' : 'Quantité unitaire × Nombre de palettes'}</div>
+        </div>
+      </div>
+      <button type="button" class="popover-close-btn" onclick="QtyPaletteCalc.close()"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div class="popover-body">
+      <!-- Unit Qty -->
+      <div class="calc-field-group">
+        <label>${isAR ? 'كمية الباليطة أو الطرد الواحد :' : 'Quantité unitaire (par palette / colis) :'}</label>
+        <div class="calc-input-row">
+          <input type="number" id="calc-pop-unit-qty" class="calc-big-input" value="${baseQty > 0 ? baseQty : ''}" placeholder="${isAR ? 'مثال: 5121' : 'Ex: 5121'}" step="any" min="0"
+            oninput="QtyPaletteCalc._update('unit')">
+          ${unit ? `<span class="calc-unit-label">${Utils.escHTML(unit)}</span>` : ''}
+        </div>
+      </div>
+
+      <!-- Pallet Stepper -->
+      <div class="calc-field-group">
+        <label>${isAR ? 'عدد الطبالي (الطرود) :' : 'Nombre de palettes (colis) :'}</label>
+        <div class="palette-stepper">
+          <button type="button" class="btn-step" onclick="QtyPaletteCalc.step(-1)" title="-1">
+            <i class="fas fa-minus"></i>
+          </button>
+          <input type="number" id="calc-pop-count" class="palette-count-input" value="${count}" min="1" step="1"
+            oninput="QtyPaletteCalc._update('count')">
+          <button type="button" class="btn-step" onclick="QtyPaletteCalc.step(1)" title="+1">
+            <i class="fas fa-plus"></i>
+          </button>
+          <div class="stepper-arrows">
+            <button type="button" class="btn-arrow" onclick="QtyPaletteCalc.step(1)" title="${isAR ? 'زيادة' : 'Augmenter'}">▲</button>
+            <button type="button" class="btn-arrow" onclick="QtyPaletteCalc.step(-1)" title="${isAR ? 'إنقاص' : 'Diminuer'}">▼</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Chips -->
+      <div class="calc-chips-wrap">
+        <span class="chips-label">${isAR ? 'عدد الطبالي الشائع :' : 'Sélection rapide palettes :'}</span>
+        <div class="chips-list">
+          ${[1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 30].map(n => `
+            <button type="button" class="palette-chip ${n === count ? 'active' : ''}" onclick="QtyPaletteCalc.setCount(${n})">
+              ${n}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Live Equation Box -->
+      <div class="calc-equation-display" id="calc-pop-equation-box">
+        <div class="eq-formula">
+          <span id="calc-disp-unit" style="font-size:15px;font-weight:800;color:var(--text)">${Utils.fmtNum(baseQty)}</span>
+          <span class="eq-op" style="font-size:16px">×</span>
+          <span id="calc-disp-count" style="font-size:15px;font-weight:800;color:var(--primary)">${count} ${isAR ? 'طبالي' : 'palettes'}</span>
+          <span class="eq-op" style="font-size:16px">=</span>
+        </div>
+        <div class="eq-total" id="calc-disp-total">
+          ${Utils.fmtNum(tot)} <span style="font-size:13px;font-weight:600;opacity:.7">${Utils.escHTML(unit)}</span>
+        </div>
+        <div id="calc-pop-warn" style="display:none;color:#ef4444;font-size:11px;font-weight:700;margin-top:4px"></div>
+      </div>
+    </div>
+
+    <div class="popover-footer">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="QtyPaletteCalc.close()">
+        ${isAR ? 'إلغاء' : 'Annuler'}
+      </button>
+      <button type="button" class="btn btn-success" id="calc-pop-apply-btn" onclick="QtyPaletteCalc.apply()" style="font-weight:800;padding:8px 18px">
+        <i class="fas fa-check"></i> ${isAR ? 'تطبيق وإدراج' : 'Valider & Insérer'} (<span id="calc-disp-btn-total">${Utils.fmtNum(tot)}</span>)
+      </button>
+    </div>`;
+
+    pop.style.display = 'block';
+
+    // Position popover relative to button or input
+    const rect = (btn || input).getBoundingClientRect();
+    const popW = 320;
+    const popH = 360;
+    let top = rect.bottom + 6;
+    let left = isAR ? (rect.right - popW) : rect.left;
+
+    if (left + popW > window.innerWidth - 10) left = window.innerWidth - popW - 10;
+    if (left < 10) left = 10;
+    if (top + popH > window.innerHeight - 10) {
+      top = Math.max(10, rect.top - popH - 6);
+    }
+
+    pop.style.top = top + 'px';
+    pop.style.left = left + 'px';
+
+    setTimeout(() => {
+      const uInp = document.getElementById('calc-pop-unit-qty');
+      if (uInp) {
+        if (!baseQty) uInp.focus();
+        else uInp.select();
+      }
+    }, 50);
+
+    setTimeout(() => {
+      document.addEventListener('pointerdown', QtyPaletteCalc._outsideListener);
+    }, 100);
+  },
+
+  _outsideListener(e) {
+    const pop = document.getElementById('qty-palette-popover');
+    if (!pop || pop.style.display === 'none') return;
+    if (!pop.contains(e.target) && !e.target.closest('.qty-calc-btn') && !e.target.closest('.qty-eq-tag')) {
+      QtyPaletteCalc.close();
+    }
+  },
+
+  step(delta) {
+    const cInp = document.getElementById('calc-pop-count');
+    if (!cInp) return;
+    let c = parseInt(cInp.value) || 1;
+    c = Math.max(1, c + delta);
+    cInp.value = c;
+    this._update('count');
+  },
+
+  setCount(n) {
+    const cInp = document.getElementById('calc-pop-count');
+    if (!cInp) return;
+    cInp.value = n;
+    this._update('count');
+  },
+
+  _update() {
+    const uInp = document.getElementById('calc-pop-unit-qty');
+    const cInp = document.getElementById('calc-pop-count');
+    if (!uInp || !cInp) return;
+
+    const baseQty = parseFloat(uInp.value) || 0;
+    const count = parseInt(cInp.value) || 1;
+    const tot = Math.round(baseQty * count * 1000) / 1000;
+
+    const dispU = document.getElementById('calc-disp-unit');
+    const dispC = document.getElementById('calc-disp-count');
+    const dispT = document.getElementById('calc-disp-total');
+    const dispBtn = document.getElementById('calc-disp-btn-total');
+    const warn = document.getElementById('calc-pop-warn');
+    const isAR = T.isRTL();
+
+    if (dispU) dispU.textContent = Utils.fmtNum(baseQty);
+    if (dispC) dispC.textContent = `${count} ${isAR ? 'طبالي' : 'palettes'}`;
+    if (dispT) dispT.innerHTML = `${Utils.fmtNum(tot)} <span style="font-size:13px;font-weight:600;opacity:.7">${Utils.escHTML(this._unit)}</span>`;
+    if (dispBtn) dispBtn.textContent = Utils.fmtNum(tot);
+
+    document.querySelectorAll('.palette-chip').forEach(ch => {
+      if (parseInt(ch.textContent.trim()) === count) ch.classList.add('active');
+      else ch.classList.remove('active');
+    });
+
+    if (this._maxQty != null && tot > this._maxQty) {
+      if (warn) {
+        warn.textContent = isAR ? `⚠️ يتجاوز الحد المتبقي (${this._maxQty})` : `⚠️ Dépasse le reste du BR (Max : ${this._maxQty})`;
+        warn.style.display = 'block';
+      }
+    } else {
+      if (warn) warn.style.display = 'none';
+    }
+  },
+
+  apply() {
+    const uInp = document.getElementById('calc-pop-unit-qty');
+    const cInp = document.getElementById('calc-pop-count');
+    if (!uInp || !cInp || !this._activeInputId) return;
+
+    const baseQty = parseFloat(uInp.value) || 0;
+    const count = parseInt(cInp.value) || 1;
+    let tot = Math.round(baseQty * count * 1000) / 1000;
+
+    const input = document.getElementById(this._activeInputId);
+    if (!input) return;
+
+    if (this._maxQty != null && tot > this._maxQty) {
+      tot = this._maxQty;
+    }
+
+    input.value = tot;
+    input.dataset.formula = `${count} × ${Utils.fmtNum(baseQty)} = ${Utils.fmtNum(tot)}`;
+    input.dataset.count = count;
+    input.dataset.unitqty = baseQty;
+
+    const btn = document.getElementById('btn-' + this._activeInputId);
+    if (btn) btn.classList.add('has-value');
+
+    const tag = document.getElementById('tag-' + this._activeInputId);
+    if (tag) {
+      tag.innerHTML = `🧮 ${input.dataset.formula}`;
+      tag.style.display = 'inline-flex';
+    }
+
+    if (this._onRecalcFn) {
+      try { (new Function(this._onRecalcFn))(); } catch(e) {}
+    }
+
+    this.close();
+  },
+
+  close() {
+    const pop = document.getElementById('qty-palette-popover');
+    if (pop) pop.style.display = 'none';
+    document.removeEventListener('pointerdown', this._outsideListener);
+    this._activeInputId = null;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
 const DashboardModule = {
@@ -546,7 +928,17 @@ const BRModule = {
         </div>
       </td>
       <td class="col-unit"><input type="text" id="br-unit-${idx}" value="${Utils.escHTML(line.unit||'')}" placeholder="${T.isRTL() ? 'وحدة' : 'u'}"></td>
-      <td class="col-qty"><input type="number" id="br-qty-${idx}" value="${qty}" min="0" step="any" oninput="BRModule._recalcLine(${idx})"></td>
+      <td class="col-qty">
+        ${QtyPaletteCalc.renderField({
+          id: `br-qty-${idx}`,
+          value: qty,
+          formula: line.formula,
+          count: line.paletteCount,
+          unitQty: line.paletteUnitQty,
+          unit: line.unit || '',
+          onRecalc: `BRModule._recalcLine(${idx})`
+        })}
+      </td>
       <td class="col-price"><input type="number" id="br-price-${idx}" value="${price}" min="0" step="any" oninput="BRModule._recalcLine(${idx})"></td>
       <td class="col-disc"><input type="number" id="br-disc-${idx}" value="${disc}" min="0" max="100" step="any" oninput="BRModule._recalcLine(${idx})"></td>
       <td class="col-total" id="br-ltot-${idx}">${Utils.fmtCurrency(tot)}</td>
@@ -595,7 +987,7 @@ const BRModule = {
   },
 
   _recalcLine(idx) {
-    const qty = parseFloat(document.getElementById(`br-qty-${idx}`)?.value)||0;
+    const qty = QtyPaletteCalc.parseVal(document.getElementById(`br-qty-${idx}`)?.value)||0;
     const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value)||0;
     const disc = parseFloat(document.getElementById(`br-disc-${idx}`)?.value)||0;
     const tot = Math.round(qty * price * (1 - disc/100) * 100) / 100;
@@ -608,7 +1000,7 @@ const BRModule = {
     let ht = 0;
     let idx = 0;
     while (document.getElementById(`br-line-${idx}`)) {
-      const qty   = parseFloat(document.getElementById(`br-qty-${idx}`)?.value)||0;
+      const qty   = QtyPaletteCalc.parseVal(document.getElementById(`br-qty-${idx}`)?.value)||0;
       const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value)||0;
       const disc  = parseFloat(document.getElementById(`br-disc-${idx}`)?.value)||0;
       ht += Math.round(qty * price * (1 - disc/100) * 100) / 100;
@@ -677,11 +1069,15 @@ const BRModule = {
       const designation = (document.getElementById(`br-des-${idx}`)?.value||'').trim();
       if (designation) {
         const unit = document.getElementById(`br-unit-${idx}`)?.value||'';
-        const qty = parseFloat(document.getElementById(`br-qty-${idx}`)?.value)||0;
+        const qtyInp = document.getElementById(`br-qty-${idx}`);
+        const qty = QtyPaletteCalc.parseVal(qtyInp?.value)||0;
         const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value)||0;
         const disc = parseFloat(document.getElementById(`br-disc-${idx}`)?.value)||0;
         const tot = Math.round(qty * price * (1 - disc/100) * 100) / 100;
-        lines.push({ designation, unit, qty, price, disc, total: tot });
+        const formula = qtyInp?.dataset?.formula || '';
+        const paletteCount = parseInt(qtyInp?.dataset?.count) || null;
+        const paletteUnitQty = parseFloat(qtyInp?.dataset?.unitqty) || null;
+        lines.push({ designation, unit, qty, price, disc, total: tot, formula, paletteCount, paletteUnitQty });
         DB.saveArticle(designation, unit, price);
       }
       idx++;
@@ -1549,7 +1945,17 @@ const BLModule = {
         <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" placeholder="${T.isRTL() ? 'وحدة' : 'U'}" value="${Utils.escHTML(item.unit||'U')}">
       </td>
       <td>
-        <input type="number" id="direct-bch-qty-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" step="any" placeholder="0" value="${initQty}" oninput="BLModule._recalcDirectBCHRow(${idx})">
+        ${QtyPaletteCalc.renderField({
+          id: `direct-bch-qty-${idx}`,
+          value: initQty,
+          formula: item.formula,
+          count: item.paletteCount,
+          unitQty: item.paletteUnitQty,
+          unit: item.unit || 'U',
+          inputClass: 'input',
+          inputStyle: 'padding:6px 8px;font-size:12px;text-align:center',
+          onRecalc: `BLModule._recalcDirectBCHRow(${idx})`
+        })}
       </td>
       <td>
         <input type="number" id="direct-bch-price-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${initPrice}" oninput="BLModule._recalcDirectBCHRow(${idx})">
@@ -1594,7 +2000,7 @@ const BLModule = {
   },
 
   _recalcDirectBCHRow(idx) {
-    const qty = parseFloat(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
+    const qty = QtyPaletteCalc.parseVal(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
     const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
     const disc = parseFloat(document.getElementById(`direct-bch-disc-${idx}`)?.value) || 0;
     const tot = Math.round(qty * price * (1 - disc / 100) * 100) / 100;
@@ -1608,7 +2014,7 @@ const BLModule = {
     const rows = document.querySelectorAll('#direct-bch-rows tr');
     rows.forEach(tr => {
       const idx = tr.id.replace('direct-bch-tr-', '');
-      const qty = parseFloat(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
+      const qty = QtyPaletteCalc.parseVal(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
       const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
       const disc = parseFloat(document.getElementById(`direct-bch-disc-${idx}`)?.value) || 0;
       totalHT += Math.round(qty * price * (1 - disc / 100) * 100) / 100;
@@ -1790,7 +2196,8 @@ const BLModule = {
       const idx = tr.id.replace('direct-bch-tr-', '');
       const designation = (document.getElementById(`direct-bch-des-${idx}`)?.value || '').trim();
       const unit = (document.getElementById(`direct-bch-unit-${idx}`)?.value || 'U').trim();
-      const qty = parseFloat(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
+      const qtyInp = document.getElementById(`direct-bch-qty-${idx}`);
+      const qty = QtyPaletteCalc.parseVal(qtyInp?.value) || 0;
       const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
       const purchasePrice = parseFloat(document.getElementById(`direct-bch-buy-${idx}`)?.value) || price;
       const disc = parseFloat(document.getElementById(`direct-bch-disc-${idx}`)?.value) || 0;
@@ -1805,7 +2212,10 @@ const BLModule = {
           price,
           purchasePrice,
           disc,
-          total: tot
+          total: tot,
+          formula: qtyInp?.dataset?.formula || undefined,
+          paletteCount: qtyInp?.dataset?.count ? Number(qtyInp.dataset.count) : undefined,
+          paletteUnitQty: qtyInp?.dataset?.unitqty ? Number(qtyInp.dataset.unitqty) : undefined
         });
       }
     });
@@ -2395,10 +2805,22 @@ const BLModule = {
               <td style="text-align:left"><strong>${Utils.escHTML(l.designation||'')}</strong></td>
               <td style="text-align:center">${Utils.escHTML(l.unit||'U')}</td>
               <td style="text-align:center;color:var(--text4)">${l.qty||0}</td>
-              <td><input type="number" id="bl-qty-${i}" value="${qtyDel||0}" min="0"
-                max="${maxQty}" step="any" style="width:80px;text-align:center"
-                data-brqty="${l.qty||0}" data-price="${l.price||0}" data-disc="${l.disc||0}"
-                oninput="BLModule._recalcBLLine(${i})"></td>
+              <td>
+                ${QtyPaletteCalc.renderField({
+                  id: `bl-qty-${i}`,
+                  value: qtyDel || 0,
+                  formula: existingLine?.formula,
+                  count: existingLine?.paletteCount,
+                  unitQty: existingLine?.paletteUnitQty,
+                  min: 0,
+                  max: maxQty,
+                  step: 'any',
+                  inputStyle: 'width:90px;text-align:center',
+                  extraAttrs: `data-brqty="${l.qty||0}" data-price="${l.price||0}" data-disc="${l.disc||0}"`,
+                  onRecalc: `BLModule._recalcBLLine(${i})`,
+                  unit: l.unit || 'U'
+                })}
+              </td>
               <td style="text-align:right">${Utils.fmtCurrency(l.price||0)}</td>
               <td style="text-align:center">${l.disc||0}%</td>
               <td id="bl-linetot-${i}" style="text-align:right;font-weight:600">${Utils.fmtCurrency(tot)}</td>
@@ -2490,7 +2912,7 @@ const BLModule = {
     const input = document.getElementById(`bl-qty-${idx}`);
     if (!input) return;
     const maxQty = parseFloat(input.max) || 999999;
-    let qty = parseFloat(input.value) || 0;
+    let qty = QtyPaletteCalc.parseVal(input.value) || 0;
     if (qty > maxQty) {
       qty = maxQty;
       input.value = maxQty;
@@ -2498,6 +2920,18 @@ const BLModule = {
       Utils.notify(T.isRTL() ? 'الكمية محددة بـ ' + maxQty + ' (كمية وصل الاستلام)' : 'Quantité limitée à ' + maxQty + ' (quantité BR)', 'warning');
     } else {
       input.style.borderColor = '';
+    }
+    const btn = document.getElementById(`btn-bl-qty-${idx}`);
+    const tag = document.getElementById(`tag-bl-qty-${idx}`);
+    if (btn) {
+      if (qty > 0) btn.classList.add('has-value');
+      else btn.classList.remove('has-value');
+    }
+    if (qty === 0 && tag) {
+      tag.style.display = 'none';
+      delete input.dataset.formula;
+      delete input.dataset.count;
+      delete input.dataset.unitqty;
     }
     const price = parseFloat(input.dataset.price)||0;
     const disc  = parseFloat(input.dataset.disc)||0;
@@ -2511,7 +2945,7 @@ const BLModule = {
     let ht = 0, i = 0;
     while (document.getElementById(`bl-qty-${i}`)) {
       const input = document.getElementById(`bl-qty-${i}`);
-      const qty = parseFloat(input.value)||0;
+      const qty = QtyPaletteCalc.parseVal(input.value)||0;
       ht += Math.round(qty * (parseFloat(input.dataset.price)||0) * (1 - (parseFloat(input.dataset.disc)||0)/100) * 100) / 100;
       i++;
     }
@@ -2540,7 +2974,7 @@ const BLModule = {
     let isPartial = false, j = 0;
     while (document.getElementById(`bl-qty-${j}`)) {
       const inp = document.getElementById(`bl-qty-${j}`);
-      if ((parseFloat(inp.value)||0) < (parseFloat(inp.dataset.brqty)||0)) { isPartial = true; break; }
+      if ((QtyPaletteCalc.parseVal(inp.value)||0) < (parseFloat(inp.dataset.brqty)||0)) { isPartial = true; break; }
       j++;
     }
     const badge = document.getElementById('bl-partial-badge');
@@ -2565,6 +2999,11 @@ const BLModule = {
     while (document.getElementById(`bl-qty-${i}`)) {
       const input = document.getElementById(`bl-qty-${i}`);
       input.value = input.dataset.brqty||0;
+      delete input.dataset.formula;
+      delete input.dataset.count;
+      delete input.dataset.unitqty;
+      const tag = document.getElementById(`tag-bl-qty-${i}`);
+      if (tag) tag.style.display = 'none';
       this._recalcBLLine(i); i++;
     }
   },
@@ -2574,6 +3013,11 @@ const BLModule = {
     while (document.getElementById(`bl-qty-${i}`)) {
       const input = document.getElementById(`bl-qty-${i}`);
       input.value = 0;
+      delete input.dataset.formula;
+      delete input.dataset.count;
+      delete input.dataset.unitqty;
+      const tag = document.getElementById(`tag-bl-qty-${i}`);
+      if (tag) tag.style.display = 'none';
       this._recalcBLLine(i); i++;
     }
   },
@@ -2615,11 +3059,20 @@ const BLModule = {
     /* Collect lines with their delivered quantities */
     const brLines = br.lines || [];
     const deliveredLines = brLines.map((l, i) => {
-      const qty   = parseFloat(document.getElementById(`bl-qty-${i}`)?.value)||0;
+      const qtyInp = document.getElementById(`bl-qty-${i}`);
+      const qty   = QtyPaletteCalc.parseVal(qtyInp?.value)||0;
       const price = Number(l.price)||0;
       const disc  = Number(l.disc)||0;
       const tot   = Math.round(qty * price * (1 - disc/100) * 100) / 100;
-      return { ...l, qtyDelivered: qty, qty, total: tot };
+      return {
+        ...l,
+        qtyDelivered: qty,
+        qty,
+        total: tot,
+        formula: qtyInp?.dataset?.formula || undefined,
+        paletteCount: qtyInp?.dataset?.count ? Number(qtyInp.dataset.count) : undefined,
+        paletteUnitQty: qtyInp?.dataset?.unitqty ? Number(qtyInp.dataset.unitqty) : undefined
+      };
     }).filter(l => l.qtyDelivered > 0);
 
     if (!deliveredLines.length) {
@@ -3197,7 +3650,20 @@ const BLModule = {
               if (dstInp && oldBL.destinationAddress) dstInp.value = oldBL.destinationAddress;
               (oldBL.lines || []).forEach((l, i) => {
                 const qInp = document.getElementById(`bl-qty-${i}`);
-                if (qInp) { qInp.value = l.qtyDelivered || l.qty; qInp.dispatchEvent(new Event('input')); }
+                if (qInp) {
+                  qInp.value = l.qtyDelivered || l.qty;
+                  if (l.formula) {
+                    qInp.dataset.formula = l.formula;
+                    if (l.paletteCount) qInp.dataset.count = l.paletteCount;
+                    if (l.paletteUnitQty) qInp.dataset.unitqty = l.paletteUnitQty;
+                    const tag = document.getElementById(`tag-bl-qty-${i}`);
+                    if (tag) {
+                      tag.innerHTML = `🧮 ${Utils.escHTML(l.formula)}`;
+                      tag.style.display = 'inline-flex';
+                    }
+                  }
+                  qInp.dispatchEvent(new Event('input'));
+                }
               });
             }, 120);
           }
@@ -3236,7 +3702,10 @@ const BLModule = {
           qty: l.qtyDelivered || l.qty,
           price: l.price,
           purchasePrice: l.purchasePrice,
-          disc: l.disc
+          disc: l.disc,
+          formula: l.formula,
+          paletteCount: l.paletteCount,
+          paletteUnitQty: l.paletteUnitQty
         });
       });
       BLModule._recalcDirectBCHTotals();
@@ -4996,6 +5465,92 @@ const AdminCaisseModule = {
   _filters: { q:'', dateFrom:'', dateTo:'', userId:'all', type:'all' },
   _charts: {},
 
+  isChargeTx(t) {
+    if (!t) return false;
+    if (t.source === 'transfert_banque_etat_vente' || t.source === 'bank_transfer' || t.source === 'virement_banque') return false;
+    return t.source === 'charge' || 
+           (t.source||'').includes('charge') || 
+           t.chargeId != null ||
+           (t.note||'').toLowerCase().includes('charge') || 
+           (t.note||'').toLowerCase().includes('مصروف') || 
+           (t.note||'').toLowerCase().includes('تكلفة') || 
+           (t.note||'').toLowerCase().includes('camera') || 
+           (t.note||'').toLowerCase().includes('instalation') || 
+           (t.note||'').toLowerCase().includes('installation') || 
+           (t.note||'').toLowerCase().includes('loyer') || 
+           (t.note||'').toLowerCase().includes('sonelgaz') || 
+           (t.note||'').toLowerCase().includes('internet') || 
+           (t.note||'').toLowerCase().includes('paie') || 
+           (t.note||'').toLowerCase().includes('salaire');
+  },
+
+  isBankTransferTx(t) {
+    if (!t) return false;
+    if (this.isChargeTx(t)) return false;
+    return t.source === 'transfert_banque_etat_vente' || 
+           t.source === 'bank_transfer' || 
+           t.source === 'virement_banque' || 
+           (t.bankId && t.bankId !== 'caisse') || 
+           (t.destination && t.destination.toLowerCase().includes('banq')) || 
+           (t.note && (t.note.toLowerCase().includes('banque') || t.note.toLowerCase().includes('versé') || t.note.toLowerCase().includes('versement') || t.note.toLowerCase().includes('virement')));
+  },
+
+  _syncCaisseCharges() {
+    try {
+      const allCharges = DB.getAll('bank_charges') || [];
+      const caisseCharges = allCharges.filter(c => c.bankId === 'caisse' || c.source === 'caisse' || (!c.bankId && c.type === 'manual'));
+      if (!caisseCharges.length) return;
+
+      const caisse = DB.getAll('caisse_admin') || [];
+      let modified = false;
+
+      caisseCharges.forEach(c => {
+        const amt = Number(c.amount) || 0;
+        if (amt <= 0) return;
+        const cid = String(c.id);
+
+        let existing = caisse.find(t => 
+          t.type === 'withdrawal' && 
+          (String(t.chargeId) === cid || 
+           ((t.source === 'charge' || (t.note||'').toLowerCase().includes((c.label||'').toLowerCase())) && Math.abs(Number(t.amount) - amt) < 0.01))
+        );
+
+        if (existing) {
+          if (existing.source !== 'charge' || !existing.chargeId) {
+            existing.source = 'charge';
+            existing.chargeId = c.id;
+            modified = true;
+          }
+        } else {
+          const maxId = caisse.reduce((m, t) => Math.max(m, t.id || 0), 0);
+          const newTx = {
+            id: maxId + 1,
+            type: 'withdrawal',
+            source: 'charge',
+            chargeId: c.id,
+            amount: amt,
+            note: `Charge: ${c.label || c.subtype || 'Frais'}${c.category ? ' (' + c.category + ')' : ''}`,
+            userId: c.createdBy || null,
+            userName: c.createdByName || 'Administrateur',
+            date: c.date || (c.createdAt || '').slice(0, 10),
+            createdAt: c.createdAt || (c.date ? c.date + 'T12:00:00.000Z' : new Date().toISOString())
+          };
+          caisse.push(newTx);
+          modified = true;
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            window.API.insert('caisse_admin', newTx).catch(() => {});
+          }
+        }
+      });
+
+      if (modified) {
+        DB.rawSet('caisse_admin', caisse);
+      }
+    } catch(e) {
+      console.warn('[_syncCaisseCharges error]', e);
+    }
+  },
+
   render() {
     if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> ${T.isRTL()?"الوصول مخصص للمسؤولين":"Accès réservé aux administrateurs"}</div></div>`;
     const isAR = T.isRTL();
@@ -5008,8 +5563,9 @@ const AdminCaisseModule = {
       this._adminTab = 'mini_caisses';
     }
 
-    // ── Auto-reconcile caisse with all closed sessions & 1% timbre États de Vente ──
+    // ── Auto-reconcile caisse with all closed sessions, États de Vente & bank_charges ──
     try { DB.recalibrateCaisse?.(); } catch(e) {}
+    try { this._syncCaisseCharges?.(); } catch(e) {}
 
     // ── Raw data (no filter applied to globals) ──
     const caAll = DB.getAll('caisse_admin').sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
@@ -5025,13 +5581,27 @@ const AdminCaisseModule = {
     const allBLs     = DB.getAll('bls');
     const totalBCH_expected = allBLs.filter(b=>b.status!=='cancelled'&&b.status!=='returned').reduce((t,b)=>t+(Number(b.totalTTC)||0),0);
 
-    // ── Metrics for Deductions & Charges Recap (Total & Today) ──
+    // ── Distinguish Bank Transfers vs Charges & Frais ──
+    const isChargeTx = (t) => this.isChargeTx(t);
+    const isBankTransferTx = (t) => this.isBankTransferTx(t);
+
+    // Calculate split totals:
+    const bankChargesInCaisse = (DB.getAll('bank_charges') || []).filter(c => c.bankId === 'caisse' || c.source === 'caisse' || (!c.bankId && c.type === 'manual'));
+    const bankChargesSum = bankChargesInCaisse.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const caisseAdminChargesSum = allWithdrawals.filter(isChargeTx).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const totalChargesOnly = Math.max(bankChargesSum, caisseAdminChargesSum);
+
+    const totalBankOnly = allWithdrawals.filter(isBankTransferTx).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const totalOtherWithdrawals = allWithdrawals.filter(t => !isBankTransferTx(t) && !isChargeTx(t)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    // Today's breakdown:
     const todayStr = (new Date()).toISOString().slice(0, 10);
     const todayDeposits = allDeposits.filter(t => (t.createdAt||'').slice(0, 10) === todayStr).reduce((s,t)=>s+(Number(t.amount)||0), 0);
     const todayWithdrawals = allWithdrawals.filter(t => (t.createdAt||'').slice(0, 10) === todayStr).reduce((s,t)=>s+(Number(t.amount)||0), 0);
-    const isChargeTx = (t) => t.source === 'charge' || (t.source||'').includes('charge') || (t.note||'').toLowerCase().includes('charge') || (t.note||'').toLowerCase().includes('مصروف') || (t.note||'').toLowerCase().includes('رواتب') || (t.note||'').toLowerCase().includes('paie');
-    const totalChargesOnly = allWithdrawals.filter(isChargeTx).reduce((s,t)=>s+(Number(t.amount)||0), 0);
-    const todayChargesOnly = allWithdrawals.filter(t => isChargeTx(t) && (t.createdAt||'').slice(0, 10) === todayStr).reduce((s,t)=>s+(Number(t.amount)||0), 0);
+    const todayBankWithdrawals = allWithdrawals.filter(t => isBankTransferTx(t) && (t.createdAt||'').slice(0, 10) === todayStr).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const todayChargesFromBank = bankChargesInCaisse.filter(c => (c.date || (c.createdAt||'').slice(0, 10)) === todayStr).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const todayChargesFromAdmin = allWithdrawals.filter(t => isChargeTx(t) && (t.createdAt||'').slice(0, 10) === todayStr).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const todayChargesOnly = Math.max(todayChargesFromBank, todayChargesFromAdmin);
 
     // ── Filtered data (for Journal, Deposits, Withdrawals tabs) ──
     const qf = (this._filters.q || '').toLowerCase().trim();
@@ -5045,8 +5615,9 @@ const AdminCaisseModule = {
     if (dt) filteredCa = filteredCa.filter(t=>(t.createdAt||'').slice(0,10)<=dt);
     if (fu && fu!=='all') filteredCa = filteredCa.filter(t=>String(t.userId)===String(fu));
     if (tf === 'deposit') filteredCa = filteredCa.filter(t=>t.type==='deposit');
-    else if (tf === 'withdrawal') filteredCa = filteredCa.filter(t=>t.type==='withdrawal');
+    else if (tf === 'bank') filteredCa = filteredCa.filter(isBankTransferTx);
     else if (tf === 'charge') filteredCa = filteredCa.filter(isChargeTx);
+    else if (tf === 'withdrawal') filteredCa = filteredCa.filter(t=>t.type==='withdrawal');
 
     const filteredDeps = filteredCa.filter(t=>t.type==='deposit');
     const filteredWits = filteredCa.filter(t=>t.type==='withdrawal');
@@ -5083,37 +5654,55 @@ const AdminCaisseModule = {
         <div class="vault-info">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.65">${isAR?'الرصيد المتاح في الصندوق':'SOLDE DISPONIBLE EN CAISSE'}</div>
           <div class="vault-amount" style="font-size:38px;font-weight:900;color:#4ade80;line-height:1.1">${Utils.fmtCurrency(balance)}</div>
-          <div style="opacity:.6;font-size:12px;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap">
+          <div style="opacity:.7;font-size:12px;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap">
             <span>↓ ${isAR?'إجمالي الإيداعات':'Total dépôts'}: <strong style="color:#4ade80">${Utils.fmtCurrency(deposits)}</strong></span>
             <span>↑ ${isAR?'إجمالي السحوبات':'Total retraits'}: <strong style="color:#f87171">${Utils.fmtCurrency(withdrawals)}</strong></span>
           </div>
-          <div style="opacity:.5;font-size:11px;margin-top:3px">${isAR?'مبيعات BCH المتوقعة':'BCH Ventes attendues'}: ${Utils.fmtCurrency(totalBCH_expected)}</div>
+          <div style="font-size:11px;margin-top:4px;display:flex;gap:14px;flex-wrap:wrap">
+            <span style="color:#c7d2fe">🏛️ ${isAR?'المحول للبنك':'Versé Banque'}: <strong>${Utils.fmtCurrency(totalBankOnly)}</strong></span>
+            <span style="color:#fdba74">🧾 ${isAR?'التكاليف والمصاريف':'Charges & Frais'}: <strong style="color:#fb923c">${Utils.fmtCurrency(totalChargesOnly)}</strong></span>
+          </div>
         </div>
       </div>
 
-      <!-- Recap Aside: Deductions & Charges (Total & Today) -->
-      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:rgba(0,0,0,.28);padding:12px 18px;border-radius:14px;border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(6px)">
-        <div style="padding-right:16px;border-right:1px solid rgba(255,255,255,.14)">
-          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#fca5a5;display:flex;align-items:center;gap:6px">
-            <i class="fas fa-arrow-circle-up" style="color:#ef4444"></i> ${isAR ? 'إجمالي الخصومات والمصاريف' : 'Total Déductions & Frais'}
+      <!-- Recap Aside: Dedicated Split Cards for Bank vs Charges vs Today -->
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:rgba(0,0,0,.32);padding:14px 20px;border-radius:14px;border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(8px)">
+        <!-- 1. Versé en Banque -->
+        <div style="padding-right:16px;border-right:1px solid rgba(255,255,255,.12)">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#a5b4fc;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-university" style="color:#818cf8"></i> ${isAR ? 'المحول للبنك (كشوفات المبيعات)' : 'Versé en Banque'}
           </div>
-          <div style="font-size:20px;font-weight:900;color:#f87171;margin-top:2px">
-            -${Utils.fmtCurrency(withdrawals)}
+          <div style="font-size:22px;font-weight:900;color:#c7d2fe;margin-top:2px">
+            -${Utils.fmtCurrency(totalBankOnly)}
           </div>
-          <div style="font-size:11px;opacity:.8;margin-top:3px;color:#fecaca">
-            ${isAR ? 'منها تكاليف ومصاريف' : 'Dont charges'}: <strong style="color:#fff">${Utils.fmtCurrency(totalChargesOnly)}</strong>
+          <div style="font-size:11px;opacity:.75;margin-top:3px;color:#e0e7ff">
+            ${isAR ? 'تحويلات الإيرادات للبنوك' : 'Versements fiscaux 1%'}
           </div>
         </div>
 
-        <div>
+        <!-- 2. Charges & Frais (59,000 DA) -->
+        <div style="padding-right:16px;border-right:1px solid rgba(255,255,255,.12)">
           <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#fdba74;display:flex;align-items:center;gap:6px">
-            <i class="fas fa-calendar-day" style="color:#f97316"></i> ${isAR ? 'خصومات ومصاريف اليوم' : 'Déductions Aujourd\'hui'}
+            <i class="fas fa-file-invoice-dollar" style="color:#f97316"></i> ${isAR ? 'التكاليف والمصاريف' : 'Charges & Frais'}
           </div>
-          <div style="font-size:20px;font-weight:900;color:#fb923c;margin-top:2px">
-            -${Utils.fmtCurrency(todayWithdrawals)}
+          <div style="font-size:22px;font-weight:900;color:#fb923c;margin-top:2px">
+            -${Utils.fmtCurrency(totalChargesOnly)}
           </div>
           <div style="font-size:11px;opacity:.8;margin-top:3px;color:#fed7aa">
-            ${isAR ? 'إيداعات اليوم' : 'Entrées aujourd\'hui'}: <span style="color:#4ade80;font-weight:800">+${Utils.fmtCurrency(todayDeposits)}</span>
+            ${isAR ? 'مصاريف مباشرة نقداً' : 'Dépenses directes caisse'}
+          </div>
+        </div>
+
+        <!-- 3. Flux Aujourd'hui -->
+        <div>
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#86efac;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-calendar-day" style="color:#22c55e"></i> ${isAR ? 'حركات اليوم' : 'Flux Aujourd\'hui'}
+          </div>
+          <div style="font-size:16px;font-weight:900;color:#4ade80;margin-top:2px">
+            +${Utils.fmtCurrency(todayDeposits)}
+          </div>
+          <div style="font-size:11px;opacity:.8;margin-top:3px;color:#fca5a5">
+            ${isAR ? 'سحوبات ومصاريف' : 'Sorties auj.'}: <strong style="color:#f87171">-${Utils.fmtCurrency(todayWithdrawals)}</strong>
           </div>
         </div>
       </div>
@@ -5134,11 +5723,12 @@ const AdminCaisseModule = {
       ${[
         {icon:'fa-receipt',       color:'#3b82f6', bg:'rgba(59,130,246,.12)', label:isAR?'مبيعات BCH المتوقعة':'BCH Ventes Attendu', val:Utils.fmtCurrency(totalBCH_expected)},
         {icon:'fa-arrow-down',    color:'#22c55e', bg:'rgba(34,197,94,.12)',  label:isAR?'الإيداعات الكلية':'Total Dépôts',         val:Utils.fmtCurrency(deposits)},
-        {icon:'fa-arrow-up',      color:'#ef4444', bg:'rgba(239,68,68,.12)', label:isAR?'السحوبات الكلية':'Total Retraits',         val:Utils.fmtCurrency(withdrawals)},
+        {icon:'fa-university',    color:'#818cf8', bg:'rgba(129,140,248,.12)',label:isAR?'المحول للبنك':'Versé en Banque',          val:Utils.fmtCurrency(totalBankOnly)},
+        {icon:'fa-file-invoice-dollar', color:'#f97316', bg:'rgba(249,115,22,.12)', label:isAR?'التكاليف والمصاريف':'Charges & Frais', val:Utils.fmtCurrency(totalChargesOnly)},
+        {icon:'fa-arrow-up',      color:'#ef4444', bg:'rgba(239,68,68,.12)', label:isAR?'إجمالي السحوبات':'Total Retraits',         val:Utils.fmtCurrency(withdrawals)},
         {icon:'fa-balance-scale', color:'#f59e0b', bg:'rgba(245,158,11,.12)',label:isAR?'إجمالي الفوارق':'Total Écarts',            val:Utils.fmtCurrency(globalEcart)},
         {icon:'fa-check-circle',  color:'#10b981', bg:'rgba(16,185,129,.12)',label:isAR?'نسبة التوازن':'Équilibre',                 val:zeroEcartPct+'%'},
         {icon:'fa-chart-line',    color:'#8b5cf6', bg:'rgba(139,92,246,.12)',label:isAR?'متوسط يومي':'Moy/jour',                   val:Utils.fmtCurrency(avgDaily)},
-        {icon:'fa-robot',         color:'#06b6d4', bg:'rgba(6,182,212,.12)', label:isAR?'إيداع تلقائي/يدوي':'Auto/Manuel',         val:autoDeposits.length+' / '+manualDeposits.length},
       ].map(k=>`
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;position:relative;overflow:hidden;transition:.2s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(0,0,0,.12)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
           <div style="position:absolute;top:0;right:0;width:48px;height:48px;background:${k.bg};border-radius:0 14px 0 100%"></div>
@@ -5163,7 +5753,8 @@ const AdminCaisseModule = {
           <option value="all" ${tf==='all'?'selected':''}>${isAR?'الكل (إيداعات وسحوبات)':'Tous (Entrées & Retraits)'}</option>
           <option value="deposit" ${tf==='deposit'?'selected':''}>${isAR?'إيداعات فقط (+)':'Dépôts uniquement (+)'}</option>
           <option value="withdrawal" ${tf==='withdrawal'?'selected':''}>${isAR?'سحوبات ومصاريف (-)':'Retraits & Charges (-)'}</option>
-          <option value="charge" ${tf==='charge'?'selected':''}>${isAR?'تكاليف ومصاريف فقط':'Charges uniquement'}</option>
+          <option value="bank" ${tf==='bank'?'selected':''}>${isAR?'تحويلات بنكية فقط (🏛️)':'Versements Banque (🏛️)'}</option>
+          <option value="charge" ${tf==='charge'?'selected':''}>${isAR?'تكاليف ومصاريف فقط (🧾)':'Charges & Frais (🧾)'}</option>
         </select>
       </div>
       <div class="filter-group">
@@ -5193,21 +5784,24 @@ const AdminCaisseModule = {
     const journalRow = (t) => {
       const isDep = t.type === 'deposit';
       const isChg = isChargeTx(t);
+      const isBank = isBankTransferTx(t);
       const isSupPay = t.source === 'supplier_payment';
       const isAuto = t.source === 'user_cloture' || t.source === 'transfert_banque_etat_vente';
 
       let badgeHtml = '';
       if (isDep) {
         badgeHtml = `<span class="badge badge-success" style="font-size:10px;padding:3px 8px;font-weight:700"><i class="fas fa-arrow-down"></i> ${isAR ? 'إيداع' : 'Dépôt'}</span>`;
+      } else if (isBank) {
+        badgeHtml = `<span class="badge" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-size:10px;padding:3px 8px;font-weight:700"><i class="fas fa-university"></i> ${isAR ? 'تحويل بنكي' : 'Versé Banque'}</span>`;
       } else if (isChg) {
-        badgeHtml = `<span class="badge" style="background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:10px;padding:3px 8px;font-weight:700"><i class="fas fa-file-invoice-dollar"></i> ${isAR ? 'تكلفة / مصاريف' : 'Charge / Frais'}</span>`;
+        badgeHtml = `<span class="badge" style="background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:10px;padding:3px 8px;font-weight:700"><i class="fas fa-file-invoice-dollar"></i> ${isAR ? 'تكلفة / مصاريف' : 'Charge & Frais'}</span>`;
       } else if (isSupPay) {
         badgeHtml = `<span class="badge" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;font-size:10px;padding:3px 8px;font-weight:700"><i class="fas fa-truck"></i> ${isAR ? 'دفع مورد' : 'Paiement Fourn.'}</span>`;
       } else {
         badgeHtml = `<span class="badge badge-danger" style="font-size:10px;padding:3px 8px;font-weight:700"><i class="fas fa-arrow-up"></i> ${isAR ? 'سحب' : 'Retrait'}</span>`;
       }
 
-      const color = isDep ? '#16a34a' : '#dc2626';
+      const color = isDep ? '#16a34a' : isBank ? '#6366f1' : isChg ? '#ea580c' : '#dc2626';
       const sign = isDep ? '+' : '-';
 
       return `
@@ -5247,6 +5841,8 @@ const AdminCaisseModule = {
 
     // ── JOURNAL COMPLET (ENTRÉES & SORTIES COMBINÉES) ──
     const filDepSum = filteredCa.filter(t=>t.type==='deposit').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const filBankSum = filteredCa.filter(isBankTransferTx).reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const filChgSum = filteredCa.filter(isChargeTx).reduce((s,t)=>s+(Number(t.amount)||0),0);
     const filWitSum = filteredCa.filter(t=>t.type==='withdrawal').reduce((s,t)=>s+(Number(t.amount)||0),0);
     const filNetSum = filDepSum - filWitSum;
 
@@ -5279,49 +5875,64 @@ const AdminCaisseModule = {
       </div>
       <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--bg3);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div style="font-size:12px;color:var(--text3)">
-          ${isAR?'إجمالي الحركات المعروضة':'Total opérations affichées'}: <strong>${filteredCa.length}</strong>
+          ${isAR?'إجمالي الحركات المعروضة:':'Total opérations affichées:'} <strong>${filteredCa.length}</strong>
         </div>
-        <div style="display:flex;gap:16px;align-items:center;font-size:13px">
-          <span>↓ ${isAR?'إيداعات':'Entrées'}: <strong style="color:var(--success)">+${Utils.fmtCurrency(filDepSum)}</strong></span>
-          <span>↑ ${isAR?'سحوبات ومصاريف':'Sorties'}: <strong style="color:var(--danger)">-${Utils.fmtCurrency(filWitSum)}</strong></span>
-          <span style="font-size:14px;font-weight:900;color:${filNetSum>=0?'var(--success)':'var(--danger)'}">
-            ${isAR?'الصافي':'Net'}: ${filNetSum>=0?'+':''}${Utils.fmtCurrency(filNetSum)}
+        <div style="display:flex;gap:14px;align-items:center;font-size:12px;flex-wrap:wrap">
+          <span>↓ ${isAR?'إيداعات:':'Entrées:'} <strong style="color:var(--success)">+${Utils.fmtCurrency(filDepSum)}</strong></span>
+          <span>🏛️ ${isAR?'المحول للبنك:':'Versé Banque:'} <strong style="color:#818cf8">-${Utils.fmtCurrency(filBankSum)}</strong></span>
+          <span>🧾 ${isAR?'تكاليف ومصاريف:':'Charges:'} <strong style="color:#fb923c">-${Utils.fmtCurrency(filChgSum)}</strong></span>
+          <span>↑ ${isAR?'إجمالي السحوبات:':'Total Sorties:'} <strong style="color:var(--danger)">-${Utils.fmtCurrency(filWitSum)}</strong></span>
+          <span style="font-size:13px;font-weight:900;color:${filNetSum>=0?'var(--success)':'var(--danger)'};background:rgba(255,255,255,.05);padding:3px 8px;border-radius:6px">
+            ${isAR?'الصافي:':'Net:'} ${filNetSum>=0?'+':''}${Utils.fmtCurrency(filNetSum)}
           </span>
         </div>
       </div>
     </div>`;
 
     // ── Transaction row renderer ──
-    const txRow = (t, colorVar, sign) => `
-    <tr onclick="AdminCaisseModule.showDetail(${t.id})" style="cursor:pointer">
-      <td>
-        <div style="font-size:12px;font-weight:700">${Utils.fmtDate(t.createdAt)}</div>
-        <div style="font-size:11px;color:var(--text4)">${(Utils.fmtDateTime(t.createdAt)||'').split(' ')[1]||''}</div>
-      </td>
-      <td>
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,${colorVar==='success'?'#22c55e':'#ef4444'},${colorVar==='success'?'#16a34a':'#dc2626'});display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            <span style="color:#fff;font-size:10px;font-weight:800">${(t.userName||'?').charAt(0).toUpperCase()}</span>
+    const txRow = (t, colorVar, sign) => {
+      const isBank = isBankTransferTx(t);
+      const isChg = isChargeTx(t);
+      let catBadge = '';
+      if (t.type === 'withdrawal') {
+        if (isBank) {
+          catBadge = `<span class="badge" style="background:#6366f1;color:#fff;font-size:9px"><i class="fas fa-university"></i> ${isAR ? 'تحويل بنكي' : 'Versé Banque'}</span>`;
+        } else if (isChg) {
+          catBadge = `<span class="badge" style="background:#f97316;color:#fff;font-size:9px"><i class="fas fa-file-invoice-dollar"></i> ${isAR ? 'تكلفة / مصاريف' : 'Charge & Frais'}</span>`;
+        }
+      }
+      return `
+      <tr onclick="AdminCaisseModule.showDetail(${t.id})" style="cursor:pointer">
+        <td>
+          <div style="font-size:12px;font-weight:700">${Utils.fmtDate(t.createdAt)}</div>
+          <div style="font-size:11px;color:var(--text4)">${(Utils.fmtDateTime(t.createdAt)||'').split(' ')[1]||''}</div>
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,${colorVar==='success'?'#22c55e':'#ef4444'},${colorVar==='success'?'#16a34a':'#dc2626'});display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <span style="color:#fff;font-size:10px;font-weight:800">${(t.userName||'?').charAt(0).toUpperCase()}</span>
+            </div>
+            <span style="font-weight:600;font-size:13px">${Utils.escHTML(t.userName||'—')}</span>
           </div>
-          <span style="font-weight:600;font-size:13px">${Utils.escHTML(t.userName||'—')}</span>
-        </div>
-      </td>
-      <td>
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="badge ${t.source==='user_cloture'?'badge-info':'badge-secondary'}" style="font-size:9px">${t.source==='user_cloture'?(isAR?'تلقائي':'Auto'):(isAR?'يدوي':'Manuel')}</span>
-          <span style="font-size:12px;color:var(--text2)">${Utils.escHTML(t.note||t.destination||t.source||'—')}</span>
-        </div>
-        ${t.bankRef?`<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-hashtag" style="font-size:8px"></i> ${Utils.escHTML(t.bankRef)}</div>`:''}
-      </td>
-      <td style="text-align:right">
-        <div style="font-size:16px;font-weight:900;color:var(--${colorVar})">${sign}${Utils.fmtCurrency(t.amount)}</div>
-      </td>
-      <td>
-        <button onclick="event.stopPropagation();PDFGen.exportDecharge(${t.id})" class="btn btn-xs btn-outline" style="color:var(--${colorVar});border-color:var(--${colorVar})" title="PDF">
-          <i class="fas fa-file-pdf"></i>
-        </button>
-      </td>
-    </tr>`;
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${catBadge}
+            <span class="badge ${t.source==='user_cloture'?'badge-info':'badge-secondary'}" style="font-size:9px">${t.source==='user_cloture'?(isAR?'تلقائي':'Auto'):(isAR?'يدوي':'Manuel')}</span>
+            <span style="font-size:12px;color:var(--text2)">${Utils.escHTML(t.note||t.destination||t.source||'—')}</span>
+          </div>
+          ${t.bankRef?`<div style="font-size:10px;color:var(--text4);margin-top:2px"><i class="fas fa-hashtag" style="font-size:8px"></i> ${Utils.escHTML(t.bankRef)}</div>`:''}
+        </td>
+        <td style="text-align:right">
+          <div style="font-size:16px;font-weight:900;color:var(--${colorVar})">${sign}${Utils.fmtCurrency(t.amount)}</div>
+        </td>
+        <td>
+          <button onclick="event.stopPropagation();PDFGen.exportDecharge(${t.id})" class="btn btn-xs btn-outline" style="color:var(--${colorVar});border-color:var(--${colorVar})" title="PDF">
+            <i class="fas fa-file-pdf"></i>
+          </button>
+        </td>
+      </tr>`;
+    };
 
     // ── OVERVIEW TAB ──
     const tabOverview = `
@@ -5439,9 +6050,13 @@ const AdminCaisseModule = {
           </tbody>
         </table>
       </div>
-      <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--bg3);display:flex;justify-content:space-between;align-items:center">
-        <span style="color:var(--text3);font-size:12px">${isAR?'إجمالي المعروض':'Total filtré'}</span>
-        <strong style="color:var(--danger);font-size:18px">-${Utils.fmtCurrency(filteredWits.reduce((s,t)=>s+(Number(t.amount)||0),0))}</strong>
+      <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--bg3);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <span style="color:var(--text3);font-size:12px">${isAR?'إجمالي المعروض:':'Total filtré:'} <strong>${filteredWits.length}</strong></span>
+        <div style="display:flex;gap:14px;align-items:center;font-size:12px;flex-wrap:wrap">
+          <span>🏛️ ${isAR?'المحول للبنك:':'Versé Banque:'} <strong style="color:#818cf8">-${Utils.fmtCurrency(filteredWits.filter(isBankTransferTx).reduce((s,t)=>s+(Number(t.amount)||0),0))}</strong></span>
+          <span>🧾 ${isAR?'تكاليف ومصاريف:':'Charges:'} <strong style="color:#fb923c">-${Utils.fmtCurrency(filteredWits.filter(isChargeTx).reduce((s,t)=>s+(Number(t.amount)||0),0))}</strong></span>
+          <strong style="color:var(--danger);font-size:16px">-${Utils.fmtCurrency(filteredWits.reduce((s,t)=>s+(Number(t.amount)||0),0))}</strong>
+        </div>
       </div>
     </div>`;
 
@@ -6370,7 +6985,7 @@ const AdminCaisseModule = {
     if (this._filters.userId && this._filters.userId!=='all') filtered = filtered.filter(t=>String(t.userId)===String(this._filters.userId));
     const rows = filtered.map(t=>[
       Utils.fmtDate(t.createdAt)||'',
-      t.type==='deposit'?(isAR?'إيداع':'Dépôt'):(isAR?'سحب':'Retrait'),
+      t.type==='deposit' ? (isAR?'إيداع':'Dépôt') : (AdminCaisseModule.isBankTransferTx(t) ? (isAR?'تحويل بنكي':'Versé Banque') : (AdminCaisseModule.isChargeTx(t) ? (isAR?'تكاليف ومصاريف':'Charge & Frais') : (isAR?'سحب':'Retrait'))),
       Number(t.amount)||0,
       t.userName||'',
       t.note||t.source||'',
@@ -6740,13 +7355,16 @@ const AdminCaisseModule = {
     const t = DB.getById('caisse_admin', id);
     if (!t) return;
     const isAR = T.isRTL();
-    const isCharge = t.source === 'charge' || (t.source||'').includes('charge') || (t.note||'').toLowerCase().includes('charge') || (t.note||'').toLowerCase().includes('مصروف');
+    const isCharge = this.isChargeTx(t);
+    const isBank = this.isBankTransferTx(t);
     const isSup = t.source === 'supplier_payment';
     let typeBadge = '';
     if (t.type === 'deposit') {
       typeBadge = `<span class="badge badge-success"><i class="fas fa-arrow-down"></i> ${T.get('adm_deposit')}</span>`;
+    } else if (isBank) {
+      typeBadge = `<span class="badge" style="background:#6366f1;color:#fff"><i class="fas fa-university"></i> ${isAR ? 'تحويل بنكي (كشف مبيعات)' : 'Versement Banque (État de Vente)'}</span>`;
     } else if (isCharge) {
-      typeBadge = `<span class="badge" style="background:#ea580c;color:#fff"><i class="fas fa-file-invoice-dollar"></i> ${isAR ? 'تكلفة / مصاريف' : 'Charge & Frais'}</span>`;
+      typeBadge = `<span class="badge" style="background:#f97316;color:#fff"><i class="fas fa-file-invoice-dollar"></i> ${isAR ? 'تكلفة / مصاريف' : 'Charge & Frais'}</span>`;
     } else if (isSup) {
       typeBadge = `<span class="badge" style="background:#7c3aed;color:#fff"><i class="fas fa-truck"></i> ${isAR ? 'دفع مورد' : 'Paiement Fournisseur'}</span>`;
     } else {

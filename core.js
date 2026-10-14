@@ -605,6 +605,46 @@ const DB = {
           }
         });
 
+        // ── Rule 5: Synchronize cash charges from bank_charges into caisse_admin ──
+        const allBankCharges = DB.getAll('bank_charges') || [];
+        const caisseCharges = allBankCharges.filter(c => c.bankId === 'caisse' || c.source === 'caisse' || (!c.bankId && c.type === 'manual'));
+        caisseCharges.forEach(c => {
+          const amt = Number(c.amount) || 0;
+          if (amt <= 0) return;
+          const cid = String(c.id);
+          let ex = cleaned.find(e => 
+            e.type === 'withdrawal' && 
+            (String(e.chargeId) === cid || 
+             ((e.source === 'charge' || (e.note||'').toLowerCase().includes((c.label||'').toLowerCase())) && Math.abs(Number(e.amount) - amt) < 0.01))
+          );
+          if (ex) {
+            if (ex.source !== 'charge' || !ex.chargeId) {
+              ex.source = 'charge';
+              ex.chargeId = c.id;
+              modified = true;
+            }
+          } else {
+            const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
+            const newWit = {
+              id: maxId + 1,
+              type: 'withdrawal',
+              source: 'charge',
+              chargeId: c.id,
+              amount: amt,
+              note: `Charge: ${c.label || c.subtype || 'Frais'}${c.category ? ' (' + c.category + ')' : ''}`,
+              userId: c.createdBy || null,
+              userName: c.createdByName || 'Administrateur',
+              date: c.date || (c.createdAt || '').slice(0, 10),
+              createdAt: c.createdAt || (c.date ? c.date + 'T12:00:00.000Z' : new Date().toISOString())
+            };
+            cleaned.push(newWit);
+            modified = true;
+            if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+              window.API.insert('caisse_admin', newWit).catch(() => {});
+            }
+          }
+        });
+
         // ── Commit cleanups ──
         if (modified) {
           DB.rawSet('caisse_admin', cleaned);
