@@ -2953,6 +2953,7 @@ const Auth = {
       canEditClients: false,
       canDeleteBR: false,
       canDeleteBL: false,
+      canManageCharges: false,
       requireDailyLiquid: true,
     };
   },
@@ -2979,6 +2980,7 @@ const Auth = {
         canCreateBL: false,
         canDeleteBR: false,
         canDeleteBL: false,
+        canManageCharges: false,
         requireDailyLiquid: false,
         canViewUsine: true,
         canViewSuivi: true

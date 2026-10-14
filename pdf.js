@@ -758,39 +758,34 @@
 
       const boxW = 100;
       const boxX = ML + CW - boxW;
-      const boxH = effectiveReturns > 0 ? 30 : 22;
+      const boxH = effectiveReturns > 0 ? 20 : 13;
 
       this._fill(doc, [248, 250, 252]);
       this._stroke(doc, C.LINE);
       doc.rect(boxX, y, boxW, boxH, 'FD');
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      this._tc(doc, C.GRAY_TXT);
-      doc.text(isAR ? 'إجمالي مبيعات الشحن (خام) :' : 'Total Ventes BCH (Brut) :', boxX + 4, y + 6);
-      doc.setFont('helvetica', 'bold');
-      this._tc(doc, [16, 185, 129]);
-      doc.text('+' + this._fmtMoney(effectiveGross), boxX + boxW - 4, y + 6, { align: 'right' });
-
-      let curY = y + 6;
+      let curY = y;
       if (effectiveReturns > 0) {
-        curY += 7;
+        curY += 5.5;
         doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
         this._tc(doc, C.GRAY_TXT);
         doc.text(isAR ? 'خصم المرتجعات :' : 'Déduction Retours (BR) :', boxX + 4, curY);
         doc.setFont('helvetica', 'bold');
         this._tc(doc, [220, 38, 38]);
         doc.text('- ' + this._fmtMoney(effectiveReturns), boxX + boxW - 4, curY, { align: 'right' });
+        curY += 6.5;
+      } else {
+        curY += 4.5;
       }
 
-      curY += 8;
       this._fill(doc, C.PRIMARY);
-      doc.rect(boxX, curY - 4, boxW, 9, 'F');
+      doc.rect(boxX, curY - 3.5, boxW, 9, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       this._tc(doc, C.WHITE);
-      doc.text(isAR ? 'الصافي النهائي (إيداع 1% طابع) :' : 'NET FINAL (VERSEMENT 1% TIMBRE) :', boxX + 4, curY + 2);
-      doc.text(this._fmtMoney(finalNetTTC), boxX + boxW - 4, curY + 2, { align: 'right' });
+      doc.text(isAR ? 'الصافي النهائي (إيداع 1% طابع) :' : 'NET FINAL (VERSEMENT 1% TIMBRE) :', boxX + 4, curY + 2.5);
+      doc.text(this._fmtMoney(finalNetTTC), boxX + boxW - 4, curY + 2.5, { align: 'right' });
 
       y += boxH + 6;
 

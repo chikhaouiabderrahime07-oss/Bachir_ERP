@@ -787,7 +787,7 @@ const App = {
           ...(Auth.can('canViewCaisse') || isAdmin ? [{ mod:'caisse', icon:'fa-cash-register', label:T.get('nav_mini_caisse') || (T.isRTL() ? 'صندوقي' : 'Ma Caisse') }] : []),
           ...(isAdmin ? [{ mod:'admin_caisse', icon:'fa-vault', label:T.get('nav_admin_caisse') }] : []),
           ...(isAdmin || Auth.can('canViewBank') ? [{ mod:'bank', icon:'fa-university', label:T.get('nav_bank') || (T.isRTL() ? 'البنك' : 'Banque') }] : []),
-          ...(isAdmin ? [{ mod:'charges', icon:'fa-receipt', label:T.get('nav_charges') }] : []),
+          ...(isAdmin || Auth.can('canManageCharges') ? [{ mod:'charges', icon:'fa-receipt', label:T.get('nav_charges') }] : []),
         ]},
         { section: T.get('sec_refs'), items: [
           ...(isAdmin || Auth.can('canViewSuppliers') || Auth.can('canViewClients') ? [{ mod:'partners', icon:'fa-handshake', label:T.isRTL() ? 'الموردون والزبائن' : 'Fournisseurs & Clients' }] : []),
