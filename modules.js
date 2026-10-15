@@ -1799,8 +1799,18 @@ const BLModule = {
             </div>
             <div class="form-group mb-0">
               <label><i class="fas fa-calendar-day"></i> ${isAR ? 'تاريخ الإصدار' : "Date d'émission"}</label>
-              <input type="date" id="direct-bch-date" class="input" value="${Utils.today()}" onchange="BLModule._validateBCHNum(document.getElementById('direct-bch-num')?.value, this.value, null, 'direct')">
+              <input type="date" id="direct-bch-date" class="input" value="${Utils.today()}" onchange="BLModule._onDateChange(this.value, 'direct')">
+              <div id="direct-bch-hist-badge" style="font-size:11px;margin-top:3px;display:none">
+                <span class="badge badge-warning" style="font-size:10.5px;padding:2px 8px;border-radius:12px"><i class="fas fa-history"></i> ${isAR ? 'سجل تاريخي' : 'Saisie Historique'}</span>
+              </div>
             </div>
+          </div>
+
+          <div id="direct-bch-hist-delivered-wrap" style="display:none;background:rgba(245,158,11,0.08);border:1px dashed #f59e0b;padding:8px 12px;border-radius:8px;margin-bottom:12px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;font-size:12px;color:var(--text)">
+              <input type="checkbox" id="direct-bch-mark-delivered" ${DB.getSettings().historicalBackfillMode ? 'checked' : ''} style="accent-color:var(--primary);width:16px;height:16px">
+              <span><strong>${isAR ? 'تم التسليم مسبقاً (أرشفة تاريخية — لن تتطلب تأكيد المصنع)' : 'Déjà Livré & Encaissé (Historique — aucune confirmation usine requise)'}</strong></span>
+            </label>
           </div>
 
           <div class="form-row-4">
@@ -2106,6 +2116,20 @@ const BLModule = {
     const ref = DB.buildBCHRef(num, year);
     if (prev) prev.innerHTML = `<span style="font-weight:800;color:var(--primary);font-size:13px">${ref}</span>`;
     return res.valid;
+  },
+
+  _onDateChange(val, mode = 'direct', blId = null, brId = null) {
+    const isHist = val && typeof Utils !== 'undefined' && val < Utils.today();
+    const pfx = mode === 'direct' ? 'direct-bch' : 'bl';
+    const badge = document.getElementById(`${pfx}-hist-badge`);
+    const delivWrap = document.getElementById(`${pfx}-hist-delivered-wrap`);
+    const markDeliv = document.getElementById(`${pfx}-mark-delivered`);
+    if (badge) badge.style.display = isHist ? 'block' : 'none';
+    if (delivWrap) delivWrap.style.display = isHist ? 'block' : 'none';
+    if (markDeliv && isHist) {
+      markDeliv.checked = !!DB.getSettings().historicalBackfillMode;
+    }
+    this._validateBCHNum(document.getElementById(`${pfx}-num`)?.value, val, blId, mode, brId);
   },
 
   _onDirectClientChange(clientId) {
@@ -2418,6 +2442,9 @@ const BLModule = {
       return;
     }
 
+    const markDeliveredChecked = document.getElementById('direct-bch-mark-delivered')?.checked === true;
+    const isHistDelivered = (date < Utils.today()) && markDeliveredChecked;
+
     const bchDoc = {
       ref,
       bchNum,
@@ -2437,7 +2464,10 @@ const BLModule = {
       noTimbre,
       timbreAmount,
       totalTTC,
-      status: 'pending_usine', // STRICT: Courtage sans BR is pending usine loading!
+      status: isHistDelivered ? 'delivered' : 'pending_usine',
+      deliveredAt: isHistDelivered ? `${date}T12:00:00.000Z` : null,
+      deliveredBy: isHistDelivered ? targetUserId : null,
+      deliveredByName: isHistDelivered ? (targetUser?.name || targetUser?.username || 'Utilisateur') : null,
       isBonChargement: true,
       isDirectFactory: true,
       source: 'usine',
@@ -2446,7 +2476,7 @@ const BLModule = {
       linkedBrRef: null,
       createdBy: targetUserId,
       createdByName: targetUser?.name || targetUser?.username || 'Utilisateur',
-      createdAt: new Date().toISOString()
+      createdAt: isHistDelivered ? `${date}T12:00:00.000Z` : new Date().toISOString()
     };
 
     const savedBCH = DB.insert('bls', bchDoc);
@@ -2454,8 +2484,20 @@ const BLModule = {
     // Create reserved BR immediately
     try {
       const reservedBR = await DB.createReservedBR(savedBCH.id);
-      Utils.notify(isAR ? `وصل استلام محجوز: ${reservedBR.ref} — في انتظار تأكيد المصنع` : `BR réservé: ${reservedBR.ref} — En attente validation usine`, 'info', 4000);
+      if (isHistDelivered && reservedBR) {
+        DB.update('brs', reservedBR.id, {
+          status: 'delivered',
+          deliveredAt: `${date}T12:00:00.000Z`,
+          deliveredBy: targetUserId,
+          deliveredByName: targetUser?.name || targetUser?.username || 'Utilisateur'
+        });
+      }
+      Utils.notify(isAR ? `وصل استلام محجوز: ${reservedBR.ref} — ${isHistDelivered ? 'تم التسليم (تاريخي)' : 'في انتظار تأكيد المصنع'}` : `BR réservé: ${reservedBR.ref} — ${isHistDelivered ? 'Livré (Historique)' : 'En attente validation usine'}`, 'info', 4000);
     } catch(e) { console.error('Reserved BR error:', e); }
+
+    if (isHistDelivered) {
+      DB.MasterBrain.recalibrateAll();
+    }
 
     Utils.notify(isAR ? `تم إنشاء سند الشحن ${ref} — في انتظار تأكيد المصنع ${sup?.name || ''}` : `BCH ${ref} créé - En attente validation usine ${sup?.name || ''}`, 'success', 5000);
 
@@ -2884,7 +2926,16 @@ const BLModule = {
       <div class="form-group">
         <label class="required">${T.get('col_date')}</label>
         <input type="date" id="bl-date" value="${bl?.date||Utils.today()}"
-          onchange="BLModule._validateBCHNum(document.getElementById('bl-num')?.value, this.value, ${bl?.id || 'null'}, 'stock', ${br?.id || 'null'})">
+          onchange="BLModule._onDateChange(this.value, 'stock', ${bl?.id || 'null'}, ${br?.id || 'null'})">
+        <div id="bl-hist-badge" style="font-size:11px;margin-top:3px;display:none">
+          <span class="badge badge-warning" style="font-size:10.5px;padding:2px 8px;border-radius:12px"><i class="fas fa-history"></i> ${isAR ? 'سجل تاريخي' : 'Saisie Historique'}</span>
+        </div>
+      </div>
+      <div id="bl-hist-delivered-wrap" style="display:none;background:rgba(245,158,11,0.08);border:1px dashed #f59e0b;padding:8px 12px;border-radius:8px;margin-bottom:12px;grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;font-size:12px;color:var(--text)">
+          <input type="checkbox" id="bl-mark-delivered" ${DB.getSettings().historicalBackfillMode ? 'checked' : ''} style="accent-color:var(--primary);width:16px;height:16px">
+          <span><strong>${isAR ? 'تم التسليم مسبقاً (أرشفة تاريخية — لن تتطلب تأكيد لاحق)' : 'Déjà Livré & Encaissé (Historique — aucune confirmation requise)'}</strong></span>
+        </label>
       </div>
       <div class="form-group">
         <label class="required">${T.get('bl_driver')} <small>${T.get('bl_driver_hint')}</small></label>
@@ -3282,6 +3333,9 @@ const BLModule = {
     // Auto-save driver (+ truck) in the DB so it shows up as a suggestion next time
     DB.saveDriver(driverName, truckIMM);
 
+    const markBLDeliveredChecked = document.getElementById('bl-mark-delivered')?.checked === true;
+    const isHistDelivered = (date < Utils.today()) && markBLDeliveredChecked;
+
     const data = {
       ref, bchNum, year: docYear, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
       destinationAddress: (document.getElementById('bl-destination')?.value||'').trim(),
@@ -3289,8 +3343,8 @@ const BLModule = {
       isPartial, partNum,
       isBonChargement: true,
       source: 'stock',
-      // BCH made from a BR already in stock: it is simply "En cours" (NOT validated by an usine)
-      status: editBlId ? (DB.getById('bls', editBlId)?.status || 'open') : 'open'
+      status: editBlId ? (DB.getById('bls', editBlId)?.status || 'open') : (isHistDelivered ? 'delivered' : 'open'),
+      deliveredAt: isHistDelivered ? (editBlId ? (DB.getById('bls', editBlId)?.deliveredAt || `${date}T12:00:00.000Z`) : `${date}T12:00:00.000Z`) : null
     };
 
     // Admin acting as user attribution (new BL only)
@@ -3319,6 +3373,13 @@ const BLModule = {
       Utils.notify((isAR ? (adminOverride ? '✅ تم تعديل سند التسليم (تجاوز إداري)' : 'تم تعديل وصل التسليم') : (adminOverride ? '✅ BL modifié (Admin Override)' : 'BL modifié')), 'success');
     } else {
       savedBL = DB.insert('bls', data);
+      if (isHistDelivered && brId) {
+        const parentBR = DB.getById('brs', brId);
+        if (parentBR && (parentBR.status === 'open' || parentBR.status === 'reserved')) {
+          DB.update('brs', brId, { status: 'delivered', deliveredAt: `${date}T12:00:00.000Z` });
+        }
+        DB.MasterBrain.recalibrateAll();
+      }
       // Auto-purge any old recycle bin entries for this BR since merchandise is now assigned to a new BL
       const bin = DB.getAll('recycle_bin');
       const conflicting = bin.filter(e => e.collection === 'bls' && Number(e.item?.brId) === Number(brId));
@@ -5013,6 +5074,57 @@ const CaisseModule = {
       </tr>`;
     }).join('') : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted)"><i class="fas fa-check-circle" style="font-size:20px;opacity:.3;display:block;margin-bottom:6px"></i>${isAR ? 'لا توجد مرتجعات اليوم' : 'Aucun retour marchandise enregistré aujourd\'hui'}</td></tr>`;
 
+    // Unclosed past dates alert
+    let unclosedHistoricalHtml = '';
+    try {
+      const allPastBLs = (DB.getAll('bls') || []).filter(b => {
+        const bDate = (b.date || (b.createdAt || '').slice(0, 10));
+        if (!bDate || bDate >= today) return false;
+        if (b.status === 'cancelled' || b.status === 'rejected') return false;
+        if (!isGlobal && String(b.createdBy || b.userId) !== String(u.id)) return false;
+        return true;
+      });
+      const pastDates = [...new Set(allPastBLs.map(b => (b.date || (b.createdAt || '').slice(0, 10))))].sort();
+      const allSessions = DB.getAll('sessions') || [];
+      const unclosedPast = pastDates.filter(d => {
+        const sess = isGlobal
+          ? allSessions.find(s => s.date === d && s.status === 'closed')
+          : allSessions.find(s => s.date === d && String(s.userId) === String(u.id) && s.status === 'closed');
+        return !sess;
+      });
+      if (unclosedPast.length > 0) {
+        unclosedHistoricalHtml = `
+          <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:38px;height:38px;border-radius:8px;background:rgba(245,158,11,.2);color:#d97706;display:flex;align-items:center;justify-content:center;font-size:18px">
+                <i class="fas fa-history"></i>
+              </div>
+              <div>
+                <div style="font-weight:700;font-size:13px;color:#d97706">
+                  ${isAR ? `تنبيه: توجد ${unclosedPast.length} أيام سابقة بها مبيعات مسجلة ولكنها غير مغلقة!` : `Attention : ${unclosedPast.length} journée(s) passée(s) contiennent des ventes non clôturées !`}
+                </div>
+                <div style="font-size:12px;color:var(--text3);margin-top:2px">
+                  ${isAR ? `التواريخ غير المغلقة: ` : `Dates non clôturées : `} <strong>${unclosedPast.slice(0, 5).map(d => Utils.fmtDate(d)).join(', ')}${unclosedPast.length > 5 ? ' ...' : ''}</strong>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              ${unclosedPast.length === 1 ? `
+                <button class="btn btn-sm" style="background:#f59e0b;color:#fff;border:none;font-weight:700" onclick="CaisseModule.showCloture('${unclosedPast[0]}')">
+                  <i class="fas fa-door-closed"></i> ${isAR ? `إغلاق يوم ${Utils.fmtDate(unclosedPast[0])}` : `Clôturer le ${Utils.fmtDate(unclosedPast[0])}`}
+                </button>
+              ` : ''}
+              <button class="btn btn-sm btn-primary" onclick="EtatVenteModule._runHistoricalScan()" title="${isAR ? 'تسوية وإغلاق تلقائي لكل الأيام السابقة' : 'Réconcilier tout l\'historique'}">
+                <i class="fas fa-magic"></i> ${isAR ? 'تسوية وإغلاق كل التواريخ تلقائياً' : 'Réconcilier tout l\'historique'}
+              </button>
+            </div>
+          </div>
+        `;
+      }
+    } catch(e) {
+      console.warn('Unclosed historical check error', e);
+    }
+
     const thStyle = 'padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)';
 
     return `<div style="padding:24px" ${isAR ? 'dir="rtl"' : ''}>
@@ -5027,7 +5139,7 @@ const CaisseModule = {
               ${T.get('caisse_title')} <span style="font-size:13px;font-weight:600;color:var(--text4)">(${Utils.escHTML(u.name)})</span>
             </h2>
             <p style="color:var(--text-muted);font-size:12px;margin:3px 0 0">
-              📅 ${isAR ? 'اليوم' : 'Aujourd\'hui'} — ${Utils.fmtDate(today)}
+              📅 ${isAR ? 'اليوم' : "Aujourd'hui"} — ${Utils.fmtDate(today)}
             </p>
           </div>
         </div>
@@ -5055,6 +5167,8 @@ const CaisseModule = {
           ${Auth.isAdmin() ? `<button class="btn btn-secondary btn-sm" onclick="App.loadModule('admin_caisse')" title="${isAR ? 'إشراف عام للمسؤول' : 'Supervision générale Admin'}"><i class="fas fa-vault"></i> ${isAR ? 'صندوق الإدارة' : 'Caisse Principale'}</button>` : ''}
         </div>
       </div>
+
+      ${unclosedHistoricalHtml}
 
       <!-- KPI Summary Cards -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px">
@@ -5179,14 +5293,16 @@ const CaisseModule = {
     </div>`;
   },
 
-  async showCloture() {
+  async showCloture(targetDate = null) {
     const u = Auth.getCurrentUser();
     if (!u) return;
     const isAR = T.isRTL();
-    const today = Utils.today();
-    const session = SessionMgr.getTodaySession(u.id);
+    const today = targetDate || Utils.today();
+    const session = targetDate 
+      ? (DB.getAll('sessions') || []).find(s => String(s.userId) === String(u.id) && s.date === targetDate) 
+      : SessionMgr.getTodaySession(u.id);
     if (session && session.status === 'closed') {
-      Utils.notify(isAR ? 'صندوقك مغلق بالفعل لهذا اليوم.' : 'Votre caisse est déjà clôturée pour aujourd\'hui.', 'info');
+      Utils.notify(isAR ? 'هذا الصندوق مغلق بالفعل لهذا التاريخ.' : 'Cette caisse est déjà clôturée pour cette date.', 'info');
       return;
     }
 
@@ -5398,7 +5514,7 @@ const CaisseModule = {
     const note = document.getElementById('cloture_note')?.value?.trim() || '';
 
     try {
-      const result = await SessionMgr.closeMiniCaisse(u.id, bankId, note);
+      const result = await SessionMgr.closeMiniCaisse(u.id, bankId, note, today);
       const bank = banks.find(b => String(b.id) === String(bankId));
       const bankName = bank?.name || (isAR ? 'البنك' : 'Banque');
       const netAmt = result?.etatDoc?.totalTTC || result?.summary?.netAmount || 0;
@@ -5867,6 +5983,9 @@ const AdminCaisseModule = {
         </button>
         <button class="btn btn-danger" onclick="AdminCaisseModule.showWithdrawal()" style="white-space:nowrap;font-weight:700">
           <i class="fas fa-arrow-up"></i> ${isAR?'- سحب':'- Retrait'}
+        </button>
+        <button class="btn btn-primary" onclick="EtatVenteModule._runHistoricalScan()" style="white-space:nowrap;font-weight:700;background:linear-gradient(135deg,#0284c7,#0369a1);border:none;box-shadow:0 2px 8px rgba(2,132,199,.3)" title="${isAR ? 'مسح وتسوية الأيام السابقة وبناء السجلات المحاسبية بأثر رجعي' : 'Scanner et réconcilier l\'historique rétroactif'}">
+          <i class="fas fa-history"></i> ${isAR ? 'تسوية الأرشيف' : 'Réconcilier Historique'}
         </button>
       </div>
     </div>`;
@@ -10566,6 +10685,7 @@ const SettingsModule = {
   _tabData() {
     const isAR = T.isRTL();
     const hasAPI = typeof window.API !== 'undefined';
+    const settings = DB.getSettings();
 
     return `<div style="display:flex;flex-direction:column;gap:16px">
 
@@ -10635,6 +10755,40 @@ const SettingsModule = {
     </div>
     `}
 
+    <!-- ── SECTION: HISTORICAL ARCHIVES BACKFILL MODE & RECONCILIATION ── -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden">
+      <div style="padding:14px 18px;background:rgba(245,158,11,.08);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+        <div style="width:30px;height:30px;border-radius:8px;background:#f59e0b;display:flex;align-items:center;justify-content:center">
+          <i class="fas fa-history" style="color:#fff;font-size:13px"></i>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <span style="font-size:13px;font-weight:800;color:var(--text)">${isAR ? 'وضع إدخال الأرشيف التاريخي والتسوية' : 'Mode Saisie d\'Archives & Réconciliation'}</span>
+          <span style="font-size:11px;color:var(--text4)">${isAR ? 'التحكم في السلوك الآمن للسندات ذات التاريخ السابق' : 'Contrôle du comportement pour les saisies à dates antérieures'}</span>
+        </div>
+        <div style="margin-left:auto">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+            <span style="font-size:12px;font-weight:700;color:var(--text)">${isAR ? 'تفعيل الوضع' : 'Activer'}</span>
+            <input type="checkbox" id="set-historical-backfill-mode" ${settings.historicalBackfillMode ? 'checked' : ''} onchange="SettingsModule._toggleHistoricalBackfill(this.checked)" style="accent-color:var(--primary);width:18px;height:18px;cursor:pointer">
+          </label>
+        </div>
+      </div>
+      <div style="padding:16px">
+        <p style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:12px">
+          ${isAR 
+            ? 'عند تفعيل هذا الوضع، سيتم تحديد خيار <strong>«تم التسليم مسبقاً»</strong> تلقائياً عند تسجيل سندات بتاريخ سابق لتسريع إدخال السنوات الماضية والأرشيف. عند التعطيل (الوضع الموصى به للعمل اليومي المعتاد)، تظل السندات مفتوحة وتتطلب تدخلاً صريحاً لتسليمها لحماية الطلبيات الجارية والورديات الحالية من الإغلاق المبكر.' 
+            : 'En activant ce mode, la case <strong>« Déjà Livré & Encaissé »</strong> sera cochée par défaut lors de la saisie de documents avec une date passée (idéal pour la saisie massive des années antérieures). En mode désactivé (recommandé pour l\'exploitation quotidienne), les documents passés restent ouverts/en attente pour protéger les opérations en cours contre toute fermeture prématurée.'}
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="EtatVenteModule._runHistoricalScan()" style="color:#f59e0b;border-color:rgba(245,158,11,.4)">
+            <i class="fas fa-magic"></i> ${isAR ? 'فتح أداة الفحص والتسوية التفاعلية' : 'Ouvrir l\'outil de réconciliation interactive'}
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="SettingsModule._showHistoricalRulesModal()" style="color:#8b5cf6;border-color:rgba(139,92,246,.4)">
+            <i class="fas fa-book-open"></i> ${isAR ? 'دليل وقواعد الاستخدام (العربية / Français)' : 'Guide & Règles d\'utilisation (Bilingue)'}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── SECTION 2: LOCAL JSON EXPORT / IMPORT ── -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px">
@@ -10672,6 +10826,199 @@ const SettingsModule = {
     </div>
 
     </div>`;
+  },
+
+  _getHistoricalRulesHTML() {
+    return `
+    <div style="font-size:12px;color:var(--text);line-height:1.6;max-height:65vh;overflow-y:auto;padding-right:6px">
+      <!-- Banner Alert -->
+      <div style="background:rgba(245,158,11,0.08);border-left:4px solid #f59e0b;padding:12px 16px;border-radius:8px;margin-bottom:16px">
+        <div style="font-weight:800;color:#f59e0b;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:8px">
+          <i class="fas fa-exclamation-triangle" style="font-size:16px"></i>
+          <span>Guide & Règles Impératives | دليل وقواعد الاستخدام الإلزامية</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--text2);line-height:1.6">
+          Veuillez lire attentivement ces 5 règles fondamentales avant d'activer ce mode ou de saisir vos archives.<br>
+          <span dir="rtl" style="display:block;text-align:right;margin-top:4px">
+            يرجى قراءة هذه القواعد الخمس الأساسية بعناية فائقة قبل تفعيل هذا الوضع أو الشروع في إدخال بيانات الأرشيف القديم.
+          </span>
+        </div>
+      </div>
+
+      <!-- RULE 1 -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-weight:800;color:var(--primary);font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          <span style="width:24px;height:24px;border-radius:6px;background:var(--primary);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">1</span>
+          <span>📅 Date Réelle du Document Papier | تاريخ السند الورقي الحقيقي</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;font-size:11.5px">
+          <div style="background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:var(--primary)">🇫🇷 En Français :</strong><br>
+            Vous devez impérativement renseigner la <u>date réelle d'origine</u> indiquée sur le bon papier (ex: <code>10/01/2026</code> ou <code>2025</code>). Ne laissez <strong>JAMAIS</strong> la date d'aujourd'hui, sinon le bon sera comptabilisé sur les ventes du jour actuel !
+          </div>
+          <div dir="rtl" style="text-align:right;background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:var(--primary)">🇩🇿 بالعربية :</strong><br>
+            يجب إدخال <u>التاريخ الأصلي الفعلي</u> المدوّن على الوصل الورقي (مثال: <code>10/01/2026</code> أو أي تاريخ من عام <code>2025</code>). إياك وترك تاريخ اليوم وإلا فسيتم احتساب الوصل بالخطأ ضمن مبيعات اليومية الحالية!
+          </div>
+        </div>
+      </div>
+
+      <!-- RULE 2 -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-weight:800;color:#10b981;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          <span style="width:24px;height:24px;border-radius:6px;background:#10b981;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">2</span>
+          <span>📦 Livraison & Encaissement Automatiques | التسليم والتحصيل الفوري</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;font-size:11.5px">
+          <div style="background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#10b981">🇫🇷 En Français :</strong><br>
+            Tant que ce mode est actif, la case <em>« Déjà Livré & Encaissé »</em> est cochée par défaut lors de la saisie de dates passées. Le bon est classé immédiatement sans attendre de validation usine.
+          </div>
+          <div dir="rtl" style="text-align:right;background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#10b981">🇩🇿 بالعربية :</strong><br>
+            طالما أن هذا الوضع مفعّل، فإن خيار <em>«تم التسليم والتحصيل مسبقاً»</em> سيكون محدداً تلقائياً عند إدخال تواريخ سابقة، ليتم اعتماد الوصل كعملية منتهية ومؤرشفة فوراً دون انتظار المصنع.
+          </div>
+        </div>
+      </div>
+
+      <!-- RULE 3 -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-weight:800;color:#f59e0b;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          <span style="width:24px;height:24px;border-radius:6px;background:#f59e0b;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">3</span>
+          <span>🔄 Synchronisation Fiscale & Bancaire | إنشاء كشوفات المبيعات والبنك بأثر رجعي</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;font-size:11.5px">
+          <div style="background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#f59e0b">🇫🇷 En Français :</strong><br>
+            Après avoir terminé votre lot d'archives, ouvrez l'outil <strong>« Scanner & Réconcilier l'historique »</strong>. Le système créera automatiquement les sessions de caisse d'archives, les États de Vente aux bons mois/années (ex: <code>ET/001/01/2026</code>) et alignera la banque et la caisse.
+          </div>
+          <div dir="rtl" style="text-align:right;background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#f59e0b">🇩🇿 بالعربية :</strong><br>
+            بعد إنهاء إدخال دفعة الأرشيف، استخدم أداة <strong>«فحص وتسوية الأرشيف»</strong> (من قائمة كشف المبيعات). سيقوم النظام آلياً بإنشاء جلسات الصندوق، وكشوفات المبيعات لكل شهر وسنة مع حساب الطابع الجبائي 1% وضبط قيود البنك والصندوق.
+          </div>
+        </div>
+      </div>
+
+      <!-- RULE 4 -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-weight:800;color:#ef4444;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          <span style="width:24px;height:24px;border-radius:6px;background:#ef4444;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">4</span>
+          <span>⚠️ Anciens Bons Restés Ouverts | السندات السابقة المسجلة كـ «مفتوحة»</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;font-size:11.5px">
+          <div style="background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#ef4444">🇫🇷 En Français :</strong><br>
+            Si vous avez déjà saisi de vieux bons qui sont restés en statut « Ouvert » (non livrés), cochez la case <strong>« Forcer la livraison des BLs et BRs restés ouverts »</strong> dans l'outil de réconciliation pour les valider en bloc.
+          </div>
+          <div dir="rtl" style="text-align:right;background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#ef4444">🇩🇿 بالعربية :</strong><br>
+            إذا كان لديك وصولات قديمة تم إدخالها مسبقاً وبقيت بحالة «مفتوح» (<code>open</code>)، ضع علامة صح على خيار <strong>«إجبار تسليم السندات المتبقية مفتوحة»</strong> داخل أداة التسوية لتسليمها دفعة واحدة.
+          </div>
+        </div>
+      </div>
+
+      <!-- RULE 5 -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:6px">
+        <div style="font-weight:800;color:#8b5cf6;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          <span style="width:24px;height:24px;border-radius:6px;background:#8b5cf6;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">5</span>
+          <span>🛑 Désactiver Impérativement après Saisie | إيقاف الوضع فور الانتهاء من إدخال الأرشيف</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;font-size:11.5px">
+          <div style="background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#8b5cf6">🇫🇷 En Français :</strong><br>
+            Une fois vos archives terminées, <strong>désactivez impérativement cette option</strong> dans les Paramètres pour réactiver la sécurité temps réel sur les expéditions en cours de vos clients actuels.
+          </div>
+          <div dir="rtl" style="text-align:right;background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border)">
+            <strong style="color:#8b5cf6">🇩🇿 بالعربية :</strong><br>
+            بمجرد الانتهاء من إدخال السجلات الورقية القديمة، <strong>عطّل هذا الوضع فوراً</strong> من الإعدادات لإعادة تفعيل الحماية الحية الصارمة على عمليات اليومية والطلبيات الجارية.
+          </div>
+        </div>
+      </div>
+    </div>
+    `;
+  },
+
+  _showHistoricalRulesModal() {
+    const isAR = T.isRTL();
+    const bodyHTML = SettingsModule._getHistoricalRulesHTML();
+    const footerHTML = `
+      <div style="display:flex;gap:8px;justify-content:flex-end;width:100%">
+        <button class="btn btn-primary" onclick="UI.closeModal()"><i class="fas fa-check"></i> ${isAR ? 'فهمت القواعد جيداً' : 'J\'ai bien compris'}</button>
+      </div>
+    `;
+    UI.showModal(
+      `<i class="fas fa-book-open" style="color:#8b5cf6"></i> ${isAR ? 'دليل وقواعد وضع الأرشيف التاريخي' : 'Guide & Règles du Mode Saisie d\'Archives'}`,
+      bodyHTML,
+      footerHTML,
+      'lg'
+    );
+  },
+
+  _toggleHistoricalBackfill(checked) {
+    const isAR = T.isRTL();
+    const checkbox = document.getElementById('set-historical-backfill-mode');
+
+    if (checked) {
+      // Show confirmation with full bilingual rules BEFORE activating!
+      const bodyHTML = `
+        <div style="margin-bottom:14px">
+          ${SettingsModule._getHistoricalRulesHTML()}
+        </div>
+        <div style="background:rgba(245,158,11,0.12);border:1px solid #f59e0b;padding:10px 14px;border-radius:8px;font-weight:700;font-size:12px;color:var(--text);display:flex;align-items:center;gap:10px">
+          <i class="fas fa-shield-alt" style="color:#f59e0b;font-size:22px;flex-shrink:0"></i>
+          <div>
+            ${isAR 
+              ? 'هل قرأت وفهمت جميع القواعد أعلاه وتؤكد رغبتك في تفعيل وضع إدخال الأرشيف الآن؟' 
+              : 'Avez-vous bien lu et compris toutes les règles ci-dessus et confirmez-vous l\'activation du Mode Saisie d\'Archives ?'}
+          </div>
+        </div>
+      `;
+
+      const footerHTML = `
+        <div style="display:flex;gap:8px;justify-content:flex-end;width:100%">
+          <button class="btn btn-secondary" onclick="SettingsModule._cancelHistoricalBackfillActivation()">${isAR ? 'إلغاء والتراجع' : 'Annuler'}</button>
+          <button class="btn btn-primary" onclick="SettingsModule._confirmHistoricalBackfillActivation()" style="background:#f59e0b;border-color:#f59e0b">
+            <i class="fas fa-check-circle"></i> ${isAR ? 'أوافق وأؤكد التفعيل' : 'Je comprends et j\'active'}
+          </button>
+        </div>
+      `;
+
+      UI.showModal(
+        `<i class="fas fa-history" style="color:#f59e0b"></i> ${isAR ? 'تأكيد تفعيل وضع إدخال الأرشيف التاريخي' : 'Confirmation : Activation du Mode Saisie d\'Archives'}`,
+        bodyHTML,
+        footerHTML,
+        'lg'
+      );
+    } else {
+      // Deactivating
+      DB.saveSettings({ historicalBackfillMode: false });
+      Utils.notify(
+        isAR 
+          ? 'تم تعطيل وضع إدخال الأرشيف — الحماية اليومية المشددة نشطة الآن' 
+          : 'Mode Saisie d\'Archives désactivé — Protection temps réel réactivée',
+        'info'
+      );
+    }
+  },
+
+  _confirmHistoricalBackfillActivation() {
+    UI.closeModal();
+    DB.saveSettings({ historicalBackfillMode: true });
+    const checkbox = document.getElementById('set-historical-backfill-mode');
+    if (checkbox) checkbox.checked = true;
+    Utils.notify(
+      T.isRTL() 
+        ? 'تم تفعيل وضع إدخال الأرشيف التاريخي بنجاح' 
+        : 'Mode Saisie d\'Archives activé avec succès',
+      'success'
+    );
+  },
+
+  _cancelHistoricalBackfillActivation() {
+    UI.closeModal();
+    const checkbox = document.getElementById('set-historical-backfill-mode');
+    if (checkbox) checkbox.checked = false;
+    DB.saveSettings({ historicalBackfillMode: false });
   },
 
   // ── Load backups from server ────────────────────────────────────
@@ -12886,13 +13233,18 @@ const EtatVenteModule = {
           </div>
         </div>
         
-        <div style="display:flex;background:var(--bg2);padding:4px;border-radius:10px;border:1px solid var(--border)">
-          <button class="btn" style="border:none;background:${this._view==='generate'?'var(--primary)':'transparent'};color:${this._view==='generate'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('generate')">
-            <i class="fas fa-plus-circle" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'توليد' : 'Générer'}
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" onclick="EtatVenteModule._runHistoricalScan()" style="background:linear-gradient(135deg,#0284c7,#0369a1);border:none;font-weight:700;box-shadow:0 2px 8px rgba(2,132,199,.25);padding:6px 14px" title="${isAR ? 'فحص وتسوية كل الأرشيف التاريخي وبناء السجلات المحاسبية تلقائياً' : 'Scanner et réconcilier tout l\'historique automatiquement'}">
+            <i class="fas fa-magic"></i> ${isAR ? 'تسوية الأرشيف' : 'Scanner l\'Historique'}
           </button>
-          <button class="btn" style="border:none;background:${this._view==='history'?'var(--primary)':'transparent'};color:${this._view==='history'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('history')">
-            <i class="fas fa-history" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'السجل الأرشيفي' : 'Historique'}
-          </button>
+          <div style="display:flex;background:var(--bg2);padding:4px;border-radius:10px;border:1px solid var(--border)">
+            <button class="btn" style="border:none;background:${this._view==='generate'?'var(--primary)':'transparent'};color:${this._view==='generate'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('generate')">
+              <i class="fas fa-plus-circle" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'توليد' : 'Générer'}
+            </button>
+            <button class="btn" style="border:none;background:${this._view==='history'?'var(--primary)':'transparent'};color:${this._view==='history'?'#fff':'var(--text)'};border-radius:8px;padding:6px 16px;font-weight:600;font-size:13px" onclick="EtatVenteModule._setView('history')">
+              <i class="fas fa-history" style="${isAR?'margin-left:6px':'margin-right:6px'}"></i> ${isAR ? 'السجل الأرشيفي' : 'Historique'}
+            </button>
+          </div>
         </div>
       </div>
       
@@ -13395,6 +13747,9 @@ const EtatVenteModule = {
     
     const now = new Date();
     const u = Auth.getCurrentUser();
+    const targetDate = doc.dateEnd || doc.date || now.toISOString().split('T')[0];
+    const isHist = targetDate < Utils.today();
+    const effCreatedAt = isHist ? `${targetDate}T18:00:00.000Z` : now.toISOString();
     
     if (selectedBankId && nNet > 0) {
       const allTx = DB.get('bank_transactions') || [];
@@ -13410,14 +13765,14 @@ const EtatVenteModule = {
         subtype: 'etat_vente',
         bankId: selectedBankId,
         amount: nNet,
-        date: doc.dateEnd || doc.date || now.toISOString().split('T')[0],
+        date: targetDate,
         ref: 'EV-DEP-' + (doc.ref || '').replace(/\//g, '-'),
         note: `Dépôt État de Vente ${doc.ref} (Validé par Admin)`,
         etatVenteId: doc.id,
         etatVenteRef: doc.ref,
         createdBy: u?.id,
         createdByName: u?.name,
-        createdAt: now.toISOString()
+        createdAt: effCreatedAt
       };
 
       let savedDeposit;
@@ -13432,6 +13787,29 @@ const EtatVenteModule = {
       const bName = selBank ? selBank.name : (isAR ? 'البنك' : 'Banque');
 
       const allCaisse = DB.get('caisse_admin') || [];
+
+      // Ensure caisse_admin deposit for real BCH cash exists
+      const exDeposit = allCaisse.find(c => 
+        c.type === 'deposit' && 
+        (c.sessionDate === targetDate || (c.createdAt || '').slice(0, 10) === targetDate) &&
+        (c.source === 'user_cloture' || c.subtype === 'user_cloture' || c.etatVenteRef === doc.ref)
+      );
+      if (!exDeposit && (nGross - nRet) > 0) {
+        await DB.insert('caisse_admin', {
+          type: 'deposit',
+          source: 'user_cloture',
+          subtype: 'user_cloture',
+          userId: u?.id,
+          userName: u?.name || (isAR ? 'الإدارة' : 'Administration'),
+          sessionDate: targetDate,
+          amount: Math.round((nGross - nRet) * 100) / 100,
+          etatVenteRef: doc.ref,
+          etatVenteId: doc.id,
+          note: isAR ? `إيداع إيرادات مبيعات BCH — كشف ${doc.ref}` : `Dépôt recettes ventes BCH — État ${doc.ref}`,
+          createdAt: effCreatedAt
+        });
+      }
+
       const existingCaisse = allCaisse.find(c => 
         c.source === 'transfert_banque_etat_vente' && 
         (c.etatVenteRef === doc.ref || (doc.id && String(c.etatVenteId) === String(doc.id)))
@@ -13442,7 +13820,7 @@ const EtatVenteModule = {
         source: 'transfert_banque_etat_vente',
         userId: u?.id,
         userName: u?.name || (isAR ? 'الإدارة' : 'Administration'),
-        sessionDate: doc.dateEnd || doc.date || now.toISOString().split('T')[0],
+        sessionDate: targetDate,
         amount: nNet,
         targetBankId: selectedBankId,
         etatVenteRef: doc.ref,
@@ -13450,7 +13828,8 @@ const EtatVenteModule = {
         etatVenteTTC: nNet,
         note: isAR 
           ? `تحويل بنكي — كشف المبيعات ${doc.ref} إلى ${bName} (تأكيد الإدارة — 1% طابع: ${Utils.fmtCurrency(nNet)})` 
-          : `Versement bancaire — État de Vente ${doc.ref} vers ${bName} (Validé par Admin — 1% timbre: ${Utils.fmtCurrency(nNet)})`
+          : `Versement bancaire — État de Vente ${doc.ref} vers ${bName} (Validé par Admin — 1% timbre: ${Utils.fmtCurrency(nNet)})`,
+        createdAt: effCreatedAt
       };
 
       if (existingCaisse) {
@@ -13590,8 +13969,12 @@ const EtatVenteModule = {
     if (!confirmed) return;
     
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const targetDateStart = this._getDateStart() || Utils.today();
+    const dateParts = targetDateStart.split('-');
+    const year = dateParts[0] || String(now.getFullYear());
+    const month = dateParts[1] || String(now.getMonth() + 1).padStart(2, '0');
+    const isHistorical = targetDateStart < Utils.today();
+    const effectiveCreatedAt = isHistorical ? `${targetDateStart}T18:00:00.000Z` : now.toISOString();
     let seqNum = DB.getAll('etat_vente_docs').filter(d => (d.ref||'').includes(`/${year}`)).length + 1;
     
     try {
@@ -13648,7 +14031,7 @@ const EtatVenteModule = {
       ecartFiscal: ecartFiscal,
       createdBy: u?.id,
       createdByName: u?.name || 'Utilisateur',
-      createdAt: now.toISOString(),
+      createdAt: effectiveCreatedAt,
       bankId: selectedBankId,
       bankDepositId: null,
       status: initialStatus
@@ -13687,7 +14070,7 @@ const EtatVenteModule = {
          etatVenteRef: ref,
          createdBy: u?.id,
          createdByName: u?.name,
-         createdAt: now.toISOString()
+         createdAt: effectiveCreatedAt
        };
 
        if (existingDeposit) {
@@ -13703,6 +14086,29 @@ const EtatVenteModule = {
 
        // Deduct from caisse_admin (update existing if found, else insert)
        const allCaisse = DB.get('caisse_admin') || [];
+
+       // Ensure caisse_admin deposit for real BCH cash exists
+       const exDeposit = allCaisse.find(c => 
+         c.type === 'deposit' && 
+         (c.sessionDate === this._getDateEnd() || (c.createdAt || '').slice(0, 10) === this._getDateEnd()) &&
+         (c.source === 'user_cloture' || c.subtype === 'user_cloture' || c.etatVenteRef === ref)
+       );
+       if (!exDeposit && netTotalTTC > 0) {
+         await DB.insert('caisse_admin', {
+           type: 'deposit',
+           source: 'user_cloture',
+           subtype: 'user_cloture',
+           userId: u?.id,
+           userName: u?.name || (isAR ? 'الإدارة' : 'Administration'),
+           sessionDate: this._getDateEnd(),
+           amount: netTotalTTC,
+           etatVenteRef: ref,
+           etatVenteId: savedDoc.id,
+           note: isAR ? `إيداع إيرادات مبيعات BCH — كشف ${ref}` : `Dépôt recettes ventes BCH — État ${ref}`,
+           createdAt: effectiveCreatedAt
+         });
+       }
+
        const existingCaisse = allCaisse.find(c => 
          c.source === 'transfert_banque_etat_vente' && 
          (c.etatVenteRef === ref || (savedDoc && String(c.etatVenteId) === String(savedDoc.id)))
@@ -13724,7 +14130,8 @@ const EtatVenteModule = {
          ecartFiscal: ecartFiscal,
          note: isAR 
            ? `تحويل بنكي — كشف المبيعات ${ref} إلى ${bankLabel} (المحول: ${Utils.fmtCurrency(netTotalEV)} بطابع 1%${marginRate>0?` وهامش +${marginRate}%`:''} | مقبوضات BCH: ${Utils.fmtCurrency(netTotalTTC)} | فارق الطابع والهامش: ${Utils.fmtCurrency(ecartFiscal)})`
-           : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Transféré: ${Utils.fmtCurrency(netTotalEV)} avec 1% timbre${marginRate>0?` et marge +${marginRate}%`:''} | Recettes réelles BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart fiscal/marge: ${Utils.fmtCurrency(ecartFiscal)})`
+           : `Versement bancaire — État de Vente ${ref} vers ${bankLabel} (Transféré: ${Utils.fmtCurrency(netTotalEV)} avec 1% timbre${marginRate>0?` et marge +${marginRate}%`:''} | Recettes réelles BCH: ${Utils.fmtCurrency(netTotalTTC)} | Écart fiscal/marge: ${Utils.fmtCurrency(ecartFiscal)})`,
+         createdAt: effectiveCreatedAt
        };
 
        if (existingCaisse) {
@@ -13748,6 +14155,151 @@ const EtatVenteModule = {
     if (!doc) return;
     const settings = DB.getSettings();
     this._doPDF(doc, settings);
+  },
+
+  _runHistoricalScan() {
+    const isAR = T.isRTL();
+    const y2 = new Date();
+    y2.setDate(y2.getDate() - 2);
+    const defaultCutoff = y2.toISOString().slice(0, 10);
+
+    const bodyHTML = `
+      <div style="font-size:13px;color:var(--text);line-height:1.6">
+        <p style="margin-bottom:10px;color:var(--text2)">
+          ${isAR 
+            ? 'تتيح لك هذه الأداة تسوية الأرشيفات التاريخية بأمان، إنشاء كشوفات المبيعات الغائبة، وإغلاق جلسات الصندوق ومزامنة قيود البنك دون التأثير على العمليات الحالية الجارية.' 
+            : 'Cet outil vous permet de régulariser l\'historique en toute sécurité, de générer les États de Vente manquants, de clôturer les sessions de caisse d\'archive et d\'aligner la banque sans perturber vos opérations en cours.'}
+        </p>
+        <div style="margin-bottom:12px;display:flex;justify-content:flex-end">
+          <button type="button" class="btn btn-xs btn-outline" onclick="SettingsModule._showHistoricalRulesModal()" style="color:#8b5cf6;border-color:rgba(139,92,246,.4);padding:4px 10px;border-radius:6px;font-weight:600">
+            <i class="fas fa-book-open"></i> ${isAR ? 'دليل وقواعد التسوية الكاملة (العربية / Français)' : 'Consulter le guide & règles complètes (Bilingue)'}
+          </button>
+        </div>
+
+        <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
+          <div class="form-group" style="margin-bottom:12px">
+            <label style="font-weight:700;display:flex;align-items:center;gap:6px">
+              <i class="fas fa-calendar-alt" style="color:var(--primary)"></i>
+              ${isAR ? 'تاريخ نهاية الأرشيف (الحد الأقصى للتسوية)' : 'Date limite d\'archive (Cutoff)'}
+            </label>
+            <input type="date" id="hist-scan-cutoff" class="input" value="${defaultCutoff}" style="max-width:200px">
+            <div style="font-size:11px;color:var(--text4);margin-top:4px">
+              ${isAR ? 'لن يتم تعديل أو فحص أي عملية بتاريخ أحدث من هذا التاريخ (حماية التواريخ الحية).' : 'Tout document ou session avec une date postérieure sera strictement préservé.'}
+            </div>
+          </div>
+
+          <div style="background:rgba(239,68,68,0.06);border:1px dashed rgba(239,68,68,0.3);padding:10px 14px;border-radius:8px">
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0">
+              <input type="checkbox" id="hist-scan-force-open" style="accent-color:var(--danger);width:17px;height:17px;margin-top:2px">
+              <div>
+                <strong style="color:var(--danger)">${isAR ? 'إجبار تسليم السندات (BL/BR) المتبقية مفتوحة' : 'Forcer la livraison des BLs et BRs restés ouverts'}</strong>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">
+                  ${isAR 
+                    ? '⚠️ اترك هذه الخانة غير محددة (الوضع الآمن) إذا كان لديك طلبيات سابقة ما زالت قيد المعالجة ولم تُسلّم بعد.' 
+                    : '⚠️ Laissez cette case décochée (recommandé) si vous avez des commandes ou bons passés légitimement en cours.'}
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div id="hist-scan-preview-box" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px"></div>
+      </div>
+    `;
+
+    const footerHTML = `
+      <div style="display:flex;gap:8px;justify-content:flex-end;width:100%">
+        <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+        <button class="btn btn-outline" id="btn-hist-dryrun" onclick="EtatVenteModule._executeHistoricalScan(true)" style="color:#0ea5e9;border-color:rgba(14,165,233,.4)">
+          <i class="fas fa-eye"></i> ${isAR ? 'معاينة تجريبية (Simulation)' : 'Aperçu (Simulation Dry Run)'}
+        </button>
+        <button class="btn btn-primary" id="btn-hist-apply" onclick="EtatVenteModule._executeHistoricalScan(false)">
+          <i class="fas fa-check-circle"></i> ${isAR ? 'تطبيق التسوية الفعلية' : 'Appliquer la Réconciliation'}
+        </button>
+      </div>
+    `;
+
+    UI.showModal(
+      `<i class="fas fa-history" style="color:#f59e0b"></i> ${isAR ? 'أداة تسوية الأرشيف التاريخي الآمنة' : 'Réconciliation Sécurisée de l\'Historique'}`,
+      bodyHTML,
+      footerHTML,
+      'lg'
+    );
+  },
+
+  async _executeHistoricalScan(dryRun = false) {
+    const isAR = T.isRTL();
+    const cutoffDate = document.getElementById('hist-scan-cutoff')?.value || null;
+    const forceDeliverOpenDocs = document.getElementById('hist-scan-force-open')?.checked === true;
+    const previewBox = document.getElementById('hist-scan-preview-box');
+
+    if (!dryRun && forceDeliverOpenDocs) {
+      const ok = await Utils.confirm2(
+        isAR ? 'تأكيد إجبار التسليم؟' : 'Confirmation requise',
+        isAR 
+          ? `⚠️ انتباه: سيقوم النظام بتحويل جميع السندات (BL/BR) المفتوحة قبل تاريخ ${cutoffDate || 'اليوم'} إلى حالة «تم التسليم» وإغلاقها. هل أنت متأكد تماماً؟` 
+          : `⚠️ Attention : Cette action va forcer le statut « Livré » pour tous les BLs et BRs restés ouverts jusqu'au ${cutoffDate || 'aujourd\'hui'}. Êtes-vous sûr ?`
+      );
+      if (!ok) return;
+    }
+
+    try {
+      Utils.notify(isAR ? 'جاري الفحص والتسوية...' : 'Traitement en cours...', 'info');
+      const res = await DB.scanAndOrganizeHistory({ dryRun, cutoffDate, forceDeliverOpenDocs });
+
+      if (dryRun && previewBox) {
+        previewBox.style.display = 'block';
+        previewBox.innerHTML = `
+          <div style="font-weight:700;font-size:12px;margin-bottom:6px;color:#0ea5e9">
+            <i class="fas fa-search"></i> ${isAR ? 'نتيجة المحاكاة (لم يتم تعديل أي بيانات في قاعدة البيانات)' : 'Résultat de la Simulation (Aucune donnée modifiée) :'}
+          </div>
+          <div style="font-size:12px;line-height:1.6;color:var(--text2)">
+            <div>• ${isAR ? 'التواريخ المفحوصة:' : 'Dates analysées :'} <strong>${res.datesProcessed || 0}</strong></div>
+            <div>• ${isAR ? 'تواريخ حية محمية (تم تجاوزها):' : 'Dates opérationnelles protégées (ignorées) :'} <strong>${res.skippedLiveCount || 0}</strong></div>
+            <div>• ${isAR ? 'سندات مفتوحة تم حفظها وتجاوزها:' : 'Bons ouverts préservés (non forcés) :'} <strong>${res.skippedOpenBLsCount || 0}</strong></div>
+            <div>• ${isAR ? 'سندات سيتم تسليمها:' : 'BLs à marquer livrés :'} <strong>${res.fixedBLs || 0}</strong></div>
+            <div>• ${isAR ? 'جلسات ستُنشأ أو تُغلق:' : 'Sessions à créer / clôturer :'} <strong>${(res.createdSessions || 0) + (res.closedSessions || 0)}</strong></div>
+            <div>• ${isAR ? 'كشوفات مبيعات ستُنشأ أو تُعدل مراجعها:' : 'États de Vente à générer / corriger :'} <strong>${(res.createdEVs || 0) + (res.fixedEVRefs || 0)}</strong></div>
+            <div>• ${isAR ? 'حركات بنك وصندوق ستُضاف:' : 'Écritures Banque / Caisse à synchroniser :'} <strong>${(res.createdBankTxs || 0) + (res.createdCaisseTxs || 0)}</strong></div>
+          </div>
+          ${res.fixes?.length ? `
+            <div style="margin-top:8px;font-size:11px;color:var(--text4);max-height:120px;overflow-y:auto;background:var(--bg);padding:8px;border-radius:6px">
+              ${res.fixes.map(f => `<div>• ${Utils.escHTML(f)}</div>`).join('')}
+            </div>
+          ` : `<div style="margin-top:8px;font-size:11px;color:var(--success)"><i class="fas fa-check"></i> ${isAR ? 'الأرشيف سليم تماماً ومطابق!' : 'L\'historique sélectionné est déjà 100% synchronisé et conforme.'}</div>`}
+        `;
+        Utils.notify(isAR ? 'اكتملت المحاكاة بنجاح' : 'Simulation terminée', 'info');
+      } else if (!dryRun) {
+        UI.closeModal();
+        const detailsMsg = isAR
+          ? `✅ اكتملت التسوية الفعلية بنجاح!\n` +
+            `• التواريخ المعالجة: ${res.datesProcessed || 0}\n` +
+            `• سندات تم تسليمها: ${res.fixedBLs || 0}\n` +
+            `• جلسات تم إنشاؤها وإغلاقها: ${(res.createdSessions || 0) + (res.closedSessions || 0)}\n` +
+            `• كشوفات مبيعات تم إنشاؤها/تصحيحها: ${(res.createdEVs || 0) + (res.fixedEVRefs || 0)}\n` +
+            `• حركات بنك وصندوق تم ضبطها: ${(res.createdBankTxs || 0) + (res.createdCaisseTxs || 0)}`
+          : `✅ Réconciliation exécutée avec succès !\n` +
+            `• Dates traitées : ${res.datesProcessed || 0}\n` +
+            `• BLs livrés : ${res.fixedBLs || 0}\n` +
+            `• Sessions créées / clôturées : ${(res.createdSessions || 0) + (res.closedSessions || 0)}\n` +
+            `• États de Vente générés / corrigés : ${(res.createdEVs || 0) + (res.fixedEVRefs || 0)}\n` +
+            `• Écritures Banque / Caisse : ${(res.createdBankTxs || 0) + (res.createdCaisseTxs || 0)}`;
+
+        await Dialog.show({
+          title: isAR ? 'تقرير التسوية التاريخية' : "Rapport de Réconciliation Historique",
+          message: `<div style="white-space:pre-line;line-height:1.6;font-size:13px">${Utils.escHTML(detailsMsg)}</div>`,
+          type: 'success',
+          confirmText: T.get('ok')
+        });
+
+        if (typeof App !== 'undefined' && App.currentModule) {
+          App.loadModule(App.currentModule);
+        }
+      }
+    } catch(e) {
+      console.error(e);
+      Utils.notify(isAR ? 'حدث خطأ أثناء فحص التاريخ: ' + e.message : 'Erreur lors du scan historique : ' + e.message, 'error');
+    }
   },
 
   _doPDF(doc, settings) {

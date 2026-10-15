@@ -357,6 +357,10 @@ const DB = {
     return this.MasterBrain.CaisseBrain.recalibrate();
   },
 
+  scanAndOrganizeHistory(options = {}) {
+    return this.MasterBrain.HistoricalBrain.scanAndOrganize(options);
+  },
+
   // ═════════════════════════════════════════════════════════════════
   // THE MASTER BRAIN SUITE — Multi-Domain Financial Integrity Cortex
   // ═════════════════════════════════════════════════════════════════
@@ -834,6 +838,432 @@ const DB = {
       }
     },
 
+    // ── 4b. Historical & Retroactive Reconciliation Brain ──────────
+    HistoricalBrain: {
+      scanAndOrganize(options = {}) {
+        const opts = (typeof options === 'boolean') ? { dryRun: options } : (options || {});
+        const dryRun = !!opts.dryRun;
+        const forceDeliverOpenDocs = !!opts.forceDeliverOpenDocs;
+        const cutoffDate = opts.cutoffDate || null;
+
+        const allBLs = DB.getAll('bls');
+        const allBRs = DB.getAll('brs');
+        const allSessions = DB.getAll('sessions');
+        const allEV = DB.getAll('etat_vente_docs');
+        const allBank = DB.getAll('bank_transactions');
+        const allCaisse = DB.getAll('caisse_admin');
+        const allUsers = DB.getAll('users');
+        const settings = DB.getSettings();
+        const banks = settings.banks || [];
+        const defaultBankId = banks.length > 0 ? banks[0].id : null;
+        const today = typeof Utils !== 'undefined' ? Utils.today() : new Date().toISOString().slice(0, 10);
+        
+        // Operational safety buffer: T (today) and T-1 (yesterday) are live operations
+        const yDate = new Date();
+        yDate.setDate(yDate.getDate() - 1);
+        const yesterday = yDate.toISOString().slice(0, 10);
+
+        let fixedBLs = 0;
+        let createdSessions = 0;
+        let closedSessions = 0;
+        let fixedEVRefs = 0;
+        let createdEVs = 0;
+        let createdBankTxs = 0;
+        let createdCaisseTxs = 0;
+        let skippedLiveCount = 0;
+        let skippedOpenBLsCount = 0;
+        const fixes = [];
+
+        // 1. Identify distinct dates from BLs
+        const dateMap = {};
+        allBLs.forEach(b => {
+          const d = (b.date || (b.createdAt || '').slice(0, 10));
+          if (!d) return;
+          if (!dateMap[d]) dateMap[d] = [];
+          dateMap[d].push(b);
+        });
+
+        // Also identify dates from BRs that might have no BL yet
+        allBRs.forEach(br => {
+          const d = (br.date || (br.createdAt || '').slice(0, 10));
+          if (d && !dateMap[d]) dateMap[d] = [];
+        });
+
+        const sortedDates = Object.keys(dateMap).sort();
+
+        for (const d of sortedDates) {
+          // If cutoffDate provided, strictly ignore any date after cutoffDate
+          if (cutoffDate && d > cutoffDate) continue;
+
+          // Operational safety buffer: dates >= yesterday (today & yesterday) are active live shifts
+          // NEVER auto-deliver open documents or auto-close sessions for live dates
+          const isLiveOperational = (d >= yesterday);
+          if (isLiveOperational) {
+            skippedLiveCount++;
+            continue;
+          }
+
+          const blsOnDate = dateMap[d];
+          if (!blsOnDate || blsOnDate.length === 0) continue;
+
+          // Check if there are open or pending documents on this archive date
+          const hasOpenBLs = blsOnDate.some(b => b.status === 'open' || b.status === 'pending_usine' || !b.status);
+
+          if (hasOpenBLs) {
+            if (forceDeliverOpenDocs) {
+              // User explicitly opted into force-delivering historical open documents
+              blsOnDate.forEach(b => {
+                let blChanged = false;
+                if (b.status === 'open' || b.status === 'pending_usine' || !b.status) {
+                  b.status = 'delivered';
+                  b.deliveredAt = b.deliveredAt || `${d}T12:00:00.000Z`;
+                  blChanged = true;
+                  fixedBLs++;
+                  fixes.push(`BCH ${b.ref} (${d}) marqué comme livré (Option Forcer activée)`);
+                }
+                if (b.brId) {
+                  const linkedBR = allBRs.find(r => Number(r.id) === Number(b.brId));
+                  if (linkedBR && (linkedBR.status === 'open' || linkedBR.status === 'reserved')) {
+                    linkedBR.status = 'delivered';
+                    linkedBR.deliveredAt = linkedBR.deliveredAt || `${d}T12:00:00.000Z`;
+                    if (!dryRun) DB.update('brs', linkedBR.id, { status: 'delivered', deliveredAt: linkedBR.deliveredAt });
+                  }
+                }
+                if (blChanged && !dryRun) {
+                  DB.update('bls', b.id, { status: b.status, deliveredAt: b.deliveredAt });
+                }
+              });
+            } else {
+              // SAFE DEFAULT: Do NOT touch open documents!
+              skippedOpenBLsCount++;
+              // If there are open BLs and forceDeliverOpenDocs is false, skip financial reconciliation for this date
+              continue;
+            }
+          }
+
+          // At this point, all BLs on date d are confirmed delivered/returned
+          // Group by user
+          const userIds = [...new Set(blsOnDate.map(b => b.createdBy || 1))];
+
+          for (const uId of userIds) {
+            const summary = (typeof SessionMgr !== 'undefined' && SessionMgr.getUserDaySummary) ? SessionMgr.getUserDaySummary(uId, d) : null;
+            if (!summary || (summary.bls.length === 0 && summary.retours.length === 0)) continue;
+
+            const uObj = allUsers.find(u => Number(u.id) === Number(uId)) || { id: uId, name: 'Vendeur' };
+            const [dYearStr, dMonthStr] = d.split('-');
+            const targetYear = parseInt(dYearStr) || new Date().getFullYear();
+            const targetMonth = dMonthStr || '01';
+
+            // 1b. Session Check
+            let sess = allSessions.find(s => 
+              (s.userId === uId || String(s.userId) === String(uId) || (uId === 1 && (s.userId === 'admin' || s.userId === '1'))) && 
+              s.date === d
+            );
+
+            if (!sess) {
+              const newSessData = {
+                userId: uId,
+                date: d,
+                status: 'closed',
+                startedAt: `${d}T08:00:00.000Z`,
+                closedAt: `${d}T18:00:00.000Z`,
+                closedNet: 0,
+                closedEspeces: summary.totalSalesTTC,
+                closedMonnaie: summary.totalReturnsTTC,
+                totalSales: summary.totalSalesTTC,
+                totalReturns: summary.totalReturnsTTC,
+                blCount: summary.bls.length,
+                returnCount: summary.retours.length,
+                realBchNet: summary.netAmount,
+                createdAt: `${d}T08:00:00.000Z`,
+                updatedAt: new Date().toISOString()
+              };
+              if (!dryRun) {
+                sess = DB.insert('sessions', newSessData);
+                allSessions.push(sess);
+              }
+              createdSessions++;
+              fixes.push(`Session archive créée pour le ${d} (User #${uId})`);
+            } else if (sess.status !== 'closed') {
+              sess.status = 'closed';
+              sess.closedAt = sess.closedAt || `${d}T18:00:00.000Z`;
+              sess.realBchNet = summary.netAmount;
+              sess.totalSales = summary.totalSalesTTC;
+              sess.totalReturns = summary.totalReturnsTTC;
+              if (!dryRun) DB.update('sessions', sess.id, sess);
+              closedSessions++;
+              fixes.push(`Session archive clôturée pour le ${d} (User #${uId})`);
+            }
+
+            // 1c. État de Vente Check
+            let evDoc = allEV.find(ev => 
+              (ev.date === d || ev.dateStart === d || ev.dateEnd === d) &&
+              (ev.userId === uId || String(ev.userId) === String(uId) || ev.createdBy === uId || String(ev.createdBy) === String(uId) || (uId === 1 && (ev.createdBy === 'admin' || ev.userId === 'admin')))
+            );
+
+            // Compute expected État de Vente totals
+            const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
+            const aggregated = {};
+            summary.bls.filter(b => b.status !== 'returned').forEach(bl => {
+              (bl.lines || []).forEach(line => {
+                const key = (line.designation || '').trim();
+                if (!key) return;
+                const qty = Number(line.qtyDelivered || line.qty) || 0;
+                const price = Number(line.price || line.unitPrice) || 0;
+                const disc = Number(line.disc) || 0;
+                const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+                const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+                const ep = Math.round((basePrice + marginPerUnit) * 100) / 100;
+                if (!aggregated[key]) aggregated[key] = { designation: key, unit: line.unit || 'U', qty: 0, basePrice, marginRate, marginPerUnit, unitPrice: ep };
+                aggregated[key].qty += qty;
+                if (basePrice > aggregated[key].basePrice) {
+                  aggregated[key].basePrice = basePrice;
+                  aggregated[key].marginRate = marginRate;
+                  aggregated[key].marginPerUnit = marginPerUnit;
+                  aggregated[key].unitPrice = ep;
+                }
+              });
+            });
+            const items = Object.values(aggregated).filter(it => it.qty > 0.0001);
+            const totalHT = Math.round(items.reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
+            const totalMargin = Math.round(items.reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
+            const tvaRate = Number(settings.tvaRate) || 19;
+            const tvaAmount = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
+            const TIMBRE_RATE_EV = 1;
+            const timbreAmount = Math.round((totalHT + tvaAmount) * TIMBRE_RATE_EV / 100 * 100) / 100;
+            const netAmountEV = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
+            const ecartFiscal = Math.round((netAmountEV - summary.netAmount) * 100) / 100;
+
+            if (evDoc) {
+              // Check if ref month is misaligned (e.g. contains current month instead of historical month)
+              const expectedMonthPattern = `/${targetMonth}/${targetYear}`;
+              if (evDoc.ref && !evDoc.ref.includes(expectedMonthPattern)) {
+                const oldRef = evDoc.ref;
+                const matchSeq = evDoc.ref.match(/ET\/(\d+)\//);
+                const seq = matchSeq ? matchSeq[1] : '001';
+                evDoc.ref = `ET/${seq}/${targetMonth}/${targetYear}`;
+                evDoc.year = targetYear;
+                evDoc.date = d;
+                evDoc.dateStart = d;
+                evDoc.dateEnd = d;
+                evDoc.status = 'deposited';
+                if (!dryRun) DB.update('etat_vente_docs', evDoc.id, evDoc, 'Correction référence date');
+                fixedEVRefs++;
+                fixes.push(`Référence État de Vente corrigée : ${oldRef} -> ${evDoc.ref}`);
+              }
+            } else if (summary.bls.length > 0) {
+              // Generate historical État de Vente
+              const existingOfTargetYear = allEV.filter(e => (e.ref || '').includes(`/${targetYear}`));
+              const seqNum = existingOfTargetYear.length + 1;
+              const ref = `ET/${String(seqNum).padStart(3, '0')}/${targetMonth}/${targetYear}`;
+              const newEVData = {
+                ref,
+                year: targetYear,
+                date: d,
+                dateStart: d,
+                dateEnd: d,
+                userId: uId,
+                userName: uObj.name || uObj.username || 'Vendeur',
+                marginRate,
+                marginPerUnit: marginRate > 0 ? `${marginRate}%` : '0%',
+                totalMargin,
+                items,
+                blList: summary.bls.map(b => ({
+                  id: b.id,
+                  ref: b.ref,
+                  clientName: b.clientName || 'Client',
+                  totalHT: Number(b.totalHT) || 0,
+                  tvaAmount: Number(b.tvaAmount || b.tva) || 0,
+                  timbreAmount: Number(b.timbreAmount || b.timbre) || 0,
+                  totalTTC: Number(b.totalTTC) || 0,
+                  status: b.status,
+                  isReturned: b.status === 'returned',
+                  date: b.date
+                })),
+                returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || 'Client', totalTTC: Number(r.totalTTC) || 0, date: r.date })),
+                totalBLsTTC: summary.totalSalesTTC,
+                grossTotalTTC: summary.totalSalesTTC,
+                totalReturnsTTC: summary.totalReturnsTTC,
+                returnsTotalTTC: summary.totalReturnsTTC,
+                realBchNet: summary.netAmount,
+                realBchGross: summary.totalSalesTTC,
+                totalHT,
+                tvaRate,
+                tvaAmount,
+                timbreAmount,
+                timbreRate: TIMBRE_RATE_EV,
+                totalTTC: netAmountEV,
+                netTotalTTC: netAmountEV,
+                totalTTCFiscal: netAmountEV,
+                ecartFiscal,
+                createdBy: uId,
+                createdByName: uObj.name || uObj.username || 'Vendeur',
+                createdAt: `${d}T18:00:00.000Z`,
+                updatedAt: new Date().toISOString(),
+                bankId: defaultBankId,
+                status: 'deposited'
+              };
+              if (!dryRun) {
+                evDoc = DB.insert('etat_vente_docs', newEVData);
+                allEV.push(evDoc);
+              }
+              createdEVs++;
+              fixes.push(`État de Vente généré pour le ${d} : ${ref} (${Utils.fmtCurrency(netAmountEV)})`);
+            }
+
+            if (sess && evDoc) {
+              if (sess.etatVenteRef !== evDoc.ref || sess.etatVenteId !== evDoc.id || sess.closedNet !== (evDoc.totalTTC || netAmountEV)) {
+                sess.etatVenteId = evDoc.id;
+                sess.etatVenteRef = evDoc.ref;
+                sess.etatVenteTTC = evDoc.totalTTC || netAmountEV;
+                sess.closedNet = evDoc.totalTTC || netAmountEV;
+                sess.realBchNet = summary.netAmount;
+                if (!dryRun) DB.update('sessions', sess.id, sess);
+              }
+            }
+
+            const effectiveEV = evDoc;
+            const effectiveEVRef = effectiveEV?.ref || sess?.etatVenteRef;
+            const effectiveEVNet = effectiveEV ? (Number(effectiveEV.totalTTC || effectiveEV.netTotalTTC) || netAmountEV) : netAmountEV;
+
+            // 1d. Bank Transaction Synchronization
+            if (defaultBankId && effectiveEV && effectiveEVNet > 0) {
+              const expectedDepRef = 'EV-DEP-' + (effectiveEVRef || '').replace(/\//g, '-');
+              let bankTx = allBank.find(t => 
+                (t.etatVenteId && String(t.etatVenteId) === String(effectiveEV.id)) ||
+                (t.etatVenteRef && t.etatVenteRef === effectiveEVRef) ||
+                (t.ref && t.ref === expectedDepRef) ||
+                (sess && t.sessionId && String(t.sessionId) === String(sess.id))
+              );
+              const bankTxData = {
+                type: 'deposit',
+                subtype: 'etat_vente',
+                bankId: effectiveEV.bankId || defaultBankId,
+                amount: effectiveEVNet,
+                date: d,
+                ref: expectedDepRef,
+                note: `Dépôt État de Vente ${effectiveEVRef} (Historique ${Utils.fmtDate(d)})`,
+                etatVenteId: effectiveEV.id,
+                etatVenteRef: effectiveEVRef,
+                createdBy: uId,
+                createdAt: `${d}T18:00:00.000Z`,
+                updatedAt: new Date().toISOString()
+              };
+              if (bankTx) {
+                if (Math.abs(Number(bankTx.amount) - effectiveEVNet) > 0.01 || bankTx.ref !== expectedDepRef || bankTx.date !== d) {
+                  if (!dryRun) DB.update('bank_transactions', bankTx.id, bankTxData);
+                }
+              } else {
+                if (!dryRun) {
+                  bankTx = DB.insert('bank_transactions', bankTxData);
+                  allBank.push(bankTx);
+                }
+                createdBankTxs++;
+                fixes.push(`Dépôt bancaire créé au ${d} : ${Utils.fmtCurrency(effectiveEVNet)}`);
+              }
+              if (effectiveEV && bankTx && effectiveEV.bankDepositId !== bankTx.id) {
+                if (!dryRun) DB.update('etat_vente_docs', effectiveEV.id, { bankDepositId: bankTx.id });
+              }
+            }
+
+            // 1e. Caisse Admin Synchronization
+            if (summary.netAmount > 0) {
+              // Deposit: Real BCH cash collected
+              let caisseDep = allCaisse.find(e => 
+                e.type === 'deposit' && 
+                (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles') && 
+                ((sess && Number(e.sessionId) === Number(sess.id)) || 
+                 (effectiveEVRef && e.etatVenteRef === effectiveEVRef) ||
+                 (e.sessionDate === d && (e.userId === uId || String(e.userId) === String(uId))))
+              );
+              const caisseDepData = {
+                type: 'deposit',
+                source: 'user_cloture',
+                userId: uId,
+                userName: uObj.name || uObj.username || 'Vendeur',
+                sessionId: sess?.id || null,
+                sessionDate: d,
+                amount: summary.netAmount,
+                etatVenteRef: effectiveEVRef || null,
+                note: `Recettes réelles BCH — Clôture ${Utils.fmtDate(d)} (${summary.bls.length} BCH)`,
+                createdAt: `${d}T18:00:00.000Z`
+              };
+              if (caisseDep) {
+                if (Math.abs(Number(caisseDep.amount) - summary.netAmount) > 0.01 || caisseDep.sessionDate !== d) {
+                  if (!dryRun) DB.update('caisse_admin', caisseDep.id, caisseDepData);
+                }
+              } else {
+                if (!dryRun) {
+                  caisseDep = DB.insert('caisse_admin', caisseDepData);
+                  allCaisse.push(caisseDep);
+                }
+                createdCaisseTxs++;
+                fixes.push(`Recette caisse créée au ${d} : +${Utils.fmtCurrency(summary.netAmount)}`);
+              }
+
+              // Withdrawal: Transfert banque État de Vente
+              if (effectiveEVNet > 0) {
+                let caisseWith = allCaisse.find(e => 
+                  e.type === 'withdrawal' && 
+                  e.source === 'transfert_banque_etat_vente' && 
+                  ((sess && Number(e.sessionId) === Number(sess.id)) || 
+                   (effectiveEVRef && e.etatVenteRef === effectiveEVRef) ||
+                   (e.sessionDate === d && (e.userId === uId || String(e.userId) === String(uId))))
+                );
+                const caisseWithData = {
+                  type: 'withdrawal',
+                  source: 'transfert_banque_etat_vente',
+                  userId: uId,
+                  userName: uObj.name || uObj.username || 'Vendeur',
+                  sessionId: sess?.id || null,
+                  sessionDate: d,
+                  amount: effectiveEVNet,
+                  etatVenteRef: effectiveEVRef || null,
+                  etatVenteId: effectiveEV?.id || null,
+                  etatVenteTTC: effectiveEVNet,
+                  note: `Versement bancaire — État de Vente ${effectiveEVRef || ''} (${Utils.fmtDate(d)})`,
+                  createdAt: `${d}T18:00:00.000Z`
+                };
+                if (caisseWith) {
+                  if (Math.abs(Number(caisseWith.amount) - effectiveEVNet) > 0.01 || caisseWith.sessionDate !== d) {
+                    if (!dryRun) DB.update('caisse_admin', caisseWith.id, caisseWithData);
+                  }
+                } else {
+                  if (!dryRun) {
+                    caisseWith = DB.insert('caisse_admin', caisseWithData);
+                    allCaisse.push(caisseWith);
+                  }
+                  createdCaisseTxs++;
+                  fixes.push(`Transfert caisse->banque créé au ${d} : -${Utils.fmtCurrency(effectiveEVNet)}`);
+                }
+              }
+            }
+          }
+        }
+
+        return {
+          ok: true,
+          datesProcessed: sortedDates.length,
+          datesScanned: sortedDates,
+          fixedBLs,
+          blsDelivered: fixedBLs,
+          createdSessions,
+          sessionsCreated: createdSessions + closedSessions,
+          closedSessions,
+          fixedEVRefs,
+          createdEVs,
+          evCorrected: fixedEVRefs + createdEVs,
+          createdBankTxs,
+          bankTxsCreated: createdBankTxs,
+          createdCaisseTxs,
+          caisseEntriesCreated: createdCaisseTxs,
+          skippedLiveCount,
+          skippedOpenBLsCount,
+          fixes
+        };
+      }
+    },
+
     // ── 5. Master Cortex (0 = 0 Total Balance Overseer) ────────
     recalibrateAll() {
       if (this._running) return;
@@ -902,6 +1332,21 @@ const DB = {
         const checks = [];
 
         try {
+          // Check 0: Organisation & Synchronisation Historique (Mode Diagnostic Non-Destructif)
+          let histRes = { datesProcessed: 0, fixes: [], skippedOpenBLsCount: 0 };
+          try {
+            // Strictly dryRun: true in automated 15-min background job
+            histRes = DB.MasterBrain.HistoricalBrain.scanAndOrganize({ dryRun: true });
+          } catch(he) { console.warn('[HistoricalBrain] Autocorrect diagnostic check err:', he); }
+          const pendingArchiveFixes = (histRes.createdSessions || 0) + (histRes.createdEVs || 0) + (histRes.fixedEVRefs || 0);
+          checks.push({ 
+            name: 'Audit Archives Historiques', 
+            status: pendingArchiveFixes > 0 ? 'INFO' : 'OK', 
+            detail: pendingArchiveFixes > 0 
+              ? `${pendingArchiveFixes} régularisation(s) d'archive en attente (Scan manuel disponible)`
+              : 'Archives synchronisées et conformes' 
+          });
+
           // Check 1: Caisse & Clôtures Reconciliation
           const caisseRes = DB.MasterBrain.CaisseBrain.recalibrate();
           checks.push({ name: 'Trésorerie Caisse Centrale & Clôtures', status: 'OK', detail: `Solde contrôlé: ${Utils.fmtCurrency(caisseRes.balance)} (${caisseRes.cleanedCount || 0} entrées purgées)` });
@@ -2010,6 +2455,8 @@ const DB = {
       timbreSlabs: [],            // table des tranches évaluées sur la Base (HT + TVA)
       // ── Banks ─────────────────────────────────────────────────────
       banks: [],                  // [{ id, name, bankName, accountNum }]
+      // ── Historical Backfill & Safety Mode ──────────────────────────
+      historicalBackfillMode: false, // false = live operation safe mode; true = default mark-delivered checked for past dates
     };
   },
 
@@ -2023,6 +2470,7 @@ const DB = {
       if (merged.timbrePerTranche === undefined) merged.timbrePerTranche = def.timbrePerTranche;
       if (merged.timbreUseCeil === undefined) merged.timbreUseCeil = false;
       if (merged.timbreEnabled === undefined) merged.timbreEnabled = def.timbreEnabled;
+      if (merged.historicalBackfillMode === undefined) merged.historicalBackfillMode = false;
       // Read slabs from DEDICATED key (not from settings — avoids Mixed-type cloud issues)
       try {
         const slabsRaw = localStorage.getItem('timbre_slabs_data');
@@ -3724,8 +4172,9 @@ const SessionMgr = {
     const targetBank = banks.find(b => String(b.id) === String(targetBankId));
 
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const dateParts = (today || (typeof Utils !== 'undefined' ? Utils.today() : '')).split('-');
+    const year = parseInt(dateParts[0]) || now.getFullYear();
+    const month = dateParts[1] ? String(dateParts[1]).padStart(2, '0') : String(now.getMonth() + 1).padStart(2, '0');
 
     // ── Idempotent Reference Check ──
     let ref = session.etatVenteRef;
@@ -3884,7 +4333,8 @@ const SessionMgr = {
         DB.update('bank_transactions', existingBankTx.id, depTxData, 'Mise à jour versement');
         bankTxId = existingBankTx.id;
       } else {
-        const savedBankTx = DB.insert('bank_transactions', { ...depTxData, createdAt: now.toISOString() });
+        const effectiveCreated = (today && today < Utils.today()) ? `${today}T18:00:00.000Z` : now.toISOString();
+        const savedBankTx = DB.insert('bank_transactions', { ...depTxData, createdAt: effectiveCreated });
         bankTxId = savedBankTx.id;
       }
       if (savedEtat && bankTxId && savedEtat.bankDepositId !== bankTxId) {
@@ -3911,12 +4361,13 @@ const SessionMgr = {
       timbreAmount,
       ecartFiscal,
       note: note || '',
-      closedAt: session.closedAt || now.toISOString(),
+      closedAt: session.closedAt || ((today && today < Utils.today()) ? `${today}T18:00:00.000Z` : now.toISOString()),
       updatedAt: now.toISOString()
     }, 'Clôture Mini Caisse');
 
     // 4. Update caisse_admin with strict traceability:
     const bankLabel = targetBank?.name || (isAR ? 'البنك' : 'Banque');
+    const effectiveCreated = (today && today < Utils.today()) ? `${today}T18:00:00.000Z` : now.toISOString();
 
     // 4a. Real BCH net cash collected enters central caisse_admin:
     // STRICT RULE: The ONLY source of money in caisse_admin is the cashier's shift closure!
@@ -3940,7 +4391,7 @@ const SessionMgr = {
     if (existingCaisseDeposit) {
       DB.update('caisse_admin', existingCaisseDeposit.id, caisseDepositData);
     } else if (summary.netAmount > 0) {
-      DB.insert('caisse_admin', { ...caisseDepositData, createdAt: now.toISOString() });
+      DB.insert('caisse_admin', { ...caisseDepositData, createdAt: effectiveCreated });
     }
 
     // 4b. Withdrawal / Transfer to Bank via État de Vente (with fixed 1% timbre deducted from caisse_admin)
@@ -3969,7 +4420,7 @@ const SessionMgr = {
     if (existingCaisseWithdrawal) {
       DB.update('caisse_admin', existingCaisseWithdrawal.id, caisseWithdrawalData);
     } else if (netAmountEV > 0) {
-      DB.insert('caisse_admin', { ...caisseWithdrawalData, createdAt: now.toISOString() });
+      DB.insert('caisse_admin', { ...caisseWithdrawalData, createdAt: effectiveCreated });
     }
 
     // 5. Trigger MasterBrain recalibration
