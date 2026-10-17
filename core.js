@@ -2050,6 +2050,41 @@ const DB = {
             detail: (caisseSyncRes && caisseSyncRes.modified) ? `Caisse synchronisée (Solde: ${Utils.fmtCurrency(caisseSyncRes.balance)})` : `Solde parfaitement synchronisé (${Utils.fmtCurrency(caisseSyncRes?.balance || 0)})` 
           });
 
+          // Check 17: Concordance Strict N° BCH <-> N° BR
+          const allBLsSync = DB.getAll('bls');
+          const allBRsSync = DB.getAll('brs');
+          const brMapSync = {}; allBRsSync.forEach(b => brMapSync[b.id] = b);
+          const numMismatches = [];
+          allBLsSync.forEach(bl => {
+            const br = bl.brId ? brMapSync[bl.brId] : null;
+            if (br) {
+              const brDigits = (br.ref ? (br.ref.match(/\d+/) || [''])[0] : '');
+              const blDigits = (bl.ref ? (bl.ref.match(/\d+/) || [''])[0] : '');
+              if ((bl.bchNum && br.brNum && Number(bl.bchNum) !== Number(br.brNum)) || (blDigits && brDigits && blDigits !== brDigits)) {
+                numMismatches.push({ blRef: bl.ref, brRef: br.ref, blId: bl.id, brId: br.id });
+              }
+            }
+          });
+          if (numMismatches.length > 0) {
+            checks.push({ 
+              name: 'Concordance N° BCH / BR', 
+              status: 'WARN', 
+              detail: `⚠️ ${numMismatches.length} décalage(s) détecté(s) : ${numMismatches.map(m=>m.blRef+' vs '+m.brRef).join(', ')}` 
+            });
+            if (typeof Utils !== 'undefined' && Utils.notify) {
+              Utils.notify((typeof T !== 'undefined' && T.isRTL()) ? `⚠️ تنبيه : ${numMismatches.length} سند شحن برقم مختلف عن وصل الاستلام!` : `⚠️ Alerte : ${numMismatches.length} BCH avec N° différent du BR !`, 'error', 8000);
+            }
+            if (typeof NotifMgr !== 'undefined') {
+              NotifMgr.add({
+                type: 'warning',
+                title: (typeof T !== 'undefined' && T.isRTL()) ? '⚠️ عدم تطابق أرقام BCH / BR' : '⚠️ Décalage N° BCH / BR',
+                message: `${numMismatches.length} document(s) : ${numMismatches.map(m=>m.blRef+' vs '+m.brRef).join(', ')}`
+              });
+            }
+          } else {
+            checks.push({ name: 'Concordance N° BCH / BR', status: 'OK', detail: `${allBLsSync.length} BCH 100% conformes à leur BR` });
+          }
+
           if (fixes.length > 0) {
             DB.insert('audit_log', {
               action: 'AUTOCORRECT',
