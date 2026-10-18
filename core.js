@@ -1381,15 +1381,17 @@ const DB = {
             if (ret.blId) {
               const linkedBL = bls.find(b => Number(b.id) === Number(ret.blId));
               if (linkedBL && linkedBL.status !== 'returned') {
+                const returnedAt = ret.createdAt || linkedBL.updatedAt || new Date().toISOString();
+                const returnedRef = ret.ref || '';
                 linkedBL.status = 'returned';
-                linkedBL.returnedAt = ret.createdAt || linkedBL.updatedAt;
-                linkedBL.returnedRef = ret.ref;
+                linkedBL.returnedAt = returnedAt;
+                linkedBL.returnedRef = returnedRef;
                 retFixed++;
                 fixes.push(`BL ${linkedBL.ref} verrouillé avec statut "returned" (Réf: ${ret.ref})`);
+                DB.update('bls', linkedBL.id, { status: 'returned', returnedAt, returnedRef }, 'Verrouillage retour');
               }
             }
           });
-          if (retFixed > 0) DB.rawSet('bls', bls);
           checks.push({ name: 'Bons de Retour & Références Réservées', status: 'OK', detail: `${retours.length} retours vérifiés (${retFixed} BLs verrouillés)` });
 
           // Check 4: États de Vente & Dépôts Bancaires
@@ -1769,6 +1771,7 @@ const DB = {
                 b.status = 'validated_usine';
                 bchFixed++;
                 fixes.push(`BCH ${b.ref} réconcilié: possède un BR validé (${b.linkedBrRef || b.brId}) → statut corrigé en "validated_usine"`);
+                DB.update('bls', b.id, { status: 'validated_usine' }, 'Autocorrect: Statut usine validé');
               }
             }
             if (b.linkedBrId && !b.brId) {
@@ -1777,6 +1780,7 @@ const DB = {
               if (lbr && lbr.status !== 'reserved') {
                 b.brId = b.linkedBrId;
                 bchFixed++;
+                DB.update('bls', b.id, { brId: b.linkedBrId }, 'Autocorrect: brId lié');
               }
             }
             // Check mathematical integrity of lines vs totals & audit timbre fiscal
@@ -1818,7 +1822,6 @@ const DB = {
               }
             }
           });
-          if (bchFixed > 0) DB.rawSet('bls', allBCHs);
           checks.push({ name: 'Bons de Chargement & Intégrité Usine', status: 'OK', detail: `${allBCHs.length} BCH vérifiés (${bchFixed} corrigés)` });
 
           // Check 11: BR Mathematical Integrity & TVA/Timbre Recalibration
@@ -2058,9 +2061,12 @@ const DB = {
           allBLsSync.forEach(bl => {
             const br = bl.brId ? brMapSync[bl.brId] : null;
             if (br) {
-              const brDigits = (br.ref ? (br.ref.match(/\d+/) || [''])[0] : '');
-              const blDigits = (bl.ref ? (bl.ref.match(/\d+/) || [''])[0] : '');
-              if ((bl.bchNum && br.brNum && Number(bl.bchNum) !== Number(br.brNum)) || (blDigits && brDigits && blDigits !== brDigits)) {
+              const brNum = br.brNum || (br.ref ? parseInt((br.ref.match(/(\d+)/) || [])[1], 10) : null);
+              const blNum = bl.bchNum ? Number(bl.bchNum) : (bl.ref ? parseInt((bl.ref.match(/(\d+)/) || [])[1], 10) : null);
+              const isMatch = (brNum && blNum && brNum === blNum) || 
+                              (br.bcRef && br.bcRef === bl.ref) || 
+                              (bl.linkedBrRef && bl.linkedBrRef === br.ref);
+              if (!isMatch) {
                 numMismatches.push({ blRef: bl.ref, brRef: br.ref, blId: bl.id, brId: br.id });
               }
             }

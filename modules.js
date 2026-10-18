@@ -770,8 +770,27 @@ const BRModule = {
     });
 
     const blMap = {};
-    // ONLY include active BLs — NOT recycled ones. A deleted BL must free its BR.
-    DB.getAll('bls').filter(bl => bl.status !== 'returned').forEach(bl => blMap[bl.brId] = bl);
+    const allActiveBLs = DB.getAll('bls').filter(bl => bl.status !== 'returned');
+    allActiveBLs.forEach(bl => {
+      if (bl.brId != null) blMap[bl.brId] = bl;
+      if (bl.linkedBrId != null) blMap[bl.linkedBrId] = bl;
+    });
+    items.forEach(br => {
+      if (!blMap[br.id] && br.bcId) {
+        const found = allActiveBLs.find(bl => Number(bl.id) === Number(br.bcId));
+        if (found) blMap[br.id] = found;
+      }
+      if (!blMap[br.id] && (br.brNum || br.ref)) {
+        const bNum = br.brNum || (br.ref ? (br.ref.match(/(\d+)/)||[])[1] : null);
+        if (bNum) {
+          const found = allActiveBLs.find(bl => {
+            const blNum = bl.bchNum || (bl.ref ? (bl.ref.match(/(\d+)/)||[])[1] : null);
+            return blNum != null && String(blNum) === String(bNum);
+          });
+          if (found) blMap[br.id] = found;
+        }
+      }
+    });
 
     const isAdmin = Auth.isAdmin();
     const perms   = Auth.getCurrentUser()?.permissions || {};
@@ -860,9 +879,12 @@ const BRModule = {
               const brLines = br.lines || [];
 
               // Detect reference / number mismatch between BR and linked BCH
-              const brDigits = (br.ref ? (br.ref.match(/\d+/) || [''])[0] : '');
-              const blDigits = (bl && bl.ref) ? (bl.ref.match(/\d+/) || [''])[0] : '';
-              const isMismatch = bl && ((bl.bchNum && br.brNum && Number(bl.bchNum) !== Number(br.brNum)) || (blDigits && brDigits && blDigits !== brDigits));
+              const brNum = br.brNum || (br.ref ? parseInt((br.ref.match(/(\d+)/) || [])[1], 10) : null);
+              const blNum = (bl && bl.bchNum) ? Number(bl.bchNum) : (bl?.ref ? parseInt((bl.ref.match(/(\d+)/) || [])[1], 10) : null);
+              const isMatch = (brNum && blNum && brNum === blNum) || 
+                              (br.bcRef && bl && br.bcRef === bl.ref) || 
+                              (bl?.linkedBrRef && bl.linkedBrRef === br.ref);
+              const isMismatch = bl && !isMatch;
               const rowStyle = isMismatch ? 'background:rgba(239,68,68,0.14) !important;border-left:5px solid #ef4444 !important;' : '';
 
               const artPills = brLines.slice(0, 2).map(l => {
@@ -1576,13 +1598,8 @@ const BLModule = {
     let items = DB.getAll('bls');
     const curUser = Auth.getCurrentUser();
     const todayDate = Utils.today();
-    if (!Auth.isAdmin() && curUser) {
-      items = items.filter(b => {
-        const bDate = (b.date || b.createdAt || '').slice(0, 10);
-        if (bDate < todayDate) return true; // Past days appear for ALL users so anyone can return them!
-        return String(b.createdBy) === String(curUser.id) || String(b.deliveredBy) === String(curUser.id);
-      });
-    }
+    // All authorized users see all BLs — traceability maintained via createdByName / deliveredByName.
+    // Users can still filter by 'Créé par' using the filter dropdown below.
     if (q) {
       const ql = q.toLowerCase();
       items = items.filter(b => {
@@ -1697,9 +1714,12 @@ const BLModule = {
               const isAR = T.isRTL();
 
               // Detect reference / number mismatch between BCH and linked BR
-              const brDigits = br ? (br.ref ? (br.ref.match(/\d+/) || [''])[0] : '') : '';
-              const blDigits = bl.ref ? (bl.ref.match(/\d+/) || [''])[0] : '';
-              const isMismatch = br && ((bl.bchNum && br.brNum && Number(bl.bchNum) !== Number(br.brNum)) || (blDigits && brDigits && blDigits !== brDigits));
+              const brNum = br ? (br.brNum || (br.ref ? parseInt((br.ref.match(/(\d+)/) || [])[1], 10) : null)) : null;
+              const blNum = bl.bchNum ? Number(bl.bchNum) : (bl.ref ? parseInt((bl.ref.match(/(\d+)/) || [])[1], 10) : null);
+              const isMatch = (brNum && blNum && brNum === blNum) || 
+                              (br && br.bcRef && br.bcRef === bl.ref) || 
+                              (bl.linkedBrRef && br && bl.linkedBrRef === br.ref);
+              const isMismatch = br && !isMatch;
               const rowStyle = isMismatch ? 'background:rgba(239,68,68,0.14) !important;border-left:5px solid #ef4444 !important;' : '';
 
               const blLines = (bl.lines && bl.lines.length) ? bl.lines : (br?.lines || []);
@@ -2651,7 +2671,9 @@ const BLModule = {
     setTimeout(() => {
       BLModule._recalcBLTotals();
       const numVal = document.getElementById('bl-num')?.value || '';
-      BLModule._validateBCHNum(numVal, document.getElementById('bl-date')?.value || Utils.today(), null, 'stock', Number(brId));
+      const dateVal = document.getElementById('bl-date')?.value || Utils.today();
+      BLModule._validateBCHNum(numVal, dateVal, null, 'stock', Number(brId));
+      BLModule._onDateChange(dateVal, 'stock', null, Number(brId));
       FormGuide.start(['bl-client','bl-destination','bl-driver','bl-truck','bl-date']);
     }, 100);
   },
@@ -2984,15 +3006,15 @@ const BLModule = {
       </div>
       <div class="form-group">
         <label class="required">${T.get('col_date')}</label>
-        <input type="date" id="bl-date" value="${bl?.date||Utils.today()}"
+        <input type="date" id="bl-date" value="${bl?.date || br?.date || Utils.today()}"
           onchange="BLModule._onDateChange(this.value, 'stock', ${bl?.id || 'null'}, ${br?.id || 'null'})">
-        <div id="bl-hist-badge" style="font-size:11px;margin-top:3px;display:none">
+        <div id="bl-hist-badge" style="font-size:11px;margin-top:3px;display:${(bl?.date || br?.date || Utils.today()) < Utils.today() ? 'block' : 'none'}">
           <span class="badge badge-warning" style="font-size:10.5px;padding:2px 8px;border-radius:12px"><i class="fas fa-history"></i> ${isAR ? 'سجل تاريخي' : 'Saisie Historique'}</span>
         </div>
       </div>
-      <div id="bl-hist-delivered-wrap" style="display:none;background:rgba(245,158,11,0.08);border:1px dashed #f59e0b;padding:8px 12px;border-radius:8px;margin-bottom:12px;grid-column:1/-1">
+      <div id="bl-hist-delivered-wrap" style="display:${(bl?.date || br?.date || Utils.today()) < Utils.today() ? 'block' : 'none'};background:rgba(245,158,11,0.08);border:1px dashed #f59e0b;padding:8px 12px;border-radius:8px;margin-bottom:12px;grid-column:1/-1">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;font-size:12px;color:var(--text)">
-          <input type="checkbox" id="bl-mark-delivered" ${DB.getSettings().historicalBackfillMode ? 'checked' : ''} style="accent-color:var(--primary);width:16px;height:16px">
+          <input type="checkbox" id="bl-mark-delivered" ${((bl?.date || br?.date || Utils.today()) < Utils.today()) ? 'checked' : ''} style="accent-color:var(--primary);width:16px;height:16px">
           <span><strong>${isAR ? 'تم التسليم مسبقاً (أرشفة تاريخية — لن تتطلب تأكيد لاحق)' : 'Déjà Livré & Encaissé (Historique — aucune confirmation requise)'}</strong></span>
         </label>
       </div>

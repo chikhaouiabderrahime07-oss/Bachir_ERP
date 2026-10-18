@@ -474,6 +474,32 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
 
     await Document.create({ col, data: newData });
     bump(col);
+
+    // ── Server-Side Referential Guarantee for BL <-> BR ──
+    // Ensures parent BR status is synchronized in MongoDB Atlas even if client network disconnects
+    if (col === 'bls' && (newData.brId || newData.linkedBrId)) {
+      const targetBrId = Number(newData.brId || newData.linkedBrId);
+      if (targetBrId) {
+        try {
+          const brDoc = await Document.findOne(idQuery('brs', targetBrId));
+          if (brDoc && brDoc.data) {
+            const isHistoricalDelivered = newData.status === 'delivered';
+            if (isHistoricalDelivered || brDoc.data.status === 'open' || brDoc.data.status === 'reserved') {
+              const updatedStatus = 'delivered';
+              const updatedDeliveredAt = newData.deliveredAt || now;
+              await Document.updateOne(
+                { _id: brDoc._id },
+                { $set: { 'data.status': updatedStatus, 'data.deliveredAt': updatedDeliveredAt, updatedAt: new Date() } }
+              );
+              bump('brs');
+            }
+          }
+        } catch (brErr) {
+          console.warn('[SERVER BL->BR SYNC]', brErr);
+        }
+      }
+    }
+
     res.status(201).json(publicData(col, newData));
 
   } catch (e) {
@@ -599,10 +625,38 @@ router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res
 // ─── DELETE /api/data/:col/:id ────────────────────────────────────
 router.delete('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
-    const col   = req.params.col;
+    const col = req.params.col;
+    let blDocToDelete = null;
+    if (col === 'bls') {
+      blDocToDelete = await Document.findOne(idQuery('bls', req.params.id)).lean();
+    }
     const result = await Document.deleteOne(idQuery(col, req.params.id));
     if (!result.deletedCount) return res.status(404).json({ error: 'Non trouvé' });
     bump(col);
+
+    // ── Server-Side Auto-Reopening of BR when BL is deleted ──
+    if (col === 'bls' && blDocToDelete?.data) {
+      const targetBrId = Number(blDocToDelete.data.brId || blDocToDelete.data.linkedBrId);
+      if (targetBrId) {
+        try {
+          const otherBLs = await Document.find({
+            col: 'bls',
+            $or: [{ 'data.brId': targetBrId }, { 'data.linkedBrId': targetBrId }],
+            'data.status': 'delivered'
+          }).lean();
+          if (!otherBLs.length) {
+            await Document.updateOne(
+              idQuery('brs', targetBrId),
+              { $set: { 'data.status': 'open', 'data.deliveredAt': null, updatedAt: new Date() } }
+            );
+            bump('brs');
+          }
+        } catch (brErr) {
+          console.warn('[SERVER BL DELETE->BR REOPEN]', brErr);
+        }
+      }
+    }
+
     res.json({ success: true, id: req.params.id });
   } catch (e) {
     console.error('[DATA/DELETE]', e);
