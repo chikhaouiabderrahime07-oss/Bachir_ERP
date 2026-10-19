@@ -57,9 +57,10 @@ app.use('/api/auth', rateLimit({
 // General API rate limit (an office shares one public IP, so keep it generous)
 app.use('/api', rateLimit({
   windowMs: 60 * 1000,
-  max: 1200,
+  max: 2400,
   keyGenerator: clientKey,
   validate: false,
+  skip: (req) => req.path.includes('_versions') || req.path === '/health',
 }));
 
 // ─── API Routes ──────────────────────────────────────────────────

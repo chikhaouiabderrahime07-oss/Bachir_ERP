@@ -337,17 +337,27 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
 
     const hasId = data.id !== undefined && data.id !== null && data.id !== '' && !isNaN(Number(data.id));
 
-    // ── Idempotency guard: same id already stored → this is a retry, merge instead of duplicating ──
+    // ── Idempotency guard: if the same document is re-submitted (exact retry) ──
     if (hasId) {
       const numId = Number(data.id);
       const existing = await Document.findOne({ col, 'data.id': numId });
       if (existing) {
-        const merged = { ...existing.data, ...data, id: numId, updatedAt: now };
-        existing.data = merged;
-        existing.updatedAt = new Date();
-        await existing.save();
-        bump(col);
-        return res.status(200).json(publicData(col, merged));
+        // Verify this is truly the EXACT SAME document being retried (same ref, or same createdAt/clientId/supplierId)
+        const isExactRetry = (data.ref && existing.data?.ref === data.ref) ||
+                             (data.createdAt && existing.data?.createdAt === data.createdAt) ||
+                             (data.date && existing.data?.date === data.date && existing.data?.createdBy === req.user?.id);
+        if (isExactRetry) {
+          const merged = { ...existing.data, ...data, id: numId, updatedAt: now };
+          existing.data = merged;
+          existing.updatedAt = new Date();
+          await existing.save();
+          bump(col);
+          return res.status(200).json(publicData(col, merged));
+        } else {
+          // COLLISION: Two different users/devices generated the same local ID concurrently.
+          // DO NOT OVERWRITE! Allocate a guaranteed unique ID from the server counter.
+          data.id = await allocateId(col);
+        }
       }
     }
 
@@ -355,12 +365,35 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
     if ((col === 'bls' || col === 'brs' || col === 'bon_retours' || col === 'etat_vente_docs' || col === 'bank_transactions') && data.ref) {
       const existingRef = await Document.findOne({ col, 'data.ref': data.ref });
       if (existingRef) {
-        const merged = { ...existingRef.data, ...data, id: existingRef.data.id, updatedAt: now };
-        existingRef.data = merged;
-        existingRef.updatedAt = new Date();
-        await existingRef.save();
-        bump(col);
-        return res.status(200).json(publicData(col, merged));
+        // Only merge if this is truly the same document (same ID or same createdAt/parent)
+        const isSameDoc = (data.id && Number(existingRef.data?.id) === Number(data.id)) ||
+                          (data.createdAt && existingRef.data?.createdAt === data.createdAt) ||
+                          (col === 'bls' && existingRef.data?.brId && Number(existingRef.data?.brId) === Number(data.brId) && existingRef.data?.clientId === data.clientId);
+        if (isSameDoc) {
+          const merged = { ...existingRef.data, ...data, id: existingRef.data.id, updatedAt: now };
+          existingRef.data = merged;
+          existingRef.updatedAt = new Date();
+          await existingRef.save();
+          bump(col);
+          return res.status(200).json(publicData(col, merged));
+        } else {
+          // Different document with colliding reference!
+          if (col === 'bls') {
+            // Auto-resolve reference collision by advancing part number so neither document is lost!
+            const year = data.year || (data.date ? parseInt(data.date.substring(0, 4)) : new Date().getFullYear());
+            const num = data.bchNum || (data.ref.match(/(\d+)/) || [])[1] || data.id;
+            let part = 1;
+            let candidateRef = `BCH-${String(num).padStart(4, '0')}-P${String(part).padStart(2, '0')}`;
+            while (await Document.findOne({ col: 'bls', 'data.ref': candidateRef })) {
+              part++;
+              candidateRef = `BCH-${String(num).padStart(4, '0')}-P${String(part).padStart(2, '0')}`;
+            }
+            data.ref = candidateRef;
+            data.partNum = part;
+          } else if (col === 'brs') {
+            return res.status(409).json({ error: `La référence BR ${data.ref} est déjà utilisée` });
+          }
+        }
       }
     }
 
@@ -430,9 +463,15 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
 
     // ── Internal id ───────────────────────────────────────────────
     let finalId;
-    if (hasId) {
+    if (hasId && !isNaN(Number(data.id))) {
       finalId = Number(data.id);
-      await raiseCounter(col, finalId);
+      const exists = await Document.findOne({ col, 'data.id': finalId });
+      if (exists) {
+        // ID is already taken by another document — allocate a guaranteed unique one
+        finalId = await allocateId(col);
+      } else {
+        await raiseCounter(col, finalId);
+      }
     } else {
       finalId = await allocateId(col);
     }
@@ -544,6 +583,28 @@ router.put('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) 
     const update = { ...req.body, updatedAt: new Date().toISOString() };
     if (col === 'users') await hashPasswordIfNeeded(update);
 
+    // ── PREVENTER: Hard Lock on BR Reopening in PUT ───────────────
+    if (col === 'brs' && update.status === 'open') {
+      const currentBr = await Document.findOne({ col: 'brs', 'data.id': id }).select('data.id data.ref').lean();
+      if (currentBr?.data) {
+        const activeLinkedBL = await Document.findOne({
+          col: 'bls',
+          $or: [
+            { 'data.brId': id },
+            { 'data.linkedBrId': id },
+            { 'data.ref': `BCH-${id}` }
+          ],
+          'data.status': { $nin: ['returned', 'cancelled'] }
+        }).lean();
+        if (activeLinkedBL) {
+          console.warn(`[PREVENTER] Blocked PUT attempt to revert BR #${id} (${currentBr.data.ref}) to 'open' because active BL exists!`);
+          return res.status(403).json({
+            error: `[PREVENTER_BLOCKED] Ce BR est verrouillé : le Bon de Chargement ${activeLinkedBL.data?.ref || ''} lui est rattaché. Impossible de le rouvrir.`
+          });
+        }
+      }
+    }
+
     const doc = await Document.findOneAndUpdate(
       { col, 'data.id': id },
       { $set: { data: update, updatedAt: new Date() } },
@@ -575,6 +636,31 @@ router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res
       if ('password' in patch) {
         if (!patch.password) delete patch.password;   // empty = unchanged
         else await hashPasswordIfNeeded(patch);
+      }
+    }
+
+    // ── PREVENTER: Hard Lock on BR Reopening ─────────────────────
+    // A BR that has an active linked BCH (not returned/cancelled) can NEVER be reverted to 'open'
+    if (col === 'brs' && patch.status === 'open') {
+      const currentBr = await Document.findOne(query).select('data.id data.ref').lean();
+      if (currentBr?.data) {
+        const brIdNum = Number(currentBr.data.id);
+        const activeLinkedBL = await Document.findOne({
+          col: 'bls',
+          $or: [
+            { 'data.brId': brIdNum },
+            { 'data.linkedBrId': brIdNum },
+            { 'data.ref': `BCH-${currentBr.data.id}` }
+          ],
+          'data.status': { $nin: ['returned', 'cancelled'] }
+        }).lean();
+
+        if (activeLinkedBL) {
+          console.warn(`[PREVENTER] Blocked attempt to revert BR #${brIdNum} (${currentBr.data.ref}) to 'open' because active BL ${activeLinkedBL.data?.ref} exists!`);
+          return res.status(403).json({
+            error: `[PREVENTER_BLOCKED] Ce BR est verrouillé : le Bon de Chargement ${activeLinkedBL.data?.ref || ''} lui est rattaché. Impossible de le rouvrir.`
+          });
+        }
       }
     }
 
@@ -634,17 +720,17 @@ router.delete('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, re
     if (!result.deletedCount) return res.status(404).json({ error: 'Non trouvé' });
     bump(col);
 
-    // ── Server-Side Auto-Reopening of BR when BL is deleted ──
+    // ── PREVENTER: Safe BR Reopening only if ZERO active BLs remain ──
     if (col === 'bls' && blDocToDelete?.data) {
       const targetBrId = Number(blDocToDelete.data.brId || blDocToDelete.data.linkedBrId);
       if (targetBrId) {
         try {
-          const otherBLs = await Document.find({
+          const remainingActiveBLs = await Document.find({
             col: 'bls',
             $or: [{ 'data.brId': targetBrId }, { 'data.linkedBrId': targetBrId }],
-            'data.status': 'delivered'
+            'data.status': { $nin: ['returned', 'cancelled'] }
           }).lean();
-          if (!otherBLs.length) {
+          if (!remainingActiveBLs.length) {
             await Document.updateOne(
               idQuery('brs', targetBrId),
               { $set: { 'data.status': 'open', 'data.deliveredAt': null, updatedAt: new Date() } }

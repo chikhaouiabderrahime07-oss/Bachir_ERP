@@ -324,6 +324,11 @@ const DB = {
     // ── Run data migrations on every boot (idempotent) ──
     this.runMigrations();
 
+    // ── Enforce Guardian Anti-Disappearance Shield on boot ──
+    try {
+      this.Guardian.auditAndEnforce();
+    } catch(e) { console.warn('[Guardian] boot error:', e); }
+
     // ── Start 15-Minute Data Integrity & Autocorrect Daemon ──
     try {
       this.MasterBrain.AutocorrectBrain.init();
@@ -359,6 +364,114 @@ const DB = {
 
   scanAndOrganizeHistory(options = {}) {
     return this.MasterBrain.HistoricalBrain.scanAndOrganize(options);
+  },
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 🛡️ GUARDIAN ENGINE : LE BOUCLIER ANTI-DISPARITION BCH & ANTI-RÉOUVERTURE BR
+  // ══════════════════════════════════════════════════════════════════════
+  Guardian: {
+    VAULT_KEY: '_immutable_bch_vault',
+
+    getVault() {
+      try {
+        const raw = localStorage.getItem(this.VAULT_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (_) {
+        return [];
+      }
+    },
+
+    saveVault(blItem) {
+      if (!blItem || (!blItem.id && !blItem.ref)) return;
+      try {
+        const vault = this.getVault();
+        const existingIdx = vault.findIndex(b => (blItem.id && Number(b.id) === Number(blItem.id)) || (blItem.ref && String(b.ref) === String(blItem.ref)));
+        if (existingIdx >= 0) {
+          vault[existingIdx] = { ...vault[existingIdx], ...blItem };
+        } else {
+          vault.push({ ...blItem, _vaultedAt: new Date().toISOString() });
+        }
+        localStorage.setItem(this.VAULT_KEY, JSON.stringify(vault.slice(-10000)));
+      } catch (e) {
+        console.warn('[Guardian.saveVault]', e);
+      }
+    },
+
+    isBRLocked(brId) {
+      if (!brId) return false;
+      const numId = Number(brId);
+      // 1. Check active BLs in regular storage
+      const activeBLs = DB.getAll('bls').filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled');
+      if (activeBLs.length > 0) return true;
+      // 2. Check immutable vault
+      const vaultBLs = this.getVault().filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled');
+      return vaultBLs.length > 0;
+    },
+
+    auditAndEnforce() {
+      let restoredCount = 0;
+      let lockedBRCount = 0;
+
+      // Step 1: Ensure all current bls are safely vaulted
+      const currentBLs = DB.getAll('bls');
+      currentBLs.forEach(b => this.saveVault(b));
+
+      // Step 2: Auto-resurrect any active vaulted BCH missing from bls
+      const vault = this.getVault();
+      const currentMap = new Map();
+      currentBLs.forEach(b => {
+        if (b.id) currentMap.set(Number(b.id), b);
+        if (b.ref) currentMap.set(String(b.ref), b);
+      });
+
+      const missingFromBLs = vault.filter(vb => {
+        if (vb.status === 'returned' || vb.status === 'cancelled') return false;
+        const existsById = vb.id && currentMap.has(Number(vb.id));
+        const existsByRef = vb.ref && currentMap.has(String(vb.ref));
+        return !existsById && !existsByRef;
+      });
+
+      if (missingFromBLs.length > 0) {
+        console.warn(`🛡️ [Guardian] PREVENTER RESURRECTED ${missingFromBLs.length} MISSING BCH FROM IMMUTABLE VAULT!`, missingFromBLs.map(b => b.ref || b.id));
+        const merged = [...currentBLs, ...missingFromBLs];
+        localStorage.setItem('bls', JSON.stringify(merged));
+        restoredCount = missingFromBLs.length;
+      }
+
+      // Step 3: BR State Lock: Every BR with an active linked BCH MUST have status: 'delivered'
+      const allBRs = DB.getAll('brs');
+      let brsModified = false;
+      allBRs.forEach(br => {
+        if (br.status === 'open' && this.isBRLocked(br.id)) {
+          console.warn(`🛡️ [Guardian] PREVENTER HARD LOCK: BR #${br.id} (${br.ref}) was 'open' while active BCH exists! Auto-locking to 'delivered'.`);
+          br.status = 'delivered';
+          if (!br.deliveredAt) br.deliveredAt = new Date().toISOString();
+          brsModified = true;
+          lockedBRCount++;
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            window.API.update('brs', br.id, { status: 'delivered', deliveredAt: br.deliveredAt }).catch(() => {});
+          }
+        }
+      });
+
+      if (brsModified) {
+        localStorage.setItem('brs', JSON.stringify(allBRs));
+      }
+
+      this.updateShieldBadge(restoredCount, lockedBRCount);
+      return { restoredCount, lockedBRCount, totalVaulted: vault.length };
+    },
+
+    updateShieldBadge(restored = 0, locked = 0) {
+      const badge = document.getElementById('guardian-shield-badge');
+      if (!badge) return;
+      const isAR = typeof T !== 'undefined' && T.isRTL();
+      const vaultCount = this.getVault().length;
+      badge.innerHTML = `<i class="fa fa-shield-alt text-emerald-400"></i> <span class="hidden sm:inline">${isAR ? 'الدرع الواقي نشط' : 'Bouclier Anti-Disparition'}</span>`;
+      badge.title = isAR 
+        ? `🛡️ الدرع الواقي نشط: ${vaultCount} وصل شحن محمي في الخزينة غير القابلة للحذف.`
+        : `🛡️ Bouclier Anti-Disparition ACTIF : ${vaultCount} BCH sécurisés dans le coffre-fort immuable.`;
+    }
   },
 
   // ═════════════════════════════════════════════════════════════════
@@ -1656,9 +1769,8 @@ const DB = {
           }, 0);
           checks.push({ name: 'Séquences Atomiques (BL/BR/ET/RET)', status: 'OK', detail: `BL #${maxBlNum} · BR #${maxBrNum} · ET #${maxEvNum} · RET #${maxRetNum}` });
 
-          // Check 7: Doublons & Intégrité Données (Anti-Doublon ID & Référence)
+          // Check 7: Doublons & Intégrité Données (Anti-Doublon ID & Référence - Mode Non-Destructif)
           let dupsFixed = 0;
-          const toRemoveCloudCheck7 = [];
           ['bls', 'brs', 'suppliers', 'clients', 'bon_retours', 'etat_vente_docs'].forEach(col => {
             const items = DB.getAll(col);
             const seenId = new Set();
@@ -1669,24 +1781,20 @@ const DB = {
               const refKey = it.ref ? String(it.ref).trim() : null;
               if (idKey && seenId.has(idKey)) {
                 dupsFixed++;
-                toRemoveCloudCheck7.push({ col, id: idKey });
-                fixes.push(`Doublon ID éliminé dans ${col}: #${idKey}`);
+                fixes.push(`Doublon ID détecté dans ${col}: #${idKey} (sécurisé)`);
               } else if (refKey && seenRef.has(refKey)) {
                 dupsFixed++;
-                toRemoveCloudCheck7.push({ col, id: idKey });
-                fixes.push(`Doublon Réf "${refKey}" éliminé dans ${col}: #${idKey}`);
+                fixes.push(`Doublon Réf "${refKey}" détecté dans ${col}: #${idKey} (sécurisé)`);
               } else {
                 if (idKey) seenId.add(idKey);
                 if (refKey) seenRef.add(refKey);
                 unique.push(it);
               }
             });
+            // Safe non-destructive deduplication of local cache only: never call API.remove to avoid deleting live cloud data
             if (unique.length < items.length) DB.rawSet(col, unique);
           });
-          if (toRemoveCloudCheck7.length > 0 && typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-            toRemoveCloudCheck7.forEach(item => window.API.remove(item.col, item.id).catch(() => {}));
-          }
-          checks.push({ name: 'Contrôle des Doublons & Intégrité Données', status: 'OK', detail: dupsFixed ? `${dupsFixed} doublons purgés` : '100% Unique' });
+          checks.push({ name: 'Contrôle des Doublons & Intégrité Données', status: 'OK', detail: dupsFixed ? `${dupsFixed} doublons contrôlés (Cloud préservé)` : '100% Unique' });
 
           // Check 8: Pointage & Sessions actives
           const openSessions = sessions.filter(s => s.status === 'open');
@@ -1850,7 +1958,6 @@ const DB = {
               DB.update('brs', br.id, { totalHT: br.totalHT, tvaRate: br.tvaRate, tvaAmount: br.tvaAmount, timbreAmount: br.timbreAmount, totalTTC: br.totalTTC }, 'Auditeur: Recalibrage BR');
             }
           });
-          if (brFixed > 0) DB.rawSet('brs', allBRs);
           checks.push({ name: 'Intégrité Mathématique BR (TVA/TTC)', status: 'OK', detail: `${allBRs.length} BR vérifiés (${brFixed} recalculés)` });
 
           // Check 12: Duplicate Sessions Detector & Auto-Clean
@@ -2362,7 +2469,20 @@ const DB = {
           const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
           safeSet(col, JSON.stringify([...data, ...uniqueLocal].slice(-5000)));
         } else {
-          safeSet(col, JSON.stringify(data));
+          // ── PROTECT LOCAL IN-FLIGHT & RECENTLY CREATED DOCUMENTS ──
+          // When LiveSync downloads server data, ensure newly created local BCH/BRs in transit are NOT erased!
+          const local = JSON.parse(localStorage.getItem(col) || '[]');
+          const serverIds = new Set(data.map(d => Number(d.id)));
+          const serverRefs = new Set(data.filter(d => d.ref).map(d => String(d.ref)));
+          const nowMs = Date.now();
+          const inFlightLocal = Array.isArray(local) ? local.filter(item => {
+            if (item._pendingSync) return true;
+            if (serverIds.has(Number(item.id))) return false;
+            if (item.ref && serverRefs.has(String(item.ref))) return false;
+            const itemAgeMs = item.createdAt ? (nowMs - new Date(item.createdAt).getTime()) : 0;
+            return itemAgeMs >= 0 && itemAgeMs < 90000; // keep items created in the last 90 seconds
+          }) : [];
+          safeSet(col, JSON.stringify([...data, ...inFlightLocal]));
         }
       }
       
@@ -2387,6 +2507,32 @@ const DB = {
       if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
 
       try {
+        // ── 🛡️ PREVENTER ENFORCEMENT LOOP : Run Guardian on every sync tick ──
+        if (this.Guardian) {
+          try {
+            this.Guardian.auditAndEnforce();
+          } catch(ge) {
+            console.warn('[LiveSync.Guardian]', ge);
+          }
+        }
+
+        // 0. Auto-flush any pending sync items (e.g. documents created during Render spin-up or network hiccup)
+        for (const pCol of ['bls', 'brs']) {
+          const pItems = DB.getAll(pCol);
+          const pendings = pItems.filter(i => i._pendingSync === true);
+          for (const pItem of pendings) {
+            try {
+              const srvRes = await window.API.insert(pCol, pItem);
+              if (srvRes) {
+                pItem._pendingSync = false;
+                pItem.id = srvRes.id || pItem.id;
+                const fresh = DB.getAll(pCol).map(x => x.id === pItem.id ? { ...x, ...srvRes, _pendingSync: false } : x);
+                localStorage.setItem(pCol, JSON.stringify(fresh));
+              }
+            } catch (_) {}
+          }
+        }
+
         // 1. Fetch lightweight version map (no DB reads, just in-memory counters)
         let changed = null;
         try {
@@ -2572,28 +2718,37 @@ const DB = {
     };
     items.push(item);
     this.rawSet(col, items);
+    if (col === 'bls' && this.Guardian) {
+      this.Guardian.saveVault(item);
+    }
     this._audit('CREATE', col, id, null, item);
     this._history(col, id, 'CREATE', 'Création', null, item);
 
     // ── Cloud: send to server, which assigns the REAL unique ID/brNum/blNum ──
-    // On error (409 duplicate etc.) → roll back optimistic localStorage save.
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.insert(col, item).then(serverItem => {
         if (!serverItem) {
-          // null = 401/token expired — roll back
-          const rolled = this.getAll(col).filter(i => i.id !== item.id);
-          localStorage.setItem(col, JSON.stringify(rolled));
-          if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 100);
+          // Token expired or server unreachable — DO NOT roll back! Keep document safely in localStorage & vault
+          const current = this.getAll(col);
+          const idx = current.findIndex(i => Number(i.id) === Number(item.id));
+          if (idx !== -1) {
+            current[idx]._pendingSync = true;
+            localStorage.setItem(col, JSON.stringify(current));
+          }
+          if (col === 'bls' && this.Guardian) this.Guardian.saveVault(item);
           return;
         }
         // Merge server-confirmed item with local item to preserve any intermediate updates
         const latest = this.getAll(col).map(i => {
           if (i.id === item.id) {
-            return { ...serverItem, ...i, id: serverItem.id || i.id };
+            return { ...serverItem, ...i, id: serverItem.id || i.id, _pendingSync: false };
           }
           return i;
         });
         localStorage.setItem(col, JSON.stringify(latest));
+        if (col === 'bls' && this.Guardian) {
+          this.Guardian.saveVault({ ...serverItem, ...item });
+        }
 
         const hasBrChange = col === 'brs' && serverItem.brNum !== item.brNum;
         const hasBlChange = col === 'bls' && serverItem.ref && serverItem.ref !== item.ref;
@@ -2605,12 +2760,22 @@ const DB = {
           if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 400);
         }
       }).catch(e => {
-        // Server rejected (409 duplicate, 500, etc.) — roll back optimistic save & show error
-        const rolled = this.getAll(col).filter(i => i.id !== item.id);
-        localStorage.setItem(col, JSON.stringify(rolled));
+        // ── 🛡️ PREVENTER RULE: NEVER DELETE CREATED BUSINESS RECORDS ON ERROR! ──
+        console.warn(`[DB.insert] Network/Server delay for ${col} #${item.id} — protecting in localStorage & vault`, e.message);
+        const current = this.getAll(col);
+        const idx = current.findIndex(i => Number(i.id) === Number(item.id));
+        if (idx !== -1) {
+          current[idx]._pendingSync = true;
+          current[idx]._lastSyncError = e.message || 'En attente réseau';
+          localStorage.setItem(col, JSON.stringify(current));
+        }
+        if (col === 'bls' && this.Guardian) {
+          this.Guardian.saveVault(item);
+        }
         const isAR = typeof T !== 'undefined' && T.isRTL();
-        if (typeof Utils !== 'undefined') Utils.notify('❌ ' + (e.message || (isAR ? 'خطأ في الخادم' : 'Erreur serveur')), 'error');
-        if (typeof App !== 'undefined' && App._currentModule) setTimeout(() => App.reloadCurrent(), 200);
+        if (typeof Utils !== 'undefined') {
+          Utils.notify(isAR ? '⚠️ تم حفظ المستند محلياً — جاري المزامنة التلقائية مع السحابة' : '⚠️ Enregistré localement — synchronisation cloud en cours', 'warning', 5000);
+        }
       });
     }
 
@@ -2621,6 +2786,16 @@ const DB = {
     const items = this.getAll(col);
     const idx = items.findIndex(i => Number(i.id) === Number(id));
     if (idx === -1) return null;
+
+    // ── 🛡️ PREVENTER INTERCEPTOR: FORBID BR REOPENING IF ACTIVE BCH EXISTS ──
+    if (col === 'brs' && data && data.status === 'open') {
+      if (this.Guardian && this.Guardian.isBRLocked(id)) {
+        console.warn(`🛡️ [Guardian] PREVENTER BLOCKED: Illegal attempt to reopen BR #${id} while active BCH is linked!`);
+        delete data.status; // Strip status regression
+        delete data.deliveredAt;
+      }
+    }
+
     const old = { ...items[idx] };
     const u = Auth.getCurrentUser();
     items[idx] = {
@@ -2630,6 +2805,9 @@ const DB = {
       updatedByName: u?.name || 'Système'
     };
     this.rawSet(col, items);
+    if (col === 'bls' && this.Guardian) {
+      this.Guardian.saveVault(items[idx]);
+    }
     this._audit('UPDATE', col, id, old, items[idx]);
     this._history(col, id, 'UPDATE', note, old, items[idx]);
     // ── Cloud: atomic PATCH (only changed fields — safe for concurrent users) ──

@@ -3478,11 +3478,19 @@ const BLModule = {
           conflicting.forEach(ce => window.API.remove('recycle_bin', ce.id).catch(() => {}));
         }
       }
-      if (BLModule.getBRRemaining(brId).exhausted) DB.update('brs', brId, { status:'delivered', deliveredAt:new Date().toISOString() }, 'Quantité BR entièrement utilisée en BCH');
+      if (!isPartial || BLModule.getBRRemaining(brId).exhausted) {
+        DB.update('brs', brId, { status: 'delivered', deliveredAt: new Date().toISOString(), linkedBlId: savedBL.id, linkedBlRef: savedBL.ref }, 'Quantité BR entièrement utilisée en BCH');
+      } else {
+        DB.update('brs', brId, { linkedBlId: savedBL.id, linkedBlRef: savedBL.ref }, 'Attribution BCH partiel');
+      }
       Utils.notify(isAR ? (isPartial ? `تم إنشاء سند تسليم جزئي: ${ref}` : `تم إنشاء سند التسليم: ${ref}`) : (isPartial ? `BL partiel créé : ${ref}` : `BL créé : ${ref}`), 'success');
     }
     UI.closeModal();
-    App.loadModule('bls');
+    if (Auth.isAdmin() || Auth.can('canViewBLs')) {
+      App.loadModule('bls');
+    } else {
+      App.loadModule('brs');
+    }
     if (andPrint && savedBL) setTimeout(()=>PDFGen.exportBonChargement(savedBL.id), 300);
   },
 
