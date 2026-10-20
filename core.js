@@ -371,14 +371,17 @@ const DB = {
   // ══════════════════════════════════════════════════════════════════════
   Guardian: {
     VAULT_KEY: '_immutable_bch_vault',
+    _vaultCache: null,
 
     getVault() {
+      if (this._vaultCache !== null) return this._vaultCache;
       try {
         const raw = localStorage.getItem(this.VAULT_KEY);
-        return raw ? JSON.parse(raw) : [];
+        this._vaultCache = raw ? JSON.parse(raw) : [];
       } catch (_) {
-        return [];
+        this._vaultCache = [];
       }
+      return this._vaultCache;
     },
 
     saveVault(blItem) {
@@ -391,9 +394,31 @@ const DB = {
         } else {
           vault.push({ ...blItem, _vaultedAt: new Date().toISOString() });
         }
+        this._vaultCache = vault;
         localStorage.setItem(this.VAULT_KEY, JSON.stringify(vault.slice(-10000)));
       } catch (e) {
         console.warn('[Guardian.saveVault]', e);
+      }
+    },
+
+    purgeFromVault(id, ref) {
+      if (!id && !ref) return;
+      try {
+        const vault = this.getVault();
+        const numId = id ? Number(id) : null;
+        const strRef = ref ? String(ref) : null;
+        const filtered = vault.filter(b => {
+          if (numId && Number(b.id) === numId) return false;
+          if (strRef && String(b.ref) === strRef) return false;
+          return true;
+        });
+        if (filtered.length !== vault.length) {
+          this._vaultCache = filtered;
+          localStorage.setItem(this.VAULT_KEY, JSON.stringify(filtered.slice(-10000)));
+          console.log(`🛡️ [Guardian] Purged item #${id} (${ref}) permanently from vault.`);
+        }
+      } catch (e) {
+        console.warn('[Guardian.purgeFromVault]', e);
       }
     },
 
@@ -403,8 +428,10 @@ const DB = {
       // 1. Check active BLs in regular storage
       const activeBLs = DB.getAll('bls').filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled');
       if (activeBLs.length > 0) return true;
-      // 2. Check immutable vault
-      const vaultBLs = this.getVault().filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled');
+      // 2. Check immutable vault, excluding items currently in recycle_bin
+      const bin = DB.getAll('recycle_bin');
+      const binBLIds = new Set(bin.filter(e => e.collection === 'bls').map(e => Number(e.item?.id || e.id)));
+      const vaultBLs = this.getVault().filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled' && !binBLIds.has(Number(b.id)));
       return vaultBLs.length > 0;
     },
 
@@ -412,20 +439,48 @@ const DB = {
       let restoredCount = 0;
       let lockedBRCount = 0;
 
-      // Step 1: Ensure all current bls are safely vaulted
+      // Step 1: Ensure all current bls are safely vaulted (IN-MEMORY BATCH — zero blocking disk I/O)
       const currentBLs = DB.getAll('bls');
-      currentBLs.forEach(b => this.saveVault(b));
-
-      // Step 2: Auto-resurrect any active vaulted BCH missing from bls
       const vault = this.getVault();
+      const vaultIds = new Set(vault.map(b => Number(b.id)));
+      const vaultRefs = new Set(vault.filter(b => b.ref).map(b => String(b.ref)));
+      let vaultModified = false;
+
+      currentBLs.forEach(b => {
+        const hasId = b.id && vaultIds.has(Number(b.id));
+        const hasRef = b.ref && vaultRefs.has(String(b.ref));
+        if (!hasId && !hasRef) {
+          vault.push({ ...b, _vaultedAt: new Date().toISOString() });
+          if (b.id) vaultIds.add(Number(b.id));
+          if (b.ref) vaultRefs.add(String(b.ref));
+          vaultModified = true;
+        }
+      });
+
+      if (vaultModified) {
+        this._vaultCache = vault;
+        try {
+          localStorage.setItem(this.VAULT_KEY, JSON.stringify(vault.slice(-10000)));
+        } catch (_) {}
+      }
+
+      // Step 2: Auto-resurrect any active vaulted BCH missing from bls (EXCLUDING intentional recycle bin deletions)
       const currentMap = new Map();
       currentBLs.forEach(b => {
         if (b.id) currentMap.set(Number(b.id), b);
         if (b.ref) currentMap.set(String(b.ref), b);
       });
 
+      const bin = DB.getAll('recycle_bin');
+      const binBLIds = new Set(bin.filter(e => e.collection === 'bls').map(e => Number(e.item?.id || e.id)));
+      const binBLRefs = new Set(bin.filter(e => e.collection === 'bls').map(e => String(e.item?.ref || e.ref)));
+
       const missingFromBLs = vault.filter(vb => {
         if (vb.status === 'returned' || vb.status === 'cancelled') return false;
+        // If in recycle bin, it was deliberately deleted by user — DO NOT RESURRECT!
+        if (vb.id && binBLIds.has(Number(vb.id))) return false;
+        if (vb.ref && binBLRefs.has(String(vb.ref))) return false;
+
         const existsById = vb.id && currentMap.has(Number(vb.id));
         const existsByRef = vb.ref && currentMap.has(String(vb.ref));
         return !existsById && !existsByRef;
@@ -2471,15 +2526,17 @@ const DB = {
         } else {
           // ── PROTECT LOCAL IN-FLIGHT & RECENTLY CREATED DOCUMENTS ──
           // When LiveSync downloads server data, ensure newly created local BCH/BRs in transit are NOT erased!
+          // Note: recycle_bin is excluded so deleted items are immediately wiped and never resurrected.
           const local = JSON.parse(localStorage.getItem(col) || '[]');
           const serverIds = new Set(data.map(d => Number(d.id)));
           const serverRefs = new Set(data.filter(d => d.ref).map(d => String(d.ref)));
           const nowMs = Date.now();
-          const inFlightLocal = Array.isArray(local) ? local.filter(item => {
+          const inFlightLocal = (col !== 'recycle_bin' && Array.isArray(local)) ? local.filter(item => {
             if (item._pendingSync) return true;
             if (serverIds.has(Number(item.id))) return false;
             if (item.ref && serverRefs.has(String(item.ref))) return false;
-            const itemAgeMs = item.createdAt ? (nowMs - new Date(item.createdAt).getTime()) : 0;
+            if (!item.createdAt) return false;
+            const itemAgeMs = nowMs - new Date(item.createdAt).getTime();
             return itemAgeMs >= 0 && itemAgeMs < 90000; // keep items created in the last 90 seconds
           }) : [];
           safeSet(col, JSON.stringify([...data, ...inFlightLocal]));
@@ -2844,9 +2901,18 @@ const DB = {
         restored: false
       });
       localStorage.setItem('recycle_bin', JSON.stringify(bin));
-      // Cloud sync recycle bin entry
+      // Cloud sync recycle bin entry with server ID reconciliation
       if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-        window.API.insert('recycle_bin', bin[bin.length-1]).catch(() => {});
+        window.API.insert('recycle_bin', bin[bin.length-1]).then(serverBin => {
+          if (serverBin && serverBin.id) {
+            const currentBin = DB.getAll('recycle_bin');
+            const target = currentBin.find(e => e.deletedAt === bin[bin.length-1].deletedAt && e.collection === col);
+            if (target) {
+              target.id = serverBin.id;
+              localStorage.setItem('recycle_bin', JSON.stringify(currentBin));
+            }
+          }
+        }).catch(() => {});
       }
     }
 
@@ -3882,6 +3948,9 @@ const Utils = {
     const [int, dec] = n.toFixed(2).split('.');
     const formatted = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + dec + ' DA';
     return formatted; // Always LTR-safe — caller wraps in <bdi> or dir=ltr span as needed
+  },
+  fmtMoney(v) {
+    return this.fmtCurrency(v);
   },
   fmtCurrencyHTML(v) {
     // Use this in HTML contexts to guarantee LTR display even in RTL mode

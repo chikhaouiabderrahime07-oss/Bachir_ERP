@@ -148,12 +148,13 @@ app.post('/api/admin/reset-all', async (req, res) => {
   }
 });
 
-// ─── Health Check ────────────────────────────────────────────────
-app.get('/api/health', (req, res) => {
+// ─── Health & Uptime Ping Check ──────────────────────────────────
+app.get(['/health', '/ping', '/api/health'], (req, res) => {
   res.json({
-    status: 'ok',
-    time:   new Date().toISOString(),
-    db:     mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    status:   'ok',
+    time:     new Date().toISOString(),
+    db:       mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    guardian: 'active'
   });
 });
 

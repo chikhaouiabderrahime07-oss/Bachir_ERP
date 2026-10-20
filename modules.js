@@ -770,27 +770,55 @@ const BRModule = {
     });
 
     const blMap = {};
+    const blByBcId = new Map();
+    const blByNum = new Map();
     const allActiveBLs = DB.getAll('bls').filter(bl => bl.status !== 'returned');
     allActiveBLs.forEach(bl => {
       if (bl.brId != null) blMap[bl.brId] = bl;
       if (bl.linkedBrId != null) blMap[bl.linkedBrId] = bl;
+      if (bl.id != null) blByBcId.set(Number(bl.id), bl);
+      const blNum = bl.bchNum || (bl.ref ? (bl.ref.match(/(\d+)/)||[])[1] : null);
+      if (blNum != null && !blByNum.has(String(blNum))) blByNum.set(String(blNum), bl);
     });
     items.forEach(br => {
       if (!blMap[br.id] && br.bcId) {
-        const found = allActiveBLs.find(bl => Number(bl.id) === Number(br.bcId));
+        const found = blByBcId.get(Number(br.bcId));
         if (found) blMap[br.id] = found;
       }
       if (!blMap[br.id] && (br.brNum || br.ref)) {
         const bNum = br.brNum || (br.ref ? (br.ref.match(/(\d+)/)||[])[1] : null);
         if (bNum) {
-          const found = allActiveBLs.find(bl => {
-            const blNum = bl.bchNum || (bl.ref ? (bl.ref.match(/(\d+)/)||[])[1] : null);
-            return blNum != null && String(blNum) === String(bNum);
-          });
+          const found = blByNum.get(String(bNum));
           if (found) blMap[br.id] = found;
         }
       }
     });
+
+    const isAR = T.isRTL();
+    const countTotal = items.length;
+    const countDelivered = items.filter(b => b.status === 'delivered').length;
+    const countOpen = items.filter(b => (b.status || 'open') === 'open').length;
+    let totalQty = 0;
+    let totalHT = 0;
+    let totalTTC = 0;
+    let countLinkedBCH = 0;
+    let totalBCHAmount = 0;
+
+    items.forEach(br => {
+      totalHT += Number(br.totalHT) || 0;
+      totalTTC += Number(br.totalTTC) || 0;
+      (br.lines || []).forEach(l => {
+        totalQty += Number(l.qty) || 0;
+      });
+      const bl = blMap[br.id];
+      if (bl) {
+        countLinkedBCH++;
+        totalBCHAmount += Number(bl.totalTTC) || 0;
+      }
+    });
+
+    this._lastFilteredItems = items;
+    this._lastFilteredBLMap = blMap;
 
     const isAdmin = Auth.isAdmin();
     const perms   = Auth.getCurrentUser()?.permissions || {};
@@ -855,6 +883,46 @@ const BRModule = {
             onclick="BRModule._filters.sortDir=BRModule._filters.sortDir==='asc'?'desc':'asc';App.loadModule('brs')">
             <i class="fas fa-sort-amount-${this._filters.sortDir==='asc'?'up':'down'}"></i>
             ${this._filters.sortDir==='asc' ? (T.isRTL()?'أقدم':'Ancien') : (T.isRTL()?'أحدث':'Récent')}
+          </button>
+        </div>
+        <div class="filter-group" style="flex:0 0 auto">
+          <label>&nbsp;</label>
+          <div style="display:flex;gap:5px">
+            <button class="btn btn-sm" onclick="BRModule._filters={q:'',status:'all',supplierId:'all',year:'all',createdBy:'all',dateFrom:'',dateTo:'',sortDir:'desc'};App.loadModule('brs')" title="${T.isRTL()?'إعادة تعيين':'Réinitialiser les filtres'}" style="height:36px;width:36px;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.1);color:#dc2626;border:1.5px solid rgba(239,68,68,.25);border-radius:8px;font-size:13px"><i class="fas fa-times"></i></button>
+            <button class="btn btn-sm" onclick="BRModule.exportBRCSV()" title="Exporter vers Excel" style="height:36px;width:36px;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px;font-size:14px"><i class="fas fa-file-excel"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Recap Status Bar -->
+      <div class="filter-recap-bar" style="background:var(--bg2, #f8fafc);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;font-size:12px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-weight:700;color:var(--text);font-size:13px"><i class="fas fa-layer-group" style="color:var(--primary)"></i> ${countTotal} ${isAR ? 'سند استلام' : 'BR(s)'}</span>
+            <span class="badge" style="background:rgba(16,185,129,0.12);color:#059669;font-weight:700;font-size:10.5px">${countDelivered} ${isAR ? 'مُسلّم' : 'Livré(s)'}</span>
+            <span class="badge" style="background:rgba(245,158,11,0.12);color:#d97706;font-weight:700;font-size:10.5px">${countOpen} ${isAR ? 'مفتوح' : 'Ouvert(s)'}</span>
+          </div>
+          <div style="height:16px;width:1px;background:var(--border2, #cbd5e1)"></div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--text4)">${isAR ? 'إجمالي السلع:' : 'Total Quantité:'}</span>
+            <strong style="color:var(--text);font-size:13px">${Math.round(totalQty * 100) / 100} ${isAR ? 'وحدة' : 'U'}</strong>
+          </div>
+          <div style="height:16px;width:1px;background:var(--border2, #cbd5e1)"></div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--text4)">${isAR ? 'المبلغ الإجمالي:' : 'Total TTC:'}</span>
+            <strong style="color:#2563eb;font-size:13px">${Utils.fmtCurrency(totalTTC)}</strong>
+            <span style="color:var(--text4);font-size:11px">(${Utils.fmtCurrency(totalHT)} HT)</span>
+          </div>
+          <div style="height:16px;width:1px;background:var(--border2, #cbd5e1)"></div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--text4)">${isAR ? 'سندات الشحن المرتبطة:' : 'BCH Liés:'}</span>
+            <span class="badge" style="background:rgba(99,102,241,0.12);color:#4f46e5;font-weight:700;font-size:10.5px">${countLinkedBCH} BCH (${Utils.fmtCurrency(totalBCHAmount)})</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-sm btn-primary" onclick="BRModule.showFilteredRecapModal()" 
+            style="display:inline-flex;align-items:center;gap:6px;font-weight:700;padding:6px 14px;border-radius:8px;box-shadow:0 2px 6px rgba(37,99,235,0.25)">
+            <i class="fas fa-chart-pie"></i> ${isAR ? 'الحصيلة والتفاصيل' : 'Générer Récapitulatif'}
           </button>
         </div>
       </div>
@@ -956,6 +1024,270 @@ const BRModule = {
           </button>
         </div>` : ''}
     </div></div>`;
+  },
+
+  showFilteredRecapModal() {
+    const isAR = T.isRTL();
+    const items = this._lastFilteredItems || DB.getAll('brs');
+    const blMap = this._lastFilteredBLMap || {};
+    const supMap = {};
+    DB.getAll('suppliers').forEach(s => { supMap[s.id] = s; });
+
+    const countTotal = items.length;
+    const countDelivered = items.filter(b => b.status === 'delivered').length;
+    const countOpen = items.filter(b => (b.status || 'open') === 'open').length;
+
+    let totalQty = 0;
+    let totalHT = 0;
+    let totalTimbre = 0;
+    let totalTTC = 0;
+    let countLinkedBCH = 0;
+    let totalBCHAmount = 0;
+    let totalBCHQty = 0;
+
+    const artAgg = {};
+    const supAgg = {};
+
+    items.forEach(br => {
+      const brHT = Number(br.totalHT) || 0;
+      const brTTC = Number(br.totalTTC) || 0;
+      const brTimbre = Number(br.timbreAmt || br.timbre) || 0;
+      totalHT += brHT;
+      totalTTC += brTTC;
+      totalTimbre += brTimbre;
+
+      const supName = supMap[br.supplierId]?.name || (isAR ? 'مورد غير محدد' : 'Non assigné');
+      if (!supAgg[supName]) supAgg[supName] = { count: 0, qty: 0, ht: 0, ttc: 0 };
+      supAgg[supName].count++;
+      supAgg[supName].ht += brHT;
+      supAgg[supName].ttc += brTTC;
+
+      (br.lines || []).forEach(l => {
+        const q = Number(l.qty) || 0;
+        const lineHT = Math.round(q * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0) / 100) * 100) / 100;
+        totalQty += q;
+        supAgg[supName].qty += q;
+
+        const artName = (l.designation || l.name || l.articleName || (isAR ? 'مادة بدون اسم' : 'Article')).trim();
+        const artUnit = (l.unit || 'U').trim();
+        const key = artName + '___' + artUnit;
+        if (!artAgg[key]) artAgg[key] = { name: artName, unit: artUnit, qty: 0, ht: 0 };
+        artAgg[key].qty += q;
+        artAgg[key].ht += lineHT;
+      });
+
+      const bl = blMap[br.id];
+      if (bl) {
+        countLinkedBCH++;
+        totalBCHAmount += Number(bl.totalTTC) || 0;
+        const blLines = (bl.lines && bl.lines.length) ? bl.lines : (br.lines || []);
+        blLines.forEach(l => {
+          totalBCHQty += Number(l.qty) || 0;
+        });
+      }
+    });
+
+    const artList = Object.values(artAgg).sort((a, b) => b.qty - a.qty);
+    const supList = Object.values(supAgg).sort((a, b) => b.ttc - a.ttc);
+
+    // Active filters summary
+    const filterPills = [];
+    if (this._filters.q) filterPills.push(`🔍 "${Utils.escHTML(this._filters.q)}"`);
+    if (this._filters.supplierId !== 'all') {
+      const s = supMap[this._filters.supplierId];
+      if (s) filterPills.push(`🏭 ${Utils.escHTML(s.name)}`);
+    }
+    if (this._filters.status !== 'all') {
+      filterPills.push(this._filters.status === 'delivered' ? `🟢 ${isAR ? 'مُسلّم' : 'Livrés'}` : `🟡 ${isAR ? 'مفتوح' : 'Ouverts'}`);
+    }
+    if (this._filters.year !== 'all') filterPills.push(`📅 ${this._filters.year}`);
+    if (this._filters.dateFrom || this._filters.dateTo) {
+      filterPills.push(`📆 ${this._filters.dateFrom || '...'} → ${this._filters.dateTo || '...'}`);
+    }
+    if (this._filters.createdBy !== 'all') {
+      const u = DB.getById('users', this._filters.createdBy);
+      if (u) filterPills.push(`👤 ${Utils.escHTML(u.name)}`);
+    }
+
+    const html = `
+      <div id="br-filtered-recap-print-area" style="padding:16px 20px;font-family:inherit;color:var(--text, #1e293b)">
+        <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:18px;font-weight:800;color:var(--text, #0f172a);display:flex;align-items:center;gap:8px">
+              <i class="fas fa-file-invoice" style="color:var(--primary, #2563eb)"></i>
+              ${isAR ? 'حصيلة وصول الاستلام المحددة (BR)' : 'Synthèse & Récapitulatif des Bons de Réception (BR)'}
+            </div>
+            <div style="font-size:12px;color:var(--text4, #64748b);margin-top:3px">
+              ${isAR ? 'تم إنشاؤه في' : 'Généré le'} ${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}
+            </div>
+          </div>
+          ${filterPills.length ? `
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+              <span style="font-size:11px;font-weight:700;color:var(--text3, #475569)">${isAR ? 'الفلاتر النشطة:' : 'Filtres actifs:'}</span>
+              ${filterPills.map(p => `<span class="badge" style="background:rgba(59,130,246,0.12);color:#2563eb;font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600">${p}</span>`).join('')}
+            </div>` : ''}
+        </div>
+
+        <!-- 4 Grand KPI Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:20px">
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-layer-group" style="color:#2563eb"></i> ${isAR ? 'حجم السندات' : 'Volume BRs'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:var(--text, #0f172a)">${countTotal} <span style="font-size:12px;font-weight:600;color:var(--text4, #64748b)">BR</span></div>
+            <div style="margin-top:6px;display:flex;gap:6px;font-size:11px">
+              <span class="badge" style="background:rgba(16,185,129,0.15);color:#059669;font-weight:700">${countDelivered} ${isAR ? 'مُسلّم' : 'Livrés'}</span>
+              <span class="badge" style="background:rgba(245,158,11,0.15);color:#d97706;font-weight:700">${countOpen} ${isAR ? 'مفتوح' : 'Ouverts'}</span>
+            </div>
+          </div>
+
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-boxes" style="color:#059669"></i> ${isAR ? 'إجمالي كمية السلع' : 'Quantité Totale Articles'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#059669">${Math.round(totalQty * 100) / 100} <span style="font-size:12px;font-weight:600;color:var(--text4, #64748b)">${isAR ? 'وحدة / طرد' : 'Unités'}</span></div>
+            <div style="margin-top:6px;font-size:11px;color:var(--text4, #64748b)">
+              ${artList.length} ${isAR ? 'مادة مختلفة' : 'article(s) distinct(s)'}
+            </div>
+          </div>
+
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-money-bill-wave" style="color:#2563eb"></i> ${isAR ? 'إجمالي قيمة BR' : 'Montant Total BR (TTC)'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#2563eb">${Utils.fmtCurrency(totalTTC)}</div>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text4, #64748b)">
+              <span><b>HT:</b> ${Utils.fmtCurrency(totalHT)}</span>
+              ${totalTimbre > 0 ? `<span><b>Timbre:</b> ${Utils.fmtCurrency(totalTimbre)}</span>` : ''}
+            </div>
+          </div>
+
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-truck-loading" style="color:#7c3aed"></i> ${isAR ? 'سندات الشحن المرتبطة (BCH)' : 'BCH / Livraisons Liées'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#7c3aed">${Utils.fmtCurrency(totalBCHAmount)}</div>
+            <div style="margin-top:6px;font-size:11px;color:var(--text4, #64748b)">
+              <span class="badge" style="background:rgba(124,58,237,0.12);color:#7c3aed;font-weight:700">${countLinkedBCH} / ${countTotal} BCH Liés</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 1: Detailed Articles Summary Table -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:13px;font-weight:700;color:var(--text, #0f172a);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-list-ul" style="color:var(--primary, #2563eb)"></i>
+            ${isAR ? 'تفاصيل الكميات والمبالغ حسب المادة' : 'Détail des Quantités et Montants par Article'}
+          </div>
+          <div style="overflow-x:auto;border:1px solid var(--border2, #e2e8f0);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:${isAR?'right':'left'}">
+              <thead>
+                <tr style="background:var(--bg3, #f8fafc);border-bottom:1px solid var(--border2, #e2e8f0);font-weight:700;color:var(--text3, #475569)">
+                  <th style="padding:8px 12px">#</th>
+                  <th style="padding:8px 12px">${isAR ? 'المادة / السلعة' : 'Désignation'}</th>
+                  <th style="padding:8px 12px;text-align:center">${isAR ? 'الوحدة' : 'Unité'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'إجمالي الكمية' : 'Quantité Totale'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'المبلغ الإجمالي (HT)' : 'Total HT Est.'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${artList.length ? artList.map((a, i) => `
+                  <tr style="border-bottom:1px solid var(--border, #f1f5f9)">
+                    <td style="padding:7px 12px;color:var(--text4, #94a3b8);font-size:11px">${i + 1}</td>
+                    <td style="padding:7px 12px;font-weight:600">${Utils.escHTML(a.name)}</td>
+                    <td style="padding:7px 12px;text-align:center;color:var(--text4, #64748b)">${Utils.escHTML(a.unit)}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">${Math.round(a.qty * 100) / 100}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700">${Utils.fmtCurrency(a.ht)}</td>
+                  </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;padding:12px;color:var(--text4)">${isAR ? 'لا توجد سلع' : 'Aucun article'}</td></tr>`}
+              </tbody>
+              <tfoot>
+                <tr style="background:var(--bg3, #f8fafc);font-weight:800;border-top:2px solid var(--border2, #cbd5e1)">
+                  <td colspan="3" style="padding:9px 12px;text-align:${isAR?'left':'right'}">${isAR ? 'المجموع العام:' : 'TOTAL GÉNÉRAL:'}</td>
+                  <td style="padding:9px 12px;text-align:right;color:#059669;font-size:13px">${Math.round(totalQty * 100) / 100}</td>
+                  <td style="padding:9px 12px;text-align:right;color:#2563eb;font-size:13px">${Utils.fmtCurrency(totalHT)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 2: Supplier Breakdown Table (if more than 1) -->
+        ${supList.length > 1 ? `
+        <div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:var(--text, #0f172a);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-industry" style="color:var(--primary, #2563eb)"></i>
+            ${isAR ? 'التوزيع حسب المصنع / المورد' : 'Répartition par Fournisseur / Usine'}
+          </div>
+          <div style="overflow-x:auto;border:1px solid var(--border2, #e2e8f0);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:${isAR?'right':'left'}">
+              <thead>
+                <tr style="background:var(--bg3, #f8fafc);border-bottom:1px solid var(--border2, #e2e8f0);font-weight:700;color:var(--text3, #475569)">
+                  <th style="padding:8px 12px">${isAR ? 'المورد / المصنع' : 'Fournisseur'}</th>
+                  <th style="padding:8px 12px;text-align:center">${isAR ? 'عدد السندات' : 'Nb BRs'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'إجمالي الكمية' : 'Quantité Totale'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'المبلغ الإجمالي (TTC)' : 'Montant TTC'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${supList.map(s => `
+                  <tr style="border-bottom:1px solid var(--border, #f1f5f9)">
+                    <td style="padding:7px 12px;font-weight:600">${Utils.escHTML(s.name)}</td>
+                    <td style="padding:7px 12px;text-align:center">${s.count}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">${Math.round(s.qty * 100) / 100}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#2563eb">${Utils.fmtCurrency(s.ttc)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+      </div>
+    `;
+
+    const footer = `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-outline" onclick="BRModule.exportBRCSV()" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25)">
+        <i class="fas fa-file-excel"></i> ${isAR ? 'تصدير إكسل' : 'Exporter CSV'}
+      </button>
+      <button class="btn btn-primary" onclick="BRModule.printFilteredRecap()">
+        <i class="fas fa-print"></i> ${isAR ? 'طباعة الحصيلة' : 'Imprimer la Synthèse'}
+      </button>
+    `;
+
+    UI.showModal(`📊 ${isAR ? 'حصيلة وصول الاستلام (BR)' : 'Récapitulatif des Bons de Réception'}`, html, footer, 'xl');
+  },
+
+  printFilteredRecap() {
+    const el = document.getElementById('br-filtered-recap-print-area');
+    if (!el) return;
+    const isAR = T.isRTL();
+    const w = window.open('', '_blank');
+    w.document.write(`
+      <!DOCTYPE html>
+      <html dir="${isAR ? 'rtl' : 'ltr'}">
+      <head>
+        <meta charset="utf-8">
+        <title>${isAR ? 'حصيلة وصول الاستلام' : 'Récapitulatif BR'}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; color: #1e293b; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+          th, td { border: 1px solid #cbd5e1; padding: 7px 10px; }
+          th { background: #f1f5f9; text-align: ${isAR ? 'right' : 'left'}; }
+          .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+          @media print {
+            body { margin: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        \${el.innerHTML}
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `);
+    w.document.close();
   },
 
   // ── Supplier options ─────────────────────────────────────
@@ -1623,6 +1955,34 @@ const BLModule = {
       return this._filters.sortDir === 'asc' ? -cmp : cmp;
     });
 
+    const isAR = T.isRTL();
+    const countTotal = items.length;
+    const countDelivered = items.filter(b => b.status === 'delivered').length;
+    const countOpen = items.filter(b => (b.status || 'open') === 'open').length;
+    const countReturned = items.filter(b => b.status === 'returned').length;
+    let totalQty = 0;
+    let totalHT = 0;
+    let totalTTC = 0;
+    let totalTimbre = 0;
+    let countLinkedBR = 0;
+
+    items.forEach(bl => {
+      totalHT += Number(bl.totalHT) || 0;
+      totalTTC += Number(bl.totalTTC) || 0;
+      totalTimbre += Number(bl.timbreAmt || bl.timbre) || 0;
+      const blLines = (bl.lines && bl.lines.length) ? bl.lines : (brMap[bl.brId]?.lines || []);
+      blLines.forEach(l => {
+        totalQty += Number(l.qty) || 0;
+      });
+      if (brMap[bl.brId] || bl.linkedBrRef) {
+        countLinkedBR++;
+      }
+    });
+
+    this._lastFilteredItems = items;
+    this._lastFilteredBRMap = brMap;
+    this._lastFilteredCliMap = cliMap;
+
     return `<div style="padding:24px">
     <div class="card">
       <div class="card-header">
@@ -1694,6 +2054,40 @@ const BLModule = {
             <button class="btn btn-sm" onclick="BLModule._filters={q:'',status:'all',clientId:'all',dateFrom:'',dateTo:'',createdBy:'all',driver:'all',sortDir:'desc'};App.loadModule('bls')" title="${T.isRTL()?'إعادة تعيين':'Réinitialiser les filtres'}" style="height:36px;width:36px;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(239,68,68,.1);color:#dc2626;border:1.5px solid rgba(239,68,68,.25);border-radius:8px;font-size:13px"><i class="fas fa-times"></i></button>
             <button class="btn btn-sm" onclick="BLModule.exportBLCSV()" title="Exporter vers Excel" style="height:36px;width:36px;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25);border-radius:8px;font-size:14px"><i class="fas fa-file-excel"></i></button>
           </div>
+        </div>
+      </div>
+
+      <!-- Filter Recap Status Bar -->
+      <div class="filter-recap-bar" style="background:var(--bg2, #f8fafc);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;font-size:12px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-weight:700;color:var(--text);font-size:13px"><i class="fas fa-truck-loading" style="color:var(--primary)"></i> ${countTotal} ${isAR ? 'سند شحن' : 'BCH(s)'}</span>
+            <span class="badge" style="background:rgba(16,185,129,0.12);color:#059669;font-weight:700;font-size:10.5px">${countDelivered} ${isAR ? 'مُسلّم' : 'Livré(s)'}</span>
+            <span class="badge" style="background:rgba(245,158,11,0.12);color:#d97706;font-weight:700;font-size:10.5px">${countOpen} ${isAR ? 'قيد التوصيل' : 'En cours'}</span>
+            ${countReturned ? `<span class="badge" style="background:rgba(239,68,68,0.12);color:#dc2626;font-weight:700;font-size:10.5px">${countReturned} ${isAR ? 'مرتجع' : 'Retour'}</span>` : ''}
+          </div>
+          <div style="height:16px;width:1px;background:var(--border2, #cbd5e1)"></div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--text4)">${isAR ? 'إجمالي السلع:' : 'Total Quantité:'}</span>
+            <strong style="color:var(--text);font-size:13px">${Math.round(totalQty * 100) / 100} ${isAR ? 'وحدة' : 'U'}</strong>
+          </div>
+          <div style="height:16px;width:1px;background:var(--border2, #cbd5e1)"></div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--text4)">${isAR ? 'المبلغ الإجمالي:' : 'Total TTC:'}</span>
+            <strong style="color:#059669;font-size:13px">${Utils.fmtCurrency(totalTTC)}</strong>
+            <span style="color:var(--text4);font-size:11px">(${Utils.fmtCurrency(totalHT)} HT)</span>
+          </div>
+          <div style="height:16px;width:1px;background:var(--border2, #cbd5e1)"></div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--text4)">${isAR ? 'وصول الاستلام المرتبطة:' : 'BR Liés:'}</span>
+            <span class="badge" style="background:rgba(59,130,246,0.12);color:#2563eb;font-weight:700;font-size:10.5px">${countLinkedBR} / ${countTotal} BR</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-sm btn-primary" onclick="BLModule.showFilteredRecapModal()" 
+            style="display:inline-flex;align-items:center;gap:6px;font-weight:700;padding:6px 14px;border-radius:8px;box-shadow:0 2px 6px rgba(37,99,235,0.25)">
+            <i class="fas fa-chart-pie"></i> ${isAR ? 'الحصيلة والتفاصيل' : 'Générer Récapitulatif'}
+          </button>
         </div>
       </div>
       <div class="table-shell">
@@ -1784,6 +2178,297 @@ const BLModule = {
           </button>
         </div>` : ''}
     </div></div>`;
+  },
+
+  showFilteredRecapModal() {
+    const isAR = T.isRTL();
+    const items = this._lastFilteredItems || DB.getAll('bls');
+    const brMap = this._lastFilteredBRMap || {};
+    const cliMap = this._lastFilteredCliMap || {};
+
+    const countTotal = items.length;
+    const countDelivered = items.filter(b => b.status === 'delivered').length;
+    const countOpen = items.filter(b => (b.status || 'open') === 'open').length;
+    const countReturned = items.filter(b => b.status === 'returned').length;
+
+    let totalQty = 0;
+    let totalHT = 0;
+    let totalTimbre = 0;
+    let totalTTC = 0;
+    let countLinkedBR = 0;
+
+    const artAgg = {};
+    const cliAgg = {};
+    const driverAgg = {};
+
+    items.forEach(bl => {
+      const blHT = Number(bl.totalHT) || 0;
+      const blTTC = Number(bl.totalTTC) || 0;
+      const blTimbre = Number(bl.timbreAmt || bl.timbre) || 0;
+      totalHT += blHT;
+      totalTTC += blTTC;
+      totalTimbre += blTimbre;
+
+      if (brMap[bl.brId] || bl.linkedBrRef) countLinkedBR++;
+
+      const cliName = cliMap[bl.clientId]?.name || bl.clientName || (isAR ? 'زبون غير محدد' : 'Client non assigné');
+      if (!cliAgg[cliName]) cliAgg[cliName] = { count: 0, qty: 0, ttc: 0 };
+      cliAgg[cliName].count++;
+      cliAgg[cliName].ttc += blTTC;
+
+      const driverName = (bl.driverName || (isAR ? 'سائق غير محدد' : 'Non assigné')).trim();
+      if (!driverAgg[driverName]) driverAgg[driverName] = { count: 0, qty: 0, ttc: 0 };
+      driverAgg[driverName].count++;
+      driverAgg[driverName].ttc += blTTC;
+
+      const blLines = (bl.lines && bl.lines.length) ? bl.lines : (brMap[bl.brId]?.lines || []);
+      blLines.forEach(l => {
+        const q = Number(l.qty) || 0;
+        const lineHT = Math.round(q * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0) / 100) * 100) / 100;
+        totalQty += q;
+        cliAgg[cliName].qty += q;
+        driverAgg[driverName].qty += q;
+
+        const artName = (l.designation || l.name || l.articleName || (isAR ? 'مادة بدون اسم' : 'Article')).trim();
+        const artUnit = (l.unit || 'U').trim();
+        const key = artName + '___' + artUnit;
+        if (!artAgg[key]) artAgg[key] = { name: artName, unit: artUnit, qty: 0, ht: 0 };
+        artAgg[key].qty += q;
+        artAgg[key].ht += lineHT;
+      });
+    });
+
+    const artList = Object.values(artAgg).sort((a, b) => b.qty - a.qty);
+    const cliList = Object.values(cliAgg).sort((a, b) => b.ttc - a.ttc);
+    const driverList = Object.values(driverAgg).sort((a, b) => b.count - a.count);
+
+    // Active filters summary
+    const filterPills = [];
+    if (this._filters.q) filterPills.push(`🔍 "${Utils.escHTML(this._filters.q)}"`);
+    if (this._filters.clientId && this._filters.clientId !== 'all') {
+      const c = cliMap[this._filters.clientId];
+      if (c) filterPills.push(`🏢 ${Utils.escHTML(c.name)}`);
+    }
+    if (this._filters.status !== 'all') {
+      filterPills.push(this._filters.status === 'delivered' ? `🟢 ${isAR ? 'مُسلّم' : 'Livrés'}` : (this._filters.status === 'returned' ? `🔴 ${isAR ? 'مرتجع' : 'Retournés'}` : `🟡 ${isAR ? 'قيد التوصيل' : 'En cours'}`));
+    }
+    if (this._filters.dateFrom || this._filters.dateTo) {
+      filterPills.push(`📆 ${this._filters.dateFrom || '...'} → ${this._filters.dateTo || '...'}`);
+    }
+    if (this._filters.driver && this._filters.driver !== 'all') {
+      filterPills.push(`🚚 ${Utils.escHTML(this._filters.driver)}`);
+    }
+
+    const html = `
+      <div id="bl-filtered-recap-print-area" style="padding:16px 20px;font-family:inherit;color:var(--text, #1e293b)">
+        <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:18px;font-weight:800;color:var(--text, #0f172a);display:flex;align-items:center;gap:8px">
+              <i class="fas fa-truck-loading" style="color:var(--primary, #059669)"></i>
+              ${isAR ? 'حصيلة سندات الشحن المحددة (BCH / BL)' : 'Synthèse & Récapitulatif des Bons de Chargement (BCH)'}
+            </div>
+            <div style="font-size:12px;color:var(--text4, #64748b);margin-top:3px">
+              ${isAR ? 'تم إنشاؤه في' : 'Généré le'} ${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}
+            </div>
+          </div>
+          ${filterPills.length ? `
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+              <span style="font-size:11px;font-weight:700;color:var(--text3, #475569)">${isAR ? 'الفلاتر النشطة:' : 'Filtres actifs:'}</span>
+              ${filterPills.map(p => `<span class="badge" style="background:rgba(16,185,129,0.12);color:#059669;font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600">${p}</span>`).join('')}
+            </div>` : ''}
+        </div>
+
+        <!-- 4 Grand KPI Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:20px">
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-layer-group" style="color:#059669"></i> ${isAR ? 'حجم السندات' : 'Volume BCHs'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:var(--text, #0f172a)">${countTotal} <span style="font-size:12px;font-weight:600;color:var(--text4, #64748b)">BCH</span></div>
+            <div style="margin-top:6px;display:flex;gap:6px;font-size:11px">
+              <span class="badge" style="background:rgba(16,185,129,0.15);color:#059669;font-weight:700">${countDelivered} ${isAR ? 'مُسلّم' : 'Livrés'}</span>
+              <span class="badge" style="background:rgba(245,158,11,0.15);color:#d97706;font-weight:700">${countOpen} ${isAR ? 'قيد التوصيل' : 'En cours'}</span>
+              ${countReturned ? `<span class="badge" style="background:rgba(239,68,68,0.15);color:#dc2626;font-weight:700">${countReturned} ${isAR ? 'مرتجع' : 'Retour'}</span>` : ''}
+            </div>
+          </div>
+
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-boxes" style="color:#2563eb"></i> ${isAR ? 'إجمالي كمية السلع' : 'Quantité Totale Articles'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#2563eb">${Math.round(totalQty * 100) / 100} <span style="font-size:12px;font-weight:600;color:var(--text4, #64748b)">${isAR ? 'وحدة / طرد' : 'Unités'}</span></div>
+            <div style="margin-top:6px;font-size:11px;color:var(--text4, #64748b)">
+              ${artList.length} ${isAR ? 'مادة مختلفة' : 'article(s) distinct(s)'}
+            </div>
+          </div>
+
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-money-bill-wave" style="color:#059669"></i> ${isAR ? 'إجمالي قيمة BCH' : 'Montant Total BCH (TTC)'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#059669">${Utils.fmtCurrency(totalTTC)}</div>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text4, #64748b)">
+              <span><b>HT:</b> ${Utils.fmtCurrency(totalHT)}</span>
+              ${totalTimbre > 0 ? `<span><b>Timbre:</b> ${Utils.fmtCurrency(totalTimbre)}</span>` : ''}
+            </div>
+          </div>
+
+          <div style="background:var(--bg3, #f1f5f9);border:1px solid var(--border2, #e2e8f0);border-radius:10px;padding:14px 16px">
+            <div style="font-size:11px;font-weight:700;color:var(--text4, #64748b);text-transform:uppercase;margin-bottom:6px">
+              <i class="fas fa-link" style="color:#7c3aed"></i> ${isAR ? 'وصول الاستلام المرتبطة (BR)' : 'Couverture BR'}
+            </div>
+            <div style="font-size:22px;font-weight:800;color:#7c3aed">${countLinkedBR} <span style="font-size:12px;font-weight:600;color:var(--text4, #64748b)">/ ${countTotal} BRs</span></div>
+            <div style="margin-top:6px;font-size:11px;color:var(--text4, #64748b)">
+              <span class="badge" style="background:rgba(124,58,237,0.12);color:#7c3aed;font-weight:700">${Math.round(countTotal ? (countLinkedBR/countTotal*100) : 0)}% ${isAR ? 'تغطية' : 'liés'}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 1: Detailed Articles Summary Table -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:13px;font-weight:700;color:var(--text, #0f172a);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-list-ul" style="color:var(--primary, #059669)"></i>
+            ${isAR ? 'تفاصيل الكميات والمبالغ حسب المادة' : 'Détail des Quantités et Montants par Article'}
+          </div>
+          <div style="overflow-x:auto;border:1px solid var(--border2, #e2e8f0);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:${isAR?'right':'left'}">
+              <thead>
+                <tr style="background:var(--bg3, #f8fafc);border-bottom:1px solid var(--border2, #e2e8f0);font-weight:700;color:var(--text3, #475569)">
+                  <th style="padding:8px 12px">#</th>
+                  <th style="padding:8px 12px">${isAR ? 'المادة / السلعة' : 'Désignation'}</th>
+                  <th style="padding:8px 12px;text-align:center">${isAR ? 'الوحدة' : 'Unité'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'إجمالي الكمية' : 'Quantité Totale'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'المبلغ الإجمالي (HT)' : 'Total HT Est.'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${artList.length ? artList.map((a, i) => `
+                  <tr style="border-bottom:1px solid var(--border, #f1f5f9)">
+                    <td style="padding:7px 12px;color:var(--text4, #94a3b8);font-size:11px">${i + 1}</td>
+                    <td style="padding:7px 12px;font-weight:600">${Utils.escHTML(a.name)}</td>
+                    <td style="padding:7px 12px;text-align:center;color:var(--text4, #64748b)">${Utils.escHTML(a.unit)}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">${Math.round(a.qty * 100) / 100}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700">${Utils.fmtCurrency(a.ht)}</td>
+                  </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;padding:12px;color:var(--text4)">${isAR ? 'لا توجد سلع' : 'Aucun article'}</td></tr>`}
+              </tbody>
+              <tfoot>
+                <tr style="background:var(--bg3, #f8fafc);font-weight:800;border-top:2px solid var(--border2, #cbd5e1)">
+                  <td colspan="3" style="padding:9px 12px;text-align:${isAR?'left':'right'}">${isAR ? 'المجموع العام:' : 'TOTAL GÉNÉRAL:'}</td>
+                  <td style="padding:9px 12px;text-align:right;color:#059669;font-size:13px">${Math.round(totalQty * 100) / 100}</td>
+                  <td style="padding:9px 12px;text-align:right;color:#2563eb;font-size:13px">${Utils.fmtCurrency(totalHT)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 2: Client Breakdown Table -->
+        ${cliList.length > 1 ? `
+        <div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:var(--text, #0f172a);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-building" style="color:var(--primary, #059669)"></i>
+            ${isAR ? 'التوزيع حسب الزبون' : 'Répartition par Client'}
+          </div>
+          <div style="overflow-x:auto;border:1px solid var(--border2, #e2e8f0);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:${isAR?'right':'left'}">
+              <thead>
+                <tr style="background:var(--bg3, #f8fafc);border-bottom:1px solid var(--border2, #e2e8f0);font-weight:700;color:var(--text3, #475569)">
+                  <th style="padding:8px 12px">${isAR ? 'الزبون' : 'Client'}</th>
+                  <th style="padding:8px 12px;text-align:center">${isAR ? 'عدد السندات' : 'Nb BCHs'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'إجمالي الكمية' : 'Quantité Totale'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'المبلغ الإجمالي (TTC)' : 'Montant TTC'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${cliList.map(c => `
+                  <tr style="border-bottom:1px solid var(--border, #f1f5f9)">
+                    <td style="padding:7px 12px;font-weight:600">${Utils.escHTML(c.name)}</td>
+                    <td style="padding:7px 12px;text-align:center">${c.count}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">${Math.round(c.qty * 100) / 100}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#2563eb">${Utils.fmtCurrency(c.ttc)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <!-- Section 3: Chauffeur Breakdown Table -->
+        ${driverList.length > 1 ? `
+        <div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:700;color:var(--text, #0f172a);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-user-tie" style="color:var(--primary, #059669)"></i>
+            ${isAR ? 'التوزيع حسب السائق' : 'Répartition par Chauffeur'}
+          </div>
+          <div style="overflow-x:auto;border:1px solid var(--border2, #e2e8f0);border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:${isAR?'right':'left'}">
+              <thead>
+                <tr style="background:var(--bg3, #f8fafc);border-bottom:1px solid var(--border2, #e2e8f0);font-weight:700;color:var(--text3, #475569)">
+                  <th style="padding:8px 12px">${isAR ? 'السائق' : 'Chauffeur'}</th>
+                  <th style="padding:8px 12px;text-align:center">${isAR ? 'عدد السندات' : 'Nb BCHs'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'إجمالي الكمية' : 'Quantité'}</th>
+                  <th style="padding:8px 12px;text-align:right">${isAR ? 'المبلغ الإجمالي (TTC)' : 'Montant TTC'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${driverList.map(d => `
+                  <tr style="border-bottom:1px solid var(--border, #f1f5f9)">
+                    <td style="padding:7px 12px;font-weight:600">${Utils.escHTML(d.name)}</td>
+                    <td style="padding:7px 12px;text-align:center">${d.count}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">${Math.round(d.qty * 100) / 100}</td>
+                    <td style="padding:7px 12px;text-align:right;font-weight:700;color:#2563eb">${Utils.fmtCurrency(d.ttc)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+      </div>
+    `;
+
+    const footer = `
+      <button class="btn btn-secondary" onclick="UI.closeModal()">${T.get('cancel')}</button>
+      <button class="btn btn-outline" onclick="BLModule.exportBLCSV()" style="background:rgba(34,197,94,.1);color:#16a34a;border:1.5px solid rgba(34,197,94,.25)">
+        <i class="fas fa-file-excel"></i> ${isAR ? 'تصدير إكسل' : 'Exporter CSV'}
+      </button>
+      <button class="btn btn-primary" onclick="BLModule.printFilteredRecap()">
+        <i class="fas fa-print"></i> ${isAR ? 'طباعة الحصيلة' : 'Imprimer la Synthèse'}
+      </button>
+    `;
+
+    UI.showModal(`📊 ${isAR ? 'حصيلة سندات الشحن (BCH)' : 'Récapitulatif des Bons de Chargement'}`, html, footer, 'xl');
+  },
+
+  printFilteredRecap() {
+    const el = document.getElementById('bl-filtered-recap-print-area');
+    if (!el) return;
+    const isAR = T.isRTL();
+    const w = window.open('', '_blank');
+    w.document.write(`
+      <!DOCTYPE html>
+      <html dir="${isAR ? 'rtl' : 'ltr'}">
+      <head>
+        <meta charset="utf-8">
+        <title>${isAR ? 'حصيلة سندات الشحن' : 'Récapitulatif BCH'}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; color: #1e293b; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+          th, td { border: 1px solid #cbd5e1; padding: 7px 10px; }
+          th { background: #f1f5f9; text-align: ${isAR ? 'right' : 'left'}; }
+          .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+          @media print {
+            body { margin: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        \${el.innerHTML}
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `);
+    w.document.close();
   },
 
 
@@ -11698,7 +12383,7 @@ const RecycleBinModule = {
       'danger'
     );
     if (!ok) return;
-    this._permaDeleteIds([binId]);
+    await this._permaDeleteIds([binId]);
     Utils.notify(isAR?'تم الحذف النهائي':'Supprimé définitivement', 'success');
     App.loadModule('recycle_bin');
   },
@@ -11715,25 +12400,44 @@ const RecycleBinModule = {
       'danger'
     );
     if (!ok) return;
-    this._permaDeleteIds([...this._selected]);
+    await this._permaDeleteIds([...this._selected]);
     this._selected.clear();
     Utils.notify(isAR?`تم حذف ${n} عنصر نهائياً`:`${n} élément(s) supprimé(s) définitivement`, 'success');
     App.loadModule('recycle_bin');
   },
 
   // Internal: remove specific IDs from recycle_bin + cloud
-  _permaDeleteIds(ids) {
+  async _permaDeleteIds(ids) {
     const idSet = new Set(ids.map(Number));
     const bin = DB.getAll('recycle_bin');
     const toRemove = bin.filter(e => idSet.has(Number(e.id)));
     const remaining = bin.filter(e => !idSet.has(Number(e.id)));
 
-    // NOTE: Caisse history is NEVER deleted — audit trail stays intact.
+    // Purge any deleted BLs from Guardian immutable vault so they can NEVER be resurrected
+    toRemove.forEach(e => {
+      if (e.col === 'bls' && e.data) {
+        if (DB.Guardian && typeof DB.Guardian.purgeFromVault === 'function') {
+          DB.Guardian.purgeFromVault(e.data.id, e.data.ref);
+        }
+      }
+    });
 
+    // NOTE: Caisse history is NEVER deleted — audit trail stays intact.
     DB.rawSet('recycle_bin', remaining);
-    // Cloud: remove from server
+
+    // Cloud: remove from server and wait for all deletions to complete
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      toRemove.forEach(e => window.API.remove('recycle_bin', e.id).catch(() => {}));
+      await Promise.all(toRemove.map(async e => {
+        try {
+          if (e.serverId) {
+            await window.API.remove('recycle_bin', e.serverId);
+          } else {
+            await window.API.remove('recycle_bin', e.id);
+          }
+        } catch (err) {
+          console.warn('[RecycleBin] Server removal error:', err);
+        }
+      }));
     }
   },
 
@@ -11746,14 +12450,32 @@ const RecycleBinModule = {
       'danger'
     );
     if (!ok) return;
-    // Read BEFORE clearing so we can cloud-delete
+    // Read BEFORE clearing so we can cloud-delete and purge vault
     const toRemove = DB.getAll('recycle_bin');
+    toRemove.forEach(e => {
+      if (e.col === 'bls' && e.data) {
+        if (DB.Guardian && typeof DB.Guardian.purgeFromVault === 'function') {
+          DB.Guardian.purgeFromVault(e.data.id, e.data.ref);
+        }
+      }
+    });
+
     // NOTE: Caisse history is NEVER deleted — audit trail stays intact.
     DB.rawSet('recycle_bin', []);
-    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      toRemove.forEach(e => window.API.remove('recycle_bin', e.id).catch(() => {}));
-    }
     this._selected.clear();
+
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      try {
+        if (window.API._req) {
+          await window.API._req('POST', '/data/recycle_bin/empty', {});
+        } else {
+          await Promise.all(toRemove.map(e => window.API.remove('recycle_bin', e.serverId || e.id).catch(() => {})));
+        }
+      } catch (err) {
+        console.warn('[RecycleBin] Server empty error:', err);
+        await Promise.all(toRemove.map(e => window.API.remove('recycle_bin', e.serverId || e.id).catch(() => {})));
+      }
+    }
     Utils.notify(isAR?'تم تفريغ السلة':'Corbeille vidée', 'success');
     App.loadModule('recycle_bin');
   }

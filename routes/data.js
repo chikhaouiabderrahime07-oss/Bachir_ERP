@@ -708,6 +708,18 @@ router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res
   }
 });
 
+// ─── POST /api/data/recycle_bin/empty — Atomic wipe of entire recycle bin ──
+router.post('/recycle_bin/empty', adminOnlyForUsers, async (req, res) => {
+  try {
+    await Document.deleteMany({ col: 'recycle_bin' });
+    bump('recycle_bin');
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[DATA/RECYCLE_BIN/EMPTY]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // ─── DELETE /api/data/:col/:id ────────────────────────────────────
 router.delete('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) => {
   try {
@@ -716,7 +728,15 @@ router.delete('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, re
     if (col === 'bls') {
       blDocToDelete = await Document.findOne(idQuery('bls', req.params.id)).lean();
     }
-    const result = await Document.deleteOne(idQuery(col, req.params.id));
+
+    let deleteQuery;
+    if (col === 'recycle_bin' && mongoose.Types.ObjectId.isValid(req.params.id)) {
+      deleteQuery = { col, $or: [{ _id: req.params.id }, { 'data.id': Number(req.params.id) || 0 }, { 'data.id': req.params.id }] };
+    } else {
+      deleteQuery = idQuery(col, req.params.id);
+    }
+
+    const result = await Document.deleteOne(deleteQuery);
     if (!result.deletedCount) return res.status(404).json({ error: 'Non trouvé' });
     bump(col);
 
