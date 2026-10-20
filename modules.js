@@ -737,11 +737,26 @@ function _wilayaSelect(id, currentVal='', required=false) {
 
 
 const BRModule = {
-  _filters: { q:'', supplierId:'all', status:'all', year:'all', createdBy:'all', dateFrom:'', dateTo:'', sortDir:'desc' },
+  _filters: { q:'', supplierId:'all', status:'all', year:'all', createdBy:'all', dateFrom:'', dateTo:'', sortDir:'desc', _initialized:false },
   _lineCount: 0,
   _displayLimit: 50,
 
+  _getToday() {
+    return (typeof Utils !== 'undefined' && typeof Utils.today === 'function') ? Utils.today() : new Date().toISOString().slice(0, 10);
+  },
+
+  _initTodayFilter() {
+    if (!this._filters._initialized) {
+      const today = this._getToday();
+      this._filters.dateFrom = today;
+      this._filters.dateTo = today;
+      this._filters._initialized = true;
+    }
+  },
+
   render() {
+    this._initTodayFilter();
+    const today = this._getToday();
     const { q, status, supplierId, year, createdBy, dateFrom, dateTo } = this._filters;
     const suppliers = DB.getAll('suppliers');
     const supMap = {}; suppliers.forEach(s=>supMap[s.id]=s);
@@ -876,6 +891,22 @@ const BRModule = {
         <div class="filter-group">
           <label>${T.isRTL()?'إلى تاريخ':'Date fin'}</label>
           <input type="date" value="${dateTo||''}" onchange="BRModule._filters.dateTo=this.value;App.loadModule('brs')">
+        </div>
+        <div class="filter-group" style="align-self:flex-end">
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm ${dateFrom===today && dateTo===today ? 'btn-primary' : 'btn-outline'}" 
+              onclick="const t = BRModule._getToday(); BRModule._filters.dateFrom=t; BRModule._filters.dateTo=t; App.loadModule('brs')" 
+              title="${T.isRTL()?'عرض وصولات اليوم فقط لتسريع التصفح':'Afficher uniquement les BRs d\'aujourd\'hui (chargement ultra-rapide)'}"
+              style="height:36px;font-size:11.5px;font-weight:700;padding:0 11px;white-space:nowrap;display:flex;align-items:center;gap:4px">
+              <i class="fas fa-calendar-day"></i> ${T.isRTL()?'اليوم':'Aujourd\'hui'}
+            </button>
+            <button class="btn btn-sm ${!dateFrom && !dateTo ? 'btn-primary' : 'btn-outline'}" 
+              onclick="BRModule._filters.dateFrom=''; BRModule._filters.dateTo=''; App.loadModule('brs')" 
+              title="${T.isRTL()?'عرض كل الأرشيف الكامل':'Afficher tout l\'historique complet'}"
+              style="height:36px;font-size:11.5px;font-weight:700;padding:0 11px;white-space:nowrap;display:flex;align-items:center;gap:4px">
+              <i class="fas fa-layer-group"></i> ${T.isRTL()?'الكل':'Tout'}
+            </button>
+          </div>
         </div>
         <div class="filter-group">
           <label>${T.isRTL()?'الترتيب':'Tri'}</label>
@@ -1853,8 +1884,21 @@ const BRModule = {
 // ═══════════════════════════════════════════════════════════════
 
 const BLModule = {
-  _filters: { q:'', status:'all', clientId:'all', supplierId:'all', dateFrom:'', dateTo:'', createdBy:'all', driver:'all', sortDir:'desc' },
+  _filters: { q:'', status:'all', clientId:'all', supplierId:'all', dateFrom:'', dateTo:'', createdBy:'all', driver:'all', sortDir:'desc', _initialized:false },
   _displayLimit: 50, // Lazy render: show 50 at a time
+
+  _getToday() {
+    return (typeof Utils !== 'undefined' && typeof Utils.today === 'function') ? Utils.today() : new Date().toISOString().slice(0, 10);
+  },
+
+  _initTodayFilter() {
+    if (!this._filters._initialized) {
+      const today = this._getToday();
+      this._filters.dateFrom = today;
+      this._filters.dateTo = today;
+      this._filters._initialized = true;
+    }
+  },
 
   /* How much of a BR is still available for a NEW BCH (returned/cancelled BCHs free their qty back) */
   getBRRemaining(brId, excludeBlId = null) {
@@ -1899,6 +1943,8 @@ const BLModule = {
   },
 
   render() {
+    this._initTodayFilter();
+    const today = this._getToday();
     // ── Inline History view ──
     if (this._viewingHistory) {
       return `<div style="padding:24px">
@@ -2025,6 +2071,22 @@ const BLModule = {
           <label>${T.isRTL()?'إلى تاريخ':'Date fin'}</label>
           <input type="date" value="${BLModule._filters.dateTo||''}" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);height:36px"
             onchange="BLModule._filters.dateTo=this.value;App.loadModule('bls')">
+        </div>
+        <div class="filter-group" style="align-self:flex-end">
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm ${BLModule._filters.dateFrom===today && BLModule._filters.dateTo===today ? 'btn-primary' : 'btn-outline'}" 
+              onclick="const t = BLModule._getToday(); BLModule._filters.dateFrom=t; BLModule._filters.dateTo=t; App.loadModule('bls')" 
+              title="${T.isRTL()?'عرض وصولات شحن اليوم فقط لتسريع التصفح':'Afficher uniquement les BCHs d\'aujourd\'hui (chargement ultra-rapide)'}"
+              style="height:36px;font-size:11.5px;font-weight:700;padding:0 11px;white-space:nowrap;display:flex;align-items:center;gap:4px">
+              <i class="fas fa-calendar-day"></i> ${T.isRTL()?'اليوم':'Aujourd\'hui'}
+            </button>
+            <button class="btn btn-sm ${!BLModule._filters.dateFrom && !BLModule._filters.dateTo ? 'btn-primary' : 'btn-outline'}" 
+              onclick="BLModule._filters.dateFrom=''; BLModule._filters.dateTo=''; App.loadModule('bls')" 
+              title="${T.isRTL()?'عرض كل الأرشيف الكامل':'Afficher tout l\'historique complet'}"
+              style="height:36px;font-size:11.5px;font-weight:700;padding:0 11px;white-space:nowrap;display:flex;align-items:center;gap:4px">
+              <i class="fas fa-layer-group"></i> ${T.isRTL()?'الكل':'Tout'}
+            </button>
+          </div>
         </div>
         <div class="filter-group">
           <label>${T.isRTL()?'أنشئ بواسطة':'Créé par'}</label>

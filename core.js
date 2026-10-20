@@ -350,9 +350,11 @@ const DB = {
   // ─── Data Migrations & Master Brain Recalibration ───────────────
   runMigrations() {
     try {
-      this._migrateTimbreSlabsToLF2025(); // M003: update old timbre slabs to LF2025 format
-      this._migrateEtatVenteTimbre();      // M004: heal missing 1% timbre on historical États de Vente
-      this.MasterBrain.recalibrateAll();  // The Master Brain: 360° financial integrity engine
+      if (!sessionStorage.getItem('_migrations_done')) {
+        this._migrateTimbreSlabsToLF2025(); // M003: update old timbre slabs to LF2025 format
+        this._migrateEtatVenteTimbre();      // M004: heal missing 1% timbre on historical États de Vente
+        sessionStorage.setItem('_migrations_done', '1');
+      }
     } catch(e) {
       console.warn('[MasterBrain] Error:', e);
     }
@@ -1398,8 +1400,8 @@ const DB = {
 
       init() {
         window.AutocorrectBrain = this;
-        setTimeout(() => this.runCheck(false), 2000);
-
+        // Do NOT run on startup — prevents background CPU freezes and database write thrashing.
+        // Background checks are scheduled every 15 min and remain strictly read-only diagnostics.
         if (this._timer) clearInterval(this._timer);
         this._timer = setInterval(() => this.runCheck(false), this._intervalMs);
 
@@ -1467,7 +1469,7 @@ const DB = {
               fixes.push(`Session ${sess.date} (User #${sess.userId}) : Ventes ${Utils.fmtCurrency(salesTTC)} - Retours ${Utils.fmtCurrency(retsTTC)} = Net ${Utils.fmtCurrency(net)}`);
             }
           });
-          if (sessionsFixed > 0) DB.rawSet('sessions', sessions);
+          if (sessionsFixed > 0 && isManual) DB.rawSet('sessions', sessions);
           checks.push({ name: 'Mini-Caisses & Sessions Vendeurs', status: 'OK', detail: `${sessions.length} sessions vérifiées (${sessionsFixed} corrigées)` });
 
           // Check 3: Bons de Retour & Reserved BL References
@@ -2180,7 +2182,7 @@ const DB = {
             checks.push({ name: 'Concordance N° BCH / BR', status: 'OK', detail: `${allBLsSync.length} BCH 100% conformes à leur BR` });
           }
 
-          if (fixes.length > 0) {
+          if (fixes.length > 0 && isManual) {
             DB.insert('audit_log', {
               action: 'AUTOCORRECT',
               collection: 'system',
@@ -2555,12 +2557,28 @@ const DB = {
         indicator.style.background = '#10b981';
         indicator.title = (isAR ? 'تمت المزامنة — ' : 'Synchronisé — ') + new Date().toLocaleTimeString(isAR ? 'ar-DZ' : 'fr-FR');
         
-        // Auto-reload the current view if data actually changed (and no modal/dialog is open and user is not typing)
+        // Auto-reload the current view ONLY if data relevant to the active module actually changed
         if (colsToSync.length > 0 && typeof App !== 'undefined' && App._currentModule) {
           const isModalOpen = document.getElementById('modalOverlay')?.classList.contains('active') || !!document.querySelector('.dlg-overlay');
           const activeEl = document.activeElement;
           const isUserTyping = activeEl && (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || activeEl.isContentEditable);
-          if (!isModalOpen && !isUserTyping && App._currentModule !== 'settings') {
+          
+          const moduleColMap = {
+            brs: ['brs', 'suppliers'],
+            bls: ['bls', 'brs', 'clients'],
+            caisse: ['sessions', 'caisse_admin', 'bls', 'bon_retours'],
+            admin_caisse: ['caisse_admin', 'bank_transactions', 'sessions', 'etat_vente_docs'],
+            dashboard: ['bls', 'brs', 'sessions', 'caisse_admin'],
+            clients: ['clients'],
+            suppliers: ['suppliers'],
+            articles: ['articles'],
+            users: ['users'],
+            charges: ['charges']
+          };
+          const relevantCols = moduleColMap[App._currentModule] || [App._currentModule];
+          const hasRelevantChange = colsToSync.some(c => relevantCols.includes(c));
+
+          if (hasRelevantChange && !isModalOpen && !isUserTyping && App._currentModule !== 'settings') {
             App.reloadDebounced(App._currentModule, 500);
           }
         }
