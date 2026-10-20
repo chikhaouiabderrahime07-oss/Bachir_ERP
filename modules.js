@@ -2654,14 +2654,15 @@ const BLModule = {
       <!-- PANEL 2: STOCK BR MODE (Existing BR) -->
       <div id="bch-panel-stock" style="display:none">
         <div class="form-group mb-2">
-          <label class="required"><i class="fas fa-boxes"></i> ${isAR ? 'اختيار وصل الاستلام في المخزون (الأقدم فالأقدم FIFO)' : 'Sélectionner le BR en stock (FIFO — Premier entré, premier servi)'}</label>
+          <label class="required"><i class="fas fa-boxes"></i> ${isAR ? 'اختيار وصل الاستلام في المخزون (الأقدم فالأقدم FIFO / FCFS)' : 'Sélectionner le BR en stock (FCFS / FIFO — Premier entré, premier servi)'}</label>
           <select id="newbl-br" class="input" style="width:100%" onchange="BLModule._onNewBLBRChange(this.value)">
             <option value="">${isAR ? '— اختيار وصل الاستلام في المخزون —' : '— Choisir un BR en stock —'}</option>
-            ${openBRs.map(br => {
+            ${openBRs.map((br, idx) => {
               const rem = BLModule.getBRRemaining(br.id);
               const supName = supMap[br.supplierId]?.name || '?';
               const dateStr = br.date ? Utils.fmtDate(br.date) : '';
-              return `<option value="${br.id}">\u2066${Utils.escHTML(br.ref)}\u2069 — ${Utils.escHTML(supName)} ${dateStr ? '('+dateStr+')' : ''} — ${isAR ? 'المتبقي:' : 'Reste:'} ${rem.remainingQty} — ${Utils.fmtCurrency(br.totalTTC)}</option>`;
+              const fcfsTag = idx === 0 ? (isAR ? ' [★ أقدم وصل FCFS]' : ' [★ 1er Entré - FCFS]') : '';
+              return `<option value="${br.id}">\u2066${Utils.escHTML(br.ref)}\u2069${fcfsTag} — ${Utils.escHTML(supName)} ${dateStr ? '('+dateStr+')' : ''} — ${isAR ? 'المتبقي:' : 'Reste:'} ${rem.remainingQty} — ${Utils.fmtCurrency(br.totalTTC)}</option>`;
             }).join('')}
           </select>
         </div>
@@ -2717,6 +2718,13 @@ const BLModule = {
       if (fStock)  fStock.style.display = 'flex';
       if (bDirect) { bDirect.className = 'btn btn-outline'; }
       if (bStock)  { bStock.className = 'btn btn-primary'; }
+
+      // Auto-select oldest BR in stock (FIFO / FCFS) if not yet chosen
+      const sel = document.getElementById('newbl-br');
+      if (sel && !sel.value && sel.options.length > 1) {
+        sel.selectedIndex = 1;
+        this._onNewBLBRChange(sel.value);
+      }
     }
   },
 

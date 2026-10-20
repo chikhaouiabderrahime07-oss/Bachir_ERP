@@ -516,7 +516,8 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
 
     // ── Server-Side Referential Guarantee for BL <-> BR ──
     // Ensures parent BR status is synchronized in MongoDB Atlas even if client network disconnects
-    if (col === 'bls' && (newData.brId || newData.linkedBrId)) {
+    // Respects FIFO / FCFS: Do NOT mark BR delivered if this is a partial delivery with remaining stock
+    if (col === 'bls' && (newData.brId || newData.linkedBrId) && !newData.isPartial) {
       const targetBrId = Number(newData.brId || newData.linkedBrId);
       if (targetBrId) {
         try {

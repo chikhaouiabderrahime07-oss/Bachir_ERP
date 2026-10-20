@@ -424,97 +424,24 @@ const DB = {
 
     isBRLocked(brId) {
       if (!brId) return false;
-      const numId = Number(brId);
-      // 1. Check active BLs in regular storage
-      const activeBLs = DB.getAll('bls').filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled');
-      if (activeBLs.length > 0) return true;
-      // 2. Check immutable vault, excluding items currently in recycle_bin
-      const bin = DB.getAll('recycle_bin');
-      const binBLIds = new Set(bin.filter(e => e.collection === 'bls').map(e => Number(e.item?.id || e.id)));
-      const vaultBLs = this.getVault().filter(b => Number(b.brId) === numId && b.status !== 'returned' && b.status !== 'cancelled' && !binBLIds.has(Number(b.id)));
-      return vaultBLs.length > 0;
+      // In Cloud mode with FIFO/FCFS, a BR is only locked when its stock is exhausted
+      if (typeof BLModule !== 'undefined' && typeof BLModule.getBRRemaining === 'function') {
+        const rem = BLModule.getBRRemaining(brId);
+        return rem && rem.exhausted === true;
+      }
+      return false;
     },
 
     auditAndEnforce() {
-      let restoredCount = 0;
-      let lockedBRCount = 0;
-
-      // Step 1: Ensure all current bls are safely vaulted (IN-MEMORY BATCH — zero blocking disk I/O)
-      const currentBLs = DB.getAll('bls');
-      const vault = this.getVault();
-      const vaultIds = new Set(vault.map(b => Number(b.id)));
-      const vaultRefs = new Set(vault.filter(b => b.ref).map(b => String(b.ref)));
-      let vaultModified = false;
-
-      currentBLs.forEach(b => {
-        const hasId = b.id && vaultIds.has(Number(b.id));
-        const hasRef = b.ref && vaultRefs.has(String(b.ref));
-        if (!hasId && !hasRef) {
-          vault.push({ ...b, _vaultedAt: new Date().toISOString() });
-          if (b.id) vaultIds.add(Number(b.id));
-          if (b.ref) vaultRefs.add(String(b.ref));
-          vaultModified = true;
-        }
-      });
-
-      if (vaultModified) {
-        this._vaultCache = vault;
-        try {
-          localStorage.setItem(this.VAULT_KEY, JSON.stringify(vault.slice(-10000)));
-        } catch (_) {}
-      }
-
-      // Step 2: Auto-resurrect any active vaulted BCH missing from bls (EXCLUDING intentional recycle bin deletions)
-      const currentMap = new Map();
-      currentBLs.forEach(b => {
-        if (b.id) currentMap.set(Number(b.id), b);
-        if (b.ref) currentMap.set(String(b.ref), b);
-      });
-
-      const bin = DB.getAll('recycle_bin');
-      const binBLIds = new Set(bin.filter(e => e.collection === 'bls').map(e => Number(e.item?.id || e.id)));
-      const binBLRefs = new Set(bin.filter(e => e.collection === 'bls').map(e => String(e.item?.ref || e.ref)));
-
-      const missingFromBLs = vault.filter(vb => {
-        if (vb.status === 'returned' || vb.status === 'cancelled') return false;
-        // If in recycle bin, it was deliberately deleted by user — DO NOT RESURRECT!
-        if (vb.id && binBLIds.has(Number(vb.id))) return false;
-        if (vb.ref && binBLRefs.has(String(vb.ref))) return false;
-
-        const existsById = vb.id && currentMap.has(Number(vb.id));
-        const existsByRef = vb.ref && currentMap.has(String(vb.ref));
-        return !existsById && !existsByRef;
-      });
-
-      if (missingFromBLs.length > 0) {
-        console.warn(`🛡️ [Guardian] PREVENTER RESURRECTED ${missingFromBLs.length} MISSING BCH FROM IMMUTABLE VAULT!`, missingFromBLs.map(b => b.ref || b.id));
-        const merged = [...currentBLs, ...missingFromBLs];
-        localStorage.setItem('bls', JSON.stringify(merged));
-        restoredCount = missingFromBLs.length;
-      }
-
-      // Step 3: BR State Lock: Every BR with an active linked BCH MUST have status: 'delivered'
-      const allBRs = DB.getAll('brs');
-      let brsModified = false;
-      allBRs.forEach(br => {
-        if (br.status === 'open' && this.isBRLocked(br.id)) {
-          console.warn(`🛡️ [Guardian] PREVENTER HARD LOCK: BR #${br.id} (${br.ref}) was 'open' while active BCH exists! Auto-locking to 'delivered'.`);
-          br.status = 'delivered';
-          if (!br.deliveredAt) br.deliveredAt = new Date().toISOString();
-          brsModified = true;
-          lockedBRCount++;
-          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-            window.API.update('brs', br.id, { status: 'delivered', deliveredAt: br.deliveredAt }).catch(() => {});
-          }
-        }
-      });
-
-      if (brsModified) {
-        localStorage.setItem('brs', JSON.stringify(allBRs));
-      }
-
-      this.updateShieldBadge(restoredCount, lockedBRCount);
-      return { restoredCount, lockedBRCount, totalVaulted: vault.length };
+      // In Cloud mode, MongoDB Atlas is the sole authority and single source of truth.
+      // We do not resurrect server-deleted records from client browser cache,
+      // and BR delivery status is governed strictly by remaining stock (FCFS / FIFO).
+      try {
+        localStorage.removeItem(this.VAULT_KEY);
+      } catch (_) {}
+      this._vaultCache = [];
+      this.updateShieldBadge(0, 0);
+      return { restoredCount: 0, lockedBRCount: 0, totalVaulted: 0 };
     },
 
     updateShieldBadge(restored = 0, locked = 0) {
@@ -2524,21 +2451,11 @@ const DB = {
           const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
           safeSet(col, JSON.stringify([...data, ...uniqueLocal].slice(-5000)));
         } else {
-          // ── PROTECT LOCAL IN-FLIGHT & RECENTLY CREATED DOCUMENTS ──
-          // When LiveSync downloads server data, ensure newly created local BCH/BRs in transit are NOT erased!
-          // Note: recycle_bin is excluded so deleted items are immediately wiped and never resurrected.
+          // ── MONGODB IS THE SOLE SOURCE OF TRUTH ──
+          // When LiveSync downloads server data, only retain un-synced local items explicitly marked _pendingSync.
+          // Confirmed database records from MongoDB are authoritative.
           const local = JSON.parse(localStorage.getItem(col) || '[]');
-          const serverIds = new Set(data.map(d => Number(d.id)));
-          const serverRefs = new Set(data.filter(d => d.ref).map(d => String(d.ref)));
-          const nowMs = Date.now();
-          const inFlightLocal = (col !== 'recycle_bin' && Array.isArray(local)) ? local.filter(item => {
-            if (item._pendingSync) return true;
-            if (serverIds.has(Number(item.id))) return false;
-            if (item.ref && serverRefs.has(String(item.ref))) return false;
-            if (!item.createdAt) return false;
-            const itemAgeMs = nowMs - new Date(item.createdAt).getTime();
-            return itemAgeMs >= 0 && itemAgeMs < 90000; // keep items created in the last 90 seconds
-          }) : [];
+          const inFlightLocal = Array.isArray(local) ? local.filter(item => item && item._pendingSync === true) : [];
           safeSet(col, JSON.stringify([...data, ...inFlightLocal]));
         }
       }
@@ -2564,15 +2481,6 @@ const DB = {
       if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
 
       try {
-        // ── 🛡️ PREVENTER ENFORCEMENT LOOP : Run Guardian on every sync tick ──
-        if (this.Guardian) {
-          try {
-            this.Guardian.auditAndEnforce();
-          } catch(ge) {
-            console.warn('[LiveSync.Guardian]', ge);
-          }
-        }
-
         // 0. Auto-flush any pending sync items (e.g. documents created during Render spin-up or network hiccup)
         for (const pCol of ['bls', 'brs']) {
           const pItems = DB.getAll(pCol);
@@ -2661,9 +2569,28 @@ const DB = {
         if (indicator) { indicator.style.background = '#ef4444'; indicator.title = isAR ? 'فشلت المزامنة' : 'Sync échoué'; }
       }
     };
-    // Delay first sync so UI renders from cache first (instant), then background sync
-    setTimeout(() => doSync(), 1500);
-    setInterval(doSync, 4000); // 4s — near-instant multi-PC sync
+    // Smart LiveSync polling: 10s when active/visible, 45s when tab is hidden/minimized
+    let syncTimer = null;
+    const scheduleNextSync = () => {
+      if (syncTimer) clearTimeout(syncTimer);
+      const delay = (typeof document !== 'undefined' && document.hidden) ? 45000 : 10000;
+      syncTimer = setTimeout(async () => {
+        await doSync();
+        scheduleNextSync();
+      }, delay);
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          doSync();
+          scheduleNextSync();
+        }
+      });
+    }
+    setTimeout(() => {
+      doSync();
+      scheduleNextSync();
+    }, 1500);
   },
 
   _seed() {
@@ -2843,15 +2770,6 @@ const DB = {
     const items = this.getAll(col);
     const idx = items.findIndex(i => Number(i.id) === Number(id));
     if (idx === -1) return null;
-
-    // ── 🛡️ PREVENTER INTERCEPTOR: FORBID BR REOPENING IF ACTIVE BCH EXISTS ──
-    if (col === 'brs' && data && data.status === 'open') {
-      if (this.Guardian && this.Guardian.isBRLocked(id)) {
-        console.warn(`🛡️ [Guardian] PREVENTER BLOCKED: Illegal attempt to reopen BR #${id} while active BCH is linked!`);
-        delete data.status; // Strip status regression
-        delete data.deliveredAt;
-      }
-    }
 
     const old = { ...items[idx] };
     const u = Auth.getCurrentUser();

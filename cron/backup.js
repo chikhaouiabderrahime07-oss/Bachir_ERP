@@ -1,41 +1,56 @@
 const cron = require('node-cron');
-const { createBackup, maybeDailyBackup, maybeIntradayBackup } = require('../routes/backup');
+const { createBackup, maybeCatchupBackup } = require('../routes/backup');
 const Backup = require('../models/Backup');
 
 /**
- * Ultra-High-Frequency 2-Minute Continuous Backup + Nightly 23:59 Master Consolidation.
- *
- * - Every 2 minutes: automatically snapshots active database state (intraday points).
- * - At 23:59: archives the consolidated Master Daily Backup and purges all intermediate 2-min snapshots.
- * - On boot/wake: catches up if needed.
+ * Twice-Daily Automated Backups: Exactly at 12:00 AM and 12:00 PM (Africa/Algiers time).
+ * - 12:00 AM Algeria = 23:00 UTC (0 23 * * *)
+ * - 12:00 PM Algeria = 11:00 UTC (0 11 * * *)
+ * 
+ * No continuous 2-minute loops. Zero CPU or database contention during work hours.
  */
 function startBackupCron() {
-  // 1. Nightly Master Backup at 23:59 Algeria time (22:59 UTC)
-  cron.schedule('59 22 * * *', async () => {
+  // 1. 12:00 AM (Midnight) Algeria time
+  cron.schedule('0 23 * * *', async () => {
     try {
-      const label = `Clôture Quotidienne (Auto) — ${new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' })}`;
+      const nowStr = new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' });
+      const label = `Sauvegarde Automatique (12 AM - Minuit) — ${nowStr}`;
       const backup = await createBackup(label, 'auto', 'system');
-      // Purge all intermediate 2-minute snapshots from the day
-      const purged = await Backup.deleteMany({ type: 'intraday' });
-      console.log(`✅ [CRON] Sauvegarde quotidienne de clôture archivée: ${backup.label} (${purged.deletedCount} points intraday nettoyés)`);
+      console.log(`✅ [CRON] Sauvegarde automatique 12 AM archivée: ${backup.label}`);
     } catch (e) {
-      console.error('❌ [CRON] Erreur clôture quotidienne:', e.message);
+      console.error('❌ [CRON] Erreur sauvegarde 12 AM:', e.message);
     }
   }, { timezone: 'UTC' });
 
-  // 2. Ultra-High-Frequency 2-Minute Intraday Continuous Snapshot
-  setInterval(() => {
-    if (maybeIntradayBackup) {
-      maybeIntradayBackup().catch(e => console.warn('⚠️ [BACKUP/2min]', e.message));
+  // 2. 12:00 PM (Midday) Algeria time
+  cron.schedule('0 11 * * *', async () => {
+    try {
+      const nowStr = new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' });
+      const label = `Sauvegarde Automatique (12 PM - Midi) — ${nowStr}`;
+      const backup = await createBackup(label, 'auto', 'system');
+      console.log(`✅ [CRON] Sauvegarde automatique 12 PM archivée: ${backup.label}`);
+    } catch (e) {
+      console.error('❌ [CRON] Erreur sauvegarde 12 PM:', e.message);
     }
-  }, 2 * 60 * 1000); // exactly 2 minutes!
+  }, { timezone: 'UTC' });
 
-  // 3. Catch-up check on boot & hourly while awake
-  const catchUp = () => maybeDailyBackup().catch(e => console.error('❌ [BACKUP/catch-up]', e.message));
-  setTimeout(catchUp, 60 * 1000);          // 1 min after boot / wake-up
-  setInterval(catchUp, 60 * 60 * 1000);    // hourly while awake
+  // 3. Catch-up check on boot & one-time cleanup of legacy intraday snapshots
+  setTimeout(async () => {
+    try {
+      if (maybeCatchupBackup) {
+        await maybeCatchupBackup();
+      }
+      // Purge any old 2-minute / intraday snapshots from previous versions
+      const purged = await Backup.deleteMany({ type: 'intraday' });
+      if (purged.deletedCount > 0) {
+        console.log(`🧹 [BACKUP] Purgé ${purged.deletedCount} anciens snapshots intraday de MongoDB.`);
+      }
+    } catch (e) {
+      console.warn('⚠️ [BACKUP/boot-cleanup]', e.message);
+    }
+  }, 60 * 1000); // 1 minute after boot
 
-  console.log('⏰ [CRON] Sauvegardes continues 2-MINUTES activées + Clôture journalière 23:59 avec purge automatique');
+  console.log('⏰ [CRON] Sauvegardes bi-quotidiennes actives: 12 AM (Minuit) et 12 PM (Midi) uniquement.');
 }
 
-module.exports = { startBackupCron, maybeDailyBackup, maybeIntradayBackup };
+module.exports = { startBackupCron };

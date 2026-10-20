@@ -19,8 +19,8 @@ const adminOnly = (req, res, next) => {
 router.use(adminOnly);
 
 // Retention: bounded so backups can never fill the free 512 MB database.
-// auto: 14 daily master, safety: 5 pre-restore, manual: 15 user backups, intraday: 48 rolling 2-min snapshots
-const KEEP = { auto: 14, safety: 5, manual: 15, intraday: 48 };
+// auto: 14 bi-daily master (1 week at 2/day), safety: 5 pre-restore, manual: 15 user backups
+const KEEP = { auto: 14, safety: 5, manual: 15 };
 const BACKUP_TTL_DAYS = 30;
 const MAX_BLOB_BYTES = 15 * 1024 * 1024; // MongoDB hard limit is 16 MB per document
 
@@ -86,9 +86,9 @@ async function createBackup(label, type = 'auto', createdBy = 'system') {
 // ─── Keep only the newest N backups of each kind ──────────────────
 async function pruneBackups() {
   const all = await Backup.find().select('type label createdAt').sort({ createdAt: -1 }).lean();
-  const buckets = { auto: [], safety: [], manual: [], intraday: [] };
+  const buckets = { auto: [], safety: [], manual: [] };
   for (const b of all) {
-    const kind = b.type === 'manual' ? 'manual' : (b.type === 'intraday' ? 'intraday' : (/^Avant restauration/.test(b.label) ? 'safety' : 'auto'));
+    const kind = b.type === 'manual' ? 'manual' : (/^Avant restauration/.test(b.label) ? 'safety' : 'auto');
     if (buckets[kind]) buckets[kind].push(b._id);
   }
   const drop = [];
@@ -96,42 +96,19 @@ async function pruneBackups() {
   if (drop.length) await Backup.deleteMany({ _id: { $in: drop } });
 }
 
-// ─── Catch-up backup: the free Render tier sleeps, so the 23:59 cron may never fire ──
-async function maybeDailyBackup() {
+// ─── Catch-up backup: only if Render was sleeping and > 12 hours passed without auto backup ──
+async function maybeCatchupBackup() {
   if (_running) return null;
   const last = await Backup.findOne({ type: 'auto', label: { $not: /^Avant restauration/ } })
     .sort({ createdAt: -1 }).select('createdAt').lean();
-  if (last && Date.now() - new Date(last.createdAt).getTime() < 20 * 3600 * 1000) return null;
-  const label = `Automatique — ${new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' })}`;
+  if (last && (Date.now() - new Date(last.createdAt).getTime()) < 12 * 3600 * 1000) {
+    return null; // A recent backup already exists within 12 hours
+  }
+  const nowStr = new Date().toLocaleString('fr-DZ', { timeZone: 'Africa/Algiers' });
+  const label = `Sauvegarde Rattrapage (Auto) — ${nowStr}`;
   const b = await createBackup(label, 'auto', 'system');
   console.log(`✅ [BACKUP] Sauvegarde de rattrapage créée: ${b.label} (${(b.sizeBytes / 1024).toFixed(0)} Ko)`);
   return b;
-}
-
-// ─── 2-Minute High-Frequency Intraday Continuous Snapshot ──────────
-let _lastDocState = null;
-async function maybeIntradayBackup() {
-  if (_running) return null;
-  try {
-    // Only snapshot if data was actually written/modified
-    const docCount = await Document.countDocuments();
-    const latestDoc = await Document.findOne().sort({ updatedAt: -1 }).select('updatedAt').lean();
-    const latestTime = latestDoc?.updatedAt ? new Date(latestDoc.updatedAt).getTime() : 0;
-    const stateKey = `${docCount}_${latestTime}`;
-    if (_lastDocState && _lastDocState === stateKey) {
-      return null; // Database unchanged in this 2-minute interval
-    }
-
-    const timeStr = new Date().toLocaleTimeString('fr-DZ', { timeZone: 'Africa/Algiers', hour: '2-digit', minute: '2-digit' });
-    const label = `Point 2-Min — ${timeStr}`;
-    const b = await createBackup(label, 'intraday', 'system');
-    _lastDocState = stateKey;
-    console.log(`⏱️ [BACKUP-2MIN] Point de restauration 2-minutes créé: ${b.label} (${(b.sizeBytes / 1024).toFixed(0)} Ko)`);
-    return b;
-  } catch (e) {
-    console.warn('⚠️ [BACKUP-2MIN]', e.message);
-    return null;
-  }
 }
 
 // .lean() returns BSON Binary for Buffer fields — normalise to a real Buffer.
@@ -294,4 +271,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, createBackup, maybeDailyBackup, maybeIntradayBackup, decodeBackup };
+module.exports = { router, createBackup, maybeCatchupBackup, decodeBackup };
