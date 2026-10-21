@@ -4339,9 +4339,19 @@ const SessionMgr = {
       }
       return d.slice(0, 10);
     };
+
+    // Pre-build BL lookup for fast reference matching
+    const allBLs = DB.getAll('bls');
+    const blMap = new Map();
+    allBLs.forEach(b => {
+      if (b.id) blMap.set(Number(b.id), b);
+      if (b.ref) blMap.set(String(b.ref).trim(), b);
+    });
+
     // Filter BLs: Match single effective date (prefer b.date, fallback to b.createdAt)
-    const rawBLs = DB.getAll('bls').filter(b => {
-      if (!isUserMatch(b.createdBy)) return false;
+    const rawBLs = allBLs.filter(b => {
+      const userMatch = isUserMatch(b.createdBy) || isUserMatch(b.userId) || isUserMatch(b.deliveredBy);
+      if (!userMatch) return false;
       const docDate = normDate(b.date) || normDate(b.createdAt);
       if (docDate !== date) return false;
       return b.status !== 'draft' && b.status !== 'cancelled';
@@ -4360,10 +4370,26 @@ const SessionMgr = {
 
     // Filter and deduplicate retours
     const rawRetours = DB.getAll('bon_retours').filter(r => {
-      if (!isUserMatch(r.cashierId || r.userId || r.createdBy)) return false;
-      const docDate = normDate(r.date) || normDate(r.createdAt);
-      return docDate === date;
+      const linkedBL = (r.blId && blMap.get(Number(r.blId))) || 
+                       (r.bcId && blMap.get(Number(r.bcId))) || 
+                       (r.blRef && blMap.get(String(r.blRef).trim())) || null;
+
+      // Robust user match across all creator/cashier/handler fields
+      const userMatches = 
+        isUserMatch(r.cashierId) || 
+        isUserMatch(r.userId) || 
+        isUserMatch(r.returnedBy) || 
+        isUserMatch(r.createdBy) ||
+        (linkedBL && (isUserMatch(linkedBL.createdBy) || isUserMatch(linkedBL.userId)));
+      if (!userMatches) return false;
+
+      const rDocDate = normDate(r.date) || normDate(r.createdAt);
+      const blDocDate = linkedBL ? (normDate(linkedBL.date) || normDate(linkedBL.createdAt)) : (normDate(r.blDate) || null);
+
+      // Match if return was recorded on this date OR belongs to a BL delivered on this date
+      return rDocDate === date || blDocDate === date;
     });
+
     const seenRetRefs = new Set();
     const retours = [];
     rawRetours.forEach(r => {

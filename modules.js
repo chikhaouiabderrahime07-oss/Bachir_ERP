@@ -4574,6 +4574,8 @@ const BLModule = {
       } catch (_) {}
     }
     const brRef = `BR-${bl.ref || String(retNum).padStart(3, '0')}`;
+    const targetUserId = bl.createdBy || u?.id;
+    const blEffectiveDate = (bl.date || (bl.createdAt ? bl.createdAt.slice(0, 10) : today));
 
     // 1. Create official Bon de Retour
     const brDoc = {
@@ -4583,6 +4585,7 @@ const BLModule = {
       bcId: bl.id,
       isBonChargement: true,
       blRef: bl.ref,
+      blDate: blEffectiveDate,
       clientId: bl.clientId,
       clientName: cli?.name || bl.clientName || 'Client',
       supplierId: bl.supplierId || br?.supplierId || null,
@@ -4596,9 +4599,11 @@ const BLModule = {
       totalTVA: Number(bl.totalTVA || br?.totalTVA || 0),
       totalTTC: amount,
       reason: fullReason,
-      userId: bl.createdBy,
-      cashierId: bl.createdBy,
+      motif: fullReason,
+      userId: targetUserId,
+      cashierId: targetUserId,
       returnedBy: u?.id,
+      returnedByName: u?.name || u?.username || 'Utilisateur',
       createdBy: u?.id,
       createdByName: u?.name || u?.username || 'Utilisateur',
       createdAt: now.toISOString(),
@@ -4640,11 +4645,89 @@ const BLModule = {
       }
     }
 
-    // 3. Return deduction is strictly applied to the user's active session / mini-caisse
-    // PURE CAISSE LAW: The main caisse (caisse_admin) is NEVER directly touched on returns!
-    // The return is registered in 'bon_retours' and deducted from the cashier's shift gains.
-    // At evening closure (SessionMgr.closeMiniCaisse), only the net cash (sales - returns) is deposited.
-    console.log(`[processReturn] Return ${brRef} of ${amount} DA accounted for in user #${u?.id} mini-caisse session`);
+    // 3. Immediately synchronize and deduct from the user's session, mini-caisse & État de Vente
+    try {
+      const affectedDates = [...new Set([today, blEffectiveDate])];
+      const affectedUserIds = [...new Set([targetUserId, u?.id].filter(Boolean))];
+
+      affectedUserIds.forEach(uid => {
+        affectedDates.forEach(d => {
+          const s = SessionMgr.getTodaySession(uid, d);
+          if (s) {
+            const sum = SessionMgr.getUserDaySummary(uid, d);
+            const patch = {
+              totalSales: sum.totalSalesTTC,
+              totalReturns: sum.totalReturnsTTC,
+              returnCount: sum.retours.length,
+              blCount: sum.bls.length,
+              updatedAt: now.toISOString()
+            };
+            if (s.status === 'closed') {
+              patch.closedNet = sum.netAmount;
+              patch.closedEspeces = sum.totalSalesTTC;
+              patch.closedMonnaie = sum.totalReturnsTTC;
+              patch.realBchNet = sum.netAmount;
+            }
+            DB.update('sessions', s.id, patch);
+
+            // Update linked caisse_admin deposit if exists for this session
+            const caisseDep = DB.getAll('caisse_admin').find(e => 
+              e.type === 'deposit' && 
+              (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles') && 
+              (Number(e.sessionId) === Number(s.id) || (e.sessionDate === d && String(e.userId) === String(uid)))
+            );
+            if (caisseDep && s.status === 'closed') {
+              DB.update('caisse_admin', caisseDep.id, {
+                amount: sum.netAmount,
+                note: `Recettes réelles après retour ${brRef} (${sum.bls.length} BCH, ${sum.retours.length} retours)`
+              });
+            }
+          }
+
+          // Also update any saved etat_vente_docs covering this date/user
+          const evDocs = (DB.getAll('etat_vente_docs') || []).filter(ev => 
+            (ev.date === d || ev.dateStart === d || ev.dateEnd === d) && 
+            (String(ev.userId) === String(uid) || String(ev.createdBy) === String(uid) || Auth.isAdmin())
+          );
+          evDocs.forEach(ev => {
+            let retList = ev.returnList || [];
+            if (!retList.some(r => String(r.ref) === String(brRef) || Number(r.id) === Number(brDoc.id))) {
+              retList.push({
+                id: brDoc.id,
+                ref: brDoc.ref,
+                blRef: brDoc.blRef,
+                date: brDoc.date,
+                clientName: brDoc.clientName,
+                motif: fullReason,
+                reason: fullReason,
+                totalTTC: amount,
+                userId: targetUserId
+              });
+            }
+            const blList = (ev.blList || []).map(b => {
+              if (Number(b.id) === Number(bl.id) || String(b.ref) === String(bl.ref)) {
+                return { ...b, status: 'returned', isReturned: true };
+              }
+              return b;
+            });
+            const newRetTotal = retList.reduce((acc, r) => acc + (Number(r.totalTTC) || 0), 0);
+            const grossTTC = Number(ev.grossTotalTTC || ev.totalBLsTTC || 0);
+            const netTTC = Math.max(0, Math.round((grossTTC - newRetTotal) * 100) / 100);
+            DB.update('etat_vente_docs', ev.id, {
+              blList,
+              returnList: retList,
+              returnsTotalTTC: newRetTotal,
+              totalReturnsTTC: newRetTotal,
+              netTotalTTC: netTTC,
+              totalTTC: netTTC,
+              updatedAt: now.toISOString()
+            });
+          });
+        });
+      });
+    } catch(err) {
+      console.warn('[processReturn] session/etat sync notice:', err);
+    }
 
     // 4. Recalibrate MasterBrain
     DB.MasterBrain.recalibrateAll();
@@ -5882,7 +5965,20 @@ const CaisseModule = {
 
     const summary = SessionMgr.getUserDaySummary(u.id, today);
     const isClosed = session ? session.status === 'closed' : false;
-    const closedNet = (session && session.closedNet !== null && session.closedNet !== undefined) ? session.closedNet : summary.netAmount;
+    
+    // Ensure closed session dynamically accounts for any returns processed
+    const effectiveNet = isClosed
+      ? (session.closedNet !== null && session.closedNet !== undefined && Math.abs((session.totalReturns || 0) - summary.totalReturnsTTC) < 0.01
+          ? session.closedNet
+          : summary.netAmount)
+      : summary.netAmount;
+    if (session && isClosed && Math.abs((session.totalReturns || 0) - summary.totalReturnsTTC) >= 0.01) {
+      session.totalReturns = summary.totalReturnsTTC;
+      session.closedNet = summary.netAmount;
+      session.closedMonnaie = summary.totalReturnsTTC;
+      DB.update('sessions', session.id, { totalReturns: summary.totalReturnsTTC, closedNet: summary.netAmount, closedMonnaie: summary.totalReturnsTTC });
+    }
+    const closedNet = effectiveNet;
     const settings = DB.getSettings();
     const banks = settings.banks || [];
     const bankDoc = session?.bankId ? banks.find(b => String(b.id) === String(session.bankId)) : null;
@@ -5891,11 +5987,19 @@ const CaisseModule = {
     // BL rows
     const blRows = summary.bls.length ? summary.bls.map((b, i) => {
       const cli = DB.getById('clients', b.clientId);
-      return `<tr style="border-bottom:1px solid var(--border);${i % 2 ? 'background:var(--bg-inset)' : ''}">
-        <td style="padding:10px 14px"><strong style="color:var(--primary)">${Utils.escHTML(b.ref || '')}</strong>${isGlobal ? `<span class="badge badge-info" style="margin-inline-start:6px;font-size:10px">${Utils.escHTML(b.createdByName || '')}</span>` : ''}</td>
+      const isRet = b.status === 'returned' || b.isReturned === true;
+      return `<tr style="border-bottom:1px solid var(--border);${i % 2 ? 'background:var(--bg-inset)' : ''};${isRet ? 'background:rgba(239,68,68,.05)' : ''}">
+        <td style="padding:10px 14px">
+          <strong style="color:${isRet ? '#ef4444' : 'var(--primary)'}">${Utils.escHTML(b.ref || '')}</strong>
+          ${isRet ? `<span style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;margin-inline-start:6px">🔄 ${isAR ? 'مرتجع' : 'RETOURNÉ'}</span>` : ''}
+          ${isGlobal ? `<span class="badge badge-info" style="margin-inline-start:6px;font-size:10px">${Utils.escHTML(b.createdByName || '')}</span>` : ''}
+        </td>
         <td style="padding:10px 14px;color:var(--text)">${Utils.escHTML(cli?.name || b.clientName || '—')}</td>
         <td style="padding:10px 14px;font-size:11px;color:var(--text4)">${b.createdAt ? new Date(b.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-        <td style="padding:10px 14px;text-align:right;font-weight:700;color:var(--success)">+${Utils.fmtCurrency(b.totalTTC)}</td>
+        <td style="padding:10px 14px;text-align:right;font-weight:700;color:${isRet ? '#ef4444' : 'var(--success)'}">
+          ${isRet ? '(-)' : '+'}${Utils.fmtCurrency(b.totalTTC)}
+          ${isRet ? `<small style="display:block;font-size:9.5px;color:#ef4444;font-weight:600">(${isAR ? 'مخصوم كمرتجع' : 'Déduit en retour'})</small>` : ''}
+        </td>
         <td style="padding:10px 14px;text-align:center">${Utils.statusBadge(b.status || 'delivered')}</td>
         <td style="padding:10px 14px;text-align:right;white-space:nowrap">
           <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${b.id})" title="${T.get('details')}"><i class="fas fa-eye"></i></button>
@@ -14170,23 +14274,62 @@ const EtatVenteModule = {
     const settings = DB.getSettings();
     const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
 
+    const normDate = d => {
+      if (!d) return '';
+      if (d.includes('T')) return d.split('T')[0];
+      if (d.includes('/')) {
+        const p = d.split('/');
+        if (p.length === 3 && p[2].length === 4) return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+      }
+      return d.slice(0, 10);
+    };
+
     // Filter BLs (Delivered, locked, and returned — so returned BCHs appear with their reference)
     const allBLs = DB.getAll('bls');
     const bls = allBLs.filter(b => {
-      const bDate = (b.date || b.createdAt || '').slice(0, 10);
+      const bDate = normDate(b.date) || normDate(b.createdAt);
       if (bDate < ds || bDate > de) return false;
       // Include delivered, locked, or returned BLs
       if (b.status !== 'delivered' && b.status !== 'locked' && b.status !== 'returned') return false;
-      if (uf !== 'all' && String(b.createdBy) !== String(uf)) return false;
+      if (uf !== 'all' && String(b.createdBy) !== String(uf) && String(b.userId) !== String(uf)) return false;
       return true;
     });
 
+    const blIdsInPeriod = new Set(bls.map(b => Number(b.id)));
+    const blRefsInPeriod = new Set(bls.map(b => String(b.ref || '').trim()).filter(Boolean));
+
     // Filter Bons de Retour in that period
     const allRetours = DB.getAll('bon_retours');
+    const allBLsMap = new Map();
+    allBLs.forEach(b => {
+      if (b.id) allBLsMap.set(Number(b.id), b);
+      if (b.ref) allBLsMap.set(String(b.ref).trim(), b);
+    });
+
     const retours = allRetours.filter(r => {
-      const rDate = (r.date || r.createdAt || '').slice(0, 10);
-      if (rDate < ds || rDate > de) return false;
-      if (uf !== 'all' && String(r.userId || r.createdBy) !== String(uf)) return false;
+      const rDate = normDate(r.date) || normDate(r.createdAt);
+      const linkedBL = (r.blId && allBLsMap.get(Number(r.blId))) || 
+                       (r.bcId && allBLsMap.get(Number(r.bcId))) || 
+                       (r.blRef && allBLsMap.get(String(r.blRef).trim())) || null;
+      const blDate = linkedBL ? (normDate(linkedBL.date) || normDate(linkedBL.createdAt)) : (normDate(r.blDate) || null);
+
+      // Date match: return occurred in period OR return belongs to a BL in this period
+      const isDateMatch = (rDate >= ds && rDate <= de) ||
+                          (blDate && blDate >= ds && blDate <= de) ||
+                          (r.blId && blIdsInPeriod.has(Number(r.blId))) ||
+                          (r.blRef && blRefsInPeriod.has(String(r.blRef).trim()));
+      if (!isDateMatch) return false;
+
+      // User match: matches selected user filter across any user role attribute
+      if (uf !== 'all') {
+        const uMatches = 
+          String(r.userId) === String(uf) ||
+          String(r.cashierId) === String(uf) ||
+          String(r.returnedBy) === String(uf) ||
+          String(r.createdBy) === String(uf) ||
+          (linkedBL && (String(linkedBL.createdBy) === String(uf) || String(linkedBL.userId) === String(uf)));
+        if (!uMatches) return false;
+      }
       return true;
     });
 
@@ -14237,7 +14380,6 @@ const EtatVenteModule = {
 
     // Differentiate same-period returns (whose original BL is already in this period's BL list and thus already excluded from aggregated items)
     // vs prior-period / cross-day returns (whose original BL was in a prior period and therefore NOT in aggregated items)
-    const blIdsInPeriod = new Set(bls.map(b => Number(b.id)));
     const priorPeriodReturns = retours.filter(r => !r.blId || !blIdsInPeriod.has(Number(r.blId)));
     const priorReturnsTotalTTC = priorPeriodReturns.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
 
@@ -14909,7 +15051,7 @@ const EtatVenteModule = {
         isReturned: b.status === 'returned',
         createdBy: b.createdBy
       })),
-      returnList: retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, date: r.date, clientName: r.clientName || (isAR ? 'زبون' : 'Client'), motif: r.motif || (isAR ? 'إرجاع بضاعة' : 'Retour marchandise'), totalTTC: Number(r.totalTTC)||0, userId: r.userId })),
+      returnList: retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, date: r.date, clientName: r.clientName || (isAR ? 'زبون' : 'Client'), motif: r.reason || r.motif || (isAR ? 'إرجاع بضاعة' : 'Retour marchandise'), reason: r.reason || r.motif || '', totalTTC: Number(r.totalTTC)||0, userId: r.userId || r.cashierId || r.createdBy })),
       totalBLsTTC: grossTotalTTC,
       grossTotalTTC: grossTotalTTC,
       totalReturnsTTC: returnsTotalTTC,
@@ -15274,6 +15416,44 @@ const EtatVenteModule = {
       }
     }
 
+    // ── Self-heal: re-sync returnList from bon_retours if doc.returnList is missing/empty ──
+    let docReturns = doc.returnList || [];
+    if (!docReturns.length) {
+      const allRets = DB.getAll('bon_retours') || [];
+      const blIds = new Set((doc.blList || []).map(b => Number(b.id)));
+      const blRefs = new Set((doc.blList || []).map(b => String(b.ref || '').trim()).filter(Boolean));
+      const matched = allRets.filter(r => 
+        (r.blId && blIds.has(Number(r.blId))) || 
+        (r.blRef && blRefs.has(String(r.blRef).trim()))
+      );
+      if (matched.length > 0) {
+        docReturns = matched.map(r => ({
+          id: r.id,
+          ref: r.ref,
+          blRef: r.blRef,
+          date: r.date,
+          clientName: r.clientName || 'Client',
+          motif: r.reason || r.motif || 'Retour marchandise',
+          reason: r.reason || r.motif || 'Retour marchandise',
+          totalTTC: Number(r.totalTTC) || 0
+        }));
+        doc.returnList = docReturns;
+        const totalRet = docReturns.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0);
+        doc.returnsTotalTTC = totalRet;
+        doc.totalReturnsTTC = totalRet;
+        if (doc.id) {
+          DB.update('etat_vente_docs', doc.id, { 
+            returnList: docReturns,
+            returnsTotalTTC: totalRet,
+            totalReturnsTTC: totalRet
+          });
+        }
+        console.log('[EtatVente] Self-healed: restored', docReturns.length, 'returns from bon_retours');
+      }
+    }
+
+    const calculatedReturns = doc.totalReturnsTTC || doc.returnsTotalTTC || (docReturns.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0));
+
     const data = {
       ref: doc.ref,
       createdByName: doc.createdByName || doc.userName,
@@ -15288,9 +15468,9 @@ const EtatVenteModule = {
       period: period,
       settings: settings,
       blList: doc.blList || [],
-      returnList: doc.returnList || [],
+      returnList: docReturns,
       grossTotalTTC: doc.totalBLsTTC || doc.grossTotalTTC || doc.totalTTC,
-      returnsTotalTTC: doc.totalReturnsTTC || doc.returnsTotalTTC || 0,
+      returnsTotalTTC: calculatedReturns,
       priorReturnsTotalTTC: doc.priorReturnsTotalTTC || 0,
       totalTTCFiscal: doc.totalTTCFiscal || doc.totalTTC,
       netTotalTTC: doc.totalTTC,
