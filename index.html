@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=38.0">
+<link rel="stylesheet" href="style.css?v=39.0">
 <link rel="icon" id="appFavicon" type="image/png" href="">
   <!-- SheetJS for Excel export — two CDN fallbacks -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -373,10 +373,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=38.0"></script>
-<script src="core.js?v=38.0"></script>
-<script src="modules.js?v=38.0"></script>
-<script src="pdf.js?v=38.0"></script>
+<script src="api.js?v=39.0"></script>
+<script src="core.js?v=39.0"></script>
+<script src="modules.js?v=39.0"></script>
+<script src="pdf.js?v=39.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -897,13 +897,13 @@ const App = {
 
     // --- LAZY LOADING DATA (non-blocking: render from cache, sync in background) ---
     const needs = {
-      dashboard: ['brs', 'bls', 'clients', 'suppliers', 'sessions'],
-      bls: ['bls', 'brs', 'clients', 'suppliers', 'users'],
+      dashboard: ['brs', 'bls', 'clients', 'suppliers', 'sessions', 'bon_retours'],
+      bls: ['bls', 'brs', 'clients', 'suppliers', 'users', 'bon_retours'],
       brs: ['brs', 'bls', 'suppliers', 'articles', 'users'],
       pointage: ['users', 'work_log', 'rh_rectifications'],
       charges: ['bank_charges', 'recurring_charges'],
       caisse: ['bank_transactions', 'bon_retours', 'etat_vente_docs', 'bls', 'brs'],
-      admin_caisse: ['caisse_admin', 'bank_accounts', 'bank_transactions'],
+      admin_caisse: ['caisse_admin', 'bank_accounts', 'bank_transactions', 'sessions', 'etat_vente_docs'],
       suppliers: ['suppliers', 'supplier_payments'],
       clients: ['clients'],
       partners: ['clients', 'suppliers'],
@@ -917,7 +917,7 @@ const App = {
       bank: ['bank_transactions', 'bank_accounts'],
       etat_vente: ['etat_vente_docs', 'bon_retours', 'bls'],
       supplier_portal: ['brs', 'bls'],
-      bc_supervision: ['bls', 'brs', 'drivers']
+      bc_supervision: ['bls', 'brs', 'drivers', 'bon_retours']
     };
     // Background sync: don't block render — localStorage already has data from last session
     if (needs[mod] && typeof DB.ensureLoaded === 'function') {

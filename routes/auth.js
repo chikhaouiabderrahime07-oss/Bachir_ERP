@@ -63,12 +63,6 @@ router.post('/login', async (req, res) => {
       user: { id: user.id, name: user.name, username: user.username, role: user.role, supplierId: user.supplierId || null, sessionId },
       weakPassword,
     });
-
-    // Opportunistic safety net: Render's free tier sleeps, so the nightly cron
-    // may never fire. An admin login triggers a backup if the last one is >24h old.
-    if (user.role === 'admin') {
-      try { require('../cron/backup').maybeDailyBackup().catch(() => {}); } catch (_) { /* ignore */ }
-    }
   } catch (e) {
     console.error('[AUTH/login]', e);
     res.status(500).json({ error: 'Erreur serveur' });

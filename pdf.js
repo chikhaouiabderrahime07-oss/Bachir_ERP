@@ -739,8 +739,9 @@
       // Use passed timbreAmt from core.js when available (respects any caps/rules); fallback to 1% on (HT+TVA)
       const effectiveTimbreAmt = (Number(timbreAmt) > 0) ? Number(timbreAmt) : Math.round((ht + effectiveTva) * 0.01 * 100) / 100;
       const effectiveTimbreRate = 1; // Strictly 1% fixed for État de Vente on (HT + TVA)
-      // Use passed totalTTC from core.js when available; fallback to recalculation
-      const fiscalTTC = (Number(totalTTC) > 0) ? Number(totalTTC) : Math.round((ht + effectiveTva + effectiveTimbreAmt) * 100) / 100;
+      // Table displays the fiscal total of items
+      const tableFiscalTTC = Math.round((ht + effectiveTva + effectiveTimbreAmt) * 100) / 100;
+      const fiscalTTC = (Number(data.totalTTCFiscal) > 0) ? Number(data.totalTTCFiscal) : ((Number(totalTTC) > 0 && Math.abs(Number(totalTTC) - tableFiscalTTC) < 0.01) ? Number(totalTTC) : tableFiscalTTC);
 
       let tEndY = this._buildTable(doc, y, COLS, bodyRows, {
         totalHT: ht,
@@ -756,16 +757,25 @@
       // ── Grand Récapitulatif Final Box (PAGE 1 — printable summary) ──
       if (y + 40 > PH - 35) { doc.addPage(); y = MT + 8; }
 
+      // Mathematical Consistency:
+      // fiscalTTC is the table's Total TTC.
+      // If finalNetTTC < fiscalTTC (due to un-deducted cross-day/prior-period returns),
+      // we display the deduction line so that: Final Net = Base (fiscalTTC) - Deductions.
+      // If fiscalTTC already matches finalNetTTC (same-day returns already excluded from items),
+      // we do not subtract a phantom second time.
+      const deductionAmount = Math.max(0, Math.round((fiscalTTC - finalNetTTC) * 100) / 100);
+      const showDeduction = deductionAmount > 0.005;
+
       const boxW = 100;
       const boxX = ML + CW - boxW;
-      const boxH = effectiveReturns > 0 ? 20 : 13;
+      const boxH = showDeduction ? 20 : 13;
 
       this._fill(doc, [248, 250, 252]);
       this._stroke(doc, C.LINE);
       doc.rect(boxX, y, boxW, boxH, 'FD');
 
       let curY = y;
-      if (effectiveReturns > 0) {
+      if (showDeduction) {
         curY += 5.5;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
@@ -773,7 +783,7 @@
         doc.text(isAR ? 'خصم المرتجعات :' : 'Déduction Retours (BR) :', boxX + 4, curY);
         doc.setFont('helvetica', 'bold');
         this._tc(doc, [220, 38, 38]);
-        doc.text('- ' + this._fmtMoney(effectiveReturns), boxX + boxW - 4, curY, { align: 'right' });
+        doc.text('- ' + this._fmtMoney(deductionAmount), boxX + boxW - 4, curY, { align: 'right' });
         curY += 6.5;
       } else {
         curY += 4.5;

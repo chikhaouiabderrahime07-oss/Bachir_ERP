@@ -120,8 +120,8 @@ router.get('/next-num/:type', async (req, res) => {
   try {
     const type = req.params.type; // 'brs' or 'bls'
     const year = parseInt(req.query.year) || new Date().getFullYear();
-    if (!['brs', 'bls', 'etat_vente'].includes(type)) {
-      return res.status(400).json({ error: 'Type invalide (brs, bls ou etat_vente)' });
+    if (!['brs', 'bls', 'etat_vente', 'bon_retours'].includes(type)) {
+      return res.status(400).json({ error: 'Type invalide (brs, bls, etat_vente ou bon_retours)' });
     }
 
     const counterId = `${type}_${year}`;
@@ -130,6 +130,16 @@ router.get('/next-num/:type', async (req, res) => {
       let docs;
       if (type === 'etat_vente') {
         docs = await Document.find({ col: 'etat_vente_docs', 'data.year': year }).lean();
+      } else if (type === 'bon_retours') {
+        docs = await Document.find({
+          col: 'bon_retours',
+          $or: [
+            { 'data.year': year },
+            { 'data.year': String(year) },
+            { 'data.ref': new RegExp(`/${year}$`) },
+            { 'data.date': new RegExp(`^${year}-`) }
+          ]
+        }).lean();
       } else {
         docs = await Document.find({ col: type, 'data.year': year }).lean();
       }
@@ -138,9 +148,13 @@ router.get('/next-num/:type', async (req, res) => {
           const match = d.data.ref.match(/ET\/(\d+)\//);
           if (match) return parseInt(match[1]);
         }
-        return parseInt(d.data?.brNum || d.data?.blNum) || 0;
+        if (type === 'bon_retours' && d.data?.ref) {
+          const match = d.data.ref.match(/RET\/(\d+)\//) || d.data.ref.match(/BR-(\w+)-(\d+)/) || d.data.ref.match(/BR-(\d+)/);
+          if (match) return parseInt(match[2] || match[1], 10);
+        }
+        return parseInt(d.data?.retNum || d.data?.brNum || d.data?.blNum) || 0;
       });
-      const currentMax = nums.length ? Math.max(...nums) : (type === 'etat_vente' ? 0 : 99);
+      const currentMax = nums.length ? Math.max(...nums) : (type === 'etat_vente' || type === 'bon_retours' ? 0 : 99);
       try { await Counter.create({ _id: counterId, seq: currentMax }); } catch (_) { /* race */ }
     }
 
@@ -238,8 +252,8 @@ router.get('/:col', async (req, res) => {
     let filter = { col };
     if (isSupplier) {
       if (supplierSid) {
-        // For BLs and BRs: only show documents belonging to this supplier
-        if (col === 'bls' || col === 'brs') {
+        // For BLs, BRs, and bon_retours: only show documents belonging to this supplier
+        if (col === 'bls' || col === 'brs' || col === 'bon_retours') {
           filter['data.supplierId'] = { $in: [supplierSid, String(supplierSid), Number(supplierSid)] };
           // Strictly exclude internal warehouse stock déstockage from factory suppliers
           if (col === 'bls') {
@@ -255,8 +269,8 @@ router.get('/:col', async (req, res) => {
           filter['data.userId'] = { $in: [req.user.id, String(req.user.id), Number(req.user.id)] };
         }
       } else {
-        // If supplier user has no supplierId assigned, block access to BLs/BRs
-        if (col === 'bls' || col === 'brs') {
+        // If supplier user has no supplierId assigned, block access to BLs/BRs/bon_retours
+        if (col === 'bls' || col === 'brs' || col === 'bon_retours') {
           return res.json([]);
         }
       }
@@ -523,8 +537,7 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
         try {
           const brDoc = await Document.findOne(idQuery('brs', targetBrId));
           if (brDoc && brDoc.data) {
-            const isHistoricalDelivered = newData.status === 'delivered';
-            if (isHistoricalDelivered || brDoc.data.status === 'open' || brDoc.data.status === 'reserved') {
+            if (newData.status === 'delivered') {
               const updatedStatus = 'delivered';
               const updatedDeliveredAt = newData.deliveredAt || now;
               await Document.updateOne(
@@ -586,21 +599,34 @@ router.put('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res) 
 
     // ── PREVENTER: Hard Lock on BR Reopening in PUT ───────────────
     if (col === 'brs' && update.status === 'open') {
-      const currentBr = await Document.findOne({ col: 'brs', 'data.id': id }).select('data.id data.ref').lean();
+      const currentBr = await Document.findOne({ col: 'brs', 'data.id': id }).select('data.id data.ref data.lines').lean();
       if (currentBr?.data) {
-        const activeLinkedBL = await Document.findOne({
+        const brIdNum = Number(currentBr.data.id);
+        const activeLinkedBLs = await Document.find({
           col: 'bls',
           $or: [
-            { 'data.brId': id },
-            { 'data.linkedBrId': id },
-            { 'data.ref': `BCH-${id}` }
+            { 'data.brId': brIdNum },
+            { 'data.linkedBrId': brIdNum },
+            { 'data.ref': `BCH-${currentBr.data.id}` }
           ],
           'data.status': { $nin: ['returned', 'cancelled'] }
         }).lean();
-        if (activeLinkedBL) {
-          console.warn(`[PREVENTER] Blocked PUT attempt to revert BR #${id} (${currentBr.data.ref}) to 'open' because active BL exists!`);
+
+        // Calculate remaining quantity on this BR
+        const brLines = currentBr.data.lines || [];
+        const totalQty = brLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+        let usedQty = 0;
+        activeLinkedBLs.forEach(b => {
+          (b.data?.lines || []).forEach(l => {
+            usedQty += (Number(l.qtyDelivered ?? l.qty) || 0);
+          });
+        });
+        const remainingQty = Math.max(0, totalQty - usedQty);
+
+        if (totalQty > 0 && remainingQty <= 0.0001 && activeLinkedBLs.length > 0) {
+          console.warn(`[PREVENTER] Blocked PUT attempt to revert BR #${id} (${currentBr.data.ref}) to 'open' because stock is fully exhausted!`);
           return res.status(403).json({
-            error: `[PREVENTER_BLOCKED] Ce BR est verrouillé : le Bon de Chargement ${activeLinkedBL.data?.ref || ''} lui est rattaché. Impossible de le rouvrir.`
+            error: `[PREVENTER_BLOCKED] Ce BR est totalement épuisé (${activeLinkedBLs.length} BCH rattachés). Impossible de le rouvrir.`
           });
         }
       }
@@ -641,12 +667,12 @@ router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res
     }
 
     // ── PREVENTER: Hard Lock on BR Reopening ─────────────────────
-    // A BR that has an active linked BCH (not returned/cancelled) can NEVER be reverted to 'open'
+    // A BR whose stock is fully exhausted by active BCHs can NEVER be reverted to 'open'
     if (col === 'brs' && patch.status === 'open') {
-      const currentBr = await Document.findOne(query).select('data.id data.ref').lean();
+      const currentBr = await Document.findOne(query).select('data.id data.ref data.lines').lean();
       if (currentBr?.data) {
         const brIdNum = Number(currentBr.data.id);
-        const activeLinkedBL = await Document.findOne({
+        const activeLinkedBLs = await Document.find({
           col: 'bls',
           $or: [
             { 'data.brId': brIdNum },
@@ -656,10 +682,21 @@ router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res
           'data.status': { $nin: ['returned', 'cancelled'] }
         }).lean();
 
-        if (activeLinkedBL) {
-          console.warn(`[PREVENTER] Blocked attempt to revert BR #${brIdNum} (${currentBr.data.ref}) to 'open' because active BL ${activeLinkedBL.data?.ref} exists!`);
+        // Calculate remaining quantity on this BR
+        const brLines = currentBr.data.lines || [];
+        const totalQty = brLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+        let usedQty = 0;
+        activeLinkedBLs.forEach(b => {
+          (b.data?.lines || []).forEach(l => {
+            usedQty += (Number(l.qtyDelivered ?? l.qty) || 0);
+          });
+        });
+        const remainingQty = Math.max(0, totalQty - usedQty);
+
+        if (totalQty > 0 && remainingQty <= 0.0001 && activeLinkedBLs.length > 0) {
+          console.warn(`[PREVENTER] Blocked attempt to revert BR #${brIdNum} (${currentBr.data.ref}) to 'open' because stock is fully exhausted!`);
           return res.status(403).json({
-            error: `[PREVENTER_BLOCKED] Ce BR est verrouillé : le Bon de Chargement ${activeLinkedBL.data?.ref || ''} lui est rattaché. Impossible de le rouvrir.`
+            error: `[PREVENTER_BLOCKED] Ce BR est totalement épuisé (${activeLinkedBLs.length} BCH rattachés). Impossible de le rouvrir.`
           });
         }
       }
