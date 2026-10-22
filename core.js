@@ -546,8 +546,47 @@ const DB = {
         const allEvDocs = DB.getAll('etat_vente_docs') || [];
         const allUsers = DB.getAll('users') || [];
 
+        // High-Performance O(1) Hash Map Indexes (Eliminates O(N^2) quadratic latency bottleneck)
+        const userMap = new Map();
+        allUsers.forEach(u => { if (u && u.id != null) userMap.set(u.id, u); });
+
+        const evById = new Map();
+        const evByRef = new Map();
+        const evByDateUser = new Map();
+        allEvDocs.forEach(d => {
+          if (!d) return;
+          if (d.id != null) evById.set(Number(d.id), d);
+          if (d.ref) evByRef.set(d.ref, d);
+          const dDate = d.date || d.dateEnd || d.dateStart;
+          if (dDate && d.userId != null) evByDateUser.set(`${dDate}_${d.userId}`, d);
+        });
+
+        const depBySession = new Map();
+        const depByEV = new Map();
+        const depByDateUser = new Map();
+
+        const wthBySession = new Map();
+        const wthByEV = new Map();
+        const wthByDateUser = new Map();
+
+        cleaned.forEach(e => {
+          if (!e) return;
+          if (e.type === 'deposit' && (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles')) {
+            if (e.sessionId != null) depBySession.set(Number(e.sessionId), e);
+            if (e.etatVenteRef) depByEV.set(e.etatVenteRef, e);
+            const dDate = e.sessionDate || (e.date || '').slice(0, 10);
+            if (dDate && e.userId != null) depByDateUser.set(`${dDate}_${e.userId}`, e);
+          } else if (e.type === 'withdrawal' && e.source === 'transfert_banque_etat_vente') {
+            if (e.sessionId != null) wthBySession.set(Number(e.sessionId), e);
+            if (e.etatVenteRef) wthByEV.set(e.etatVenteRef, e);
+            if (e.etatVenteId != null) wthByEV.set(`id_${e.etatVenteId}`, e);
+            const dDate = e.sessionDate || (e.date || '').slice(0, 10);
+            if (dDate && e.userId != null) wthByDateUser.set(`${dDate}_${e.userId}`, e);
+          }
+        });
+
         closedSessions.forEach(s => {
-          const sUser = allUsers.find(u => u.id === s.userId);
+          const sUser = userMap.get(s.userId);
           const userName = sUser?.name || sUser?.username || s.userName || 'Caissier';
           const sessionDate = s.date || (s.closedAt || s.createdAt || '').slice(0, 10);
 
@@ -558,14 +597,10 @@ const DB = {
             expectedRealBchNet = summ ? summ.netAmount : (Number(s.closedEspeces) || Number(s.closedNet) || 0);
           }
 
-          // 4a. Synchronize Deposit (Recettes réelles BCH)
-          let dep = cleaned.find(e => 
-            e.type === 'deposit' && 
-            (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles') && 
-            (Number(e.sessionId) === Number(s.id) || 
-             (s.etatVenteRef && e.etatVenteRef === s.etatVenteRef) || 
-             ((e.sessionDate === sessionDate || (e.date || '').slice(0, 10) === sessionDate) && String(e.userId) === String(s.userId)))
-          );
+          // 4a. Synchronize Deposit (Recettes réelles BCH) via O(1) Hash Map
+          let dep = depBySession.get(Number(s.id)) || 
+                    (s.etatVenteRef ? depByEV.get(s.etatVenteRef) : null) || 
+                    depByDateUser.get(`${sessionDate}_${s.userId}`);
 
           if (dep) {
             dep.sessionId = s.id;
@@ -598,20 +633,19 @@ const DB = {
               createdAt: s.closedAt || s.createdAt || new Date().toISOString()
             };
             cleaned.push(dep);
+            depBySession.set(Number(s.id), dep);
+            if (s.etatVenteRef) depByEV.set(s.etatVenteRef, dep);
+            depByDateUser.set(`${sessionDate}_${s.userId}`, dep);
             modified = true;
             if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
               window.API.insert('caisse_admin', dep).catch(() => {});
             }
           }
 
-          // 4b. Synchronize Withdrawal (Transfert Banque État de Vente)
-          let evDoc = s.etatVenteId ? allEvDocs.find(d => d.id === s.etatVenteId) : null;
-          if (!evDoc && s.etatVenteRef) {
-            evDoc = allEvDocs.find(d => d.ref === s.etatVenteRef);
-          }
-          if (!evDoc) {
-            evDoc = allEvDocs.find(d => (d.date === sessionDate || d.dateEnd === sessionDate) && String(d.userId) === String(s.userId));
-          }
+          // 4b. Synchronize Withdrawal (Transfert Banque État de Vente) via O(1) Hash Map
+          let evDoc = (s.etatVenteId != null ? evById.get(Number(s.etatVenteId)) : null) || 
+                      (s.etatVenteRef ? evByRef.get(s.etatVenteRef) : null) || 
+                      evByDateUser.get(`${sessionDate}_${s.userId}`);
 
           let expectedEvTTC = 0;
           let expectedTimbre = 0;
@@ -652,14 +686,10 @@ const DB = {
           const expectedEcart = Math.round((expectedEvTTC - expectedRealBchNet) * 100) / 100;
           const evRef = evDoc?.ref || s.etatVenteRef || `ET/SESS-${s.id}`;
 
-          let wit = cleaned.find(e => 
-            e.type === 'withdrawal' && 
-            e.source === 'transfert_banque_etat_vente' && 
-            (Number(e.sessionId) === Number(s.id) || 
-             (evRef && e.etatVenteRef === evRef) || 
-             (evDoc && (e.etatVenteRef === evDoc.ref || String(e.etatVenteId) === String(evDoc.id))) ||
-             ((e.sessionDate === sessionDate || (e.date || '').slice(0, 10) === sessionDate) && String(e.userId) === String(s.userId)))
-          );
+          let wit = wthBySession.get(Number(s.id)) || 
+                    (evRef ? wthByEV.get(evRef) : null) || 
+                    (evDoc ? (wthByEV.get(evDoc.ref) || wthByEV.get(`id_${evDoc.id}`)) : null) || 
+                    wthByDateUser.get(`${sessionDate}_${s.userId}`);
 
           if (wit) {
             wit.sessionId = s.id;
@@ -699,6 +729,9 @@ const DB = {
               createdAt: s.closedAt || s.createdAt || new Date().toISOString()
             };
             cleaned.push(wit);
+            wthBySession.set(Number(s.id), wit);
+            if (evRef) wthByEV.set(evRef, wit);
+            wthByDateUser.set(`${sessionDate}_${s.userId}`, wit);
             modified = true;
             if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
               window.API.insert('caisse_admin', wit).catch(() => {});
@@ -1528,9 +1561,15 @@ const DB = {
                   window.API.insert('bank_transactions', newTx).catch(() => {});
                 }
               } else if (existingDep && Math.abs(Number(existingDep.amount) - Number(ev.totalTTC)) > 0.01) {
-                existingDep.amount = Number(ev.totalTTC);
-                evFixed++;
-                fixes.push(`Montant du dépôt bancaire ajusté pour État de Vente ${ev.ref} (${Utils.fmtCurrency(ev.totalTTC)})`);
+                // Ensure bank deposits are not retroactively altered for closed historical periods
+                const evDate = (ev.date || ev.dateStart || ev.createdAt || '').slice(0, 10);
+                const isClosedOrPast = (evDate && evDate < Utils.today()) || 
+                  DB.getAll('sessions').some(s => (s.etatVenteId === ev.id || s.date === evDate) && s.status === 'closed');
+                if (!isClosedOrPast) {
+                  existingDep.amount = Number(ev.totalTTC);
+                  evFixed++;
+                  fixes.push(`Montant du dépôt bancaire ajusté pour État de Vente ${ev.ref} (${Utils.fmtCurrency(ev.totalTTC)})`);
+                }
               }
             });
             if (evFixed > 0) DB.rawSet('bank_transactions', bankTxs);
@@ -2924,24 +2963,47 @@ const DB = {
       if (!br) {
         // Auto-purge dead bin entry
         const updatedBin = bin.filter(e => e.id !== binId);
-        localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+        this.rawSet('recycle_bin', updatedBin);
         if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
           window.API.remove('recycle_bin', binId).catch(() => {});
         }
         return { ok: false, error: isAR ? 'تعذر الاستعادة: تم حذف وصل الاستلام الأصلي.' : 'Impossible de restaurer : le BR d\'origine a été supprimé.' };
       }
       // For non-partial BLs, block if BR already has an active BL
-      // For partial BLs, always allow restore (multiple partials per BR is expected)
       if (!finalItem.isPartial) {
         const activeBLs = this.getAll('bls').filter(b => Number(b.brId) === Number(finalItem.brId) && b.status !== 'returned');
         if (activeBLs.length > 0) {
           // Auto-purge the conflicting recycle bin entry
           const updatedBin = bin.filter(e => e.id !== binId);
-          localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+          this.rawSet('recycle_bin', updatedBin);
           if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
             window.API.remove('recycle_bin', binId).catch(() => {});
           }
           return { ok: false, error: isAR ? `لا يمكن استعادة وصل التسليم هذا لأن وصل الاستلام ${br.ref} مرتبط بالفعل بوصل تسليم نشط آخر (${activeBLs[0].ref}). تم حذف العنصر نهائياً من المهملات.` : `Ce BL ne peut plus être restauré car le BR ${br.ref} est déjà rattaché à un autre BL actif (${activeBLs[0].ref}). L'élément a été définitivement purgé de la corbeille.` };
+        }
+      } else {
+        // Enforce that partial BLs check BLModule.getBRRemaining(finalItem.brId).
+        // If available quantity < finalItem.qtyDelivered, block restoration with an appropriate error rather than creating phantom inventory.
+        const reqQty = Number(finalItem.qtyDelivered) || (finalItem.lines || []).reduce((sum, l) => sum + (Number(l.qtyDelivered ?? l.qty) || 0), 0);
+        let remainingQty = 0;
+        if (typeof BLModule !== 'undefined' && typeof BLModule.getBRRemaining === 'function') {
+          const rem = BLModule.getBRRemaining(finalItem.brId);
+          remainingQty = rem.remainingQty;
+        } else {
+          const totalBR = (br.lines || []).reduce((sum, l) => sum + (Number(l.qty) || 0), 0);
+          const usedBR = this.getAll('bls')
+            .filter(b => (Number(b.brId) === Number(finalItem.brId) || Number(b.linkedBrId) === Number(finalItem.brId)) && b.status !== 'returned' && b.status !== 'cancelled')
+            .reduce((sum, b) => sum + (b.lines || []).reduce((lsum, l) => lsum + (Number(l.qtyDelivered ?? l.qty) || 0), 0), 0);
+          remainingQty = Math.max(0, Math.round((totalBR - usedBR) * 1000) / 1000);
+        }
+
+        if (remainingQty < reqQty) {
+          return {
+            ok: false,
+            error: isAR 
+              ? `تعذر استعادة وصل التسليم الجزئي: الكمية المتبقية في وصل الاستلام (${remainingQty}) غير كافية للكمية المطلوبة (${reqQty}).`
+              : `Impossible de restaurer ce BL partiel : la quantité restante sur le BR (${remainingQty}) est insuffisante pour couvrir la quantité demandée (${reqQty}).`
+          };
         }
       }
     }
@@ -2955,13 +3017,18 @@ const DB = {
 
     // Remove from bin entirely (don't just mark — actually remove)
     const updatedBin = bin.filter(e => e.id !== binId);
-    localStorage.setItem('recycle_bin', JSON.stringify(updatedBin));
+    this.rawSet('recycle_bin', updatedBin);
     // Cloud sync: remove the bin entry
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.remove('recycle_bin', binId).catch(() => {});
     }
 
     return { ok: true, item: restored, refWarning };
+  },
+
+  purgeFromBin(binId) {
+    if (!binId) return false;
+    return this.delete('recycle_bin', binId);
   },
 
   // ─── Unified Sequential Document Numbering & Cross-Checker ───────
@@ -3629,7 +3696,7 @@ const DB = {
     const entry = { id: log.length+1, ts, userId: u?.id||null, userName: u?.name||'System', action, collection: col, docId: id, prevHash: prev };
     entry.hash = this._fnv(`${prev}|${ts}|${entry.userId}|${action}|${col}|${id}`);
     log.push(entry);
-    localStorage.setItem('audit_log', JSON.stringify(log.slice(-5000)));
+    this.rawSet('audit_log', log.slice(-5000));
     // Push to server so audit persists across sessions
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.insert('audit_log', entry).catch(e => console.warn('[audit] cloud push failed', e.message));
@@ -3640,7 +3707,7 @@ const DB = {
     const u = Auth.getCurrentUser();
     const entry = { id: h.length+1, ts: new Date().toISOString(), col, docId: id, action, note, userId: u?.id||null, userName: u?.name||'System' };
     h.push(entry);
-    localStorage.setItem('history', JSON.stringify(h.slice(-3000)));
+    this.rawSet('history', h.slice(-3000));
     // Push to server so history persists across sessions
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       window.API.insert('history', entry).catch(e => console.warn('[history] cloud push failed', e.message));
@@ -3659,10 +3726,14 @@ const DB = {
   },
   importAll(json) {
     try {
-      const d = JSON.parse(json);
+      const d = typeof json === 'string' ? JSON.parse(json) : json;
+      if (!d || typeof d !== 'object') return false;
       Object.keys(d).forEach(k => {
-        if (k === 'settings') localStorage.setItem('settings', JSON.stringify(d[k]));
-        else if (k !== 'exportedAt') localStorage.setItem(k, JSON.stringify(d[k]));
+        if (k === 'settings') {
+          this.setSettings ? this.setSettings(d[k]) : localStorage.setItem('settings', JSON.stringify(d[k]));
+        } else if (k !== 'exportedAt') {
+          this.rawSet ? this.rawSet(k, d[k]) : localStorage.setItem(k, JSON.stringify(d[k]));
+        }
       });
       return true;
     } catch { return false; }
@@ -4323,11 +4394,11 @@ const SessionMgr = {
   getUserDaySummary(userId, date = Utils.today()) {
     const isUserMatch = (creatorId) => {
       if (userId === 'all') return true;
+      if (creatorId == null) return false;
       if (creatorId === userId || String(creatorId) === String(userId)) return true;
       const isAdminDoc = (creatorId === 1 || creatorId === '1' || creatorId === 'admin');
       const isAdminQuery = (userId === 1 || userId === '1' || userId === 'admin');
       if (isAdminDoc && isAdminQuery) return true;
-      if (creatorId == null && isAdminQuery) return true;
       return false;
     };
     const normDate = d => {
@@ -4350,8 +4421,10 @@ const SessionMgr = {
 
     // Filter BLs: Match single effective date (prefer b.date, fallback to b.createdAt)
     const rawBLs = allBLs.filter(b => {
-      const userMatch = isUserMatch(b.createdBy) || isUserMatch(b.userId) || isUserMatch(b.deliveredBy);
-      if (!userMatch) return false;
+      const creatorMatch = isUserMatch(b.createdBy) || isUserMatch(b.userId);
+      const deliveryMatch = b.deliveredBy != null && isUserMatch(b.deliveredBy);
+      const legacyAdminMatch = (b.createdBy == null && b.userId == null && (userId === 1 || userId === '1' || userId === 'admin'));
+      if (!creatorMatch && !deliveryMatch && !legacyAdminMatch) return false;
       const docDate = normDate(b.date) || normDate(b.createdAt);
       if (docDate !== date) return false;
       return b.status !== 'draft' && b.status !== 'cancelled';
@@ -4374,20 +4447,16 @@ const SessionMgr = {
                        (r.bcId && blMap.get(Number(r.bcId))) || 
                        (r.blRef && blMap.get(String(r.blRef).trim())) || null;
 
-      // Robust user match across all creator/cashier/handler fields
-      const userMatches = 
-        isUserMatch(r.cashierId) || 
-        isUserMatch(r.userId) || 
-        isUserMatch(r.returnedBy) || 
-        isUserMatch(r.createdBy) ||
-        (linkedBL && (isUserMatch(linkedBL.createdBy) || isUserMatch(linkedBL.userId)));
+      // Return deductions must strictly match the selling cashier (r.cashierId || r.userId),
+      // not the supervising admin (r.returnedBy / r.createdBy).
+      const sellingCashierId = r.cashierId || r.userId || (linkedBL && (linkedBL.createdBy || linkedBL.userId));
+      const userMatches = isUserMatch(sellingCashierId);
       if (!userMatches) return false;
 
       const rDocDate = normDate(r.date) || normDate(r.createdAt);
-      const blDocDate = linkedBL ? (normDate(linkedBL.date) || normDate(linkedBL.createdAt)) : (normDate(r.blDate) || null);
 
-      // Match if return was recorded on this date OR belongs to a BL delivered on this date
-      return rDocDate === date || blDocDate === date;
+      // Match ONLY if return was physically processed on this date (past closed days remain immutable)
+      return rDocDate === date;
     });
 
     const seenRetRefs = new Set();
@@ -4735,11 +4804,14 @@ const SessionMgr = {
     }
 
     // Update caisse_admin
-    const caisseDep = DB.getAll('caisse_admin').find(e => Number(e.sessionId) === Number(session.id) && (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles'));
+    const caisseDep = DB.getAll('caisse_admin').find(e => 
+      (Number(e.sessionId) === Number(session.id) || (e.sessionDate === session.date && String(e.userId) === String(session.userId))) && 
+      (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles')
+    );
     const caisseWit = DB.getAll('caisse_admin').find(e => 
       e.type === 'withdrawal' && 
       e.source === 'transfert_banque_etat_vente' && 
-      (Number(e.sessionId) === Number(session.id) || (session.etatVenteRef && e.etatVenteRef === session.etatVenteRef))
+      (Number(e.sessionId) === Number(session.id) || (session.etatVenteRef && e.etatVenteRef === session.etatVenteRef) || (e.sessionDate === session.date && String(e.userId) === String(session.userId)))
     );
     if (caisseWit) {
       DB.update('caisse_admin', caisseWit.id, {
