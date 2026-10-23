@@ -7542,9 +7542,10 @@ const AdminCaisseModule = {
       const isCl = s.status === 'closed';
 
       // 1. Real BCH cash collected (Gross Ventes BCH TTC - Retours Déduits TTC)
-      const realBchGross = sum.totalSalesTTC;
-      const realBchReturns = sum.totalReturnsTTC;
-      const realBchNet = sum.netAmount; // What was physically collected in cashier's drawer
+      const caisseDep = allCaisseAdminEntries.find(e => e.type === 'deposit' && (Number(e.sessionId) === Number(s.id) || (e.source === 'user_cloture' && e.sessionDate === s.date && String(e.userId) === String(s.userId))));
+      const realBchGross = (sum.totalSalesTTC > 0 || !isCl) ? sum.totalSalesTTC : Number(s.totalSales || s.closedEspeces || s.closedNet || caisseDep?.amount || 0);
+      const realBchReturns = (sum.totalReturnsTTC > 0 || !isCl) ? sum.totalReturnsTTC : Number(s.totalReturns || s.closedMonnaie || 0);
+      const realBchNet = (sum.netAmount > 0 || !isCl) ? sum.netAmount : Number(s.closedNet || s.realBchNet || caisseDep?.amount || 0);
 
       // 2. Official État de Vente TTC (with 1% timbre)
       let evDoc = s.etatVenteId ? DB.getById('etat_vente_docs', s.etatVenteId) : null;
@@ -7598,7 +7599,6 @@ const AdminCaisseModule = {
       const bankAmount = bankTx ? Number(bankTx.amount) || 0 : (isCl ? etatVenteTTC : 0);
 
       // 5. Caisse Centrale Admin Deposit
-      const caisseDep = allCaisseAdminEntries.find(e => e.type === 'deposit' && (Number(e.sessionId) === Number(s.id) || (e.source === 'user_cloture' && e.sessionDate === s.date && String(e.userId) === String(s.userId))));
       const caisseAdminAmount = caisseDep ? Number(caisseDep.amount) || 0 : (isCl ? realBchNet : 0);
 
       return {

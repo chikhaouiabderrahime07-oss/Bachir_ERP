@@ -2624,7 +2624,7 @@ const DB = {
           safeSet('timbre_slabs_data', JSON.stringify(data));
         }
       } else {
-        let qs = isLarge ? '?limit=500' : '';
+        let qs = isLarge ? '?limit=10000' : '';
         data = await window.API.getAll(col, qs);
         if (!data || !Array.isArray(data)) return; // Null/failed response: NEVER touch local storage!
         
