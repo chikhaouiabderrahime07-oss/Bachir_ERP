@@ -593,8 +593,12 @@ const DB = {
           // Calculate or fetch expected net BCH cash collected:
           let expectedRealBchNet = Number(s.realBchNet);
           if (isNaN(expectedRealBchNet) || expectedRealBchNet <= 0) {
-            const summ = (typeof SessionMgr !== 'undefined' && SessionMgr.getUserDaySummary) ? SessionMgr.getUserDaySummary(s.userId, sessionDate) : null;
-            expectedRealBchNet = summ ? summ.netAmount : (Number(s.closedEspeces) || Number(s.closedNet) || 0);
+            if (Number(s.closedNet) > 0) {
+              expectedRealBchNet = Number(s.closedNet);
+            } else {
+              const summ = (typeof SessionMgr !== 'undefined' && SessionMgr.getUserDaySummary) ? SessionMgr.getUserDaySummary(s.userId, sessionDate) : null;
+              expectedRealBchNet = summ ? summ.netAmount : (Number(s.closedEspeces) || 0);
+            }
           }
 
           // 4a. Synchronize Deposit (Recettes réelles BCH) via O(1) Hash Map
@@ -626,6 +630,7 @@ const DB = {
               userName,
               sessionId: s.id,
               sessionDate,
+              date: sessionDate,
               amount: expectedRealBchNet,
               targetBankId: s.targetBankId || null,
               etatVenteRef: s.etatVenteRef || null,
@@ -697,9 +702,10 @@ const DB = {
             wit.userId = s.userId;
             wit.userName = userName;
             if (evRef && !wit.etatVenteRef) wit.etatVenteRef = evRef;
-            if (Math.abs(Number(wit.amount || 0) - expectedRealBchNet) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01) {
-              wit.amount = expectedRealBchNet;
+            if (Math.abs(Number(wit.amount || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.realBchNet || 0) - expectedRealBchNet) > 0.01) {
+              wit.amount = expectedEvTTC;
               wit.etatVenteTTC = expectedEvTTC;
+              wit.realBchNet = expectedRealBchNet;
               wit.timbreAmount = expectedTimbre;
               wit.ecartFiscal = expectedEcart;
               modified = true;
@@ -707,7 +713,7 @@ const DB = {
                 window.API.update('caisse_admin', wit.id, wit).catch(() => {});
               }
             }
-          } else if (expectedRealBchNet > 0) {
+          } else if (expectedEvTTC > 0 || expectedRealBchNet > 0) {
             // Auto-create missing withdrawal for this État de Vente transfer
             const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
             wit = {
@@ -718,7 +724,9 @@ const DB = {
               userName,
               sessionId: s.id,
               sessionDate,
-              amount: expectedRealBchNet,
+              date: sessionDate,
+              amount: expectedEvTTC,
+              realBchNet: expectedRealBchNet,
               targetBankId: s.targetBankId || evDoc?.bankId || null,
               etatVenteRef: evRef,
               etatVenteId: evDoc?.id || s.etatVenteId || null,
@@ -1421,6 +1429,139 @@ const DB = {
       } finally {
         this._running = false;
       }
+    },
+
+    healCaisseAdminHistory() {
+      console.log('[MasterBrain] Starting retroactive caisse_admin healing...');
+      const caisse = DB.getAll('caisse_admin') || [];
+      const sessions = DB.getAll('sessions') || [];
+      const evDocs = DB.getAll('etat_vente_docs') || [];
+      const charges = DB.getAll('bank_charges') || [];
+      let healedCount = 0;
+
+      // 1. Restore all transfert_banque_etat_vente withdrawals: amount = etatVenteTTC
+      caisse.forEach(tx => {
+        if (tx.type === 'withdrawal' && tx.source === 'transfert_banque_etat_vente') {
+          let evDoc = tx.etatVenteId ? DB.getById('etat_vente_docs', tx.etatVenteId) : null;
+          if (!evDoc && tx.etatVenteRef) evDoc = evDocs.find(d => d.ref === tx.etatVenteRef);
+          if (!evDoc && tx.sessionId) evDoc = evDocs.find(d => Number(d.sessionId) === Number(tx.sessionId));
+
+          const sess = tx.sessionId ? sessions.find(s => Number(s.id) === Number(tx.sessionId)) : null;
+
+          let targetTTC = 0;
+          let realBchNet = 0;
+          if (evDoc && Number(evDoc.totalTTC) > 0) {
+            targetTTC = Number(evDoc.totalTTC);
+          } else if (sess && (sess.etatVenteTTC || sess.closedNet)) {
+            targetTTC = Number(sess.etatVenteTTC || sess.closedNet);
+          } else if (tx.etatVenteTTC && Number(tx.etatVenteTTC) > 0) {
+            targetTTC = Number(tx.etatVenteTTC);
+          }
+
+          if (sess) {
+            const sum = SessionMgr.getUserDaySummary(sess.userId, sess.date);
+            realBchNet = sum.netAmount;
+          } else if (tx.realBchNet) {
+            realBchNet = Number(tx.realBchNet);
+          }
+
+          const targetAmount = targetTTC > 0 ? targetTTC : realBchNet;
+          if (targetAmount > 0 && Math.abs((Number(tx.amount) || 0) - targetAmount) > 0.01) {
+            tx.amount = targetAmount;
+            tx.etatVenteTTC = targetTTC;
+            if (realBchNet > 0) tx.realBchNet = realBchNet;
+            tx.ecartFiscal = Math.round((targetTTC - (tx.realBchNet || 0)) * 100) / 100;
+            healedCount++;
+          }
+        }
+      });
+
+      // 2. Ensure all cash charges from bank_charges are in caisse_admin
+      const caisseCharges = charges.filter(c => c.bankId === 'caisse' || c.source === 'caisse' || (!c.bankId && c.type === 'manual'));
+      caisseCharges.forEach(c => {
+        const amt = Number(c.amount) || 0;
+        if (amt <= 0) return;
+        const cid = String(c.id);
+        const exists = caisse.find(t => t.type === 'withdrawal' && (String(t.chargeId) === cid || ((t.source === 'charge' || (t.note||'').toLowerCase().includes((c.label||'').toLowerCase())) && Math.abs(Number(t.amount) - amt) < 0.01)));
+        if (!exists) {
+          const maxId = caisse.reduce((m, e) => Math.max(m, e.id || 0), 0);
+          caisse.push({
+            id: maxId + 1,
+            type: 'withdrawal',
+            source: 'charge',
+            chargeId: c.id,
+            amount: amt,
+            note: `Charge: ${c.label || c.subtype || 'Frais'}${c.category ? ' (' + c.category + ')' : ''}`,
+            userId: c.createdBy || null,
+            userName: c.createdByName || 'Administrateur',
+            date: c.date || (c.createdAt || '').slice(0, 10),
+            createdAt: c.createdAt || (c.date ? c.date + 'T12:00:00.000Z' : new Date().toISOString())
+          });
+          healedCount++;
+        }
+      });
+
+      // 3. Ensure direct Caisse Principale Bon de Retour refunds are in caisse_admin
+      const allRetours = DB.getAll('bon_retours') || [];
+      allRetours.forEach(r => {
+        if (r.cashierId === 'caisse_admin' || r.refundedByCashierId === 'caisse_admin') {
+          const rAmt = Number(r.totalTTC) || 0;
+          if (rAmt <= 0) return;
+          const exists = caisse.find(t => t.type === 'withdrawal' && (t.bonRetourId === r.id || t.bonRetourRef === r.ref || (t.source === 'bon_retour' && (t.note||'').includes(r.ref))));
+          if (!exists) {
+            const maxId = caisse.reduce((m, e) => Math.max(m, e.id || 0), 0);
+            caisse.push({
+              id: maxId + 1,
+              type: 'withdrawal',
+              source: 'bon_retour',
+              bonRetourId: r.id,
+              bonRetourRef: r.ref,
+              blRef: r.blRef,
+              clientId: r.clientId,
+              clientName: r.clientName || 'Client',
+              amount: rAmt,
+              note: `Remboursement direct Bon de Retour ${r.ref} (Client: ${r.clientName || 'Client'})`,
+              userId: r.returnedBy || r.userId || null,
+              userName: r.returnedByName || 'Administrateur',
+              date: r.date || (r.createdAt || '').slice(0, 10),
+              createdAt: r.createdAt || (r.date ? r.date + 'T12:00:00.000Z' : new Date().toISOString())
+            });
+            healedCount++;
+          }
+        }
+      });
+
+      DB.rawSet('caisse_admin', caisse);
+
+      // 4. Backfill missing client details on old BLs/BCHs
+      const bls = DB.getAll('bls') || [];
+      const clients = DB.getAll('clients') || [];
+      const clientMap = new Map();
+      clients.forEach(c => clientMap.set(c.id, c));
+      let blsHealed = 0;
+      bls.forEach(b => {
+        if (b.clientId) {
+          const cli = clientMap.get(b.clientId);
+          if (cli) {
+            let changed = false;
+            if (!b.clientName && cli.name) { b.clientName = cli.name; changed = true; }
+            if (!b.clientAddress && cli.address) { b.clientAddress = cli.address; changed = true; }
+            if (!b.destinationAddress && cli.address) { b.destinationAddress = cli.address; changed = true; }
+            if (!b.clientPhone && cli.phone) { b.clientPhone = cli.phone; changed = true; }
+            if (!b.clientNif && cli.nif) { b.clientNif = cli.nif; changed = true; }
+            if (!b.clientRc && cli.rc) { b.clientRc = cli.rc; changed = true; }
+            if (!b.clientNis && cli.nis) { b.clientNis = cli.nis; changed = true; }
+            if (changed) blsHealed++;
+          }
+        }
+      });
+      if (blsHealed > 0) {
+        DB.rawSet('bls', bls);
+        console.log(`[MasterBrain] Backfilled client data on ${blsHealed} old BL documents`);
+      }
+
+      console.log(`[MasterBrain] Healing complete: ${healedCount} caisse entries updated/restored, ${blsHealed} BLs enriched`);
+      return { ok: true, healedCount, blsHealed };
     },
 
     // ── 6. The 15-Minute Autocorrect & Data Integrity Cortex Engine ──
@@ -4443,20 +4584,23 @@ const SessionMgr = {
 
     // Filter and deduplicate retours
     const rawRetours = DB.getAll('bon_retours').filter(r => {
+      const rDocDate = normDate(r.date) || normDate(r.createdAt);
+      if (rDocDate !== date) return false;
+
+      // If return was refunded directly from central safe (caisse_admin), do not deduct from cashier drawers
+      if (r.cashierId === 'caisse_admin' || r.refundedByCashierId === 'caisse_admin') {
+        return userId === 'all';
+      }
+
+      if (userId === 'all') return true;
+
       const linkedBL = (r.blId && blMap.get(Number(r.blId))) || 
                        (r.bcId && blMap.get(Number(r.bcId))) || 
                        (r.blRef && blMap.get(String(r.blRef).trim())) || null;
 
-      // Return deductions must strictly match the selling cashier (r.cashierId || r.userId),
-      // not the supervising admin (r.returnedBy / r.createdBy).
-      const sellingCashierId = r.cashierId || r.userId || (linkedBL && (linkedBL.createdBy || linkedBL.userId));
-      const userMatches = isUserMatch(sellingCashierId);
-      if (!userMatches) return false;
-
-      const rDocDate = normDate(r.date) || normDate(r.createdAt);
-
-      // Match ONLY if return was physically processed on this date (past closed days remain immutable)
-      return rDocDate === date;
+      // The refund must deduct from the cashier who paid out cash today:
+      const refundCashierId = r.refundedByCashierId || r.cashierId || (linkedBL && (linkedBL.createdBy || linkedBL.userId)) || r.userId;
+      return isUserMatch(refundCashierId);
     });
 
     const seenRetRefs = new Set();
@@ -4725,6 +4869,7 @@ const SessionMgr = {
       userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       sessionId: session.id,
       sessionDate: today,
+      date: today,
       amount: summary.netAmount, // Actual net cash handed over
       targetBankId,
       etatVenteRef: ref,
@@ -4736,7 +4881,7 @@ const SessionMgr = {
       DB.insert('caisse_admin', { ...caisseDepositData, createdAt: effectiveCreated });
     }
 
-    // 4b. Withdrawal / Transfer to Bank via État de Vente (aligned with physical net cash handed over)
+    // 4b. Withdrawal / Transfer to Bank via État de Vente (amount = netAmountEV with 1% timbre)
     const existingCaisseWithdrawal = DB.getAll('caisse_admin').find(e => 
       e.type === 'withdrawal' && 
       e.source === 'transfert_banque_etat_vente' && 
@@ -4749,10 +4894,12 @@ const SessionMgr = {
       userName: u?.name || (isAR ? 'البائع' : 'Vendeur'),
       sessionId: session.id,
       sessionDate: today,
-      amount: summary.netAmount,
+      date: today,
+      amount: netAmountEV,
       targetBankId,
       etatVenteRef: ref,
       etatVenteTTC: netAmountEV,
+      realBchNet: summary.netAmount,
       timbreAmount,
       ecartFiscal,
       note: isAR 
@@ -4761,7 +4908,7 @@ const SessionMgr = {
     };
     if (existingCaisseWithdrawal) {
       DB.update('caisse_admin', existingCaisseWithdrawal.id, caisseWithdrawalData);
-    } else if (summary.netAmount > 0) {
+    } else if (netAmountEV > 0 || summary.netAmount > 0) {
       DB.insert('caisse_admin', { ...caisseWithdrawalData, createdAt: effectiveCreated });
     }
 
@@ -4819,12 +4966,48 @@ const SessionMgr = {
         etatVenteTTC: Number(newNet),
         note: (caisseWit.note || '') + ` [Rectifié de ${Utils.fmtCurrency(oldNet)} à ${Utils.fmtCurrency(newNet)} par Admin]`
       });
+    } else if (Number(newNet) > 0) {
+      const nowIso = new Date().toISOString();
+      const sDate = session.date || nowIso.slice(0, 10);
+      DB.insert('caisse_admin', {
+        type: 'withdrawal',
+        source: 'transfert_banque_etat_vente',
+        userId: session.userId,
+        userName: session.userName || 'Caissier',
+        sessionId: session.id,
+        sessionDate: sDate,
+        date: sDate,
+        amount: Number(newNet),
+        targetBankId: session.targetBankId,
+        etatVenteRef: session.etatVenteRef,
+        etatVenteTTC: Number(newNet),
+        realBchNet: Number(newNet),
+        note: `Versement bancaire rectifié — Session #${session.id} (${Utils.fmtCurrency(newNet)})`,
+        createdAt: nowIso
+      });
     }
     // Also update the deposit entry to keep caisse balanced
     if (caisseDep) {
       DB.update('caisse_admin', caisseDep.id, {
         amount: Number(newNet),
         note: (caisseDep.note || '') + ` [Rectifié de ${Utils.fmtCurrency(oldNet)} à ${Utils.fmtCurrency(newNet)} par Admin]`
+      });
+    } else if (Number(newNet) > 0) {
+      const nowIso = new Date().toISOString();
+      const sDate = session.date || nowIso.slice(0, 10);
+      DB.insert('caisse_admin', {
+        type: 'deposit',
+        source: 'user_cloture',
+        userId: session.userId,
+        userName: session.userName || 'Caissier',
+        sessionId: session.id,
+        sessionDate: sDate,
+        date: sDate,
+        amount: Number(newNet),
+        targetBankId: session.targetBankId,
+        etatVenteRef: session.etatVenteRef,
+        note: `Recettes réelles rectifiées — Session #${session.id} (${Utils.fmtCurrency(newNet)})`,
+        createdAt: nowIso
       });
     }
 

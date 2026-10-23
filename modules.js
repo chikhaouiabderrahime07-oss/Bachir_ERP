@@ -1864,17 +1864,37 @@ const BRModule = {
   _activeFilters: {},
   exportBRCSV() {
     const sups = {}; DB.getAll('suppliers').forEach(s => sups[s.id] = s);
-    const items = DB.getAll('brs');
+    let items = (this._lastFilteredItems && this._lastFilteredItems.length) ? [...this._lastFilteredItems] : null;
+    const f = this._filters || {};
+    if (!items) {
+      items = DB.getAll('brs');
+      if (f.q) {
+        const ql = (f.q || '').toLowerCase();
+        items = items.filter(b => (b.ref||'').toLowerCase().includes(ql) || ((sups[b.supplierId]||{}).name||'').toLowerCase().includes(ql));
+      }
+      if (f.supplierId && f.supplierId !== 'all') {
+        items = items.filter(b => String(b.supplierId) === String(f.supplierId));
+      }
+      if (f.status && f.status !== 'all') {
+        items = items.filter(b => (b.status || 'open') === f.status);
+      }
+      if (f.createdBy && f.createdBy !== 'all') items = items.filter(b => String(b.createdBy) === String(f.createdBy));
+    }
+    // Strict period filter guarantee: only records within active dateFrom/dateTo are exported
+    if (f.dateFrom) items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) >= f.dateFrom);
+    if (f.dateTo) items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) <= f.dateTo);
+
     const rows = items.map(br => [
       br.ref||'', br.date||'', (sups[br.supplierId]||{}).name||'',
       Number(br.totalHT||0), Number(br.tvaRate||0), Number(br.tvaAmount||0),
       Number(br.timbreAmount||0), Number(br.totalTTC||0),
       br.status||'open', br.receivedBy||'', br.notes||''
     ]);
+    const dateSuffix = (f.dateFrom ? `_${f.dateFrom}` : '') + (f.dateTo ? `_au_${f.dateTo}` : `_${new Date().toISOString().slice(0,10)}`);
     exportXLSX(
       ['Référence','Date','Fournisseur','Total HT','TVA %','Montant TVA','Timbre','Total TTC','Statut','Réceptionné par','Notes'],
       rows,
-      'Bons_Reception_' + new Date().toISOString().slice(0,10)
+      'Bons_Reception' + dateSuffix
     );
   }
 };
@@ -2253,50 +2273,80 @@ const BLModule = {
     const countOpen = items.filter(b => (b.status || 'open') === 'open').length;
     const countReturned = items.filter(b => b.status === 'returned').length;
 
+    const isShowingOnlyReturned = this._filters.status === 'returned';
     let totalQty = 0;
     let totalHT = 0;
     let totalTimbre = 0;
     let totalTTC = 0;
     let countLinkedBR = 0;
+    let returnedQty = 0;
+    let returnedHT = 0;
+    let returnedTTC = 0;
 
     const artAgg = {};
     const cliAgg = {};
     const driverAgg = {};
 
     items.forEach(bl => {
+      const isRet = bl.status === 'returned';
       const blHT = Number(bl.totalHT) || 0;
       const blTTC = Number(bl.totalTTC) || 0;
       const blTimbre = Number(bl.timbreAmt || bl.timbre) || 0;
-      totalHT += blHT;
-      totalTTC += blTTC;
-      totalTimbre += blTimbre;
+
+      if (isRet && !isShowingOnlyReturned) {
+        returnedHT += blHT;
+        returnedTTC += blTTC;
+      } else {
+        totalHT += blHT;
+        totalTTC += blTTC;
+        totalTimbre += blTimbre;
+      }
 
       if (brMap[bl.brId] || bl.linkedBrRef) countLinkedBR++;
 
       const cliName = cliMap[bl.clientId]?.name || bl.clientName || (isAR ? 'زبون غير محدد' : 'Client non assigné');
-      if (!cliAgg[cliName]) cliAgg[cliName] = { count: 0, qty: 0, ttc: 0 };
+      if (!cliAgg[cliName]) cliAgg[cliName] = { count: 0, qty: 0, ttc: 0, returnedQty: 0, returnedTTC: 0 };
       cliAgg[cliName].count++;
-      cliAgg[cliName].ttc += blTTC;
+      if (isRet && !isShowingOnlyReturned) {
+        cliAgg[cliName].returnedTTC += blTTC;
+      } else {
+        cliAgg[cliName].ttc += blTTC;
+      }
 
       const driverName = (bl.driverName || (isAR ? 'سائق غير محدد' : 'Non assigné')).trim();
-      if (!driverAgg[driverName]) driverAgg[driverName] = { count: 0, qty: 0, ttc: 0 };
+      if (!driverAgg[driverName]) driverAgg[driverName] = { count: 0, qty: 0, ttc: 0, returnedQty: 0, returnedTTC: 0 };
       driverAgg[driverName].count++;
-      driverAgg[driverName].ttc += blTTC;
+      if (isRet && !isShowingOnlyReturned) {
+        driverAgg[driverName].returnedTTC += blTTC;
+      } else {
+        driverAgg[driverName].ttc += blTTC;
+      }
 
       const blLines = (bl.lines && bl.lines.length) ? bl.lines : (brMap[bl.brId]?.lines || []);
       blLines.forEach(l => {
         const q = Number(l.qty) || 0;
         const lineHT = Math.round(q * (Number(l.price) || 0) * (1 - (Number(l.disc) || 0) / 100) * 100) / 100;
-        totalQty += q;
-        cliAgg[cliName].qty += q;
-        driverAgg[driverName].qty += q;
+        if (isRet && !isShowingOnlyReturned) {
+          returnedQty += q;
+          cliAgg[cliName].returnedQty += q;
+          driverAgg[driverName].returnedQty += q;
+        } else {
+          totalQty += q;
+          cliAgg[cliName].qty += q;
+          driverAgg[driverName].qty += q;
+        }
 
         const artName = (l.designation || l.name || l.articleName || (isAR ? 'مادة بدون اسم' : 'Article')).trim();
         const artUnit = (l.unit || 'U').trim();
         const key = artName + '___' + artUnit;
-        if (!artAgg[key]) artAgg[key] = { name: artName, unit: artUnit, qty: 0, ht: 0 };
-        artAgg[key].qty += q;
-        artAgg[key].ht += lineHT;
+        if (!artAgg[key]) artAgg[key] = { name: artName, unit: artUnit, qty: 0, ht: 0, returnedQty: 0, returnedHT: 0 };
+        if (isRet && !isShowingOnlyReturned) {
+          artAgg[key].returnedQty += q;
+          artAgg[key].returnedHT += lineHT;
+        } else {
+          artAgg[key].qty += q;
+          artAgg[key].ht += lineHT;
+        }
       });
     });
 
@@ -2360,7 +2410,7 @@ const BLModule = {
             </div>
             <div style="font-size:22px;font-weight:800;color:#2563eb">${Math.round(totalQty * 100) / 100} <span style="font-size:12px;font-weight:600;color:var(--text4, #64748b)">${isAR ? 'وحدة / طرد' : 'Unités'}</span></div>
             <div style="margin-top:6px;font-size:11px;color:var(--text4, #64748b)">
-              ${artList.length} ${isAR ? 'مادة مختلفة' : 'article(s) distinct(s)'}
+              ${artList.length} ${isAR ? 'مادة مختلفة' : 'article(s) distinct(s)'}${returnedQty > 0 ? ` · <span style="color:var(--danger);font-weight:700">(-${Math.round(returnedQty * 100) / 100} ${isAR ? 'مرتجع' : 'retours'})</span>` : ''}
             </div>
           </div>
 
@@ -2372,6 +2422,7 @@ const BLModule = {
             <div style="margin-top:6px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text4, #64748b)">
               <span><b>HT:</b> ${Utils.fmtCurrency(totalHT)}</span>
               ${totalTimbre > 0 ? `<span><b>Timbre:</b> ${Utils.fmtCurrency(totalTimbre)}</span>` : ''}
+              ${returnedTTC > 0 ? `<span style="color:var(--danger);font-weight:700">(-${Utils.fmtCurrency(returnedTTC)})</span>` : ''}
             </div>
           </div>
 
@@ -3195,6 +3246,11 @@ const BLModule = {
         supplierName: sup?.name || existing.supplierName || 'Usine',
         clientId: Number(clientId),
         clientName: cli?.name || existing.clientName || 'Client',
+        clientPhone: cli?.phone || existing.clientPhone || '',
+        clientNif: cli?.nif || existing.clientNif || '',
+        clientRc: cli?.rc || existing.clientRc || '',
+        clientNis: cli?.nis || existing.clientNis || '',
+        clientAddress: cli?.address || existing.clientAddress || '',
         driverName,
         truckIMM,
         destinationAddress: destAddr || cli?.address || '',
@@ -3280,6 +3336,11 @@ const BLModule = {
       supplierName: sup?.name || 'Usine',
       clientId: Number(clientId),
       clientName: cli?.name || 'Client',
+      clientPhone: cli?.phone || '',
+      clientNif: cli?.nif || '',
+      clientRc: cli?.rc || '',
+      clientNis: cli?.nis || '',
+      clientAddress: cli?.address || '',
       driverName,
       truckIMM,
       destinationAddress: destAddr || cli?.address || '',
@@ -4177,10 +4238,19 @@ const BLModule = {
 
     const markBLDeliveredChecked = document.getElementById('bl-mark-delivered')?.checked === true;
     const isHistDelivered = (date < Utils.today()) && markBLDeliveredChecked;
+    const cli = DB.getById('clients', Number(clientId));
+    const destAddr = (document.getElementById('bl-destination')?.value||'').trim();
 
     const data = {
-      ref, bchNum, year: docYear, brId, clientId: Number(clientId), driverName, truckIMM, date, notes,
-      destinationAddress: (document.getElementById('bl-destination')?.value||'').trim(),
+      ref, bchNum, year: docYear, brId, clientId: Number(clientId),
+      clientName: cli?.name || '',
+      clientPhone: cli?.phone || '',
+      clientNif: cli?.nif || '',
+      clientRc: cli?.rc || '',
+      clientNis: cli?.nis || '',
+      clientAddress: cli?.address || '',
+      destinationAddress: destAddr || cli?.address || '',
+      driverName, truckIMM, date, notes,
       lines: deliveredLines, totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       isPartial, partNum,
       isBonChargement: true,
@@ -4328,8 +4398,11 @@ const BLModule = {
   showDetail(blId) {
     const bl = DB.getById('bls', blId);
     if (!bl) return;
-    const br = DB.getById('brs', bl.brId);
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+    const settings = DB.getSettings() || {};
+    const br = bl.brId ? DB.getById('brs', bl.brId) : (bl.linkedBrId ? DB.getById('brs', bl.linkedBrId) : null);
     const cli = bl ? DB.getById('clients', bl.clientId) : null;
+    const sup = br ? (DB.getById('suppliers', br.supplierId) || {}) : (bl.supplierId ? (DB.getById('suppliers', bl.supplierId) || {}) : {});
     const isLocked = bl.status==='delivered'||bl.status==='locked';
     const isReturned = bl.status==='returned';
     const retDoc = isReturned ? ((DB.getAll('bon_retours')||[]).find(r => r.blId === bl.id || r.bcId === bl.id || r.blRef === bl.ref) || null) : null;
@@ -4338,12 +4411,41 @@ const BLModule = {
     const effReturnReason = bl.returnReason || retDoc?.reason;
     const effReturnRef = bl.returnRef || retDoc?.ref;
 
+    // Company profile
+    const compName = settings.companyName || settings.evCompanyName || 'SOCIÉTÉ';
+    const compActivity = settings.activityType || settings.evActivityType || '';
+    const compAddress = settings.address || settings.evAddress || '';
+    const compPhone = settings.phone || settings.evPhone || '';
+    const compNif = settings.nif || settings.evNif || '';
+    const compRc = settings.rc || settings.evRc || '';
+    const compNis = settings.nis || settings.evNis || '';
+    const compAi = settings.ai || settings.evAi || '';
+
+    // Client profile
+    const cliName = cli?.name || bl.clientName || 'Client';
+    const cliActivity = cli?.activityType || '';
+    const cliAddress = cli?.address || bl.clientAddress || '';
+    const destAddress = bl.destinationAddress || cli?.address || bl.clientAddress || '';
+    const cliPhone = cli?.phone || bl.clientPhone || '';
+    const cliNif = cli?.nif || bl.clientNif || '';
+    const cliRc = cli?.rc || bl.clientRc || '';
+    const cliNis = cli?.nis || bl.clientNis || '';
+
+    // Lines & financial totals
+    const lines = bl.lines || (br ? br.lines || [] : []);
+    const totalHT = Number(bl.totalHT || 0);
+    const tvaRate = Number(bl.tvaRate || (settings.tvaRate || 19));
+    const tvaAmount = Number(bl.tvaAmount || 0);
+    const timbreAmount = Number(bl.timbreAmount || 0);
+    const totalTTC = Number(bl.totalTTC || (br ? br.totalTTC : 0) || (totalHT + tvaAmount + timbreAmount));
+
     const body = `
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       ${Utils.statusBadge(bl.status||'open')}
-      ${isLocked && !isReturned ? `<span class="badge badge-success"><i class="fas fa-check-circle"></i> Livré</span>` : ''}
-      ${isReturned ? `<span class="badge badge-danger" style="background:#ef4444;color:#fff;font-weight:700"><i class="fas fa-ban"></i> RETOURNÉ</span>` : ''}
+      ${isLocked && !isReturned ? `<span class="badge badge-success"><i class="fas fa-check-circle"></i> ${isAR ? 'تم التسليم' : 'Livré'}</span>` : ''}
+      ${isReturned ? `<span class="badge badge-danger" style="background:#ef4444;color:#fff;font-weight:700"><i class="fas fa-ban"></i> ${isAR ? 'مرتجع' : 'RETOURNÉ'}</span>` : ''}
     </div>
+
     ${isReturned ? `<div style="background:linear-gradient(135deg,rgba(239,68,68,.06),rgba(220,38,38,.06));border:2px solid rgba(239,68,68,.2);border-radius:14px;padding:16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,.15)">
         <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#ef4444,#dc2626);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0"><i class="fas fa-undo"></i></div>
@@ -4375,16 +4477,123 @@ const BLModule = {
         <div style="font-size:13px;font-weight:600;color:var(--text)">${Utils.escHTML(effReturnReason||'—')}</div>
       </div>
     </div>` : ''}
-    <table class="detail-table">
-      <tr><th>${T.isRTL()?"مرجع BL":"Référence BL"}</th><td><strong>${Utils.escHTML(bl.ref||'')}</strong></td></tr>
-      <tr><th>${T.get('bl_linked_br')}</th><td>${br?`<strong>${Utils.escHTML(br.ref)}</strong>`:'-'}</td></tr>
-      <tr><th>${T.get('col_date')}</th><td>${Utils.fmtDate(bl.date)} <span style="color:var(--text4);font-size:10px">${bl.createdAt?new Date(bl.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}</span></td></tr>
-      <tr><th>${T.get('col_client')}</th><td>${Utils.escHTML(cli?.name||'-')}${cli?.activityType ? ` <span style="font-size:11px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:600">${Utils.escHTML(cli.activityType)}</span>` : ''}</td></tr>
-      <tr><th>${T.get('bl_driver')}</th><td>${Utils.escHTML(bl.driverName||'-')}</td></tr>
-      <tr><th>${T.get('bl_truck')}</th><td><code>${Utils.escHTML(bl.truckIMM||'-')}</code></td></tr>
-      <tr><th>${T.get('col_total_ttc')}</th><td class="fw-bold text-primary" style="font-size:15px">${Utils.fmtCurrency(bl.totalTTC||br?.totalTTC||0)}</td></tr>
-      ${bl.notes?`<tr><th>${T.get('br_notes')}</th><td>${Utils.escHTML(bl.notes)}</td></tr>`:''}
-    </table>
+
+    <!-- Complete 3-Card Entity Hub -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">
+      <!-- 1. Fiche Entreprise / Expéditeur -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--primary);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-building"></i> ${isAR ? 'المؤسسة / المصدر' : 'SOCIÉTÉ / EXPÉDITEUR'}
+        </div>
+        <div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">${Utils.escHTML(compName)}</div>
+        ${compActivity ? `<div style="font-size:11px;color:var(--text3);margin-bottom:6px"><strong>${isAR ? 'النشاط:' : 'Activité:'}</strong> ${Utils.escHTML(compActivity)}</div>` : ''}
+        <div style="font-size:11px;color:var(--text4);display:flex;flex-direction:column;gap:3px">
+          <div><i class="fas fa-map-marker-alt" style="width:14px"></i> <strong>${isAR ? 'العنوان:' : 'Adresse:'}</strong> ${Utils.escHTML(compAddress || '—')}</div>
+          <div><i class="fas fa-phone" style="width:14px"></i> <strong>${isAR ? 'الهاتف:' : 'Tél:'}</strong> ${Utils.escHTML(compPhone || '—')}</div>
+          <div><i class="fas fa-id-card" style="width:14px"></i> <strong>NIF:</strong> ${Utils.escHTML(compNif || '—')} | <strong>RC:</strong> ${Utils.escHTML(compRc || '—')}</div>
+          ${compNis || compAi ? `<div><i class="fas fa-file-invoice" style="width:14px"></i> <strong>NIS:</strong> ${Utils.escHTML(compNis || '—')} | <strong>AI:</strong> ${Utils.escHTML(compAi || '—')}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- 2. Fiche Client / Destinataire -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#8b5cf6;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-user-tag"></i> ${isAR ? 'الزبون / المستلم' : 'CLIENT / DESTINATAIRE'}
+        </div>
+        <div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">
+          ${Utils.escHTML(cliName)}
+          ${cliActivity ? `<span style="font-size:11px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:600;margin-inline-start:6px">${Utils.escHTML(cliActivity)}</span>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--text4);display:flex;flex-direction:column;gap:3px">
+          <div><i class="fas fa-map-pin" style="width:14px;color:#ef4444"></i> <strong>${isAR ? 'وجهة التسليم:' : 'Destination:'}</strong> <strong style="color:var(--text)">${Utils.escHTML(destAddress || cliAddress || '—')}</strong></div>
+          ${cliAddress && cliAddress !== destAddress ? `<div><i class="fas fa-home" style="width:14px"></i> <strong>${isAR ? 'العنوان الرئيسي:' : 'Adresse Client:'}</strong> ${Utils.escHTML(cliAddress)}</div>` : ''}
+          <div><i class="fas fa-phone" style="width:14px"></i> <strong>${isAR ? 'الهاتف:' : 'Tél:'}</strong> ${Utils.escHTML(cliPhone || '—')}</div>
+          <div><i class="fas fa-id-card" style="width:14px"></i> <strong>NIF:</strong> ${Utils.escHTML(cliNif || '—')} | <strong>RC:</strong> ${Utils.escHTML(cliRc || '—')}</div>
+          ${cliNis ? `<div><i class="fas fa-file-invoice" style="width:14px"></i> <strong>NIS:</strong> ${Utils.escHTML(cliNis)}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- 3. Fiche Transport & Traçabilité -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#f59e0b;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-truck"></i> ${isAR ? 'النقل واللوجستيك' : 'TRANSPORT & LOGISTIQUE'}
+        </div>
+        <div style="font-size:11px;color:var(--text4);display:flex;flex-direction:column;gap:4px">
+          <div><i class="fas fa-user" style="width:14px"></i> <strong>${isAR ? 'السائق:' : 'Chauffeur:'}</strong> <span style="font-size:12px;font-weight:700;color:var(--text)">${Utils.escHTML(bl.driverName || '—')}</span></div>
+          <div><i class="fas fa-truck-moving" style="width:14px"></i> <strong>${isAR ? 'المركبة:' : 'Véhicule:'}</strong> <code>${Utils.escHTML(bl.truckIMM || '—')}</code></div>
+          <div><i class="fas fa-calendar-alt" style="width:14px"></i> <strong>${isAR ? 'التاريخ:' : 'Date:'}</strong> ${Utils.fmtDate(bl.date)} <span style="font-size:10px;color:var(--text4)">${bl.createdAt ? new Date(bl.createdAt).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}) : ''}</span></div>
+          <div><i class="fas fa-user-edit" style="width:14px"></i> <strong>${isAR ? 'المنشئ:' : 'Créé par:'}</strong> ${Utils.escHTML(bl.createdByName || bl.createdBy || '—')}</div>
+          ${br ? `<div><i class="fas fa-link" style="width:14px"></i> <strong>${isAR ? 'وصل الشحن الأصلي:' : 'BR Lié:'}</strong> <strong>${Utils.escHTML(br.ref)}</strong></div>` : ''}
+          ${bl.deliveredByName || bl.deliveredAt ? `<div><i class="fas fa-check-double" style="width:14px;color:#10b981"></i> <strong>${isAR ? 'تم التسليم بواسطة:' : 'Livré par:'}</strong> ${Utils.escHTML(bl.deliveredByName || 'Livré')} (${Utils.fmtDateTime(bl.deliveredAt)})</div>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Tableau Détaillé des Articles -->
+    <div class="card" style="margin-bottom:16px;overflow:hidden">
+      <div class="card-header" style="background:var(--bg3);padding:10px 14px">
+        <h4 style="margin:0;font-size:13px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px">
+          <i class="fas fa-boxes" style="color:var(--primary)"></i> ${isAR ? 'تفاصيل السلع والبضائع' : 'Détail des Articles & Marchandises'}
+        </h4>
+        <span class="badge badge-secondary">${lines.length} ${isAR ? 'عنصر' : 'lignes'}</span>
+      </div>
+      <div class="table-shell" style="overflow-x:auto">
+        <table class="data-table" style="font-size:12px;width:100%">
+          <thead>
+            <tr style="background:var(--bg3)">
+              <th style="width:40px;text-align:center">#</th>
+              <th>${isAR ? 'بيان المادة' : 'Désignation'}</th>
+              <th style="text-align:center;width:80px">${isAR ? 'الوحدة' : 'Unité'}</th>
+              <th style="text-align:center;width:80px">${isAR ? 'الكمية' : 'Quantité'}</th>
+              <th style="text-align:right;width:110px">${isAR ? 'السعر الفردي' : 'P.U. HT'}</th>
+              <th style="text-align:right;width:120px">${isAR ? 'المجموع خ.ر' : 'Total HT'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.length ? lines.map((l, idx) => {
+              const q = Number(l.qtyDelivered || l.qty || 0);
+              const p = Number(l.price || 0);
+              const disc = Number(l.disc || 0);
+              const effP = p * (1 - disc / 100);
+              const lineTot = Number(l.total || (q * effP));
+              return `<tr>
+                <td style="text-align:center;color:var(--text4)">${idx + 1}</td>
+                <td style="font-weight:700;color:var(--text)">${Utils.escHTML(l.designation || 'Article')}</td>
+                <td style="text-align:center;color:var(--text3)">${Utils.escHTML(l.unit || 'U')}</td>
+                <td style="text-align:center;font-weight:800;color:var(--primary)">${Utils.fmtNum(q)}</td>
+                <td style="text-align:right">${Utils.fmtCurrency(p)}</td>
+                <td style="text-align:right;font-weight:800;color:var(--text)">${Utils.fmtCurrency(lineTot)}</td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="6" class="text-center text-muted" style="padding:14px">${isAR ? 'لا توجد عناصر' : 'Aucune ligne'}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 5. Totaux & Récapitulatif Fiscal -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+      <div style="background:var(--bg2);border:1.5px solid var(--border);border-radius:12px;padding:12px 18px;min-width:280px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3)">
+          <span>${isAR ? 'المجموع خ.ر (Total HT):' : 'Total HT :'}</span>
+          <strong style="color:var(--text)">${Utils.fmtCurrency(totalHT)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3)">
+          <span>${isAR ? `الرسم على القيمة المضافة (${tvaRate}%):` : `TVA (${tvaRate}%) :`}</span>
+          <strong style="color:var(--text)">${Utils.fmtCurrency(tvaAmount)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3)">
+          <span>${isAR ? 'حق الطابع (Timbre):' : 'Timbre fiscal :'}</span>
+          <strong style="color:var(--text)">${timbreAmount > 0 ? Utils.fmtCurrency(timbreAmount) : (isAR ? 'معفى' : '0,00 DA')}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900;color:var(--primary);border-top:2px solid var(--border);padding-top:6px;margin-top:2px">
+          <span>${isAR ? 'المجموع ك.ر (Total TTC):' : 'Total TTC :'}</span>
+          <span>${Utils.fmtCurrency(totalTTC)}</span>
+        </div>
+      </div>
+    </div>
+
+    ${bl.notes ? `<div style="background:var(--bg2);padding:10px 14px;border-radius:8px;border:1px solid var(--border);margin-bottom:14px;font-size:12px"><strong style="color:var(--text)">${T.get('br_notes')}:</strong> ${Utils.escHTML(bl.notes)}</div>` : ''}
+
     ${Utils.historyHTML('bls', blId)}`;
 
     const footer = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center">
@@ -4540,6 +4749,20 @@ const BLModule = {
           <input type="text" id="ret_reason_custom" class="input" style="width:100%;display:none" placeholder="${isAR ? 'حدد سبب الإرجاع بالتفصيل...' : 'Précisez le motif du retour...'}">
         </div>
 
+        ${Auth.isAdmin() ? `
+        <div class="form-group mb-2">
+          <label class="required" style="font-weight:700">${isAR ? 'الصندوق / الدرج الذي قام بالدفع المالي للمرتجع :' : 'Caisse / Tiroir qui rembourse le client :'}</label>
+          <select id="ret_cashier_sel" class="input" style="width:100%;margin-bottom:8px">
+            <option value="caisse_admin">${isAR ? '🏦 الصندوق المركزي (الخزينة الرئيسية - Caisse Principale)' : '🏦 Caisse Principale (Coffre Central Administrateur)'}</option>
+            ${DB.getAll('users').filter(usr => usr.role !== 'supplier').map(usr => `<option value="${usr.id}" ${usr.id === bl.createdBy ? 'selected' : ''}>👤 ${Utils.escHTML(usr.name || usr.username)} (${usr.id === bl.createdBy ? (isAR ? 'البائع الأصلي' : 'Vendeur Initial') : (isAR ? 'أمين صندوق' : 'Caissier')})</option>`).join('')}
+          </select>
+        </div>
+        ` : `
+        <div style="font-size:12px;color:var(--text3);margin-bottom:10px;background:var(--bg3);padding:8px 12px;border-radius:8px;border:1px solid var(--border)">
+          <i class="fas fa-cash-register" style="color:var(--primary)"></i> ${isAR ? 'الخصم المالي سيتم من صندوقك الحالي :' : 'Le montant sera déduit immédiatement de votre mini-caisse :'} <strong>${Utils.escHTML(u?.name || 'Ma Caisse')}</strong>
+        </div>
+        `}
+
         <div class="form-group mb-2">
           <label style="font-weight:700">${isAR ? 'ملاحظات' : 'Observations / Remarques'}</label>
           <textarea id="ret_notes" class="input" style="width:100%;height:60px" placeholder="${isAR ? 'تفاصيل وملاحظات إضافية...' : 'Détails supplémentaires...'}"></textarea>
@@ -4564,6 +4787,16 @@ const BLModule = {
     const notes = document.getElementById('ret_notes')?.value?.trim() || '';
     const fullReason = notes ? `${reason} (${notes})` : reason;
 
+    let payingCashierId = (bl.createdBy || bl.userId || u?.id);
+    if (Auth.isAdmin()) {
+      const chosen = document.getElementById('ret_cashier_sel')?.value;
+      if (chosen) {
+        payingCashierId = (chosen === 'caisse_admin' ? 'caisse_admin' : (Number(chosen) || chosen));
+      }
+    } else {
+      payingCashierId = u?.id;
+    }
+
     const today = Utils.today();
     const now = new Date();
     const year = now.getFullYear();
@@ -4575,7 +4808,6 @@ const BLModule = {
       } catch (_) {}
     }
     const brRef = `BR-${bl.ref || String(retNum).padStart(3, '0')}`;
-    const targetUserId = bl.createdBy || u?.id;
     const blEffectiveDate = (bl.date || (bl.createdAt ? bl.createdAt.slice(0, 10) : today));
 
     // 1. Create official Bon de Retour
@@ -4601,16 +4833,41 @@ const BLModule = {
       totalTTC: amount,
       reason: fullReason,
       motif: fullReason,
-      userId: targetUserId,
-      cashierId: targetUserId,
+      userId: payingCashierId,
+      cashierId: payingCashierId,
+      refundedByCashierId: payingCashierId,
       returnedBy: u?.id,
       returnedByName: u?.name || u?.username || 'Utilisateur',
+      originalSellerId: bl.createdBy,
+      originalSellerName: bl.createdByName,
       createdBy: u?.id,
       createdByName: u?.name || u?.username || 'Utilisateur',
       createdAt: now.toISOString(),
       status: 'validated'
     };
     DB.insert('bon_retours', brDoc);
+
+    // 1b. If refunded directly from Central Safe (Caisse Principale) by Admin:
+    if (payingCashierId === 'caisse_admin') {
+      const maxCaisseId = (DB.getAll('caisse_admin') || []).reduce((m, e) => Math.max(m, e.id || 0), 0);
+      const caisseAdminWithdrawal = {
+        id: maxCaisseId + 1,
+        type: 'withdrawal',
+        source: 'bon_retour',
+        amount: amount,
+        bonRetourId: brDoc.id,
+        bonRetourRef: brRef,
+        blRef: bl.ref,
+        clientId: bl.clientId,
+        clientName: cli?.name || bl.clientName || 'Client',
+        userId: u?.id,
+        userName: u?.name || 'Administrateur',
+        date: today,
+        note: `Remboursement direct Bon de Retour ${brRef} (Client: ${cli?.name || bl.clientName || 'Client'})`,
+        createdAt: now.toISOString()
+      };
+      DB.insert('caisse_admin', caisseAdminWithdrawal);
+    }
 
     // 2. Lock the BL permanently as returned
     DB.update('bls', bl.id, {
@@ -4649,26 +4906,23 @@ const BLModule = {
     // 3. Immediately synchronize and deduct from the user's session & mini-caisse
     try {
       // Past closed days must remain strictly immutable (zero retroactive mutation).
-      // Returns ONLY affect today's open session for the selling cashier (targetUserId).
-      const affectedDates = [today];
-      const affectedUserIds = [...new Set([targetUserId].filter(Boolean))];
+      // Returns ONLY affect today's open session for the refunding cashier and selling cashier.
+      const affectedUserIds = [...new Set([payingCashierId, bl.createdBy, u?.id].filter(id => id && id !== 'caisse_admin'))];
 
       affectedUserIds.forEach(uid => {
-        affectedDates.forEach(d => {
-          const s = SessionMgr.getTodaySession(uid, d);
-          // Only update open sessions; do NOT mutate past closed sessions
-          if (s && s.status !== 'closed') {
-            const sum = SessionMgr.getUserDaySummary(uid, d);
-            const patch = {
-              totalSales: sum.totalSalesTTC,
-              totalReturns: sum.totalReturnsTTC,
-              returnCount: sum.retours.length,
-              blCount: sum.bls.length,
-              updatedAt: now.toISOString()
-            };
-            DB.update('sessions', s.id, patch);
-          }
-        });
+        const s = SessionMgr.getTodaySession(uid, today);
+        // Only update open sessions; do NOT mutate past closed sessions
+        if (s && s.status !== 'closed') {
+          const sum = SessionMgr.getUserDaySummary(uid, today);
+          const patch = {
+            totalSales: sum.totalSalesTTC,
+            totalReturns: sum.totalReturnsTTC,
+            returnCount: sum.retours.length,
+            blCount: sum.bls.length,
+            updatedAt: now.toISOString()
+          };
+          DB.update('sessions', s.id, patch);
+        }
       });
     } catch(err) {
       console.warn('[processReturn] session/etat sync notice:', err);
@@ -4932,7 +5186,28 @@ const BLModule = {
   exportBLCSV() {
     const brs  = {}; DB.getAll('brs').forEach(b => brs[b.id] = b);
     const clis = {}; DB.getAll('clients').forEach(c => clis[c.id] = c);
-    const rows = DB.getAll('bls').map(bl => [
+    let items = (this._lastFilteredItems && this._lastFilteredItems.length) ? [...this._lastFilteredItems] : null;
+    const f = this._filters || {};
+    if (!items) {
+      items = DB.getAll('bls');
+      if (f.q) {
+        const ql = (f.q || '').toLowerCase();
+        items = items.filter(b => (b.ref||'').toLowerCase().includes(ql) || ((clis[b.clientId]||{}).name||'').toLowerCase().includes(ql) || (b.driverName||'').toLowerCase().includes(ql));
+      }
+      if (f.clientId && f.clientId !== 'all') {
+        items = items.filter(b => String(b.clientId) === String(f.clientId));
+      }
+      if (f.status && f.status !== 'all') {
+        items = items.filter(b => (b.status || 'open') === f.status);
+      }
+      if (f.createdBy && f.createdBy !== 'all') items = items.filter(b => String(b.createdBy) === String(f.createdBy));
+      if (f.driver && f.driver !== 'all') items = items.filter(b => (b.driverName || '') === f.driver);
+    }
+    // Strict period filter guarantee: only records within active dateFrom/dateTo are exported
+    if (f.dateFrom) items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) >= f.dateFrom);
+    if (f.dateTo) items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) <= f.dateTo);
+
+    const rows = items.map(bl => [
       bl.ref||'', bl.date||'',
       (clis[bl.clientId]||{}).name||'',
       (brs[bl.brId]||{}).ref||'',
@@ -4941,10 +5216,11 @@ const BLModule = {
       Number(bl.timbreAmount||0), Number(bl.totalTTC||0),
       bl.status||'open', bl.notes||''
     ]);
+    const dateSuffix = (f.dateFrom ? `_${f.dateFrom}` : '') + (f.dateTo ? `_au_${f.dateTo}` : `_${new Date().toISOString().slice(0,10)}`);
     exportXLSX(
       ['Référence','Date','Client','BR lié','Chauffeur','Immatriculation','Total HT','TVA %','Montant TVA','Timbre','Total TTC','Statut','Notes'],
       rows,
-      'Bons_Livraison_' + new Date().toISOString().slice(0,10)
+      'Bons_Livraison' + dateSuffix
     );
   },
 
@@ -6881,7 +7157,7 @@ const AdminCaisseModule = {
         <button class="btn btn-danger" onclick="AdminCaisseModule.showWithdrawal()" style="white-space:nowrap;font-weight:700">
           <i class="fas fa-arrow-up"></i> ${isAR?'- سحب':'- Retrait'}
         </button>
-        <button class="btn btn-primary" onclick="EtatVenteModule._runHistoricalScan()" style="white-space:nowrap;font-weight:700;background:linear-gradient(135deg,#0284c7,#0369a1);border:none;box-shadow:0 2px 8px rgba(2,132,199,.3)" title="${isAR ? 'مسح وتسوية الأيام السابقة وبناء السجلات المحاسبية بأثر رجعي' : 'Scanner et réconcilier l\'historique rétroactif'}">
+        <button class="btn btn-primary" onclick="DB.MasterBrain.healCaisseAdminHistory();DB.MasterBrain.recalibrateAll();App.loadModule('admin_caisse');Utils.notify((T.isRTL()?'تمت تسوية ومطابقة أرشيف الصندوق بنجاح':'Historique Caisse réconcilié et synchronisé avec succès'),'success');" style="white-space:nowrap;font-weight:700;background:linear-gradient(135deg,#0284c7,#0369a1);border:none;box-shadow:0 2px 8px rgba(2,132,199,.3)" title="${isAR ? 'مسح وتسوية الأيام السابقة وبناء السجلات المحاسبية بأثر رجعي' : 'Scanner et réconcilier l\'historique rétroactif'}">
           <i class="fas fa-history"></i> ${isAR ? 'تسوية الأرشيف' : 'Réconcilier Historique'}
         </button>
       </div>
@@ -7371,6 +7647,9 @@ const AdminCaisseModule = {
           etatVenteTTC: 0,
           bankAmount: 0,
           caisseAdminAmount: 0,
+          chargesAmount: 0,
+          directReturnsAmount: 0,
+          otherWithdrawalsAmount: 0,
           banks: new Set(),
           evDocs: []
         };
@@ -7385,6 +7664,46 @@ const AdminCaisseModule = {
       if (d.targetBank?.name) dayMap[dt].banks.add(d.targetBank.name);
       if (d.evDoc) dayMap[dt].evDocs.push(d.evDoc);
     });
+
+    // Also integrate direct cash charges, direct returns, and vault withdrawals into dayMap
+    allCaisseAdminEntries.forEach(tx => {
+      const txDate = (tx.date || tx.sessionDate || (tx.createdAt || '')).slice(0, 10);
+      if (!txDate) return;
+      if (this._filters.dateFrom && txDate < this._filters.dateFrom) return;
+      if (this._filters.dateTo && txDate > this._filters.dateTo) return;
+      if (!dayMap[txDate]) {
+        dayMap[txDate] = {
+          date: txDate,
+          sessions: [],
+          realBchGross: 0,
+          realBchReturns: 0,
+          realBchNet: 0,
+          etatVenteTTC: 0,
+          bankAmount: 0,
+          caisseAdminAmount: 0,
+          chargesAmount: 0,
+          directReturnsAmount: 0,
+          otherWithdrawalsAmount: 0,
+          banks: new Set(),
+          evDocs: []
+        };
+      }
+      if (dayMap[txDate].chargesAmount === undefined) dayMap[txDate].chargesAmount = 0;
+      if (dayMap[txDate].directReturnsAmount === undefined) dayMap[txDate].directReturnsAmount = 0;
+      if (dayMap[txDate].otherWithdrawalsAmount === undefined) dayMap[txDate].otherWithdrawalsAmount = 0;
+
+      const amt = Number(tx.amount) || 0;
+      if (tx.type === 'withdrawal') {
+        if (this.isChargeTx(tx)) {
+          dayMap[txDate].chargesAmount += amt;
+        } else if (tx.source === 'bon_retour') {
+          dayMap[txDate].directReturnsAmount += amt;
+        } else if (!this.isBankTransferTx(tx)) {
+          dayMap[txDate].otherWithdrawalsAmount += amt;
+        }
+      }
+    });
+
     const sortedDailyList = Object.values(dayMap).sort((a,b) => b.date.localeCompare(a.date));
 
     // Cashier Aggregation for View 3 (Synthèse par Caissier)
@@ -7662,11 +7981,11 @@ const AdminCaisseModule = {
               </div>
               <span style="color:var(--text4);font-size:18px">−</span>
               <div style="color:var(--danger);background:rgba(239,68,68,.1);padding:6px 12px;border-radius:8px">
-                − ${isAR ? 'المحول للبنك (كشف المبيعات 1%)' : 'Total Retraits (État de Vente 1%)'}
+                − ${isAR ? 'إجمالي السحوبات (بنك + مصاريف)' : 'Total Retraits (Banque + Charges)'}
               </div>
               <span style="color:var(--text4);font-size:18px">=</span>
-              <div style="color:#d97706;background:rgba(245,158,11,.1);padding:6px 12px;border-radius:8px">
-                ${isAR ? 'الفائض المالي المتبقي في الخزينة' : 'Écart / Surplus Restant au Coffre'}
+              <div style="color:#0284c7;background:rgba(2,132,199,.1);padding:6px 12px;border-radius:8px">
+                ${isAR ? 'رصيد الخزينة النهائي' : 'Solde Net au Coffre'}
               </div>
             </div>
           </div>
@@ -7694,32 +8013,32 @@ const AdminCaisseModule = {
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--danger);display:flex;align-items:center;gap:6px">
                   <span style="width:20px;height:20px;border-radius:50%;background:var(--danger);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">2</span>
-                  ${isAR ? 'التحويل للبنك (سحب)' : '2. Versement Banque (Retrait)'}
+                  ${isAR ? 'السحوبات والتحويلات (خروج)' : '2. Sorties & Versements (Retrait)'}
                 </span>
-                <span class="badge badge-danger" style="font-size:10px">-${Utils.fmtCurrency(totalEV_TTC)}</span>
+                <span class="badge badge-danger" style="font-size:10px">-${Utils.fmtCurrency(totalBankVersed + totalChargesOnly)}</span>
               </div>
               <div style="font-size:11.5px;color:var(--text3);line-height:1.45">
                 ${isAR 
-                  ? 'المبلغ الرسمي المصرح به في كشف المبيعات مع طابع 1% الإجباري (HT + TVA). يُسحب من الصندوق ويودع في الحساب البنكي.'
-                  : 'Montant officiel de l\'État de Vente incluant le timbre fiscal légal de 1% sur (HT + TVA). Ce montant sort de la caisse pour dépôt à la banque.'}
+                  ? 'إجمالي المبالغ الخارجة من الخزينة: التحويلات البنكية لكشوف المبيعات بالإضافة إلى مصاريف التشغيل والتكاليف المدفوعة نقداً.'
+                  : 'Total des sorties de caisse : versements bancaires pour les États de Vente ainsi que les charges et frais décaissés en espèces.'}
               </div>
             </div>
 
             <!-- Step 3 -->
-            <div style="background:var(--bg3);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:14px;position:relative">
+            <div style="background:var(--bg3);border:1px solid rgba(2,132,199,.25);border-radius:12px;padding:14px;position:relative">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:#d97706;display:flex;align-items:center;gap:6px">
-                  <span style="width:20px;height:20px;border-radius:50%;background:#d97706;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">3</span>
+                <span style="font-size:11px;font-weight:800;text-transform:uppercase;color:#0284c7;display:flex;align-items:center;gap:6px">
+                  <span style="width:20px;height:20px;border-radius:50%;background:#0284c7;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">3</span>
                   ${isAR ? 'الرصيد المتبقي بالخزينة' : '3. Reste Physique au Coffre'}
                 </span>
-                <span class="badge" style="background:rgba(245,158,11,.15);color:#d97706;font-size:10px;font-weight:900">
-                  ${(totalNetRealBCH - totalEV_TTC) >= 0 ? '+' : ''}${Utils.fmtCurrency(totalNetRealBCH - totalEV_TTC)}
+                <span class="badge" style="background:rgba(2,132,199,.15);color:#0284c7;font-size:10px;font-weight:900">
+                  ${balance >= 0 ? '+' : ''}${Utils.fmtCurrency(balance)}
                 </span>
               </div>
               <div style="font-size:11.5px;color:var(--text3);line-height:1.45">
                 ${isAR 
-                  ? 'الفارق الإيجابي الناتج بين المقبوضات الفعلية وكشف المبيعات المحول للبنك. يمثل الفائض المحاسبي والسيولة النقدية المتواجدة فعلياً في الخزينة.'
-                  : 'Différence nette entre encaissement réel et déclaration banque. Représente l\'excédent de liquidités restant physiquement dans la caisse.'}
+                  ? 'رصيد السيولة النقدية المتواجد فعلياً في الخزينة بعد خصم التحويلات البنكية والمصاريف من المقبوضات الفعلية.'
+                  : 'Solde réel de trésorerie disponible dans le coffre (Dépôts réels − Sorties banques & charges).'}
               </div>
             </div>
           </div>
@@ -7768,6 +8087,8 @@ const AdminCaisseModule = {
                 <th style="text-align:right;background:rgba(2,132,199,.04)">${isAR ? 'الصافي الفعلي BCH' : 'Net Réel BCH (Caisse)'}</th>
                 <th style="text-align:right;background:rgba(13,148,136,.04)">${isAR ? 'كشف المبيعات (1%)' : 'État de Vente TTC (1%)'}</th>
                 <th style="text-align:right;font-weight:800">${isAR ? 'الفارق الجبائي TTC' : 'Écart Fiscal TTC (Diff)'}</th>
+                <th style="text-align:right;color:#f97316;background:rgba(249,115,22,.04);font-weight:800">${isAR ? 'المصاريف والمرتجعات (−)' : 'Charges & Retours (−)'}</th>
+                <th style="text-align:right;background:rgba(16,185,129,.05);color:#10b981;font-weight:800">${isAR ? 'رصيد الصندوق اليومي' : 'Solde Caisse Jour (BCH Réel − ÉV − Charges)'}</th>
                 <th style="text-align:right">${isAR ? 'المحول للبنك (سحب)' : 'Versé Banque (Sortie)'}</th>
                 <th style="text-align:right">${isAR ? 'الصندوق المركزي (إيداع)' : 'Caisse Centrale (Dépôt)'}</th>
                 <th style="text-align:center">${isAR ? 'الحالة' : 'Statut'}</th>
@@ -7776,7 +8097,9 @@ const AdminCaisseModule = {
             </thead>
             <tbody>
               ${sortedDailyList.length ? sortedDailyList.map(day => {
+                const dayCharges = (day.chargesAmount || 0) + (day.directReturnsAmount || 0) + (day.otherWithdrawalsAmount || 0);
                 const dayDiff = Math.round((day.etatVenteTTC - day.realBchNet) * 100) / 100;
+                const daySolde = Math.round((day.realBchNet - day.etatVenteTTC - dayCharges) * 100) / 100;
                 const closedInDay = day.sessions.filter(s => s.session.status === 'closed').length;
                 const isAllClosed = closedInDay === day.sessions.length && day.sessions.length > 0;
                 const bankNames = [...day.banks].join(', ') || '—';
@@ -7790,8 +8113,14 @@ const AdminCaisseModule = {
                   <td style="text-align:right;font-weight:800;color:#0d9488;background:rgba(13,148,136,.04)">${Utils.fmtCurrency(day.etatVenteTTC)}</td>
                   <td style="text-align:right">
                     <span class="badge" style="background:${Math.abs(dayDiff)<0.01?'rgba(16,185,129,.15)':dayDiff>0?'rgba(14,165,233,.15)':'rgba(239,68,68,.15)'};color:${Math.abs(dayDiff)<0.01?'#10b981':dayDiff>0?'#0284c7':'#ef4444'};font-weight:800">
-                      ${dayDiff>=0?'+':''}${Utils.fmtCurrency(dayDiff)}
+                    ${dayDiff>=0?'+':''}${Utils.fmtCurrency(dayDiff)}
                     </span>
+                  </td>
+                  <td style="text-align:right;color:#f97316;font-weight:700">
+                    ${dayCharges > 0 ? `-${Utils.fmtCurrency(dayCharges)}` : '—'}
+                  </td>
+                  <td style="text-align:right;font-weight:900;color:${daySolde>=0?'#10b981':'#ef4444'};background:rgba(16,185,129,.05)">
+                    ${daySolde>=0?'+':''}${Utils.fmtCurrency(daySolde)}
                   </td>
                   <td style="text-align:right">
                     <div style="font-weight:800;color:#8b5cf6">${Utils.fmtCurrency(day.bankAmount)}</div>
@@ -7810,7 +8139,7 @@ const AdminCaisseModule = {
                     </button>
                   </td>
                 </tr>`;
-              }).join('') : `<tr><td colspan="11" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
+              }).join('') : `<tr><td colspan="13" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
             <tfoot>
               <tr style="background:var(--bg3);font-weight:800;border-top:2px solid var(--border)">
@@ -7823,6 +8152,12 @@ const AdminCaisseModule = {
                   <span class="badge" style="background:${Math.abs(totalEcartFiscal)<0.01?'rgba(16,185,129,.15)':totalEcartFiscal>0?'rgba(14,165,233,.15)':'rgba(239,68,68,.15)'};color:${Math.abs(totalEcartFiscal)<0.01?'#10b981':totalEcartFiscal>0?'#0284c7':'#ef4444'};font-weight:900">
                     ${totalEcartFiscal>=0?'+':''}${Utils.fmtCurrency(totalEcartFiscal)}
                   </span>
+                </td>
+                <td style="text-align:right;color:#f97316;font-weight:800">
+                  ${(()=>{ const totCh = sortedDailyList.reduce((s,d)=>s+(d.chargesAmount||0)+(d.directReturnsAmount||0)+(d.otherWithdrawalsAmount||0),0); return totCh > 0 ? `-${Utils.fmtCurrency(totCh)}` : '0.00 DA'; })()}
+                </td>
+                <td style="text-align:right;font-weight:900;color:${(()=>{ const totCh = sortedDailyList.reduce((s,d)=>s+(d.chargesAmount||0)+(d.directReturnsAmount||0)+(d.otherWithdrawalsAmount||0),0); return (totalNetRealBCH - totalEV_TTC - totCh)>=0?'#10b981':'#ef4444'; })()};background:rgba(16,185,129,.08)">
+                  ${(()=>{ const totCh = sortedDailyList.reduce((s,d)=>s+(d.chargesAmount||0)+(d.directReturnsAmount||0)+(d.otherWithdrawalsAmount||0),0); const sld = Math.round((totalNetRealBCH - totalEV_TTC - totCh)*100)/100; return (sld>=0?'+':'')+Utils.fmtCurrency(sld); })()}
                 </td>
                 <td style="text-align:right;color:#8b5cf6">${Utils.fmtCurrency(totalBankVersed)}</td>
                 <td style="text-align:right;color:#10b981">${Utils.fmtCurrency(totalCaisseAdmin)}</td>
