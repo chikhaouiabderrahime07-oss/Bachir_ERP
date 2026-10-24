@@ -7049,13 +7049,25 @@ const CaisseModule = {
     const isAR = typeof T !== 'undefined' && T.isRTL();
     const today = Utils.today();
 
-    // ── Fire only once per calendar day per browser session ──
+    // ── Fire only once per calendar day — use localStorage so it persists across browser restarts ──
     const storageKey = `_unclosed_notif_${today}`;
-    if (sessionStorage.getItem(storageKey)) return;
-    sessionStorage.setItem(storageKey, '1');
+    if (localStorage.getItem(storageKey)) return;
+    localStorage.setItem(storageKey, '1');
+    // Clean up old keys (keep only today's)
+    Object.keys(localStorage).forEach(k => { if (k.startsWith('_unclosed_notif_') && k !== storageKey) localStorage.removeItem(k); });
 
     const allSessions = DB.getAll('sessions');
-    const unclosed = allSessions.filter(s => s.date && s.date < today && s.status !== 'closed');
+    // Only alert for sessions that actually had real sales/returns movement
+    // (zero-movement sessions are auto-closed by the healer — no need to bother admin)
+    const allBLs = DB.getAll('bls') || [];
+    const unclosed = allSessions.filter(s => {
+      if (!s.date || s.date >= today || s.status === 'closed') return false;
+      const sales   = Number(s.totalSales   || s.realBchGross   || 0);
+      const returns = Number(s.totalReturns || s.realBchReturns || 0);
+      if (sales > 0.001 || returns > 0.001) return true; // has movement
+      // Also check if any BL is linked to this session
+      return allBLs.some(b => Number(b.sessionId) === Number(s.id) && b.status !== 'cancelled');
+    });
     if (!unclosed.length) return;
 
     const allUsers = DB.getAll('users');
