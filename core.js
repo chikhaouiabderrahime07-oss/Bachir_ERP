@@ -3678,9 +3678,10 @@ const DB = {
       return { valid: false, reason: 'taken_br', ref: takenBR.ref, doc: takenBR, message: `Déjà utilisé dans BR (${takenBR.ref})` };
     }
 
-    // Check in BLs / BCHs
+    // Check in BLs / BCHs — SKIP returned/cancelled (they free the number for R-/P- reuse)
     const takenBL = this.getAll('bls').find(b => {
       if (excludeBlId && Number(b.id) === Number(excludeBlId)) return false;
+      if (b.status === 'returned' || b.status === 'cancelled') return false;
       const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
       if (bYear !== y) return false;
       const bNum = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);

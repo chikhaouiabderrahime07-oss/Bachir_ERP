@@ -1942,10 +1942,13 @@
       // Reason block
       if (br.reason || br.returnReason) {
         this._rect(doc, ML, y, CW, 10, [255, 255, 255], [252, 165, 165]);
+        const motifText = this._t(br.reason || br.returnReason || '/');
+        const hasArabic = /[\u0600-\u06FF]/.test(motifText);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [239, 68, 68]);
-        doc.text('MOTIF DU RETOUR :', ML + 3, y + 4);
-        doc.setFont('helvetica', 'normal'); this._tc(doc, [15, 23, 42]);
-        doc.text(this._t(br.reason || br.returnReason || '/'), ML + 3, y + 8);
+        doc.text(isAR ? ': سبب الإرجاع' : 'MOTIF DU RETOUR :', ML + 3, y + 4);
+        if (hasArabic) { doc.setFont(AR_FONT_NAME, 'normal'); } else { doc.setFont('helvetica', 'normal'); }
+        this._tc(doc, [15, 23, 42]);
+        doc.text(motifText, ML + 3, y + 8);
         y += 12;
       }
 
