@@ -1659,6 +1659,39 @@ const DB = {
 
       if (evHealed > 0) console.log(`[MasterBrain] Retroactive return heal: ${evHealed} États de Vente/sessions updated`);
 
+      // ── 4b. Auto-close zero-movement open sessions (no sales, no returns) ──
+      //    These are typically old placeholder sessions from days when the cashier
+      //    never made any transaction. We silently mark them closed so they stop
+      //    appearing as "open" in the Admin view.
+      const today = new Date().toISOString().slice(0, 10);
+      let zeroMovClosed = 0;
+      allSessions.forEach(sess => {
+        if (sess.status === 'closed') return;   // already closed
+        if (!sess.date || sess.date >= today) return; // skip today and future
+        const sales   = Number(sess.totalSales   || sess.realBchGross  || 0);
+        const returns = Number(sess.totalReturns || sess.realBchReturns || 0);
+        if (sales > 0.001 || returns > 0.001) return; // has movement — skip
+        // Double-check: does any BL/BCH reference this session?
+        const allBLsNow = DB.getAll('bls') || [];
+        const hasBL = allBLsNow.some(b => Number(b.sessionId) === Number(sess.id) && b.status !== 'cancelled');
+        if (hasBL) return; // real movement found in BLs — skip
+        DB.update('sessions', sess.id, {
+          status: 'closed',
+          closedAt: sess.date + 'T23:59:59.000Z',
+          closedBy: 'system',
+          closedByName: 'Clôture automatique',
+          closedNote: 'Clôture automatique — aucun mouvement enregistré',
+          totalSales: 0,
+          totalReturns: 0,
+          realBchGross: 0,
+          realBchReturns: 0,
+          realBchNet: 0,
+          closedNet: 0,
+        }, '[AutoHeal] Clôture automatique — session sans mouvement');
+        zeroMovClosed++;
+      });
+      if (zeroMovClosed > 0) console.log(`[MasterBrain] Auto-closed ${zeroMovClosed} zero-movement open sessions`);
+
       // 4. Backfill missing client details on old BLs/BCHs
       const bls = DB.getAll('bls') || [];
       const clients = DB.getAll('clients') || [];

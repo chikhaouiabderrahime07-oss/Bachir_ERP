@@ -8482,7 +8482,11 @@ const AdminCaisseModule = {
                     <button class="btn btn-xs btn-outline" onclick="AdminCaisseModule.showSessionBCHDetails(${s.id})" title="${isAR ? 'تفاصيل سندات الجلسة' : 'Détail des Bons de la session'}">
                       <i class="fas fa-list"></i>
                     </button>
-                    ${isCl ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;margin-inline-start:4px" onclick="AdminCaisseModule.rectifyUserCloture('${s.id}')" title="${isAR ? 'تصحيح التحويل والإغلاق' : 'Rectifier la clôture'}"><i class="fas fa-edit"></i></button>` : `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="AdminCaisseModule.adminForceClosePastSession('${s.id}')" title="${isAR ? 'إغلاق هذه الجلسة القديمة بأثر رجعي (مشرف)' : 'Forcer la clôture rétroactive de cette session (Admin)'}"><i class="fas fa-door-closed"></i> ${isAR ? 'إغلاق قسري' : 'Forcer Clôture'}</button>`}
+                    ${isCl
+                      ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;margin-inline-start:4px" onclick="AdminCaisseModule.rectifyUserCloture('${s.id}')" title="${isAR ? 'تصحيح التحويل والإغلاق' : 'Rectifier la clôture'}"><i class="fas fa-edit"></i></button>`
+                      : (d.realBchGross <= 0.001 && d.realBchReturns <= 0.001)
+                        ? `<span class="badge" style="background:rgba(100,116,139,.12);color:#64748b;border:1px solid rgba(100,116,139,.25);font-size:10px;padding:3px 7px;border-radius:6px;margin-inline-start:4px"><i class="fas fa-minus-circle"></i> ${isAR ? 'مغلقة تلقائياً — لا حركة' : 'Clôturé auto — aucun mvt'}</span>`
+                        : `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="AdminCaisseModule.adminForceClosePastSession('${s.id}')" title="${isAR ? 'إغلاق هذه الجلسة القديمة بأثر رجعي (مشرف)' : 'Forcer la clôture rétroactive de cette session (Admin)'}"><i class="fas fa-door-closed"></i> ${isAR ? 'إغلاق قسري' : 'Forcer Clôture'}</button>`}
                   </td>
                 </tr>`;
               }).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
