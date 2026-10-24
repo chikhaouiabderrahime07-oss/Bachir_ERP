@@ -8807,15 +8807,21 @@ const AdminCaisseModule = {
       const totalTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
       const totalReturnsTTC = sum.totalReturnsTTC || 0;
       const realBchNet = Math.max(0, sum.netAmount);
-      // Generate EV ref
+      // Generate EV ref — extract only the sequential number (part[1] of "ET/023/10/26")
       const allEVDocs = DB.getAll('etat_vente_docs') || [];
       const maxEvNum = allEVDocs.reduce((m, d) => {
-        const n = parseInt((d.ref || '').replace(/\D/g, '')) || 0;
+        const parts = (d.ref || '').split('/');
+        const n = parseInt(parts[1]) || 0;
         return Math.max(m, n);
       }, 0);
       const month = (session.date || '').slice(5, 7);
       const year = (session.date || '').slice(0, 4);
-      const evRef = `ET/${maxEvNum + 1}/${month}/${year.slice(2)}`;
+      const evRef = `ET/${String(maxEvNum + 1).padStart(3, '0')}/${month}/${year.slice(2)}`;
+      // Collect BL ids and refs from this session's deliveries (exclude returned)
+      const activeBls = (sum.bls || []).filter(b => b.status !== 'returned');
+      const blIds = activeBls.map(b => b.id).filter(Boolean);
+      const blRefs = activeBls.map(b => b.ref).filter(Boolean);
+      const blList = activeBls.map(b => ({ id: b.id, ref: b.ref, clientName: b.clientName || b.client || '', totalTTC: Number(b.totalTTC || b.montantTTC) || 0 }));
       const evDoc = {
         ref: evRef,
         userId: session.userId,
@@ -8824,6 +8830,10 @@ const AdminCaisseModule = {
         dateEnd: session.date,
         sessionId: session.id,
         items,
+        blIds,
+        blRefs,
+        blList,
+        blCount: blIds.length,
         totalHT,
         tvaAmount,
         tvaRate,
