@@ -8507,26 +8507,39 @@ const AdminCaisseModule = {
                     ${!isAllClosed ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="(()=>{let openSess=AdminCaisseModule._getOpenSessionsForDay('${day.date}');if(!openSess.length){openSess=DB.getAll('sessions').filter(s=>s.date==='${day.date}'&&s.status!=='closed');}if(openSess.length===1){AdminCaisseModule.adminForceClosePastSession(openSess[0].id);}else if(openSess.length>1){AdminCaisseModule._miniCaisseSubView='sessions';AdminCaisseModule._filters.dateFrom='${day.date}';AdminCaisseModule._filters.dateTo='${day.date}';AdminCaisseModule._miniCaisseStatusFilter='open';App.loadModule('admin_caisse');}else{Utils.notify('Aucune session ouverte trouvée pour ce jour.','warning');}})();" title="${isAR ? 'إغلاق الجلسات المفتوحة لهذا اليوم' : 'Forcer clôture des sessions ouvertes'}"><i class="fas fa-door-closed"></i></button>` : ''}
                   </td>
                 </tr>
-                ${dayHasReturns ? `<tr style="border-bottom:2px solid var(--border);background:rgba(239,68,68,.03)">
+                ${dayHasReturns ? (()=>{
+                  const _s3 = DB.getSettings();
+                  const _mr3 = Number(_s3.evMarginRate ?? _s3.evMarginPercent ?? 0);
+                  const _tv3 = Number(_s3.tvaRate) || 19;
+                  let _dRHT = 0;
+                  dayRetours.forEach(r => { (r.lines || r.items || []).forEach(ln => { const q = Number(ln.qtyDelivered||ln.qty)||0; const p = Number(ln.price)||0; const disc = Number(ln.disc)||0; _dRHT += q*p*(1-disc/100)*(1+_mr3/100); }); });
+                  const _dRTVA = Math.round(_dRHT*(_tv3/100)*100)/100;
+                  const _dRTimb = Math.round((_dRHT+_dRTVA)*0.01*100)/100;
+                  const _dRTTC = Math.round((_dRHT+_dRTVA+_dRTimb)*100)/100;
+                  return `<tr style="border-bottom:2px solid var(--border);background:rgba(239,68,68,.03)">
                   <td colspan="13" style="padding:6px 16px">
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                       <span style="font-size:10px;font-weight:800;color:#ef4444;text-transform:uppercase"><i class="fas fa-undo" style="margin-${isAR?'left':'right'}:4px"></i>${isAR ? 'المرتجعات :' : 'Retours :'}</span>
                       ${dayRetours.map(r => `<span style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.18);border-radius:6px;padding:2px 8px;font-size:10px;display:inline-flex;align-items:center;gap:4px">
                         <strong style="color:#dc2626">${Utils.escHTML(r.ref||'BR')}</strong>
-                        <span style="color:var(--text4)">←</span>
-                        <span style="color:var(--text3)">${Utils.escHTML(r.blRef||'—')}</span>
+                        <span style="color:var(--text4)">&#8592;</span>
+                        <span style="color:var(--text3)">${Utils.escHTML(r.blRef||'')}</span>
                         <span style="font-weight:700;color:#ef4444">-${Utils.fmtCurrency(r.totalTTC||0)}</span>
                       </span>`).join('')}
-                      <span style="margin-${isAR?'right':'left'}:auto;font-size:10px;color:var(--text3);background:rgba(2,132,199,.06);border-radius:6px;padding:2px 8px">
-                        <span style="color:var(--success);font-weight:700">+${Utils.fmtCurrency(day.realBchGross)}</span>
-                        <span style="color:var(--text4)"> − </span>
-                        <span style="color:var(--danger);font-weight:700">${Utils.fmtCurrency(day.realBchReturns)}</span>
-                        <span style="color:var(--text4)"> = </span>
-                        <span style="color:var(--primary);font-weight:800">${Utils.fmtCurrency(day.realBchNet)}</span>
+                      <span style="margin-${isAR?'right':'left'}:auto;display:inline-flex;gap:6px;align-items:center">
+                        <span style="font-size:10px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:6px;padding:2px 8px">
+                          <span style="color:var(--text4)">${isAR?'صندوق:':'Caisse:'}</span>
+                          <span style="color:#ef4444;font-weight:800">-${Utils.fmtCurrency(day.realBchReturns)}</span>
+                        </span>
+                        <span style="font-size:10px;color:var(--text4)">|</span>
+                        <span style="font-size:10px;background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.15);border-radius:6px;padding:2px 8px">
+                          <span style="color:var(--text4)"><i class="fas fa-university" style="font-size:9px;margin-${isAR?'left':'right'}:3px;color:#6366f1"></i>${isAR?'بنك(EV):':'Banque(EV):'}</span>
+                          <span style="color:#4f46e5;font-weight:800">-${Utils.fmtCurrency(_dRTTC)}</span>
+                        </span>
                       </span>
                     </div>
                   </td>
-                </tr>` : ''}`;
+                </tr>`; })() : ''}`;
               }).join('') : `<tr><td colspan="13" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
             <tfoot>
@@ -8642,34 +8655,46 @@ const AdminCaisseModule = {
                         : `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="AdminCaisseModule.adminForceClosePastSession('${s.id}')" title="${isAR ? 'إغلاق هذه الجلسة القديمة بأثر رجعي (مشرف)' : 'Forcer la clôture rétroactive de cette session (Admin)'}"><i class="fas fa-door-closed"></i> ${isAR ? 'إغلاق قسري' : 'Forcer Clôture'}</button>`}
                   </td>
                 </tr>
-                ${hasReturns ? `<tr style="border-bottom:2px solid var(--border);background:rgba(239,68,68,.03)">
+                ${hasReturns ? (()=>{
+                  const _s2 = DB.getSettings();
+                  const _mr2 = Number(_s2.evMarginRate ?? _s2.evMarginPercent ?? 0);
+                  const _tv2 = Number(_s2.tvaRate) || 19;
+                  let _eRHT = 0;
+                  d.summary.retours.forEach(r => { (r.lines || r.items || []).forEach(ln => { const q = Number(ln.qtyDelivered||ln.qty)||0; const p = Number(ln.price)||0; const disc = Number(ln.disc)||0; _eRHT += q*p*(1-disc/100)*(1+_mr2/100); }); });
+                  const _eRTVA = Math.round(_eRHT*(_tv2/100)*100)/100;
+                  const _eRTimb = Math.round((_eRHT+_eRTVA)*0.01*100)/100;
+                  const _eRTTC = Math.round((_eRHT+_eRTVA+_eRTimb)*100)/100;
+                  return `<tr style="border-bottom:2px solid var(--border);background:rgba(239,68,68,.03)">
                   <td colspan="12" style="padding:8px 16px">
                     <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
                       <div style="flex-shrink:0;display:flex;align-items:center;gap:6px">
                         <i class="fas fa-undo" style="color:#ef4444;font-size:13px"></i>
-                        <span style="font-size:11px;font-weight:800;color:#ef4444;text-transform:uppercase">${isAR ? 'تفاصيل المرتجعات :' : 'Détail Retours :'}</span>
+                        <span style="font-size:11px;font-weight:800;color:#ef4444;text-transform:uppercase">${isAR ? 'تفاصيل المرتجعات :' : 'Detail Retours :'}</span>
                       </div>
                       <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
                         ${d.summary.retours.map(r => `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:5px 10px;font-size:11px;display:inline-flex;align-items:center;gap:6px">
                           <span style="font-weight:700;color:#dc2626">${Utils.escHTML(r.ref || 'BR')}</span>
-                          <span style="color:var(--text3)">←</span>
-                          <span style="color:var(--text2);font-weight:600">${Utils.escHTML(r.blRef || r.bcRef || '—')}</span>
-                          <span style="color:var(--text4)">·</span>
-                          <span style="color:var(--text3)">${Utils.escHTML(r.clientName || '—')}</span>
+                          <span style="color:var(--text3)">&#8592;</span>
+                          <span style="color:var(--text2);font-weight:600">${Utils.escHTML(r.blRef || r.bcRef || '')}</span>
+                          <span style="color:var(--text4)">|</span>
+                          <span style="color:var(--text3)">${Utils.escHTML(r.clientName || '')}</span>
                           <span style="font-weight:800;color:#ef4444">-${Utils.fmtCurrency(r.totalTTC || 0)}</span>
                         </div>`).join('')}
                       </div>
-                      <div style="flex-shrink:0;background:rgba(2,132,199,.08);border:1px solid rgba(2,132,199,.2);border-radius:8px;padding:5px 10px;font-size:10px;color:var(--text2)">
-                        <span style="font-weight:600">${isAR ? 'المعادلة :' : 'Calcul :'}</span>
-                        <span style="color:var(--success);font-weight:700">+${Utils.fmtCurrency(d.realBchGross)}</span>
-                        <span style="color:var(--text4)"> − </span>
-                        <span style="color:var(--danger);font-weight:700">${Utils.fmtCurrency(d.realBchReturns)}</span>
-                        <span style="color:var(--text4)"> = </span>
-                        <span style="color:var(--primary);font-weight:800">${Utils.fmtCurrency(d.realBchNet)}</span>
+                      <div style="flex-shrink:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <div style="background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:6px;padding:3px 8px;font-size:10px">
+                          <span style="color:var(--text4)">${isAR?'الصندوق:':'Caisse:'}</span>
+                          <span style="color:#ef4444;font-weight:800">-${Utils.fmtCurrency(d.realBchReturns)}</span>
+                        </div>
+                        <span style="font-size:10px;color:var(--text4)">|</span>
+                        <div style="background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.15);border-radius:6px;padding:3px 8px;font-size:10px">
+                          <span style="color:var(--text4)"><i class="fas fa-university" style="font-size:9px;margin-${isAR?'left':'right'}:3px;color:#6366f1"></i>${isAR?'البنك (EV):':'Banque (EV):'}</span>
+                          <span style="color:#4f46e5;font-weight:800">-${Utils.fmtCurrency(_eRTTC)}</span>
+                        </div>
                       </div>
                     </div>
                   </td>
-                </tr>` : ''}`;
+                </tr>`; })() : ''}`;
               }).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
             <tfoot>
@@ -9226,35 +9251,49 @@ const AdminCaisseModule = {
           </div>
         </div>
 
-        ${sum.retours.length > 0 ? `<div style="background:linear-gradient(135deg,rgba(239,68,68,.06),rgba(249,115,22,.04));border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <i class="fas fa-exclamation-triangle" style="color:#f59e0b;font-size:14px"></i>
-            <span style="font-size:12px;font-weight:800;color:var(--text);text-transform:uppercase">${isAR ? 'شرح تأثير المرتجعات على الأرقام' : 'Pourquoi l\'écart ? — Impact des retours sur les chiffres'}</span>
+        ${(()=>{
+          if (!sum.retours.length) return '';
+          const _s = DB.getSettings();
+          const _mr = Number(_s.evMarginRate ?? _s.evMarginPercent ?? 0);
+          const _tv = Number(_s.tvaRate) || 19;
+          let _evRetHT = 0;
+          sum.retours.forEach(r => {
+            (r.lines || r.items || []).forEach(ln => {
+              const q = Number(ln.qtyDelivered || ln.qty) || 0;
+              const p = Number(ln.price) || 0;
+              const d = Number(ln.disc) || 0;
+              _evRetHT += q * p * (1 - d/100) * (1 + _mr/100);
+            });
+          });
+          const _evRetTVA = Math.round(_evRetHT * (_tv/100) * 100)/100;
+          const _evRetTimbre = Math.round((_evRetHT + _evRetTVA) * 0.01 * 100)/100;
+          const _evRetTTC = Math.round((_evRetHT + _evRetTVA + _evRetTimbre) * 100)/100;
+          return `<div style="background:linear-gradient(135deg,rgba(239,68,68,.06),rgba(249,115,22,.04));border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <i class="fas fa-university" style="color:#6366f1;font-size:14px"></i>
+            <span style="font-size:12px;font-weight:800;color:var(--text);text-transform:uppercase">${isAR ? 'كيف يُحتسب الإرجاع في الكشف المُرسل للبنك' : 'Comment le retour est comptabilise dans le versement banque'}</span>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
-            <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:6px 12px;text-align:center">
-              <div style="font-size:9px;color:var(--text4);font-weight:600;text-transform:uppercase">${isAR ? 'مبيعات BCH خام' : 'Ventes BCH Brut'}</div>
-              <div style="font-size:14px;font-weight:800;color:var(--success)">+${Utils.fmtCurrency(sum.totalSalesTTC)}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:10px 14px">
+              <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#ef4444;margin-bottom:4px"><i class="fas fa-cash-register" style="margin-${isAR?'left':'right'}:4px"></i>${isAR ? 'الخصم من الصندوق (TTC الحقيقي)' : '1. Deduit de la Caisse (TTC reel BCH)'}</div>
+              <div style="font-size:16px;font-weight:900;color:#dc2626">-${Utils.fmtCurrency(sum.totalReturnsTTC)}</div>
+              <div style="font-size:9px;color:var(--text4);margin-top:4px">${sum.retours.map(r => '<span style="background:rgba(239,68,68,.1);border-radius:4px;padding:1px 5px;margin-'+((isAR?'left':'right'))+':3px"><strong>'+Utils.escHTML(r.ref||'BR')+'</strong> '+Utils.escHTML(r.blRef||'')+'</span>').join('')}</div>
+              <div style="font-size:9.5px;color:var(--text3);margin-top:4px;border-top:1px solid rgba(239,68,68,.15);padding-top:4px">${isAR ? 'المبلغ الحقيقي المسترجع نقداً للزبون (طابع حقيقي)' : 'Montant reel rembourse au client (timbre reel BCH)'}</div>
             </div>
-            <span style="font-size:18px;font-weight:800;color:var(--danger)">−</span>
-            <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:6px 12px;text-align:center">
-              <div style="font-size:9px;color:var(--text4);font-weight:600;text-transform:uppercase">${isAR ? 'مرتجعات مخصومة' : 'Retours Déduits'}</div>
-              <div style="font-size:14px;font-weight:800;color:var(--danger)">-${Utils.fmtCurrency(sum.totalReturnsTTC)}</div>
-              <div style="font-size:9px;color:#ef4444;font-weight:600;margin-top:2px">${sum.retours.map(r => Utils.escHTML(r.ref||'BR')).join(', ')}</div>
-            </div>
-            <span style="font-size:18px;font-weight:800;color:var(--text4)">=</span>
-            <div style="background:rgba(2,132,199,.1);border:1px solid rgba(2,132,199,.25);border-radius:8px;padding:6px 12px;text-align:center">
-              <div style="font-size:9px;color:var(--text4);font-weight:600;text-transform:uppercase">${isAR ? 'صافي نقدي (دخل الصندوق)' : 'Net Cash (entre en caisse)'}</div>
-              <div style="font-size:14px;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(sum.netAmount)}</div>
+            <div style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:10px 14px">
+              <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#6366f1;margin-bottom:4px"><i class="fas fa-file-invoice-dollar" style="margin-${isAR?'left':'right'}:4px"></i>${isAR ? 'الخصم في كشف المبيعات (للبنك)' : '2. Deduit dans Etat de Vente (vers Banque)'}</div>
+              <div style="font-size:16px;font-weight:900;color:#4f46e5">-${Utils.fmtCurrency(_evRetTTC)}</div>
+              <div style="font-size:9px;color:var(--text4);margin-top:4px">${isAR ? 'بنفس هامش الربح' : 'Avec marge'} ${_mr}% + TVA ${_tv}% + ${isAR ? 'طابع' : 'Timbre'} 1%</div>
+              <div style="font-size:9.5px;color:var(--text3);margin-top:4px;border-top:1px solid rgba(99,102,241,.15);padding-top:4px">${isAR ? 'مواد سالبة × هامش ربح × رسم × طابع 1%' : 'Articles negatifs x marge x TVA x timbre 1%'}</div>
             </div>
           </div>
-          <div style="font-size:11px;color:var(--text3);line-height:1.5;border-top:1px solid rgba(239,68,68,.15);padding-top:8px">
-            <i class="fas fa-info-circle" style="color:#f59e0b;margin-${isAR?'left':'right'}:4px"></i>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--text2);line-height:1.5">
+            <i class="fas fa-shield-alt" style="color:#22c55e;margin-${isAR?'left':'right'}:4px"></i>
             ${isAR
-              ? '<strong>كيف يعمل الإرجاع :</strong> عند إرجاع بضاعة، يتم <u>خصم المبلغ الإجمالي (TTC)</u> مباشرة من صندوق أمين الصندوق. أما في <strong>كشف المبيعات</strong> (État de Vente)، فيتم إدراج المواد المرتجعة كأسطر <strong>سالبة</strong> (كمية سالبة) مع نفس هامش الربح والطابع الجبائي 1%. لذلك قد يظهر فارق بسيط بين المبلغ المخصوم من الصندوق والمبلغ المصرح به في الكشف.'
-              : '<strong>Comment fonctionne un retour :</strong> Lors d\u2019un retour, le montant <u>TTC du BCH</u> est déduit directement de la caisse du caissier. Dans l\u2019<strong>État de Vente</strong>, les articles retournés apparaissent comme des lignes <strong>négatives</strong> (quantité négative) avec la même marge et le timbre fiscal 1%. Un léger écart peut donc apparaître entre le montant déduit en caisse et celui déclaré dans l\u2019EV.'}
+              ? '<strong>ملاحظة :</strong> البنك لا يرى سوى كشف المبيعات (EV). المرتجع يظهر كمواد بكميات <strong>سالبة</strong> معاد حسابها بنفس أسعار البيع + هامش الربح + رسم + طابع 1%. الفرق بين المبلغين (<strong>'+Utils.fmtCurrency(Math.abs(sum.totalReturnsTTC - _evRetTTC))+'</strong>) يبقى لصالحكم ولا يظهر في أي مكان رسمي.'
+              : '<strong>Important :</strong> La banque ne voit que le montant EV. Le retour y apparait comme articles a <strong>quantite negative</strong> recalcules avec marge '+_mr+'% + TVA + timbre 1%. La difference entre les deux (<strong>'+Utils.fmtCurrency(Math.abs(sum.totalReturnsTTC - _evRetTTC))+'</strong>) reste en votre faveur et nu{2019}apparait nulle part dans les documents officiels.'}
           </div>
-        </div>` : ''}
+        </div>`; })()}
 
         <div style="margin-bottom:16px">
           <strong style="font-size:13px;color:var(--text);margin-bottom:8px;display:block"><i class="fas fa-truck" style="color:var(--primary)"></i> ${isAR ? 'سندات الشحن الصادرة (BCH)' : 'Bons de Chargement émis (BCH)'} (${sum.bls.length})</strong>
