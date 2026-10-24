@@ -328,6 +328,29 @@ const DB = {
     // No automatic background data modification. Math recalibration still
     // runs on-demand when user saves/closes sessions.
 
+    // ── Remote Force Reset: admin sets flag in DB, all clients auto-wipe ──
+    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+      try {
+        window.API.get('/data/_versions').then(res => {
+          const resetTs = res && (res.force_reset || (res.v && res.v.force_reset));
+          const lastReset = localStorage.getItem('_last_force_reset');
+          if (resetTs && String(resetTs) !== String(lastReset)) {
+            console.log('[ForceReset] Remote reset detected — wiping all caches');
+            localStorage.clear();
+            sessionStorage.clear();
+            document.cookie.split(';').forEach(c => {
+              const k = c.split('=')[0].trim();
+              document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+            });
+            if ('caches' in window) caches.keys().then(n => n.forEach(k => caches.delete(k)));
+            localStorage.setItem('_last_force_reset', String(resetTs));
+            location.reload();
+            return;
+          }
+        }).catch(() => {});
+      } catch(_) {}
+    }
+
     // Cloud mode: if localStorage appears empty or cleared, restore from MongoDB
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       const hasData = this._cols.some(c => this.getAll(c).length > 0);
@@ -2966,8 +2989,24 @@ const DB = {
         try {
           const res = await window.API.get('/data/_versions');
           if (res && typeof res === 'object') {
+            // ── Remote Force Reset check ──
+            const resetTs = res.force_reset;
+            const lastReset = localStorage.getItem('_last_force_reset');
+            if (resetTs && resetTs > 0 && String(resetTs) !== String(lastReset)) {
+              console.log('[LiveSync] Remote force-reset detected — wiping all caches');
+              const marker = String(resetTs);
+              localStorage.clear();
+              sessionStorage.clear();
+              document.cookie.split(';').forEach(c => {
+                document.cookie = c.split('=')[0].trim() + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+              });
+              localStorage.setItem('_last_force_reset', marker);
+              location.reload();
+              return;
+            }
+
             changed = [];
-            const verMap = res.v || res; // supports both { epoch, v: { ... } } and flat map
+            const verMap = res.v || res;
             const currentEpoch = res.epoch;
 
             // Detect server reboot / redeploy / cold-start wake

@@ -189,6 +189,20 @@ app.get('/reset', (req, res) => {
   </body></html>`);
 });
 
+// ─── Force Reset All Clients Remotely ────────────────────────────
+// Admin visits /force-reset-all → sets flag in memory → all clients auto-wipe
+app.get('/force-reset-all', (req, res) => {
+  try {
+    const { setForceReset, bumpAll } = require('./lib/versions');
+    const ts = Date.now();
+    setForceReset(ts);
+    bumpAll();
+    res.json({ success: true, message: 'Force reset triggered for ALL clients. They will auto-wipe on next page load/sync.', timestamp: ts });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Serve Frontend ──────────────────────────────────────────────
 // SECURITY: this used to serve the ENTIRE project folder, so
 //   https://<site>/routes/auth.js, /server.js, /package.json, /seed_v2.js …
