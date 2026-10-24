@@ -7913,7 +7913,8 @@ const AdminCaisseModule = {
       } else if (isCl && (s.etatVenteTTC || s.closedNet)) {
         etatVenteTTC = Number(s.etatVenteTTC || s.closedNet) || 0;
       } else {
-        // Calculate on-the-fly from active delivered BLs lines
+        // Calculate on-the-fly from active delivered BLs lines (with faida margin)
+        const evMarginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
         const aggregated = {};
         sum.bls.filter(b => b.status !== 'returned').forEach(bl => {
           (bl.lines || []).forEach(line => {
@@ -7922,7 +7923,8 @@ const AdminCaisseModule = {
             const qty = Number(line.qtyDelivered || line.qty) || 0;
             const price = Number(line.price) || 0;
             const disc = Number(line.disc) || 0;
-            const effPrice = price * (1 - disc / 100);
+            const basePrice = price * (1 - disc / 100);
+            const effPrice = basePrice * (1 + evMarginRate / 100);
             if (!aggregated[key]) aggregated[key] = { qty: 0, price: effPrice };
             aggregated[key].qty += qty;
           });
@@ -8463,11 +8465,16 @@ const AdminCaisseModule = {
                 const isAllClosed = noSessions || (closedInDay === day.sessions.length && day.sessions.length > 0);
                 const bankNames = [...day.banks].join(', ') || '—';
                 const firstEV = day.evDocs[0];
-                return `<tr style="border-bottom:1px solid var(--border)">
+                const dayRetours = day.sessions.reduce((arr, sd) => arr.concat(sd.summary?.retours || []), []);
+                const dayHasReturns = day.realBchReturns > 0.01 && dayRetours.length > 0;
+                return `<tr style="border-bottom:${dayHasReturns?'none':'1px solid var(--border)'}">
                   <td style="font-weight:700"><strong>${Utils.fmtDate(day.date)}</strong></td>
                   <td style="text-align:center"><span class="badge ${isAllClosed?'badge-success':'badge-warning'}">${closedInDay}/${day.sessions.length}</span></td>
                   <td style="text-align:right;color:var(--success);font-weight:700">+${Utils.fmtCurrency(day.realBchGross)}</td>
-                  <td style="text-align:right;color:var(--danger);font-weight:700">-${Utils.fmtCurrency(day.realBchReturns)}</td>
+                  <td style="text-align:right;color:var(--danger);font-weight:700">
+                    ${dayHasReturns ? `<div>-${Utils.fmtCurrency(day.realBchReturns)}</div>
+                    <div style="font-size:9px;color:#ef4444;font-weight:600;margin-top:2px"><i class="fas fa-undo" style="margin-${isAR?'left':'right'}:3px"></i>${dayRetours.length} ${isAR?'إرجاع':'retour(s)'}</div>` : `-${Utils.fmtCurrency(day.realBchReturns)}`}
+                  </td>
                   <td style="text-align:right;font-weight:800;color:var(--primary);background:rgba(2,132,199,.04)">${Utils.fmtCurrency(day.realBchNet)}</td>
                   <td style="text-align:right;font-weight:800;color:#0d9488;background:rgba(13,148,136,.04)">${Utils.fmtCurrency(day.etatVenteTTC)}</td>
                   <td style="text-align:right">
@@ -8499,7 +8506,27 @@ const AdminCaisseModule = {
                     </button>
                     ${!isAllClosed ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="(()=>{let openSess=AdminCaisseModule._getOpenSessionsForDay('${day.date}');if(!openSess.length){openSess=DB.getAll('sessions').filter(s=>s.date==='${day.date}'&&s.status!=='closed');}if(openSess.length===1){AdminCaisseModule.adminForceClosePastSession(openSess[0].id);}else if(openSess.length>1){AdminCaisseModule._miniCaisseSubView='sessions';AdminCaisseModule._filters.dateFrom='${day.date}';AdminCaisseModule._filters.dateTo='${day.date}';AdminCaisseModule._miniCaisseStatusFilter='open';App.loadModule('admin_caisse');}else{Utils.notify('Aucune session ouverte trouvée pour ce jour.','warning');}})();" title="${isAR ? 'إغلاق الجلسات المفتوحة لهذا اليوم' : 'Forcer clôture des sessions ouvertes'}"><i class="fas fa-door-closed"></i></button>` : ''}
                   </td>
-                </tr>`;
+                </tr>
+                ${dayHasReturns ? `<tr style="border-bottom:2px solid var(--border);background:rgba(239,68,68,.03)">
+                  <td colspan="13" style="padding:6px 16px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span style="font-size:10px;font-weight:800;color:#ef4444;text-transform:uppercase"><i class="fas fa-undo" style="margin-${isAR?'left':'right'}:4px"></i>${isAR ? 'المرتجعات :' : 'Retours :'}</span>
+                      ${dayRetours.map(r => `<span style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.18);border-radius:6px;padding:2px 8px;font-size:10px;display:inline-flex;align-items:center;gap:4px">
+                        <strong style="color:#dc2626">${Utils.escHTML(r.ref||'BR')}</strong>
+                        <span style="color:var(--text4)">←</span>
+                        <span style="color:var(--text3)">${Utils.escHTML(r.blRef||'—')}</span>
+                        <span style="font-weight:700;color:#ef4444">-${Utils.fmtCurrency(r.totalTTC||0)}</span>
+                      </span>`).join('')}
+                      <span style="margin-${isAR?'right':'left'}:auto;font-size:10px;color:var(--text3);background:rgba(2,132,199,.06);border-radius:6px;padding:2px 8px">
+                        <span style="color:var(--success);font-weight:700">+${Utils.fmtCurrency(day.realBchGross)}</span>
+                        <span style="color:var(--text4)"> − </span>
+                        <span style="color:var(--danger);font-weight:700">${Utils.fmtCurrency(day.realBchReturns)}</span>
+                        <span style="color:var(--text4)"> = </span>
+                        <span style="color:var(--primary);font-weight:800">${Utils.fmtCurrency(day.realBchNet)}</span>
+                      </span>
+                    </div>
+                  </td>
+                </tr>` : ''}`;
               }).join('') : `<tr><td colspan="13" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
             <tfoot>
@@ -8560,7 +8587,8 @@ const AdminCaisseModule = {
               ${sessionDetails.length ? sessionDetails.map(d => {
                 const s = d.session;
                 const isCl = s.status === 'closed';
-                return `<tr style="border-bottom:1px solid var(--border)">
+                const hasReturns = d.realBchReturns > 0.01 && d.summary.retours && d.summary.retours.length > 0;
+                return `<tr style="border-bottom:${hasReturns?'none':'1px solid var(--border)'}">
                   <td style="font-weight:600">${Utils.fmtDate(s.date)}</td>
                   <td>
                     <div style="display:flex;align-items:center;gap:8px">
@@ -8578,7 +8606,10 @@ const AdminCaisseModule = {
                     </span>
                   </td>
                   <td style="text-align:right;color:var(--success);font-weight:700">+${Utils.fmtCurrency(d.realBchGross)}</td>
-                  <td style="text-align:right;color:var(--danger);font-weight:700">-${Utils.fmtCurrency(d.realBchReturns)}</td>
+                  <td style="text-align:right;color:var(--danger);font-weight:700">
+                    ${hasReturns ? `<div>-${Utils.fmtCurrency(d.realBchReturns)}</div>
+                    <div style="font-size:9px;color:#ef4444;font-weight:600;margin-top:2px"><i class="fas fa-undo" style="margin-${isAR?'left':'right'}:3px"></i>${d.summary.retours.length} ${isAR?'سند إرجاع':'retour(s)'}</div>` : `-${Utils.fmtCurrency(d.realBchReturns)}`}
+                  </td>
                   <td style="text-align:right;font-weight:800;color:var(--primary);background:rgba(2,132,199,.04)">${Utils.fmtCurrency(d.realBchNet)}</td>
                   <td style="text-align:right;font-weight:800;color:#0d9488;background:rgba(13,148,136,.04)">${Utils.fmtCurrency(d.etatVenteTTC)}</td>
                   <td style="text-align:right">
@@ -8610,7 +8641,35 @@ const AdminCaisseModule = {
                         ? `<span class="badge" style="background:rgba(100,116,139,.12);color:#64748b;border:1px solid rgba(100,116,139,.25);font-size:10px;padding:3px 7px;border-radius:6px;margin-inline-start:4px"><i class="fas fa-minus-circle"></i> ${isAR ? 'مغلقة تلقائياً — لا حركة' : 'Clôturé auto — aucun mvt'}</span>`
                         : `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="AdminCaisseModule.adminForceClosePastSession('${s.id}')" title="${isAR ? 'إغلاق هذه الجلسة القديمة بأثر رجعي (مشرف)' : 'Forcer la clôture rétroactive de cette session (Admin)'}"><i class="fas fa-door-closed"></i> ${isAR ? 'إغلاق قسري' : 'Forcer Clôture'}</button>`}
                   </td>
-                </tr>`;
+                </tr>
+                ${hasReturns ? `<tr style="border-bottom:2px solid var(--border);background:rgba(239,68,68,.03)">
+                  <td colspan="12" style="padding:8px 16px">
+                    <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+                      <div style="flex-shrink:0;display:flex;align-items:center;gap:6px">
+                        <i class="fas fa-undo" style="color:#ef4444;font-size:13px"></i>
+                        <span style="font-size:11px;font-weight:800;color:#ef4444;text-transform:uppercase">${isAR ? 'تفاصيل المرتجعات :' : 'Détail Retours :'}</span>
+                      </div>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
+                        ${d.summary.retours.map(r => `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:5px 10px;font-size:11px;display:inline-flex;align-items:center;gap:6px">
+                          <span style="font-weight:700;color:#dc2626">${Utils.escHTML(r.ref || 'BR')}</span>
+                          <span style="color:var(--text3)">←</span>
+                          <span style="color:var(--text2);font-weight:600">${Utils.escHTML(r.blRef || r.bcRef || '—')}</span>
+                          <span style="color:var(--text4)">·</span>
+                          <span style="color:var(--text3)">${Utils.escHTML(r.clientName || '—')}</span>
+                          <span style="font-weight:800;color:#ef4444">-${Utils.fmtCurrency(r.totalTTC || 0)}</span>
+                        </div>`).join('')}
+                      </div>
+                      <div style="flex-shrink:0;background:rgba(2,132,199,.08);border:1px solid rgba(2,132,199,.2);border-radius:8px;padding:5px 10px;font-size:10px;color:var(--text2)">
+                        <span style="font-weight:600">${isAR ? 'المعادلة :' : 'Calcul :'}</span>
+                        <span style="color:var(--success);font-weight:700">+${Utils.fmtCurrency(d.realBchGross)}</span>
+                        <span style="color:var(--text4)"> − </span>
+                        <span style="color:var(--danger);font-weight:700">${Utils.fmtCurrency(d.realBchReturns)}</span>
+                        <span style="color:var(--text4)"> = </span>
+                        <span style="color:var(--primary);font-weight:800">${Utils.fmtCurrency(d.realBchNet)}</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>` : ''}`;
               }).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
             </tbody>
             <tfoot>
@@ -9167,6 +9226,36 @@ const AdminCaisseModule = {
           </div>
         </div>
 
+        ${sum.retours.length > 0 ? `<div style="background:linear-gradient(135deg,rgba(239,68,68,.06),rgba(249,115,22,.04));border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <i class="fas fa-exclamation-triangle" style="color:#f59e0b;font-size:14px"></i>
+            <span style="font-size:12px;font-weight:800;color:var(--text);text-transform:uppercase">${isAR ? 'شرح تأثير المرتجعات على الأرقام' : 'Pourquoi l\'écart ? — Impact des retours sur les chiffres'}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
+            <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);border-radius:8px;padding:6px 12px;text-align:center">
+              <div style="font-size:9px;color:var(--text4);font-weight:600;text-transform:uppercase">${isAR ? 'مبيعات BCH خام' : 'Ventes BCH Brut'}</div>
+              <div style="font-size:14px;font-weight:800;color:var(--success)">+${Utils.fmtCurrency(sum.totalSalesTTC)}</div>
+            </div>
+            <span style="font-size:18px;font-weight:800;color:var(--danger)">−</span>
+            <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:6px 12px;text-align:center">
+              <div style="font-size:9px;color:var(--text4);font-weight:600;text-transform:uppercase">${isAR ? 'مرتجعات مخصومة' : 'Retours Déduits'}</div>
+              <div style="font-size:14px;font-weight:800;color:var(--danger)">-${Utils.fmtCurrency(sum.totalReturnsTTC)}</div>
+              <div style="font-size:9px;color:#ef4444;font-weight:600;margin-top:2px">${sum.retours.map(r => Utils.escHTML(r.ref||'BR')).join(', ')}</div>
+            </div>
+            <span style="font-size:18px;font-weight:800;color:var(--text4)">=</span>
+            <div style="background:rgba(2,132,199,.1);border:1px solid rgba(2,132,199,.25);border-radius:8px;padding:6px 12px;text-align:center">
+              <div style="font-size:9px;color:var(--text4);font-weight:600;text-transform:uppercase">${isAR ? 'صافي نقدي (دخل الصندوق)' : 'Net Cash (entre en caisse)'}</div>
+              <div style="font-size:14px;font-weight:800;color:var(--primary)">${Utils.fmtCurrency(sum.netAmount)}</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);line-height:1.5;border-top:1px solid rgba(239,68,68,.15);padding-top:8px">
+            <i class="fas fa-info-circle" style="color:#f59e0b;margin-${isAR?'left':'right'}:4px"></i>
+            ${isAR
+              ? '<strong>كيف يعمل الإرجاع :</strong> عند إرجاع بضاعة، يتم <u>خصم المبلغ الإجمالي (TTC)</u> مباشرة من صندوق أمين الصندوق. أما في <strong>كشف المبيعات</strong> (État de Vente)، فيتم إدراج المواد المرتجعة كأسطر <strong>سالبة</strong> (كمية سالبة) مع نفس هامش الربح والطابع الجبائي 1%. لذلك قد يظهر فارق بسيط بين المبلغ المخصوم من الصندوق والمبلغ المصرح به في الكشف.'
+              : '<strong>Comment fonctionne un retour :</strong> Lors d\u2019un retour, le montant <u>TTC du BCH</u> est déduit directement de la caisse du caissier. Dans l\u2019<strong>État de Vente</strong>, les articles retournés apparaissent comme des lignes <strong>négatives</strong> (quantité négative) avec la même marge et le timbre fiscal 1%. Un léger écart peut donc apparaître entre le montant déduit en caisse et celui déclaré dans l\u2019EV.'}
+          </div>
+        </div>` : ''}
+
         <div style="margin-bottom:16px">
           <strong style="font-size:13px;color:var(--text);margin-bottom:8px;display:block"><i class="fas fa-truck" style="color:var(--primary)"></i> ${isAR ? 'سندات الشحن الصادرة (BCH)' : 'Bons de Chargement émis (BCH)'} (${sum.bls.length})</strong>
           <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:10px">
@@ -9246,13 +9335,15 @@ const AdminCaisseModule = {
       if (evDoc && Number(evDoc.totalTTC) > 0) etatVenteTTC = Number(evDoc.totalTTC) || 0;
       else if (isCl && (s.etatVenteTTC || s.closedNet)) etatVenteTTC = Number(s.etatVenteTTC || s.closedNet) || 0;
       else {
+        const evMR = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
         const aggregated = {};
         sum.bls.filter(b => b.status !== 'returned').forEach(bl => {
           (bl.lines || []).forEach(l => {
             const k = (l.designation || '').trim();
             if (!k) return;
             const q = Number(l.qtyDelivered || l.qty) || 0;
-            const p = (Number(l.price) || 0) * (1 - (Number(l.disc) || 0) / 100);
+            const baseP = (Number(l.price) || 0) * (1 - (Number(l.disc) || 0) / 100);
+            const p = baseP * (1 + evMR / 100);
             if (!aggregated[k]) aggregated[k] = { q: 0, p };
             aggregated[k].q += q;
           });
@@ -15270,8 +15361,8 @@ const EtatVenteModule = {
       return true;
     });
 
-    // Aggregated product lines from active delivered BLs (returns excluded so items are net sold)
-    // Unit price includes the configurable client benefit margin (calculated as % of article base price)
+    // Aggregated product lines from active delivered BLs
+    // Unit price includes the configurable client benefit margin (faida: % of article base price)
     const aggregated = {};
     bls.filter(b => b.status !== 'returned').forEach(bl => {
       const lines = bl.lines || [];
@@ -15305,23 +15396,68 @@ const EtatVenteModule = {
       });
     });
 
-    const items = Object.values(aggregated).filter(it => it.qty > 0.0001).sort((a, b) => a.designation.localeCompare(b.designation));
+    // ── SUBTRACT return quantities from aggregated items ──
+    // Returns are treated as negative articles: same faida & 1% timbre apply on net qty
+    const sameDayReturnedBlIds = new Set(bls.filter(b => b.status === 'returned').map(b => Number(b.id)));
+    const crossDayReturns = retours.filter(r => !sameDayReturnedBlIds.has(Number(r.blId || r.bcId)));
+
+    // For same-day returned BLs: subtract their lines from aggregated
+    bls.filter(b => b.status === 'returned').forEach(bl => {
+      (bl.lines || []).forEach(line => {
+        const key = (line.designation || line.articleName || line.name || '').trim();
+        if (!key || !aggregated[key]) return;
+        const qty = Number(line.qtyDelivered || line.qty) || 0;
+        aggregated[key].qty -= qty;
+      });
+    });
+
+    // For cross-day returns (bon de retour): subtract their lines from aggregated
+    crossDayReturns.forEach(r => {
+      const rLines = r.lines || r.items || [];
+      rLines.forEach(line => {
+        const key = (line.designation || line.articleName || line.name || '').trim();
+        if (!key) return;
+        const qty = Number(line.qtyReturned || line.qty) || 0;
+        const price = Number(line.price || line.unitPrice) || 0;
+        const disc = Number(line.disc) || 0;
+        const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+        const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+        const effectivePrice = Math.round((basePrice + marginPerUnit) * 100) / 100;
+        if (aggregated[key]) {
+          aggregated[key].qty -= qty;
+        } else {
+          // Return item not in sales — add as negative line
+          aggregated[key] = {
+            designation: key,
+            unit: line.unit || 'U',
+            qty: -qty,
+            basePrice: basePrice,
+            marginRate: marginRate,
+            marginPerUnit: marginPerUnit,
+            unitPrice: effectivePrice
+          };
+        }
+      });
+    });
+
+    // Items with qty > 0 are net sold; items with qty < 0 are net returned (show separately)
+    const items = Object.values(aggregated).filter(it => Math.abs(it.qty) > 0.0001).sort((a, b) => a.designation.localeCompare(b.designation));
 
     let totalMargin = 0;
     items.forEach(it => { totalMargin += (it.qty || 0) * (it.marginPerUnit || (it.basePrice * marginRate / 100)); });
     totalMargin = Math.round(totalMargin * 100) / 100;
 
-    // grossTotalTTC = sum of non-returned BLs only (returned BLs are excluded from items table too)
+    // grossTotalTTC = sum of non-returned BLs only
     const grossTotalTTC = bls.filter(b => b.status !== 'returned').reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
-    // returnsTotalTTC = cross-day returns only (same-day returns whose BL is already excluded from gross)
-    const sameDayReturnedBlIds = new Set(bls.filter(b => b.status === 'returned').map(b => Number(b.id)));
-    const crossDayReturns = retours.filter(r => !sameDayReturnedBlIds.has(Number(r.blId || r.bcId)));
-    const returnsTotalTTC = crossDayReturns.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
+    // returnsTotalTTC from bon de retour documents (real BCH TTC — for display)
+    const returnsTotalTTC = crossDayReturns.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0)
+      + bls.filter(b => b.status === 'returned').reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
     const netTotalTTC = Math.max(0, Math.round((grossTotalTTC - returnsTotalTTC) * 100) / 100);
 
-    // priorPeriodReturns = same as crossDayReturns (BLs from outside this period — already excluded from items)
+    // EV TTC is now computed from NET aggregated items (returns already subtracted)
+    // so timbre & faida are correctly calculated on the net — no flat subtraction needed
     const priorPeriodReturns = crossDayReturns;
-    const priorReturnsTotalTTC = priorPeriodReturns.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
+    const priorReturnsTotalTTC = 0; // Returns are already baked into the items — don't subtract again
 
     return { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC, marginRate, totalMargin, priorReturnsTotalTTC, priorPeriodReturns };
   },
