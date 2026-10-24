@@ -15,8 +15,8 @@
   /* ── Arabic font cache (loaded once from CDN) ────────────── */
   let _arFontB64  = null;   /* base64 string of TTF data    */
   let _arFontLoad = null;   /* promise for in-flight fetch  */
-  const AR_FONT_URL = 'https://fonts.gstatic.com/s/readexpro/v9/SLXYc1bJ7HE5YDoGPuzj_dh8na74KiwZQQzfm4w-ZEk.ttf';
-  const AR_FONT_NAME = 'ReadexPro';
+  const AR_FONT_URL = 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf';
+  const AR_FONT_NAME = 'Amiri';
   const AR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
   /* ── Colours ────────────────────────────────────────────── */
@@ -95,19 +95,21 @@
     _registerAr(doc) {
       if (!_arFontB64) return false;
       try {
-        doc.addFileToVFS('ReadexPro-Regular.ttf', _arFontB64);
-        doc.addFont('ReadexPro-Regular.ttf', AR_FONT_NAME, 'normal');
+        doc.addFileToVFS('Amiri-Regular.ttf', _arFontB64);
+        doc.addFont('Amiri-Regular.ttf', AR_FONT_NAME, 'normal');
         return true;
       } catch(e) { return false; }
     },
 
-    /* Smart text — auto-switches to NotoNaskhArabic for Arabic content */
+    /* Smart text — auto-switches to Amiri (bold +1.5pt) for Arabic content */
     _text(doc, text, x, y, opts) {
       const s = this._t(text);
       if (this._hasAr(s) && _arFontB64) {
         const prev = doc.getFont();
-        doc.setFont(AR_FONT_NAME, 'normal');
+        doc.setFont(AR_FONT_NAME, 'bold');
+        const prevSz = doc.getFontSize(); doc.setFontSize(prevSz + 1.5);
         doc.text(s, x, y, opts);
+        doc.setFontSize(prevSz);
         doc.setFont(prev.fontName, prev.fontStyle);
       } else {
         doc.text(s, x, y, opts);

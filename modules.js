@@ -13779,40 +13779,44 @@ const BankModule = {
     </div>`).join('')}
   </div>
 
-  <!-- ── Entrées Breakdown: Caisse vs EV vs Externe ── -->
+  <!-- ── Entrées Breakdown: EV vs Caisse vs Externe ── -->
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:20px">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.7px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
       <i class="fas fa-chart-pie" style="color:#3b82f6"></i>
-      ${isAR ? 'تفصيل مصادر الإيداعات البنكية' : 'Détail des sources de dépôts bancaires'}
+      ${isAR ? 'تفصيل مصادر الإيداعات البنكية — انقر للتصفية' : 'Sources des dépôts bancaires — cliquez pour filtrer'}
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-      <div style="background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2);border-radius:10px;padding:12px 14px">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#8b5cf6;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
-          <i class="fas fa-file-invoice"></i> ${isAR ? 'كشوفات المبيعات (EV)' : 'États de Vente (EV)'}
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px">
+      <!-- EV card: biggest, most prominent -->
+      <div onclick="updateBankFilter('subtype','etat_vente')" style="background:linear-gradient(135deg,rgba(139,92,246,.15),rgba(139,92,246,.05));border:2px solid rgba(139,92,246,.35);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s" onmouseenter="this.style.borderColor='#8b5cf6';this.style.transform='translateY(-2px)'" onmouseleave="this.style.borderColor='rgba(139,92,246,.35)';this.style.transform=''">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#8b5cf6;letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-file-invoice"></i> ${isAR ? '📄 كشوفات المبيعات (EV) — تحويل الصندوق للبنك' : '📄 Virements EV Caisse → Banque'}
         </div>
-        <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(grandInEV)}</div>
-        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'تحويل الصندوق → بنك عبر EV' : 'Transferts caisse → banque via EV'}</div>
+        <div style="font-size:22px;font-weight:900;color:#8b5cf6">${Utils.fmtCurrency(grandInEV)}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:4px">${isAR ? 'مجموع تحويلات كشوفات المبيعات المؤكدة للبنك' : 'Total des EV confirmés et versés en banque'}</div>
       </div>
-      <div style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:12px 14px">
+      <!-- Direct caisse transfer -->
+      <div onclick="updateBankFilter('subtype','transfer_from_caisse')" style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .2s" onmouseenter="this.style.borderColor='#10b981';this.style.transform='translateY(-2px)'" onmouseleave="this.style.borderColor='rgba(16,185,129,.2)';this.style.transform=''">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#10b981;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
-          <i class="fas fa-exchange-alt"></i> ${isAR ? 'تحويل مباشر من الصندوق' : 'Virement direct Caisse'}
+          <i class="fas fa-exchange-alt"></i> ${isAR ? 'تحويل مباشر' : 'Virement Caisse'}
         </div>
         <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(grandInCaisse)}</div>
         <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'تحويل يدوي من الصندوق' : 'Virement manuel depuis caisse'}</div>
       </div>
-      <div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:12px 14px">
+      <!-- External deposit -->
+      <div onclick="updateBankFilter('subtype','external_deposit')" style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .2s" onmouseenter="this.style.borderColor='#f59e0b';this.style.transform='translateY(-2px)'" onmouseleave="this.style.borderColor='rgba(245,158,11,.2)';this.style.transform=''">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#f59e0b;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
           <i class="fas fa-coins"></i> ${isAR ? 'إيداع خارجي' : 'Dépôt Externe'}
         </div>
         <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(grandInExt)}</div>
-        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'إيداع نقدي مباشر بالبنك' : 'Cash déposé directement en banque'}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'إيداع نقدي مباشر بالبنك' : 'Cash déposé en banque directement'}</div>
       </div>
+      <!-- Other -->
       <div style="background:rgba(100,116,139,.07);border:1px solid rgba(100,116,139,.2);border-radius:10px;padding:12px 14px">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#64748b;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
-          <i class="fas fa-ellipsis-h"></i> ${isAR ? 'مصادر أخرى' : 'Autres sources'}
+          <i class="fas fa-ellipsis-h"></i> ${isAR ? 'أخرى' : 'Divers'}
         </div>
         <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(Math.max(0, grandIn - grandInEV - grandInExt - grandInCaisse))}</div>
-        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'إيداعات متنوعة أخرى' : 'Corrections / divers'}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'تصحيحات وغير ذلك' : 'Corrections / divers'}</div>
       </div>
     </div>
   </div>
@@ -13934,6 +13938,13 @@ const BankModule = {
           }).join('')}
         </tbody>
       </table>
+    </div>
+    <!-- ── Filtered totals summary ── -->
+    <div style="padding:12px 20px;background:rgba(59,130,246,.04);border-top:2px solid var(--border);display:flex;flex-wrap:wrap;gap:20px;align-items:center">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px">${isAR ? 'مجموع الفلترة الحالية' : 'Totaux de la sélection'} (${totalTxs})</span>
+      <span style="font-size:14px;font-weight:900;color:#10b981">+ ${Utils.fmtCurrency(filteredTxs.filter(t=>t.type==='deposit').reduce((s,t)=>s+(Number(t.amount)||0),0))} ${isAR?'وارد':'entrants'}</span>
+      <span style="font-size:14px;font-weight:900;color:#ef4444">− ${Utils.fmtCurrency(filteredTxs.filter(t=>t.type==='payment').reduce((s,t)=>s+(Number(t.amount)||0),0))} ${isAR?'صادر':'sortants'}</span>
+      <span style="font-size:14px;font-weight:900;color:#3b82f6">= ${Utils.fmtCurrency(filteredTxs.reduce((s,t)=>s+(t.type==='deposit'?1:-1)*(Number(t.amount)||0),0))} ${isAR?'صافي':'net'}</span>
     </div>
     ${pages > 1 ? `<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div style="font-size:12px;color:var(--text4)">${isAR ? 'صفحة' : 'Page'} ${BankModule._page+1} / ${pages} — ${totalTxs} ${isAR ? 'عملية' : 'transaction(s)'}</div>
@@ -15584,7 +15595,7 @@ const EtatVenteModule = {
           stBadge = `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:700">${isAR ? 'تم الإنشاء' : 'Généré'}</span>`;
         }
         
-        const nbBL = (doc.blList || []).length;
+        const nbBL = EtatVenteModule._getOrHealBlList(doc).length;
         const nbRet = (doc.returnList || []).length;
         const gross = doc.totalBLsTTC || doc.grossTotalTTC || doc.totalTTC || 0;
         const retVal = doc.totalReturnsTTC || doc.returnsTotalTTC || 0;
@@ -15597,7 +15608,8 @@ const EtatVenteModule = {
           <td style="padding:12px 16px;color:var(--text2)">${periodStr}</td>
           <td style="padding:12px 16px;color:var(--text)">${Utils.escHTML(doc.createdByName || doc.userName || '—')}</td>
           <td style="padding:12px 16px;text-align:center">
-            <span class="badge" style="background:rgba(14,165,233,.1);color:#0ea5e9">${nbBL} ${isAR ? 'سند' : 'BL'}</span>
+            <span class="badge" style="background:${nbBL===0?'rgba(239,68,68,.1)':'rgba(14,165,233,.1)'};color:${nbBL===0?'#ef4444':'#0ea5e9'}">${nbBL} ${isAR ? 'سند' : 'BL'}</span>
+            ${nbBL === 0 ? `<button title="${isAR?'إصلاح الروابط':'Réparer BLs'}" onclick="EtatVenteModule._repairBlList('${doc.id}')" style="margin-left:4px;background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:2px 6px;font-size:10px;font-weight:700;cursor:pointer">🔧 ${isAR?'إصلاح':'Réparer'}</button>` : ''}
             ${nbRet > 0 ? `<span class="badge" style="background:rgba(239,68,68,.1);color:#ef4444;${isAR?'margin-right:4px':'margin-left:4px'}">${nbRet} ${isAR ? 'إرجاع' : 'BR'}</span>` : ''}
           </td>
           <td style="padding:12px 16px;text-align:${isAR?'left':'right'};font-weight:700;color:var(--success)">+${Utils.fmtCurrency(gross)}</td>
@@ -16089,6 +16101,121 @@ const EtatVenteModule = {
     App.loadModule('etat_vente');
   },
   
+  // ── Force-heal blList for an EV doc: tries all strategies, returns the list ──
+  _getOrHealBlList(doc) {
+    if ((doc.blList || []).length > 0) return doc.blList;
+    let healBls = [];
+    const allBls = DB.getAll('bls') || [];
+    const allSessions = DB.getAll('sessions') || [];
+
+    // Strategy 1: direct sessionId match
+    if (doc.sessionId) {
+      healBls = allBls.filter(b =>
+        Number(b.sessionId) === Number(doc.sessionId) && b.status !== 'cancelled'
+      );
+    }
+    // Strategy 2: find session via etatVenteRef or etatVenteId → get its BLs
+    if (!healBls.length && (doc.ref || doc.id)) {
+      const linkedSess = allSessions.find(s =>
+        (doc.ref && s.etatVenteRef === doc.ref) ||
+        (doc.id  && String(s.etatVenteId) === String(doc.id))
+      );
+      if (linkedSess) {
+        healBls = allBls.filter(b =>
+          Number(b.sessionId) === Number(linkedSess.id) && b.status !== 'cancelled'
+        );
+        if (!doc.sessionId && healBls.length) doc.sessionId = linkedSess.id;
+      }
+    }
+    // Strategy 3: date + userId
+    if (!healBls.length && doc.userId) {
+      const evDate = (doc.dateStart || doc.dateEnd || doc.date || '').slice(0, 10);
+      if (evDate) {
+        healBls = allBls.filter(b =>
+          (b.date || '').slice(0, 10) === evDate &&
+          String(b.userId) === String(doc.userId) &&
+          b.status !== 'cancelled'
+        );
+      }
+    }
+    // Strategy 4: date + userName (old EVs may have userName but wrong userId)
+    if (!healBls.length && doc.userName) {
+      const evDate = (doc.dateStart || doc.dateEnd || doc.date || '').slice(0, 10);
+      if (evDate) {
+        // Find user by name first
+        const matchedUser = (DB.getAll('users') || []).find(u =>
+          (u.name || u.fullName || u.username || '').toLowerCase().trim() ===
+          String(doc.userName).toLowerCase().trim()
+        );
+        if (matchedUser) {
+          healBls = allBls.filter(b =>
+            (b.date || '').slice(0, 10) === evDate &&
+            String(b.userId) === String(matchedUser.id) &&
+            b.status !== 'cancelled'
+          );
+        }
+      }
+    }
+    // Strategy 5 (brute-force): any BLs on that date whose session has no EV linked yet
+    // Only use as last resort — and only if exactly one session found on that date
+    if (!healBls.length) {
+      const evDate = (doc.dateStart || doc.dateEnd || doc.date || '').slice(0, 10);
+      if (evDate) {
+        const allEvDocs = DB.getAll('etat_vente_docs') || [];
+        const linkedSessionIds = new Set(allEvDocs.filter(d => d.id !== doc.id && (d.blList||[]).length > 0).map(d => d.sessionId).filter(Boolean));
+        const candidateSessions = allSessions.filter(s =>
+          (s.date || '').slice(0, 10) === evDate &&
+          s.status === 'closed' &&
+          !linkedSessionIds.has(s.id)
+        );
+        if (candidateSessions.length === 1) {
+          healBls = allBls.filter(b =>
+            Number(b.sessionId) === Number(candidateSessions[0].id) && b.status !== 'cancelled'
+          );
+          if (healBls.length && !doc.sessionId) doc.sessionId = candidateSessions[0].id;
+        }
+      }
+    }
+
+    if (healBls.length > 0) {
+      const healed = healBls.map(b => ({
+        id: b.id, ref: b.ref || '', date: b.date || '',
+        clientName: b.clientName || b.client || 'Client Comptoir',
+        status: b.status || 'delivered',
+        totalHT: Number(b.totalHT) || 0,
+        tvaAmount: Number(b.tvaAmount || b.tva) || 0,
+        timbreAmount: Number(b.timbreAmount || b.timbre) || 0,
+        totalTTC: Number(b.totalTTC || b.montantTTC) || 0
+      }));
+      doc.blList = healed;
+      if (doc.id) {
+        DB.update('etat_vente_docs', doc.id, {
+          blList: healed,
+          blIds: healed.map(b => b.id),
+          blCount: healed.length,
+          ...(doc.sessionId ? { sessionId: doc.sessionId } : {})
+        });
+      }
+      console.log('[EtatVente] _getOrHealBlList: healed', healed.length, 'BLs for EV', doc.ref || doc.id);
+    }
+    return doc.blList || [];
+  },
+
+  // ── Force-repair BLs for a specific EV doc from UI button ──
+  _repairBlList(id) {
+    const doc = DB.getById('etat_vente_docs', id);
+    if (!doc) return;
+    const isAR = T.isRTL();
+    const before = (doc.blList || []).length;
+    const healed = this._getOrHealBlList(doc);
+    if (healed.length > 0) {
+      Utils.notify(isAR ? `✅ تم إصلاح الكشف: ${healed.length} سند مرتبط` : `✅ Réparé : ${healed.length} BL(s) liés`, 'success');
+      App.loadModule(App.currentModule);
+    } else {
+      Utils.notify(isAR ? '⚠️ لا توجد سندات مطابقة لهذا الكشف' : '⚠️ Aucun BL trouvé pour cet EV (vérifiez sessionId/date/userId)', 'warning');
+    }
+  },
+
   _reprint(id) {
     const doc = DB.getById('etat_vente_docs', id);
     if (!doc) return;
@@ -16274,55 +16401,8 @@ const EtatVenteModule = {
       });
     }
 
-    // ── Self-heal: rebuild blList from sessionId / date+userId if missing or empty ──
-    if (!(doc.blList || []).length) {
-      let healBls = [];
-      // Try by sessionId first (most accurate)
-      if (doc.sessionId) {
-        healBls = (DB.getAll('bls') || []).filter(b =>
-          Number(b.sessionId) === Number(doc.sessionId) && b.status !== 'cancelled'
-        );
-      }
-      // Fallback 1: match session by etatVenteRef or etatVenteId
-      if (!healBls.length && doc.ref) {
-        const linkedSess = (DB.getAll('sessions') || []).find(s =>
-          s.etatVenteRef === doc.ref || String(s.etatVenteId) === String(doc.id)
-        );
-        if (linkedSess) {
-          healBls = (DB.getAll('bls') || []).filter(b =>
-            Number(b.sessionId) === Number(linkedSess.id) && b.status !== 'cancelled'
-          );
-          if (healBls.length && !doc.sessionId) doc.sessionId = linkedSess.id;
-        }
-      }
-      // Fallback 2: match by date + userId (doc uses 'date' for retroactive EVs)
-      if (!healBls.length && doc.userId && (doc.dateStart || doc.date)) {
-        const evDate = (doc.dateStart || doc.dateEnd || doc.date || '').slice(0, 10);
-        healBls = (DB.getAll('bls') || []).filter(b =>
-          (b.date || '').slice(0, 10) === evDate &&
-          String(b.userId) === String(doc.userId) &&
-          b.status !== 'cancelled'
-        );
-      }
-      if (healBls.length > 0) {
-        const healedBlList = healBls.map(b => ({
-          id: b.id,
-          ref: b.ref || '',
-          date: b.date || '',
-          clientName: b.clientName || b.client || 'Client Comptoir',
-          status: b.status || 'delivered',
-          totalHT: Number(b.totalHT) || 0,
-          tvaAmount: Number(b.tvaAmount || b.tva) || 0,
-          timbreAmount: Number(b.timbreAmount || b.timbre) || 0,
-          totalTTC: Number(b.totalTTC || b.montantTTC) || 0
-        }));
-        doc.blList = healedBlList;
-        if (doc.id) {
-          DB.update('etat_vente_docs', doc.id, { blList: healedBlList, blIds: healedBlList.map(b => b.id), blCount: healedBlList.length });
-        }
-        console.log('[EtatVente] Self-healed: restored', healedBlList.length, 'BLs into blList from sessionId/date/ref');
-      }
-    }
+    // ── Self-heal: rebuild blList using all strategies (delegates to _getOrHealBlList) ──
+    EtatVenteModule._getOrHealBlList(doc);
 
     // ── Self-heal: re-aggregate items from BLs if doc.items is missing/empty ──
     let docItems = doc.items || [];
