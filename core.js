@@ -724,10 +724,8 @@ const DB = {
             wit.userId = s.userId;
             wit.userName = userName;
             if (evRef && !wit.etatVenteRef) wit.etatVenteRef = evRef;
-            // Withdrawal amount = realBchNet (actual cash sent to bank), NOT etatVenteTTC
-            // etatVenteTTC is the fiscal declaration; actual cash movement = realBchNet
-            if (Math.abs(Number(wit.amount || 0) - expectedRealBchNet) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.realBchNet || 0) - expectedRealBchNet) > 0.01) {
-              wit.amount = expectedRealBchNet;
+            if (Math.abs(Number(wit.amount || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.realBchNet || 0) - expectedRealBchNet) > 0.01) {
+              wit.amount = expectedEvTTC;
               wit.etatVenteTTC = expectedEvTTC;
               wit.realBchNet = expectedRealBchNet;
               wit.timbreAmount = expectedTimbre;
@@ -737,7 +735,7 @@ const DB = {
                 window.API.update('caisse_admin', wit.id, wit).catch(() => {});
               }
             }
-          } else if (expectedRealBchNet > 0) {
+          } else if (expectedEvTTC > 0 || expectedRealBchNet > 0) {
             // Auto-create missing withdrawal for this État de Vente transfer
             const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
             wit = {
@@ -749,7 +747,7 @@ const DB = {
               sessionId: s.id,
               sessionDate,
               date: sessionDate,
-              amount: expectedRealBchNet,
+              amount: expectedEvTTC,
               realBchNet: expectedRealBchNet,
               targetBankId: s.targetBankId || evDoc?.bankId || null,
               etatVenteRef: evRef,
@@ -903,6 +901,67 @@ const DB = {
             }
             modified = true;
           }
+        });
+
+        // ── Cross-reconciliation: sync État de Vente bank transfers (transfert_banque_etat_vente)
+        // Each closed session's EV bank withdrawal in caisse_admin must appear as a bank deposit
+        const evTransfers = caisse.filter(e =>
+          e.type === 'withdrawal' &&
+          e.source === 'transfert_banque_etat_vente' &&
+          Number(e.amount) > 0
+        );
+
+        // Build lookup for existing EV bank deposits
+        const existingEvBankDeps = new Set(
+          cleanedBankTxs
+            .filter(bt => bt.type === 'deposit' && (bt.subtype === 'etat_vente' || bt.etatVenteRef || bt.etatVenteId))
+            .map(bt => bt.etatVenteRef || `sess_${bt.sessionId}` || `id_${bt.etatVenteId}`)
+            .filter(Boolean)
+        );
+
+        evTransfers.forEach(ct => {
+          const amt = Number(ct.amount) || 0;
+          if (amt <= 0) return;
+          const targetBankId = ct.targetBankId || (banks.length > 0 ? banks[0].id : null);
+          if (!targetBankId) return;
+
+          // Check if already mirrored
+          const evKey = ct.etatVenteRef || (ct.sessionId ? `sess_${ct.sessionId}` : null);
+          if (evKey && existingEvBankDeps.has(evKey)) return;
+
+          // Also check by amount + date + bankId
+          const dateKey = (ct.date || ct.sessionDate || '').slice(0, 10);
+          const alreadyExists = cleanedBankTxs.some(bt =>
+            bt.type === 'deposit' &&
+            String(bt.bankId) === String(targetBankId) &&
+            Math.abs(Number(bt.amount) - amt) < 0.01 &&
+            (bt.date || '').slice(0, 10) === dateKey &&
+            (bt.etatVenteRef === ct.etatVenteRef || (bt.sessionId && bt.sessionId === ct.sessionId))
+          );
+          if (alreadyExists) return;
+
+          const newId = cleanedBankTxs.reduce((m, e) => Math.max(m, e.id || 0), 0) + 1;
+          const newTx = {
+            id: newId,
+            bankId: targetBankId,
+            type: 'deposit',
+            subtype: 'etat_vente',
+            amount: amt,
+            etatVenteRef: ct.etatVenteRef || null,
+            etatVenteId: ct.etatVenteId || null,
+            sessionId: ct.sessionId || null,
+            userId: ct.userId || null,
+            ref: ct.etatVenteRef ? `EV-DEP-${ct.etatVenteRef}` : `EV-DEP-SESS-${ct.sessionId || newId}`,
+            date: dateKey || new Date().toISOString().slice(0, 10),
+            createdAt: ct.createdAt || new Date().toISOString(),
+            note: `Versement État de Vente ${ct.etatVenteRef || ''} — Session #${ct.sessionId || ''} (${Utils.fmtCurrency(amt)})`
+          };
+          cleanedBankTxs.push(newTx);
+          if (evKey) existingEvBankDeps.add(evKey);
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            window.API.insert('bank_transactions', newTx).catch(() => {});
+          }
+          modified = true;
         });
 
         if (modified) {

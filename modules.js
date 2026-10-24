@@ -7321,10 +7321,13 @@ const AdminCaisseModule = {
     const isBankTransferTx = (t) => this.isBankTransferTx(t);
 
     // Calculate split totals:
+    // Charges source of truth = caisse_admin withdrawal entries (recalibrate already syncs bank_charges into caisse_admin)
+    // bankChargesSum is used only as a fallback if caisse_admin hasn't been synced yet
     const bankChargesInCaisse = (DB.getAll('bank_charges') || []).filter(c => c.bankId === 'caisse' || c.source === 'caisse' || (!c.bankId && c.type === 'manual'));
     const bankChargesSum = bankChargesInCaisse.reduce((s, c) => s + (Number(c.amount) || 0), 0);
     const caisseAdminChargesSum = allWithdrawals.filter(isChargeTx).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-    const totalChargesOnly = Math.max(bankChargesSum, caisseAdminChargesSum);
+    // Use caisse_admin charges as primary (already includes synced bank_charges); fall back to bank_charges if caisse not yet synced
+    const totalChargesOnly = caisseAdminChargesSum > 0 ? caisseAdminChargesSum : bankChargesSum;
 
     const totalBankOnly = allWithdrawals.filter(isBankTransferTx).reduce((s, t) => s + (Number(t.amount) || 0), 0);
     const totalOtherWithdrawals = allWithdrawals.filter(t => !isBankTransferTx(t) && !isChargeTx(t)).reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -7336,7 +7339,7 @@ const AdminCaisseModule = {
     const todayBankWithdrawals = allWithdrawals.filter(t => isBankTransferTx(t) && (t.createdAt||'').slice(0, 10) === todayStr).reduce((s, t) => s + (Number(t.amount) || 0), 0);
     const todayChargesFromBank = bankChargesInCaisse.filter(c => (c.date || (c.createdAt||'').slice(0, 10)) === todayStr).reduce((s, c) => s + (Number(c.amount) || 0), 0);
     const todayChargesFromAdmin = allWithdrawals.filter(t => isChargeTx(t) && (t.createdAt||'').slice(0, 10) === todayStr).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-    const todayChargesOnly = Math.max(todayChargesFromBank, todayChargesFromAdmin);
+    const todayChargesOnly = todayChargesFromAdmin > 0 ? todayChargesFromAdmin : todayChargesFromBank;
 
     // ── Filtered data (for Journal, Deposits, Withdrawals tabs) ──
     const qf = (this._filters.q || '').toLowerCase().trim();
@@ -7883,7 +7886,13 @@ const AdminCaisseModule = {
       }
 
       // 3. Strict Écart Fiscal TTC (Différence État de Vente vs BCH Réel)
-      const ecartFiscal = Math.round((etatVenteTTC - realBchNet) * 100) / 100;
+      // EV TTC includes 1% timbre on top of BCH TTC (HT+TVA).
+      // BCH realBchNet does NOT include timbre (it's the actual TTC collected = HT×1.19).
+      // So the fair comparison is: EV TTC vs (BCH net + expected timbre).
+      // Expected timbre = realBchNet × 0.01 (timbre ≈ 1% of HT+TVA = 1% of BCH TTC pre-timbre)
+      const expectedTimbreOnBCH = Math.round(realBchNet * 0.01 * 100) / 100;
+      // Écart = what EV declares BEYOND (BCH net + timbre) — true fiscal gap only
+      const ecartFiscal = Math.round((etatVenteTTC - realBchNet - expectedTimbreOnBCH) * 100) / 100;
 
       // 4. Versement Banque
       const bankTx = s.bankTxId ? DB.getById('bank_transactions', s.bankTxId) : allBankTxs.find(t => (evDoc && t.etatVenteId === evDoc.id) || (s.etatVenteRef && t.etatVenteRef === s.etatVenteRef));
@@ -7919,7 +7928,7 @@ const AdminCaisseModule = {
     const totalReturnsTTC = sessionDetails.reduce((sum, d) => sum + d.realBchReturns, 0);
     const totalNetRealBCH = sessionDetails.reduce((sum, d) => sum + d.realBchNet, 0);
     const totalEV_TTC = sessionDetails.reduce((sum, d) => sum + d.etatVenteTTC, 0);
-    const totalEcartFiscal = Math.round((totalEV_TTC - totalNetRealBCH) * 100) / 100;
+    const totalEcartFiscal = Math.round(sessionDetails.reduce((s, d) => s + d.ecartFiscal, 0) * 100) / 100;
     const totalBankVersed = sessionDetails.filter(d => d.session.status === 'closed').reduce((sum, d) => sum + d.bankAmount, 0);
     const totalCaisseAdmin = sessionDetails.filter(d => d.session.status === 'closed').reduce((sum, d) => sum + d.caisseAdminAmount, 0);
     const closedCount = sessionDetails.filter(d => d.session.status === 'closed').length;
@@ -8387,7 +8396,7 @@ const AdminCaisseModule = {
                 <th style="text-align:right">${isAR ? 'المرتجعات (−)' : 'Retours (−)'}</th>
                 <th style="text-align:right;background:rgba(2,132,199,.04)">${isAR ? 'الصافي الفعلي BCH' : 'Net Réel BCH (Caisse)'}</th>
                 <th style="text-align:right;background:rgba(13,148,136,.04)">${isAR ? 'كشف المبيعات (1%)' : 'État de Vente TTC (1%)'}</th>
-                <th style="text-align:right;font-weight:800">${isAR ? 'الفارق الجبائي TTC' : 'Écart Fiscal TTC (Diff)'}</th>
+                <th style="text-align:right;font-weight:800">${isAR ? 'الفارق الجبائي الصافي (بعد الطابع)' : 'Écart Fiscal Net (hors timbre 1%)'}</th>
                 <th style="text-align:right;color:#f97316;background:rgba(249,115,22,.04);font-weight:800">${isAR ? 'المصاريف والمرتجعات (−)' : 'Charges & Retours (−)'}</th>
                 <th style="text-align:right;background:rgba(16,185,129,.05);color:#10b981;font-weight:800">${isAR ? 'رصيد الصندوق اليومي' : 'Solde Caisse Jour (BCH Réel − ÉV − Charges)'}</th>
                 <th style="text-align:right">${isAR ? 'المحول للبنك (سحب)' : 'Versé Banque (Sortie)'}</th>
@@ -8399,7 +8408,10 @@ const AdminCaisseModule = {
             <tbody>
               ${sortedDailyList.length ? sortedDailyList.map(day => {
                 const dayCharges = (day.chargesAmount || 0) + (day.directReturnsAmount || 0) + (day.otherWithdrawalsAmount || 0);
-                const dayDiff = Math.round((day.etatVenteTTC - day.realBchNet) * 100) / 100;
+                // Écart fiscal = EV TTC - (BCH net + expected 1% timbre on BCH net)
+                // This isolates the true fiscal gap beyond what the timbre explains
+                const dayTimbreExpected = Math.round(day.realBchNet * 0.01 * 100) / 100;
+                const dayDiff = Math.round((day.etatVenteTTC - day.realBchNet - dayTimbreExpected) * 100) / 100;
                 const daySolde = Math.round((day.realBchNet - day.etatVenteTTC - dayCharges) * 100) / 100;
                 const closedInDay = day.sessions.filter(s => s.session.status === 'closed').length;
                 const noSessions  = day.sessions.length === 0;
@@ -8535,7 +8547,13 @@ const AdminCaisseModule = {
                   </td>
                   <td style="text-align:right;font-weight:800;color:#10b981">${Utils.fmtCurrency(d.caisseAdminAmount)}</td>
                   <td style="text-align:center">
-                    ${d.evDoc ? `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._reprint('${d.evDoc.id}')" title="Voir PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> ${Utils.escHTML(d.evDoc.ref)}</button>` : `<span style="color:var(--text4)">${s.etatVenteRef ? Utils.escHTML(s.etatVenteRef) : '—'}</span>`}
+                    ${d.evDoc
+                      ? `<button class="btn btn-xs btn-outline" onclick="EtatVenteModule._reprint('${d.evDoc.id}')" title="Voir PDF État de Vente"><i class="fas fa-file-invoice-dollar" style="color:var(--primary)"></i> ${Utils.escHTML(d.evDoc.ref)}</button>`
+                      : s.etatVenteRef
+                        ? `<span style="color:var(--text4)">${Utils.escHTML(s.etatVenteRef)}</span>`
+                        : isCl && d.realBchGross > 0.001
+                          ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-size:10px;padding:3px 7px" onclick="AdminCaisseModule.generateRetroactiveEV('${s.id}')" title="${isAR ? 'إنشاء كشف مبيعات بأثر رجعي' : 'Générer État de Vente rétroactif'}"><i class="fas fa-magic"></i> ${isAR ? 'إنشاء كشف' : 'Générer EV'}</button>`
+                          : `<span style="color:var(--text4)">—</span>`}
                   </td>
                   <td style="text-align:center;white-space:nowrap">
                     <button class="btn btn-xs btn-outline" onclick="AdminCaisseModule.showSessionBCHDetails(${s.id})" title="${isAR ? 'تفاصيل سندات الجلسة' : 'Détail des Bons de la session'}">
@@ -8737,6 +8755,100 @@ const AdminCaisseModule = {
 
   _getOpenSessionsForDay(date) {
     return DB.getAll('sessions').filter(s => s.date === date && s.status !== 'closed');
+  },
+
+  // ── Generate a retroactive État de Vente for a closed session that has no EV doc ──
+  async generateRetroactiveEV(sessionId) {
+    const isAR = T.isRTL();
+    const session = DB.getById('sessions', sessionId);
+    if (!session) { Utils.notify(isAR ? 'الجلسة غير موجودة' : 'Session introuvable', 'error'); return; }
+    if (session.status !== 'closed') { Utils.notify(isAR ? 'الجلسة غير مغلقة' : 'Session pas encore clôturée', 'warning'); return; }
+    const existingEV = session.etatVenteId
+      ? DB.getById('etat_vente_docs', session.etatVenteId)
+      : (DB.getAll('etat_vente_docs') || []).find(d =>
+          (d.date === session.date || d.dateEnd === session.date) && String(d.userId) === String(session.userId));
+    if (existingEV) {
+      DB.update('sessions', session.id, { etatVenteId: existingEV.id, etatVenteRef: existingEV.ref }, '[Admin] EV ref re-linked');
+      Utils.notify(isAR ? 'تم ربط كشف المبيعات الموجود' : 'État de Vente existant re-lié', 'success');
+      App.loadModule('admin_caisse');
+      return;
+    }
+    const ok = await Dialog.show({
+      title: isAR ? `📄 إنشاء كشف مبيعات بأثر رجعي` : `📄 Générer État de Vente rétroactif`,
+      message: isAR
+        ? `سيتم إنشاء كشف مبيعات رسمي لجلسة <strong>${session.userName || '#' + session.id}</strong> بتاريخ ${Utils.fmtDate(session.date)}.`
+        : `Génération d'un État de Vente officiel pour la session de <strong>${session.userName || '#' + session.id}</strong> du ${Utils.fmtDate(session.date)}.`,
+      type: 'info',
+      confirmText: isAR ? '✅ إنشاء' : '✅ Générer',
+      cancelText: T.get('cancel')
+    });
+    if (!ok) return;
+    try {
+      const sum = SessionMgr.getUserDaySummary(session.userId, session.date);
+      const settings = DB.getSettings();
+      const tvaRate = Number(settings.tvaRate) || 19;
+      const aggregated = {};
+      (sum.bls || []).filter(b => b.status !== 'returned').forEach(bl => {
+        (bl.lines || []).forEach(line => {
+          const key = (line.designation || '').trim();
+          if (!key) return;
+          const qty = Number(line.qtyDelivered || line.qty) || 0;
+          const price = Number(line.price) || 0;
+          const disc = Number(line.disc) || 0;
+          const effPrice = price * (1 - disc / 100);
+          if (!aggregated[key]) aggregated[key] = { qty: 0, price: effPrice, designation: key };
+          aggregated[key].qty += qty;
+        });
+      });
+      const items = Object.values(aggregated);
+      const totalHT = Math.round(items.reduce((a, it) => a + it.qty * it.price, 0) * 100) / 100;
+      const tvaAmount = Math.round(totalHT * (tvaRate / 100) * 100) / 100;
+      const timbreAmount = Math.round((totalHT + tvaAmount) * 0.01 * 100) / 100;
+      const totalTTC = Math.round((totalHT + tvaAmount + timbreAmount) * 100) / 100;
+      const totalReturnsTTC = sum.totalReturnsTTC || 0;
+      const realBchNet = Math.max(0, sum.netAmount);
+      // Generate EV ref
+      const allEVDocs = DB.getAll('etat_vente_docs') || [];
+      const maxEvNum = allEVDocs.reduce((m, d) => {
+        const n = parseInt((d.ref || '').replace(/\D/g, '')) || 0;
+        return Math.max(m, n);
+      }, 0);
+      const month = (session.date || '').slice(5, 7);
+      const year = (session.date || '').slice(0, 4);
+      const evRef = `ET/${maxEvNum + 1}/${month}/${year.slice(2)}`;
+      const evDoc = {
+        ref: evRef,
+        userId: session.userId,
+        userName: session.userName,
+        date: session.date,
+        dateEnd: session.date,
+        sessionId: session.id,
+        items,
+        totalHT,
+        tvaAmount,
+        tvaRate,
+        timbreAmount,
+        totalTTC,
+        totalReturnsTTC,
+        returnsTotalTTC: totalReturnsTTC,
+        realBchNet,
+        grossTotalTTC: totalTTC,
+        netTotalTTC: totalTTC,
+        bankId: session.targetBankId || null,
+        createdAt: session.closedAt || new Date().toISOString(),
+        retroactive: true,
+        retroNote: `[Rétroactif Admin] Généré après clôture — session #${session.id}`
+      };
+      const inserted = DB.insert('etat_vente_docs', evDoc);
+      const newId = inserted?.id || DB.getAll('etat_vente_docs').find(d => d.ref === evRef)?.id;
+      DB.update('sessions', session.id, { etatVenteRef: evRef, etatVenteId: newId, etatVenteTTC: totalTTC }, '[Admin] EV rétroactif lié à la session');
+      DB.recalibrateCaisse?.();
+      Utils.notify(isAR ? `✅ تم إنشاء كشف مبيعات ${evRef} بنجاح` : `✅ État de Vente ${evRef} généré avec succès`, 'success');
+      App.loadModule('admin_caisse');
+    } catch(e) {
+      console.error('[generateRetroactiveEV]', e);
+      Utils.notify(isAR ? '❌ خطأ أثناء الإنشاء' : '❌ Erreur lors de la génération', 'error');
+    }
   },
 
   async adminForceClosePastSession(sessionId) {
