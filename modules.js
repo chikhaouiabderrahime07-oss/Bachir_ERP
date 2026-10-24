@@ -16206,14 +16206,103 @@ const EtatVenteModule = {
     const doc = DB.getById('etat_vente_docs', id);
     if (!doc) return;
     const isAR = T.isRTL();
-    const before = (doc.blList || []).length;
+    // Try auto-heal first
     const healed = this._getOrHealBlList(doc);
     if (healed.length > 0) {
       Utils.notify(isAR ? `✅ تم إصلاح الكشف: ${healed.length} سند مرتبط` : `✅ Réparé : ${healed.length} BL(s) liés`, 'success');
       App.loadModule(App.currentModule);
-    } else {
-      Utils.notify(isAR ? '⚠️ لا توجد سندات مطابقة لهذا الكشف' : '⚠️ Aucun BL trouvé pour cet EV (vérifiez sessionId/date/userId)', 'warning');
+      return;
     }
+    // Auto-heal failed → open manual picker modal
+    this._openManualBlPicker(id);
+  },
+
+  // ── Manual BL picker: lets admin hand-pick BLs to link to an EV ──
+  _openManualBlPicker(evId) {
+    const doc = DB.getById('etat_vente_docs', evId);
+    if (!doc) return;
+    const isAR = T.isRTL();
+    const evDate = (doc.dateStart || doc.dateEnd || doc.date || '').slice(0, 10);
+    const allBls = (DB.getAll('bls') || []).filter(b => b.status !== 'cancelled');
+    // Sort: same date first, then by date desc
+    allBls.sort((a, b) => {
+      const aDate = (a.date || '').slice(0, 10);
+      const bDate = (b.date || '').slice(0, 10);
+      if (aDate === evDate && bDate !== evDate) return -1;
+      if (bDate === evDate && aDate !== evDate) return 1;
+      return bDate.localeCompare(aDate);
+    });
+
+    const blRows = allBls.slice(0, 80).map(b => {
+      const isTarget = (b.date || '').slice(0, 10) === evDate;
+      return `<tr style="background:${isTarget?'rgba(139,92,246,.07)':''}">
+        <td style="padding:6px 8px;text-align:center">
+          <input type="checkbox" class="bl-pick-cb" data-blid="${b.id}" ${isTarget?'checked':''} style="width:15px;height:15px;cursor:pointer">
+        </td>
+        <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:${isTarget?'#8b5cf6':'var(--text2)'};font-weight:${isTarget?'700':'400'}">${Utils.escHTML(b.ref||'—')}</td>
+        <td style="padding:6px 8px;font-size:11px;color:var(--text2)">${b.date||'—'}</td>
+        <td style="padding:6px 8px;font-size:11px;color:var(--text3);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escHTML(b.clientName||b.client||'—')}</td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;color:#10b981;font-size:11px">${Utils.fmtCurrency(b.totalTTC||0)}</td>
+      </tr>`;
+    }).join('');
+
+    const modalId = `bl-picker-${evId}`;
+    const html = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px">
+      <strong>${isAR?'كشف:':'EV:'}</strong> ${Utils.escHTML(doc.ref||'#'+evId)} &nbsp;|&nbsp;
+      <strong>${isAR?'التاريخ:':'Date:'}</strong> ${evDate||'?'} &nbsp;|&nbsp;
+      <strong>${isAR?'المستخدم:':'Vendeur:'}</strong> ${Utils.escHTML(doc.userName||doc.userId||'?')}
+    </div>
+    <div style="font-size:11px;color:var(--text4);margin-bottom:8px">${isAR?'✅ السندات المعلّمة ستُربط بهذا الكشف. السندات بنفس التاريخ محددة مسبقاً.':'✅ Les BLs cochés seront liés à cet EV. Ceux de la même date sont présélectionnés.'}</div>
+    <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="position:sticky;top:0;background:var(--bg3)">
+          <tr>
+            <th style="padding:6px 8px;width:30px"><input type="checkbox" id="bl-pick-all" onchange="document.querySelectorAll('.bl-pick-cb').forEach(c=>c.checked=this.checked)"></th>
+            <th style="padding:6px 8px;text-align:left">${isAR?'المرجع':'Réf'}</th>
+            <th style="padding:6px 8px;text-align:left">${isAR?'التاريخ':'Date'}</th>
+            <th style="padding:6px 8px;text-align:left">${isAR?'الزبون':'Client'}</th>
+            <th style="padding:6px 8px;text-align:right">${isAR?'المجموع':'Total TTC'}</th>
+          </tr>
+        </thead>
+        <tbody>${blRows||`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text4)">${isAR?'لا توجد سندات':'Aucun BL'}</td></tr>`}</tbody>
+      </table>
+    </div>`;
+
+    Dialog.show({
+      title: isAR ? `🔧 ربط سندات يدوياً — ${doc.ref||''}` : `🔧 Lier des BLs manuellement — ${doc.ref||''}`,
+      message: html,
+      type: 'info',
+      confirmText: isAR ? '✅ ربط المحددين' : '✅ Lier la sélection',
+      cancelText: isAR ? 'إلغاء' : 'Annuler',
+      wide: true
+    }).then(ok => {
+      if (!ok) return;
+      const checked = [...document.querySelectorAll('.bl-pick-cb:checked')];
+      if (!checked.length) { Utils.notify(isAR?'لم تُحدد أي سند':'Aucun BL sélectionné','warning'); return; }
+      const selectedIds = checked.map(c => Number(c.dataset.blid));
+      const selectedBls = (DB.getAll('bls')||[]).filter(b => selectedIds.includes(Number(b.id)));
+      const blList = selectedBls.map(b => ({
+        id: b.id, ref: b.ref||'', date: b.date||'',
+        clientName: b.clientName||b.client||'Client',
+        status: b.status||'delivered',
+        totalHT: Number(b.totalHT)||0,
+        tvaAmount: Number(b.tvaAmount||b.tva)||0,
+        timbreAmount: Number(b.timbreAmount||b.timbre)||0,
+        totalTTC: Number(b.totalTTC||b.montantTTC)||0
+      }));
+      // Find the session linked to the first selected BL (for sessionId fix)
+      const firstBl = selectedBls[0];
+      const linkedSessId = firstBl?.sessionId || null;
+      DB.update('etat_vente_docs', evId, {
+        blList, blIds: blList.map(b=>b.id), blCount: blList.length,
+        ...(linkedSessId ? { sessionId: linkedSessId } : {}),
+        ...(firstBl?.userId && !doc.userId ? { userId: firstBl.userId } : {}),
+        ...(firstBl?.date && !doc.date ? { date: firstBl.date } : {})
+      });
+      Utils.notify(isAR ? `✅ تم ربط ${blList.length} سند بنجاح` : `✅ ${blList.length} BL(s) liés avec succès`, 'success');
+      App.loadModule(App.currentModule);
+    });
   },
 
   _reprint(id) {

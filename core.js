@@ -968,6 +968,48 @@ const DB = {
           DB.rawSet('bank_transactions', cleanedBankTxs);
         }
 
+        // ── Rule 4: Purge phantom EV bank deposits ──────────────────────────────
+        // A bank EV deposit is "phantom" if there is NO matching caisse_admin entry
+        // with source==='transfert_banque_etat_vente' by etatVenteRef OR (amount+date).
+        // These are ghost entries that inflate the bank balance artificially.
+        const caisseEvWithdrawals = caisse.filter(e =>
+          e.type === 'withdrawal' &&
+          e.source === 'transfert_banque_etat_vente' &&
+          Number(e.amount) > 0
+        );
+        const caisseEvByRef = new Map();
+        const caisseEvByAmtDate = new Set();
+        caisseEvWithdrawals.forEach(c => {
+          if (c.etatVenteRef) caisseEvByRef.set(String(c.etatVenteRef).trim(), c);
+          if (c.sessionId) caisseEvByRef.set(`sess_${c.sessionId}`, c);
+          const dateStr = (c.date || c.sessionDate || c.createdAt || '').slice(0, 10);
+          caisseEvByAmtDate.add(`${Number(c.amount).toFixed(2)}|${dateStr}`);
+        });
+
+        const phantomIds = [];
+        cleanedBankTxs = cleanedBankTxs.filter(bt => {
+          if (bt.type !== 'deposit') return true;
+          if (bt.subtype !== 'etat_vente' && !bt.etatVenteRef && !bt.etatVenteId) return true;
+          // It's an EV deposit — check if a caisse entry backs it
+          const evRef = (bt.etatVenteRef || '').trim();
+          if (evRef && caisseEvByRef.has(evRef)) return true;
+          if (bt.sessionId && caisseEvByRef.has(`sess_${bt.sessionId}`)) return true;
+          const btDate = (bt.date || bt.createdAt || '').slice(0, 10);
+          const amtKey = `${Number(bt.amount).toFixed(2)}|${btDate}`;
+          if (caisseEvByAmtDate.has(amtKey)) return true;
+          // No caisse entry found → phantom
+          phantomIds.push(bt.id);
+          return false;
+        });
+
+        if (phantomIds.length > 0) {
+          DB.rawSet('bank_transactions', cleanedBankTxs);
+          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
+            phantomIds.forEach(id => window.API.delete('bank_transactions', id).catch(() => {}));
+          }
+          console.warn(`[BankBrain] Purged ${phantomIds.length} phantom EV bank deposits (IDs: ${phantomIds.join(', ')})`);
+        }
+
         const bankBalances = {};
         banks.forEach(b => {
           const init = Number(b.initialBalance) || 0;

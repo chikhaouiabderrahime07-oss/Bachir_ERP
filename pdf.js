@@ -106,7 +106,7 @@
       const s = this._t(text);
       if (this._hasAr(s) && _arFontB64) {
         const prev = doc.getFont();
-        doc.setFont(AR_FONT_NAME, 'bold');
+        doc.setFont(AR_FONT_NAME, 'normal');
         const prevSz = doc.getFontSize(); doc.setFontSize(prevSz + 1.5);
         doc.text(s, x, y, opts);
         doc.setFontSize(prevSz);
