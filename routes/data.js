@@ -460,10 +460,23 @@ router.post('/:col', adminOnlyForUsers, supplierWriteGuard, async (req, res) => 
           return res.status(200).json(publicData(col, merged));
         }
       } else if (data.source === 'transfert_banque_etat_vente' && (data.etatVenteRef || data.sessionId)) {
-        const query = data.etatVenteRef
-          ? { col: 'caisse_admin', 'data.source': 'transfert_banque_etat_vente', 'data.etatVenteRef': data.etatVenteRef }
-          : { col: 'caisse_admin', 'data.source': 'transfert_banque_etat_vente', 'data.sessionId': Number(data.sessionId) };
-        const existingCaisse = await Document.findOne(query);
+        // PRIMARY dedup: always check sessionId first (refs can change from ET/SESS-XX to real ref)
+        let existingCaisse = null;
+        if (data.sessionId) {
+          existingCaisse = await Document.findOne({
+            col: 'caisse_admin',
+            'data.source': 'transfert_banque_etat_vente',
+            'data.sessionId': { $in: [Number(data.sessionId), String(data.sessionId)] }
+          });
+        }
+        // SECONDARY dedup: check by etatVenteRef only if sessionId didn't match
+        if (!existingCaisse && data.etatVenteRef) {
+          existingCaisse = await Document.findOne({
+            col: 'caisse_admin',
+            'data.source': 'transfert_banque_etat_vente',
+            'data.etatVenteRef': data.etatVenteRef
+          });
+        }
         if (existingCaisse) {
           const merged = { ...existingCaisse.data, ...data, id: existingCaisse.data.id, updatedAt: now };
           existingCaisse.data = merged;

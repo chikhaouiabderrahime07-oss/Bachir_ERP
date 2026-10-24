@@ -3123,8 +3123,7 @@ const BLModule = {
         el('direct-bch-timbre-detail').textContent = '';
       } else {
         const baseAmt = Math.round((totalHT + tvaAmt) * 100) / 100;
-        const effPct = ((timbreAmt / (baseAmt || 1)) * 100).toFixed(2);
-        el('direct-bch-timbre-detail').textContent = `(${effPct}% | ${timbreDetail?.tranches||0} tranches × ${timbreDetail?.perTranche||1.5} DA)`;
+        el('direct-bch-timbre-detail').textContent = '';
       }
     }
   },
@@ -4209,8 +4208,7 @@ const BLModule = {
         el('bl-timbre-pct').textContent = '';
       } else {
         const baseAmt = Math.round((ht + tva) * 100) / 100;
-        const effPct = ((timbre / (baseAmt || 1)) * 100).toFixed(2);
-        el('bl-timbre-pct').textContent = `(${effPct}% | ${timbreDetail?.tranches||0} tr. × ${timbreDetail?.perTranche||1.5} DA)`;
+        el('bl-timbre-pct').textContent = '';
       }
     }
     let isPartial = false, j = 0;
@@ -7930,14 +7928,10 @@ const AdminCaisseModule = {
         etatVenteTTC = Math.round((etatVenteHT + etatVenteTVA + etatVenteTimbre) * 100) / 100;
       }
 
-      // 3. Strict Écart Fiscal TTC (Différence État de Vente vs BCH Réel)
-      // EV TTC includes 1% timbre on top of BCH TTC (HT+TVA).
-      // BCH realBchNet does NOT include timbre (it's the actual TTC collected = HT×1.19).
-      // So the fair comparison is: EV TTC vs (BCH net + expected timbre).
-      // Expected timbre = realBchNet × 0.01 (timbre ≈ 1% of HT+TVA = 1% of BCH TTC pre-timbre)
-      const expectedTimbreOnBCH = Math.round(realBchNet * 0.01 * 100) / 100;
-      // Écart = what EV declares BEYOND (BCH net + timbre) — true fiscal gap only
-      const ecartFiscal = Math.round((etatVenteTTC - realBchNet - expectedTimbreOnBCH) * 100) / 100;
+      // 3. Strict Écart Fiscal TTC = Net Réel BCH (Caisse) - État de Vente TTC
+      // Positive = BCH collected MORE than EV declared (normal with returns)
+      // Negative = EV declared MORE than BCH collected (fiscal gap)
+      const ecartFiscal = Math.round((realBchNet - etatVenteTTC) * 100) / 100;
 
       // 4. Versement Banque
       const bankTx = s.bankTxId ? DB.getById('bank_transactions', s.bankTxId) : allBankTxs.find(t => (evDoc && t.etatVenteId === evDoc.id) || (s.etatVenteRef && t.etatVenteRef === s.etatVenteRef));
@@ -9106,7 +9100,7 @@ const AdminCaisseModule = {
     const sum = SessionMgr.getUserDaySummary(session.userId, session.date);
     const evDoc = session.etatVenteId ? DB.getById('etat_vente_docs', session.etatVenteId) : null;
     const etatVenteTTC = evDoc ? Number(evDoc.totalTTC) || 0 : (session.closedNet || sum.netAmount);
-    const ecartFiscal = Math.round((etatVenteTTC - sum.netAmount) * 100) / 100;
+    const ecartFiscal = Math.round((sum.netAmount - etatVenteTTC) * 100) / 100;
 
     const bchRows = sum.bls.length ? sum.bls.map(b => {
       const cli = DB.getById('clients', b.clientId);
@@ -9263,7 +9257,7 @@ const AdminCaisseModule = {
         etatVenteTTC = Math.round((ht + tva + timbre) * 100) / 100;
       }
 
-      const ecartFiscal = Math.round((etatVenteTTC - sum.netAmount) * 100) / 100;
+      const ecartFiscal = Math.round((sum.netAmount - etatVenteTTC) * 100) / 100;
       const bankTx = s.bankTxId ? DB.getById('bank_transactions', s.bankTxId) : allBankTxs.find(t => (evDoc && t.etatVenteId === evDoc.id) || (s.etatVenteRef && t.etatVenteRef === s.etatVenteRef));
       const targetBank = bankList.find(b => String(b.id) === String(s.targetBankId || s.bankId || bankTx?.bankId || evDoc?.bankId));
       const bankAmount = bankTx ? Number(bankTx.amount) || 0 : (isCl ? etatVenteTTC : 0);
@@ -15343,7 +15337,7 @@ const EtatVenteModule = {
     // Deduct returns of prior periods / cross-day returns to accurately reflect net cash received
     const totalEV_TTC = Math.max(0, Math.round((grossEV_TTC - (priorReturnsTotalTTC || 0)) * 100) / 100);
     const netTotalEV = totalEV_TTC;
-    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
+    const ecartFiscal = Math.round((netTotalTTC - netTotalEV) * 100) / 100;
 
     let html = `
     <!-- Filter bar -->
@@ -15936,7 +15930,7 @@ const EtatVenteModule = {
     // Deduct returns of prior periods / cross-day returns to accurately reflect net cash received
     const totalEV_TTC = Math.max(0, Math.round((grossEV_TTC - (priorReturnsTotalTTC || 0)) * 100) / 100);
     const netTotalEV = totalEV_TTC;
-    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
+    const ecartFiscal = Math.round((netTotalTTC - netTotalEV) * 100) / 100;
 
     // Double confirmation to avoid miss clicks
     const confirmed = await Utils.confirm2(

@@ -1622,6 +1622,28 @@ const DB = {
       let healedCount = 0;
 
       // 1. Restore all transfert_banque_etat_vente withdrawals: amount = etatVenteTTC
+      // Build sessionId→withdrawal index to deduplicate later
+      const _healWthBySession = new Map();
+      caisse.forEach(tx => {
+        if (tx.type === 'withdrawal' && tx.source === 'transfert_banque_etat_vente' && tx.sessionId != null) {
+          const sid = Number(tx.sessionId);
+          const prev = _healWthBySession.get(sid);
+          if (prev) {
+            // Duplicate for same sessionId — mark the second one for removal
+            tx._duplicate = true;
+            healedCount++;
+            return;
+          }
+          _healWthBySession.set(sid, tx);
+        }
+      });
+      // Purge duplicates
+      const beforeLen = caisse.length;
+      for (let i = caisse.length - 1; i >= 0; i--) {
+        if (caisse[i]._duplicate) caisse.splice(i, 1);
+      }
+      if (caisse.length < beforeLen) console.log(`[HealCaisse] Purged ${beforeLen - caisse.length} duplicate withdrawals`);
+
       caisse.forEach(tx => {
         if (tx.type === 'withdrawal' && tx.source === 'transfert_banque_etat_vente') {
           let evDoc = tx.etatVenteId ? DB.getById('etat_vente_docs', tx.etatVenteId) : null;
@@ -1645,6 +1667,15 @@ const DB = {
             realBchNet = sum.netAmount;
           } else if (tx.realBchNet) {
             realBchNet = Number(tx.realBchNet);
+          }
+
+          // ── ROOT FIX: always sync etatVenteRef from the real EV doc ──
+          // This prevents recalibrate()'s wthByEV map from missing the entry
+          const realRef = evDoc?.ref || sess?.etatVenteRef || null;
+          if (realRef && realRef !== tx.etatVenteRef) {
+            tx.etatVenteRef = realRef;
+            if (evDoc) tx.etatVenteId = evDoc.id;
+            healedCount++;
           }
 
           const targetAmount = targetTTC > 0 ? targetTTC : realBchNet;
@@ -3716,7 +3747,7 @@ const DB = {
     const n = s ? s.padStart(Math.max(4, s.length), '0') : '0001';
     const pfx = prefix || 'BCH';
     const base = `${pfx}-${n}`;
-    if (partNum) return `${base}-P${String(partNum).padStart(2,'0')}`;
+    if (partNum) return `${base}-${String(partNum).padStart(2,'0')}`;
     return base;
   },
 

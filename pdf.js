@@ -469,8 +469,7 @@
       totRows.push(mkTotRow(isAR ? 'المجموع خ.ر' : 'Total HT',   this._fmtMoney(totalsData.totalHT||0),  false));
       if (totalsData.tvaAmount) totRows.push(mkTotRow(isAR ? `الضرائب (ر.ق.م ${totalsData.tvaRate||19}%)` : `Taxes (TVA ${totalsData.tvaRate||19}%)`, this._fmtMoney(totalsData.tvaAmount||0), false));
       if (totalsData.timbre) {
-        const tRateLabel = totalsData.timbreRate ? ` (${totalsData.timbreRate}%)` : '';
-        totRows.push(mkTotRow(isAR ? `الطابع الجبائي${tRateLabel}` : `Timbre Fiscal${tRateLabel}`, this._fmtMoney(totalsData.timbre||0), false));
+        totRows.push(mkTotRow(isAR ? 'الطابع الجبائي' : 'Timbre Fiscal', this._fmtMoney(totalsData.timbre||0), false));
       }
       totRows.push(mkTotRow(isAR ? 'المجموع ك.ر' : 'TOTAL TTC',  this._fmtMoney(totalsData.totalTTC||0), true));
 
@@ -750,8 +749,7 @@
         tvaAmount: effectiveTva,
         tvaRate: tvaRate || 19,
         timbre: effectiveTimbreAmt,
-        timbreRate: 1, // Displays "Timbre Fiscal (1%)"
-        totalTTC: fiscalTTC
+                totalTTC: fiscalTTC
       });
       
       y = tEndY + 8;
