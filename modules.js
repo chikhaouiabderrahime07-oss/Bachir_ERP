@@ -8391,7 +8391,8 @@ const AdminCaisseModule = {
                 const dayDiff = Math.round((day.etatVenteTTC - day.realBchNet) * 100) / 100;
                 const daySolde = Math.round((day.realBchNet - day.etatVenteTTC - dayCharges) * 100) / 100;
                 const closedInDay = day.sessions.filter(s => s.session.status === 'closed').length;
-                const isAllClosed = closedInDay === day.sessions.length && day.sessions.length > 0;
+                const noSessions  = day.sessions.length === 0;
+                const isAllClosed = noSessions || (closedInDay === day.sessions.length && day.sessions.length > 0);
                 const bankNames = [...day.banks].join(', ') || '—';
                 const firstEV = day.evDocs[0];
                 return `<tr style="border-bottom:1px solid var(--border)">
@@ -8418,8 +8419,9 @@ const AdminCaisseModule = {
                   </td>
                   <td style="text-align:right;font-weight:800;color:#10b981">${Utils.fmtCurrency(day.caisseAdminAmount)}</td>
                   <td style="text-align:center">
-                    <span class="badge ${isAllClosed?'badge-success':'badge-warning'}">
-                      <i class="fas ${isAllClosed?'fa-check-circle':'fa-clock'}"></i> ${isAllClosed ? (isAR ? 'مغلق ومطابق' : 'Clôturé & Validé') : (isAR ? 'جلسة جارية' : 'En cours')}
+                    <span class="badge ${isAllClosed ? (noSessions ? '' : 'badge-success') : 'badge-warning'}" style="${noSessions ? 'background:rgba(100,116,139,.12);color:#64748b;border:1px solid rgba(100,116,139,.25)' : ''}">
+                      <i class="fas ${isAllClosed ? (noSessions ? 'fa-receipt' : 'fa-check-circle') : 'fa-clock'}"></i>
+                      ${noSessions ? (isAR ? 'مصاريف فقط' : 'Charges uniquement') : isAllClosed ? (isAR ? 'مغلق ومطابق' : 'Clôturé & Validé') : (isAR ? 'جلسة جارية' : 'En cours')}
                     </span>
                   </td>
                   <td style="text-align:center;white-space:nowrap">
