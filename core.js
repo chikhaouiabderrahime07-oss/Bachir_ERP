@@ -928,9 +928,14 @@ const DB = {
           const targetBankId = ct.targetBankId || (banks.length > 0 ? banks[0].id : null);
           if (!targetBankId) return;
 
-          // Check if already mirrored — by ref/sessionId (set lookup above) or by date+amount±50k
+          // Check if already mirrored — by ref OR sessionId (checked independently to handle
+          // cases where caisse ref=ET/SESS-30 but bank deposit has sessionId=30 with diff ref)
           const evKey = ct.etatVenteRef || (ct.sessionId ? `sess_${ct.sessionId}` : null);
           if (evKey && existingEvBankDeps.has(evKey)) return;
+          // Also check sessionId independently (caisse may use ET/SESS-X while bank has actual EV ref)
+          if (ct.sessionId && existingEvBankDeps.has(`sess_${ct.sessionId}`)) return;
+          // Also check etatVenteId independently
+          if (ct.etatVenteId && existingEvBankDeps.has(`id_${ct.etatVenteId}`)) return;
 
           // Also check by amount (within 50,000 DA tolerance for timbre differences) + same date + same bank
           const dateKey = (ct.date || ct.sessionDate || '').slice(0, 10);
