@@ -2874,8 +2874,8 @@ const DB = {
     const toLoad = collections.filter(c => {
       if (this._loaded[c]) return false;
       const lastSync = localStorage.getItem(`_sync_ts_${c}`);
-      // Fast cooldown of 15s (instead of 5 minutes!) for seamless multi-PC navigation
-      if (lastSync && Date.now() - parseInt(lastSync) < 15 * 1000) {
+      // 8s cooldown — fast enough for multi-PC real-time, safe from flooding
+      if (lastSync && Date.now() - parseInt(lastSync) < 8 * 1000) {
         this._loaded[c] = true;
         return false;
       }
@@ -3087,15 +3087,64 @@ const DB = {
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
+          // Invalidate all sync timestamps so coming back to tab always fetches fresh data
+          Object.keys(this._loaded).forEach(c => {
+            localStorage.removeItem(`_sync_ts_${c}`);
+          });
+          this._loaded = {};
           doSync();
           scheduleNextSync();
         }
       });
     }
+
+    // ── Force Sync Now button on the indicator dot ──
+    const _addForceSyncBtn = () => {
+      const dot = document.getElementById('sync-indicator');
+      if (!dot || dot._fsAttached) return;
+      dot._fsAttached = true;
+      dot.style.cursor = 'pointer';
+      dot.title = typeof T !== 'undefined' && T.isRTL() ? 'انقر للمزامنة الفورية' : 'Cliquer pour synchroniser maintenant';
+      dot.style.width = 'auto';
+      dot.style.height = 'auto';
+      dot.style.padding = '3px 8px';
+      dot.style.borderRadius = '12px';
+      dot.style.fontSize = '10px';
+      dot.style.fontWeight = '700';
+      dot.style.color = '#fff';
+      dot.style.display = 'flex';
+      dot.style.alignItems = 'center';
+      dot.style.gap = '4px';
+      dot.innerHTML = '<i class="fas fa-sync-alt" style="font-size:9px"></i> Sync';
+      dot.addEventListener('click', async () => {
+        const isAR = typeof T !== 'undefined' && T.isRTL();
+        dot.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:9px"></i>';
+        dot.style.background = '#f59e0b';
+        // Clear all sync timestamps to force full refresh
+        Object.keys(localStorage).filter(k => k.startsWith('_sync_ts_')).forEach(k => localStorage.removeItem(k));
+        this._loaded = {};
+        this._syncVersions = {};
+        await doSync();
+        dot.innerHTML = '<i class="fas fa-sync-alt" style="font-size:9px"></i> Sync';
+        dot.style.background = '#10b981';
+        Utils.notify(isAR ? '✅ تمت المزامنة الكاملة' : '✅ Synchronisation complète', 'success', 2000);
+      });
+    };
+
+    // First sync: start immediately, then set up schedule
     setTimeout(() => {
-      doSync();
+      doSync().then(() => {
+        _addForceSyncBtn();
+      });
       scheduleNextSync();
-    }, 1500);
+      // Re-attach button every 3s until the dot element exists in DOM
+      let btnRetry = 0;
+      const btnCheck = setInterval(() => {
+        _addForceSyncBtn();
+        btnRetry++;
+        if (btnRetry > 20) clearInterval(btnCheck);
+      }, 3000);
+    }, 500);
   },
 
   _seed() {

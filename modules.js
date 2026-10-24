@@ -3434,7 +3434,7 @@ const BLModule = {
 
       Utils.notify(isAR ? `تم حفظ تعديلات سند الشحن ${ref} بنجاح` : `BCH ${ref} mis à jour avec succès`, 'success', 4000);
       UI.closeModal();
-      if (typeof App !== 'undefined' && App.currentModule === 'caisse') {
+      if (typeof App !== 'undefined' && App._currentModule === 'caisse') {
         App.loadModule('caisse');
       } else if (typeof App !== 'undefined') {
         App.loadModule('bls');
@@ -3528,7 +3528,7 @@ const BLModule = {
     }
 
     UI.closeModal();
-    if (typeof App !== 'undefined' && App.currentModule === 'caisse') {
+    if (typeof App !== 'undefined' && App._currentModule === 'caisse') {
       App.loadModule('caisse');
     } else if (typeof App !== 'undefined') {
       App.loadModule('bls');
@@ -16210,7 +16210,7 @@ const EtatVenteModule = {
     const healed = this._getOrHealBlList(doc);
     if (healed.length > 0) {
       Utils.notify(isAR ? `✅ تم إصلاح الكشف: ${healed.length} سند مرتبط` : `✅ Réparé : ${healed.length} BL(s) liés`, 'success');
-      App.loadModule(App.currentModule);
+      App.loadModule(App._currentModule || 'etat_vente');
       return;
     }
     // Auto-heal failed → open manual picker modal
@@ -16301,7 +16301,7 @@ const EtatVenteModule = {
         ...(firstBl?.date && !doc.date ? { date: firstBl.date } : {})
       });
       Utils.notify(isAR ? `✅ تم ربط ${blList.length} سند بنجاح` : `✅ ${blList.length} BL(s) liés avec succès`, 'success');
-      App.loadModule(App.currentModule);
+      App.loadModule(App._currentModule || 'etat_vente');
     });
   },
 
@@ -16447,8 +16447,11 @@ const EtatVenteModule = {
           confirmText: T.get('ok')
         });
 
-        if (typeof App !== 'undefined' && App.currentModule) {
-          App.loadModule(App.currentModule);
+        // Auto-run BankBrain recalibrate to clean phantom deposits after historical scan
+        try { DB.MasterBrain.BankBrain.recalibrate(); } catch(_) {}
+
+        if (typeof App !== 'undefined' && App._currentModule) {
+          App.loadModule(App._currentModule);
         }
       }
     } catch(e) {

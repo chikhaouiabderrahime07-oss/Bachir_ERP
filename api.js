@@ -62,10 +62,13 @@ const API = (() => {
     if (body !== undefined) opts.body = JSON.stringify(body);
 
     const wakeTimer = setTimeout(() => setWakeBanner(true), 2500);
+    // Safety: always clear the banner after 8s even if something goes wrong
+    const safeClearTimer = setTimeout(() => setWakeBanner(false), 8000);
 
     try {
       const res = await fetch(BASE + path, opts);
       clearTimeout(wakeTimer);
+      clearTimeout(safeClearTimer);
       setWakeBanner(false);
       
       // Token expired — clear it and signal the app gracefully (NO location.reload!)
@@ -95,6 +98,7 @@ const API = (() => {
       return data;
     } catch (e) {
       clearTimeout(wakeTimer);
+      clearTimeout(safeClearTimer);
       // Auto-retry once on network/fetch errors during spin-up
       if (retries > 0 && (e.name === 'TypeError' || e.message?.includes('fetch'))) {
         setWakeBanner(true);
