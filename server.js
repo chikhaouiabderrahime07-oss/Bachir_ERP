@@ -158,13 +158,32 @@ app.get(['/health', '/ping', '/api/health'], (req, res) => {
   });
 });
 
-// ─── Reset: Clear localStorage & Force Resync from MongoDB ──────
+// ─── Reset: Clear localStorage, cookies, tokens & Force Resync from MongoDB ──
 app.get('/reset', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Reset</title></head><body>
     <script>
+      // 1. Clear all localStorage & sessionStorage
       localStorage.clear();
       sessionStorage.clear();
-      alert('✅ Cache vidé ! L\\'application va recharger les données depuis MongoDB.');
+      // 2. Delete all cookies
+      document.cookie.split(';').forEach(c => {
+        const k = c.split('=')[0].trim();
+        document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+        document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=' + location.hostname;
+      });
+      // 3. Unregister service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(r => r.unregister());
+        });
+      }
+      // 4. Clear caches API
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          names.forEach(n => caches.delete(n));
+        });
+      }
+      alert('Cache, cookies, tokens — tout est vidé. Redirection...');
       window.location.href = '/';
     </script>
   </body></html>`);
