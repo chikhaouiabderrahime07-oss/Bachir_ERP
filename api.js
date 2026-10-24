@@ -23,22 +23,8 @@ const API = (() => {
   }
   function getUser() { return _user; }
 
-  // ── Wake / Cold-Start Indicator ──────────────────────────────────
-  function setWakeBanner(visible, msg) {
-    let el = document.getElementById('erp-cloud-wake-banner');
-    if (!visible) {
-      if (el) el.remove();
-      return;
-    }
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'erp-cloud-wake-banner';
-      el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#0f172a;color:#f8fafc;padding:7px 18px;border-radius:24px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.3);z-index:999999;display:flex;align-items:center;gap:10px;border:1px solid #3b82f6;transition:all 0.3s';
-      document.body.appendChild(el);
-    }
-    const isAR = typeof T !== 'undefined' && T.isRTL();
-    el.innerHTML = `<i class="fas fa-spinner fa-spin" style="color:#60a5fa"></i> <span>${msg || (isAR ? 'جاري الاتصال بالخادم السحابي...' : 'Connexion au serveur cloud en cours...')}</span>`;
-  }
+  // ── Wake / Cold-Start Indicator — DISABLED (silent background sync) ──
+  function setWakeBanner() {} // no-op
 
   // ── Fetch wrapper ───────────────────────────────────────────────
   async function req(method, path, body, retries = 2) {
@@ -61,15 +47,8 @@ const API = (() => {
     };
     if (body !== undefined) opts.body = JSON.stringify(body);
 
-    const wakeTimer = setTimeout(() => setWakeBanner(true), 2500);
-    // Safety: always clear the banner after 8s even if something goes wrong
-    const safeClearTimer = setTimeout(() => setWakeBanner(false), 8000);
-
     try {
       const res = await fetch(BASE + path, opts);
-      clearTimeout(wakeTimer);
-      clearTimeout(safeClearTimer);
-      setWakeBanner(false);
       
       // Token expired — clear it and signal the app gracefully (NO location.reload!)
       if (res.status === 401) {
@@ -97,15 +76,11 @@ const API = (() => {
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       return data;
     } catch (e) {
-      clearTimeout(wakeTimer);
-      clearTimeout(safeClearTimer);
       // Auto-retry once on network/fetch errors during spin-up
       if (retries > 0 && (e.name === 'TypeError' || e.message?.includes('fetch'))) {
-        setWakeBanner(true);
         await new Promise(r => setTimeout(r, 2000));
         return req(method, path, body, retries - 1);
       }
-      setWakeBanner(false);
       console.error(`[API] ${method} ${path}`, e.message);
       throw e;
     }

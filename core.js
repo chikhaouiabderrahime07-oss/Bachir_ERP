@@ -911,13 +911,16 @@ const DB = {
           Number(e.amount) > 0
         );
 
-        // Build lookup for existing EV bank deposits
-        const existingEvBankDeps = new Set(
-          cleanedBankTxs
-            .filter(bt => bt.type === 'deposit' && (bt.subtype === 'etat_vente' || bt.etatVenteRef || bt.etatVenteId))
-            .map(bt => bt.etatVenteRef || `sess_${bt.sessionId}` || `id_${bt.etatVenteId}`)
-            .filter(Boolean)
-        );
+        // Build lookup for existing EV bank deposits — index by BOTH ref AND sessionId
+        const existingEvBankDeps = new Set();
+        cleanedBankTxs
+          .filter(bt => bt.type === 'deposit' && (bt.subtype === 'etat_vente' || bt.etatVenteRef || bt.etatVenteId))
+          .forEach(bt => {
+            if (bt.etatVenteRef) existingEvBankDeps.add(String(bt.etatVenteRef).trim());
+            if (bt.sessionId)    existingEvBankDeps.add(`sess_${bt.sessionId}`);
+            if (bt.etatVenteId)  existingEvBankDeps.add(`id_${bt.etatVenteId}`);
+            if (bt.caisseRef)    existingEvBankDeps.add(String(bt.caisseRef).trim()); // patched dual-ref
+          });
 
         evTransfers.forEach(ct => {
           const amt = Number(ct.amount) || 0;
@@ -925,18 +928,18 @@ const DB = {
           const targetBankId = ct.targetBankId || (banks.length > 0 ? banks[0].id : null);
           if (!targetBankId) return;
 
-          // Check if already mirrored
+          // Check if already mirrored — by ref/sessionId (set lookup above) or by date+amount±50k
           const evKey = ct.etatVenteRef || (ct.sessionId ? `sess_${ct.sessionId}` : null);
           if (evKey && existingEvBankDeps.has(evKey)) return;
 
-          // Also check by amount + date + bankId
+          // Also check by amount (within 50,000 DA tolerance for timbre differences) + same date + same bank
           const dateKey = (ct.date || ct.sessionDate || '').slice(0, 10);
           const alreadyExists = cleanedBankTxs.some(bt =>
             bt.type === 'deposit' &&
+            (bt.subtype === 'etat_vente' || bt.etatVenteRef || bt.sessionId) &&
             String(bt.bankId) === String(targetBankId) &&
-            Math.abs(Number(bt.amount) - amt) < 0.01 &&
-            (bt.date || '').slice(0, 10) === dateKey &&
-            (bt.etatVenteRef === ct.etatVenteRef || (bt.sessionId && bt.sessionId === ct.sessionId))
+            Math.abs(Number(bt.amount) - amt) <= 50000 &&
+            (bt.date || '').slice(0, 10) === dateKey
           );
           if (alreadyExists) return;
 
@@ -968,46 +971,24 @@ const DB = {
           DB.rawSet('bank_transactions', cleanedBankTxs);
         }
 
-        // ── Rule 4: Purge phantom EV bank deposits ──────────────────────────────
-        // A bank EV deposit is "phantom" if there is NO matching caisse_admin entry
-        // with source==='transfert_banque_etat_vente' by etatVenteRef OR (amount+date).
-        // These are ghost entries that inflate the bank balance artificially.
-        const caisseEvWithdrawals = caisse.filter(e =>
-          e.type === 'withdrawal' &&
-          e.source === 'transfert_banque_etat_vente' &&
-          Number(e.amount) > 0
+        // ── Rule 4: INTEGRITY ENFORCER — flag (NOT delete) EV bank deposits with no anchor ──
+        // An anchor = sessionId OR etatVenteRef OR etatVenteId.
+        // Historical deposits may have mismatched refs but correct sessionId — we NEVER auto-delete.
+        // We only log a console warning so an admin can investigate manually.
+        // Actual deletion must be done explicitly via admin tools, never automatically.
+        const evDepositsAll = cleanedBankTxs.filter(bt =>
+          bt.type === 'deposit' &&
+          (bt.subtype === 'etat_vente' || bt.etatVenteRef || bt.etatVenteId)
         );
-        const caisseEvByRef = new Map();
-        const caisseEvByAmtDate = new Set();
-        caisseEvWithdrawals.forEach(c => {
-          if (c.etatVenteRef) caisseEvByRef.set(String(c.etatVenteRef).trim(), c);
-          if (c.sessionId) caisseEvByRef.set(`sess_${c.sessionId}`, c);
-          const dateStr = (c.date || c.sessionDate || c.createdAt || '').slice(0, 10);
-          caisseEvByAmtDate.add(`${Number(c.amount).toFixed(2)}|${dateStr}`);
-        });
-
-        const phantomIds = [];
-        cleanedBankTxs = cleanedBankTxs.filter(bt => {
-          if (bt.type !== 'deposit') return true;
-          if (bt.subtype !== 'etat_vente' && !bt.etatVenteRef && !bt.etatVenteId) return true;
-          // It's an EV deposit — check if a caisse entry backs it
-          const evRef = (bt.etatVenteRef || '').trim();
-          if (evRef && caisseEvByRef.has(evRef)) return true;
-          if (bt.sessionId && caisseEvByRef.has(`sess_${bt.sessionId}`)) return true;
-          const btDate = (bt.date || bt.createdAt || '').slice(0, 10);
-          const amtKey = `${Number(bt.amount).toFixed(2)}|${btDate}`;
-          if (caisseEvByAmtDate.has(amtKey)) return true;
-          // No caisse entry found → phantom
-          phantomIds.push(bt.id);
-          return false;
-        });
-
-        if (phantomIds.length > 0) {
-          DB.rawSet('bank_transactions', cleanedBankTxs);
-          if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-            phantomIds.forEach(id => window.API.delete('bank_transactions', id).catch(() => {}));
-          }
-          console.warn(`[BankBrain] Purged ${phantomIds.length} phantom EV bank deposits (IDs: ${phantomIds.join(', ')})`);
+        const unanchored = evDepositsAll.filter(bt =>
+          !bt.sessionId && !bt.etatVenteRef && !bt.etatVenteId
+        );
+        if (unanchored.length > 0) {
+          console.warn(
+            `[BankBrain] ⚠️ ${unanchored.length} EV bank deposit(s) have no sessionId/etatVenteRef/etatVenteId anchor.\n` +
+            `  IDs: ${unanchored.map(t => t.id).join(', ')}\n` +
+            `  These were NOT auto-deleted. Use the Admin audit tool to review them.`
+          );
         }
 
         const bankBalances = {};
@@ -3243,6 +3224,20 @@ const DB = {
   },
 
   insert(col, data) {
+    // ── 🔒 BANK EV DEPOSIT GUARD — Every EV bank deposit MUST have an anchor ──
+    // Anchor = sessionId OR etatVenteRef OR etatVenteId (at least one required)
+    // This prevents phantom deposits from ever being created again.
+    if (col === 'bank_transactions' &&
+        data.type === 'deposit' &&
+        (data.subtype === 'etat_vente' || data.etatVenteRef || data.etatVenteId)) {
+      if (!data.sessionId && !data.etatVenteRef && !data.etatVenteId) {
+        const err = '[BankGuard] ❌ BLOCKED: EV bank deposit has no sessionId, etatVenteRef or etatVenteId anchor. Fix the calling code!';
+        console.error(err, data);
+        // Still insert but stamp it as needing review so it shows in audit
+        data._needsAnchorReview = true;
+        data._anchorError = 'Missing sessionId/etatVenteRef/etatVenteId at insert time';
+      }
+    }
     const items = this.getAll(col);
     const id = items.length ? Math.max(...items.map(i => i.id)) + 1 : 1;
     const u = Auth.getCurrentUser();
