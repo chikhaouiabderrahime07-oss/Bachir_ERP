@@ -724,8 +724,10 @@ const DB = {
             wit.userId = s.userId;
             wit.userName = userName;
             if (evRef && !wit.etatVenteRef) wit.etatVenteRef = evRef;
-            if (Math.abs(Number(wit.amount || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.realBchNet || 0) - expectedRealBchNet) > 0.01) {
-              wit.amount = expectedEvTTC;
+            // Withdrawal amount = realBchNet (actual cash sent to bank), NOT etatVenteTTC
+            // etatVenteTTC is the fiscal declaration; actual cash movement = realBchNet
+            if (Math.abs(Number(wit.amount || 0) - expectedRealBchNet) > 0.01 || Math.abs(Number(wit.etatVenteTTC || 0) - expectedEvTTC) > 0.01 || Math.abs(Number(wit.realBchNet || 0) - expectedRealBchNet) > 0.01) {
+              wit.amount = expectedRealBchNet;
               wit.etatVenteTTC = expectedEvTTC;
               wit.realBchNet = expectedRealBchNet;
               wit.timbreAmount = expectedTimbre;
@@ -735,7 +737,7 @@ const DB = {
                 window.API.update('caisse_admin', wit.id, wit).catch(() => {});
               }
             }
-          } else if (expectedEvTTC > 0 || expectedRealBchNet > 0) {
+          } else if (expectedRealBchNet > 0) {
             // Auto-create missing withdrawal for this État de Vente transfer
             const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
             wit = {
@@ -747,7 +749,7 @@ const DB = {
               sessionId: s.id,
               sessionDate,
               date: sessionDate,
-              amount: expectedEvTTC,
+              amount: expectedRealBchNet,
               realBchNet: expectedRealBchNet,
               targetBankId: s.targetBankId || evDoc?.bankId || null,
               etatVenteRef: evRef,
