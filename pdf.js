@@ -1577,6 +1577,7 @@
       const supNif = s.nif || sup.nif || '-';
       const supNis = s.nis || sup.nis || '';
       const supPhone = s.phone || sup.phone || '';
+      // ── Fix: company address from settings first, then supplier DB record ──
       const supAddress = this._t(s.address || sup.address || '-');
       const supAi = s.ai || sup.ai || '';
 
@@ -1606,8 +1607,9 @@
       const cliNif = cli.nif || '-';
       const cliNis = cli.nis || '';
       const cliPhone = cli.phone || '';
-      const wilayaDest = bl.destinationAddress || bl.wilaya || cli.address || '-';
-      const cliAddress = this._t(wilayaDest);
+      // ── Fix: use client's own address from DB first, fallback to BL destination ──
+      const cliAddrRaw = cli.address || bl.clientAddress || bl.destinationAddress || bl.wilaya || '-';
+      const cliAddress = this._t(cliAddrRaw);
       const cliAi = cli.ai || '';
 
       const rxBox = ML + cw2 + gap;
@@ -1632,150 +1634,85 @@
       }
       y += boxH + 2.5;
 
-      // ── 5. Items Table ──
-      const colDef = [
-        { label: isAR ? 'الرقم' : 'N°', w: 10, align: 'center' },
-        { label: isAR ? 'بيان التوريدات / البضائع' : 'DÉSIGNATION DES FOURNITURES / MARCHANDISES', w: 82, align: 'left' },
-        { label: isAR ? 'الوحدة' : 'UNITÉ', w: 14, align: 'center' },
-        { label: isAR ? 'الكمية' : 'QTÉ', w: 20, align: 'center' },
-        { label: isAR ? 'سعر الوحدة خ.ر' : 'P.U. HT', w: 32, align: 'right' },
-        { label: isAR ? 'المجموع خ.ر' : 'TOTAL HT', w: 36, align: 'right' }
+      // ── 4b. Delivery Address Banner (Bold, prominent, before table) ──
+      const deliveryAddr = this._t(bl.destinationAddress || bl.wilaya || cli.address || bl.clientAddress || '');
+      const deliveryCity = this._t(bl.destinationCity || bl.wilayaName || '');
+      const fullDeliveryAddr = [deliveryAddr, deliveryCity].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' — ');
+      if (fullDeliveryAddr && fullDeliveryAddr.trim() && fullDeliveryAddr.trim() !== '-' && fullDeliveryAddr.trim() !== '/') {
+        const addrH = 8;
+        this._rect(doc, ML, y, CW, addrH, [255, 251, 235], [251, 191, 36]);
+        // Left accent stripe
+        doc.setFillColor(245, 158, 11);
+        doc.rect(ML, y, 2.5, addrH, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [146, 64, 14]);
+        this._text(doc, isAR ? 'عنوان التسليم :' : 'ADRESSE DE LIVRAISON :', ML + 5, y + 3.2);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
+        this._text(doc, fullDeliveryAddr.slice(0, 70), ML + 5, y + 6.8);
+        y += addrH + 2;
+      }
+
+      // ── 5. Items Table (same style as État de Vente — using _buildTable) ──
+      const COLS_BL = [
+        { label: isAR ? 'الرقم' : 'N°',                                                  width: 12,  halign: 'center' },
+        { label: isAR ? 'بيان التوريدات / البضائع' : 'DÉSIGNATION DES FOURNITURES / MARCHANDISES', width: 75, halign: 'left' },
+        { label: isAR ? 'الوحدة' : 'UNITÉ',                                               width: 15,  halign: 'center' },
+        { label: isAR ? 'الكمية' : 'QTÉ',                                                 width: 18,  halign: 'center' },
+        { label: isAR ? 'سعر الوحدة خ.ر' : 'P.U. HT',                                    width: 34,  halign: 'center' },
+        { label: isAR ? 'المجموع خ.ر' : 'TOTAL HT',                                       width: 40,  halign: 'center' },
       ];
 
-      // Table Header
-      const thH = 6.5;
-      this._rect(doc, ML, y, CW, thH, C.PRIMARY, C.PRIMARY);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, C.WHITE);
-      let cx = ML;
-      colDef.forEach(c => {
-        if (c.align === 'center') doc.text(c.label, cx + c.w / 2, y + 4.3, { align: 'center' });
-        else if (c.align === 'right') doc.text(c.label, cx + c.w - 2.5, y + 4.3, { align: 'right' });
-        else doc.text(c.label, cx + 2.5, y + 4.3);
-        cx += c.w;
-      });
-      y += thH;
-
-      // Table Rows & Padding (minRows = 9, rowH = 8)
-      const minRows = 9;
-      const rowH = 8;
-      const maxRows = 12;
-      const visibleLines = lines.slice(0, maxRows);
-      const totalRows = Math.max(minRows, visibleLines.length);
-
-      for (let i = 0; i < totalRows; i++) {
-        const rowBg = i % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
-        this._rect(doc, ML, y, CW, rowH, rowBg, [226, 232, 240]);
-
-        // Vertical column separator grid
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.15);
-        let lineX = ML;
-        colDef.forEach(c => {
-          lineX += c.w;
-          if (lineX < ML + CW) {
-            doc.line(lineX, y, lineX, y + rowH);
-          }
-        });
-
-        if (i < visibleLines.length) {
-          const l = visibleLines[i];
-          const qty = Number(l.qtyDelivered || l.qty || 0);
-          const pu = Number(l.price || 0);
-          const disc = Number(l.disc || 0);
-          const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
-
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); this._tc(doc, [30, 41, 59]);
-          let rx = ML;
-          doc.text(String(i + 1).padStart(2, '0'), rx + 5, y + 5.2, { align: 'center' });
-          rx += 10;
-          doc.text(this._t(l.designation || 'Marchandise').slice(0, 50), rx + 2.5, y + 5.2);
-          rx += 82;
-          doc.text(this._t(l.unit || 'U'), rx + 7, y + 5.2, { align: 'center' });
-          rx += 14;
-          doc.setFont('helvetica', 'bold');
-          doc.text(this._fmtNum(qty), rx + 10, y + 5.2, { align: 'center' });
-          rx += 20;
-          doc.setFont('helvetica', 'normal');
-          doc.text(this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''), rx + 29.5, y + 5.2, { align: 'right' });
-          rx += 32;
-          doc.setFont('helvetica', 'bold');
-          doc.text(this._fmtMoney(tot), rx + 33.5, y + 5.2, { align: 'right' });
-        } else {
-          // Padded empty row: light gray row number & clean cells
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); this._tc(doc, [180, 190, 205]);
-          doc.text(String(i + 1).padStart(2, '0'), ML + 5, y + 5.2, { align: 'center' });
-        }
-        y += rowH;
-      }
-
-      // ── 6. Large Totals Bar (~11mm) ──
-      y += 2;
-      const totH = 11;
-      const ttcBlockW = 62;
-      this._rect(doc, ML, y, CW, totH, [241, 245, 249], [203, 213, 225]);
-
-      // Highlighted Total TTC block on the right
-      const ttcX = ML + CW - ttcBlockW;
-      doc.setFillColor(...C.PRIMARY);
-      doc.rect(ttcX, y, ttcBlockW, totH, 'F');
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-      this._tc(doc, [217, 239, 243]);
-      this._text(doc, isAR ? 'المجموع ك.ر (مع الرسوم)' : 'TOTAL TTC', ttcX + ttcBlockW / 2, y + 4.2, { align: 'center' });
-      doc.setFontSize(10);
-      this._tc(doc, C.WHITE);
-      doc.text(this._fmtMoney(totalTTC), ttcX + ttcBlockW / 2, y + 9.2, { align: 'center' });
-
-      // Left values: Total HT, TVA 19%, Timbre
       const blTva = Number(bl.tvaAmount) || (br ? Number(br.tvaAmount) : 0) || (bl.hasTva ? Math.round(totalHT * 0.19 * 100) / 100 : 0);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
-      this._text(doc, isAR ? 'المجموع خ.ر' : 'TOTAL HT', ML + 4, y + 4.2);
-      doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
-      doc.text(this._fmtMoney(totalHT), ML + 4, y + 9.2);
+      const blTvaRate = Number(bl.tvaRate) || (br ? Number(br.tvaRate) : 0) || 19;
 
-      doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
-      this._text(doc, isAR ? 'الرسم 19% (TVA)' : 'TVA 19%', ML + 48, y + 4.2);
-      doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
-      doc.text(this._fmtMoney(blTva), ML + 48, y + 9.2);
-
-      if (timbre > 0) {
-        doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
-        this._text(doc, isAR ? 'حق الطابع' : 'TIMBRE', ML + 92, y + 4.2);
-        doc.setFontSize(8.5); this._tc(doc, [15, 23, 42]);
-        doc.text(this._fmtMoney(timbre), ML + 92, y + 9.2);
-      }
-      y += totH + 2.5;
-
-      // ── 7. Dedicated Amount in Words Box (~13mm) ──
-      const wordsH = 13;
-      this._rect(doc, ML, y, CW, wordsH, [255, 255, 255], [203, 213, 225]);
-      doc.setFillColor(...C.PRIMARY);
-      doc.rect(ML, y, 3, wordsH, 'F');
-
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(7.2); this._tc(doc, [71, 85, 105]);
-      this._text(doc, isAR
-        ? 'أوقفت هذه الفاتورة / وصل التسليم عند المبلغ الإجمالي قدره :'
-        : 'Arrêté le présent bon de livraison à la somme de :', ML + 6, y + 4.5);
-
-      const wd = this._amountWords(totalTTC);
-      const wdText = wd
-        ? (isAR ? `${wd} دينار جزائري` : `${wd.toUpperCase()} DINARS ALGÉRIENS`)
-        : (isAR ? `${this._fmtMoney(totalTTC)} دينار جزائري` : `${this._fmtMoney(totalTTC)} DINARS ALGÉRIENS`);
-
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.8); this._tc(doc, [15, 23, 42]);
-      const wordsLines = doc.splitTextToSize(wdText, CW - 12);
-      wordsLines.slice(0, 2).forEach((wl, idx) => {
-        this._text(doc, wl, ML + 6, y + 9 + idx * 3.8);
+      const bodyRowsBL = (lines || []).map((l, i) => {
+        const qty = Number(l.qtyDelivered || l.qty || 0);
+        const pu  = Number(l.price || 0);
+        const disc = Number(l.disc || 0);
+        const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
+        return [
+          String(i + 1).padStart(2, '0'),
+          this._t(l.designation || ''),
+          this._t(l.unit || 'U'),
+          this._fmtNum(qty),
+          this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''),
+          this._fmtMoney(tot),
+        ];
       });
-      y += wordsH + 2.5;
+      if (!bodyRowsBL.length) bodyRowsBL.push(['01', '', 'U', '', '', this._fmtMoney(0)]);
 
-      // ── 8. Transport & Observations Box (~8.5mm) ──
+      const tEndY = this._buildTable(doc, y, COLS_BL, bodyRowsBL, {
+        totalHT:   totalHT,
+        tvaAmount: blTva,
+        tvaRate:   blTvaRate,
+        timbre:    timbre,
+        totalTTC:  totalTTC,
+      });
+      y = tEndY + 4;
+
+      // ── 6. Amount in Words ──
+      const wd = this._amountWords(totalTTC);
+      if (wd) {
+        const wdText = isAR ? `${wd} دينار جزائري` : `${wd.toUpperCase()} DINARS ALGÉRIENS`;
+        const wordsH = 10;
+        this._rect(doc, ML, y, CW, wordsH, [255, 255, 255], [203, 213, 225]);
+        doc.setFillColor(...C.PRIMARY);
+        doc.rect(ML, y, 3, wordsH, 'F');
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7.2); this._tc(doc, [71, 85, 105]);
+        this._text(doc, isAR ? 'أوقفت هذه الفاتورة عند المبلغ الإجمالي قدره :' : 'Arrêté le présent bon de livraison à la somme de :', ML + 6, y + 3.5);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); this._tc(doc, [15, 23, 42]);
+        const wl = doc.splitTextToSize(wdText, CW - 12);
+        this._text(doc, wl[0], ML + 6, y + 7.5);
+        y += wordsH + 3;
+      }
+
+      // ── 7. Transport & Observations ──
       const transH = 8.5;
       this._rect(doc, ML, y, CW, transH, [248, 250, 252], [226, 232, 240]);
 
       const driverName = this._t(bl.driverName || sup.driverName || '/');
-      const truckIMM = this._t(bl.truckIMM || sup.truckIMM || '/');
+      const truckIMM   = this._t(bl.truckIMM || sup.truckIMM || '/');
       const destWilaya = this._t(bl.destinationAddress || bl.wilaya || cli.address || '/');
-      const obsText = this._t(bl.notes || bl.observation || '');
+      const obsText    = this._t(bl.notes || bl.observation || '');
 
       doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
       this._text(doc, isAR ? 'السائق :' : 'CHAUFFEUR :', ML + 3, y + 5.5);
@@ -1790,72 +1727,65 @@
       doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); this._tc(doc, [100, 116, 139]);
       this._text(doc, obsText ? (isAR ? 'ملاحظات :' : 'OBSERVATIONS :') : (isAR ? 'الوجهة :' : 'DESTINATION :'), ML + 132, y + 5.5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2); this._tc(doc, [15, 23, 42]);
-      const rightInfo = obsText ? obsText.slice(0, 28) : destWilaya.slice(0, 28);
-      this._text(doc, rightInfo, ML + 158, y + 5.5);
-      y += transH + 2.5;
+      this._text(doc, (obsText || destWilaya).slice(0, 28), ML + 158, y + 5.5);
+      y += transH + 3;
 
-      // ── 9. Traceability & Security Note ──
-      const traceH = 5.5;
-      this._rect(doc, ML, y, CW, traceH, [254, 243, 199], [251, 191, 36]);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.2); this._tc(doc, [146, 64, 14]);
-      doc.text(isAR
-        ? `وثيقة تسليم - فاتورة | مرجع سند الشحن : ${bchRef} | وصل الاستلام : ${brRef} | تدقيق أمني : #${chkHex} (${secCode})`
-        : `DOCUMENT DE LIVRAISON - FACTURE | REF BCH : ${bchRef} | BR : ${brRef} | CONTRÔLE SÉCURITÉ : #${chkHex} (${secCode})`,
-        ML + CW / 2, y + 3.8, { align: 'center' });
-      y += traceH + 3;
-
-      // ── 10. Triple Validation & Stamp Boxes (~40mm) ──
-      const stampH = 40;
-      const colW = 62;
-      const colGap = (CW - colW * 3) / 2; // (194 - 186) / 2 = 4mm
+      // ── 8. Triple Signature Boxes ──
+      const stampH = 38;
+      const colW3  = 62;
+      const colGap3 = (CW - colW3 * 3) / 2;
       const sigCols = [
-        {
-          title: isAR ? 'مصلحة الشحن / المخزن' : 'SERVICE EXPÉDITION / MAGASIN',
-          sub: isAR ? '(الاسم، التاريخ والختم)' : '(Nom, Date & Cachet)'
-        },
-        {
-          title: isAR ? 'الناقل / السائق' : 'LE TRANSPORTEUR / CHAUFFEUR',
-          sub: isAR ? '(استلام البضاعة)' : '(Prise en charge marchandise)'
-        },
-        {
-          title: isAR ? 'استلام الزبون / الإبراء' : 'RÉCEPTION CLIENT / ACQUIT',
-          sub: isAR ? '(استلام مطابق للطلب)' : '(Bon pour réception conforme)'
-        }
+        { title: isAR ? 'مصلحة الشحن / المخزن'  : 'SERVICE EXPÉDITION / MAGASIN',   sub: isAR ? '(الاسم، التاريخ والختم)' : '(Nom, Date & Cachet)' },
+        { title: isAR ? 'الناقل / السائق'         : 'LE TRANSPORTEUR / CHAUFFEUR',    sub: isAR ? '(استلام البضاعة)' : '(Prise en charge marchandise)' },
+        { title: isAR ? 'استلام الزبون / الإبراء' : 'RÉCEPTION CLIENT / ACQUIT',      sub: isAR ? '(استلام مطابق للطلب)' : '(Bon pour réception conforme)' },
       ];
-
       sigCols.forEach((col, idx) => {
-        const sx = ML + idx * (colW + colGap);
-        this._rect(doc, sx, y, colW, stampH, [255, 255, 255], [203, 213, 225]);
-
-        // Box Header
+        const sx = ML + idx * (colW3 + colGap3);
+        this._rect(doc, sx, y, colW3, stampH, [255, 255, 255], [203, 213, 225]);
         doc.setFillColor(241, 245, 249);
-        doc.rect(sx, y, colW, 6, 'F');
+        doc.rect(sx, y, colW3, 6, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [30, 41, 59]);
-        this._text(doc, col.title, sx + colW / 2, y + 4.2, { align: 'center' });
-
-        // Subtitle
+        this._text(doc, col.title, sx + colW3 / 2, y + 4.2, { align: 'center' });
         doc.setFont('helvetica', 'italic'); doc.setFontSize(6.5); this._tc(doc, [100, 116, 139]);
-        this._text(doc, col.sub, sx + colW / 2, y + 9.5, { align: 'center' });
-
-        // Dotted signature line
+        this._text(doc, col.sub, sx + colW3 / 2, y + 9.5, { align: 'center' });
         doc.setFillColor(148, 163, 184);
-        const dotY = y + stampH - 9;
-        let lx = sx + 5;
-        while (lx < sx + colW - 5) {
-          doc.circle(lx, dotY, 0.35, 'F');
-          lx += 2.2;
-        }
-
-        // Signature label
+        const dotY2 = y + stampH - 9;
+        let lx2 = sx + 5;
+        while (lx2 < sx + colW3 - 5) { doc.circle(lx2, dotY2, 0.35, 'F'); lx2 += 2.2; }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
-        this._text(doc, isAR ? 'التاريخ والختم والتوقيع' : 'Date, Cachet & Signature', sx + colW / 2, y + stampH - 3, { align: 'center' });
+        this._text(doc, isAR ? 'التاريخ والختم والتوقيع' : 'Date, Cachet & Signature', sx + colW3 / 2, y + stampH - 3, { align: 'center' });
       });
+      y += stampH + 4;
 
-      // ── 11. Footer & Single-Page Guarantee ──
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [100, 116, 139]);
-      doc.text(isAR ? `تاريخ الإصدار : ${this._fmtDateTime(new Date().toISOString())}` : `Document généré le : ${this._fmtDateTime(new Date().toISOString())}`, ML, PH - 5);
-      doc.text(isAR ? 'صفحة 1 من 1' : 'Page 1 sur 1', PW / 2, PH - 5, { align: 'center' });
-      doc.text(isAR ? 'وثيقة تجارية رسمية' : 'Document Commercial Officiel', ML + CW, PH - 5, { align: 'right' });
+      // ── 9. Company Legal Footer (bottom — only entreprise info) ──
+      const footerH = 14;
+      const footerY = Math.max(y + 2, PH - footerH - 10);
+      doc.setFillColor(241, 245, 249);
+      doc.rect(ML, footerY, CW, footerH, 'F');
+      doc.setDrawColor(...C.LINE);
+      doc.setLineWidth(0.3);
+      doc.line(ML, footerY, ML + CW, footerY);
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); this._tc(doc, C.PRIMARY);
+      this._text(doc, this._t(s.companyName || ''), PW / 2, footerY + 4.5, { align: 'center' });
+
+      const footLeg = [
+        s.rc  && `RC : ${s.rc}`,
+        s.nif && `NIF : ${s.nif}`,
+        s.nis && `NIS : ${s.nis}`,
+        s.ai  && `AI : ${s.ai}`,
+      ].filter(Boolean).join('   |   ');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); this._tc(doc, [71, 85, 105]);
+      if (footLeg) this._text(doc, footLeg, PW / 2, footerY + 8.5, { align: 'center' });
+
+      const footAddr = [s.address && `${isAR ? 'العنوان' : 'Adresse'} : ${this._t(s.address)}`, s.phone && `${isAR ? 'الهاتف' : 'Tél'} : ${s.phone}`].filter(Boolean).join('   |   ');
+      if (footAddr) this._text(doc, footAddr, PW / 2, footerY + 12, { align: 'center' });
+
+      // ── 10. Page footer line ──
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); this._tc(doc, [100, 116, 139]);
+      doc.text(isAR ? `تاريخ الإصدار : ${this._fmtDateTime(new Date().toISOString())}` : `Document généré le : ${this._fmtDateTime(new Date().toISOString())}`, ML, PH - 4);
+      doc.text(isAR ? 'صفحة 1 من 1' : 'Page 1 sur 1', PW / 2, PH - 4, { align: 'center' });
+      doc.text(isAR ? 'وثيقة تجارية رسمية' : 'Document Commercial Officiel', ML + CW, PH - 4, { align: 'right' });
 
       // Strictly guarantee exactly 1 single page!
       while (doc.getNumberOfPages() > 1) {

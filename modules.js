@@ -497,6 +497,12 @@ const DashboardModule = {
     const activity = [...recentBRs.map(b=>({type:'BR',ref:b.ref,date:b.date,amount:b.totalTTC,name:supMap[b.supplierId]?.name})), ...recentBLs.map(b=>({type:'BL',ref:b.ref,date:b.date,amount:b.totalTTC,name:cliMap[b.clientId]?.name}))].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,8);
 
     const isAR = T.isRTL();
+
+    // ── Auto-notify admin of unclosed past sessions on every dashboard load ──
+    if (isAdmin) {
+      try { setTimeout(() => CaisseModule.checkAndNotifyUnclosedSessions?.(), 1200); } catch(e) {}
+    }
+
     const sessionBanner = (!session && u.role !== 'admin') ? `
     <div style="background:linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.2);border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div style="display:flex;align-items:center;gap:10px"><i class="fas fa-sun" style="font-size:20px;color:#f59e0b"></i><div><div style="font-weight:700;font-size:13px;color:var(--text)">${T.get('caisse_no_session')}</div><div style="font-size:11px;color:var(--text4)">${isAR ? 'ابدأ يومك لتفعيل الصندوق' : 'Démarrez votre journée pour activer la caisse'}</div></div></div>
@@ -2767,16 +2773,63 @@ const BLModule = {
       <div id="bch-panel-stock" style="display:none">
         <div class="form-group mb-2">
           <label class="required"><i class="fas fa-boxes"></i> ${isAR ? 'اختيار وصل الاستلام في المخزون (الأقدم فالأقدم FIFO / FCFS)' : 'Sélectionner le BR en stock (FCFS / FIFO — Premier entré, premier servi)'}</label>
-          <select id="newbl-br" class="input" style="width:100%" onchange="BLModule._onNewBLBRChange(this.value)">
-            <option value="">${isAR ? '— اختيار وصل الاستلام في المخزون —' : '— Choisir un BR en stock —'}</option>
-            ${openBRs.map((br, idx) => {
+          <!-- BR Search & Filter Bar -->
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:180px;position:relative">
+              <i class="fas fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text4);font-size:12px;pointer-events:none"></i>
+              <input type="text" id="br-stock-search" class="input" style="padding-left:30px;font-size:12px" placeholder="${isAR ? 'البحث بمرجع BR أو المورد...' : 'Rechercher par réf BR ou fournisseur...'}"
+                oninput="BLModule._filterBRStockList(this.value, document.getElementById('br-stock-sup-filter')?.value, document.getElementById('br-stock-date-filter')?.value)">
+            </div>
+            <select id="br-stock-sup-filter" class="input" style="min-width:140px;font-size:12px" onchange="BLModule._filterBRStockList(document.getElementById('br-stock-search')?.value, this.value, document.getElementById('br-stock-date-filter')?.value)">
+              <option value="">${isAR ? '— كل الموردين —' : '— Tous fournisseurs —'}</option>
+              ${[...new Set(openBRs.map(br => br.supplierId))].map(supId => {
+                const s = supMap[supId];
+                return s ? `<option value="${supId}">${Utils.escHTML(s.name)}</option>` : '';
+              }).join('')}
+            </select>
+            <input type="date" id="br-stock-date-filter" class="input" style="min-width:130px;font-size:12px" title="${isAR ? 'تصفية حسب تاريخ BR' : 'Filtrer par date BR'}"
+              onchange="BLModule._filterBRStockList(document.getElementById('br-stock-search')?.value, document.getElementById('br-stock-sup-filter')?.value, this.value)">
+            <button type="button" class="btn btn-xs btn-outline" onclick="document.getElementById('br-stock-search').value='';document.getElementById('br-stock-sup-filter').value='';document.getElementById('br-stock-date-filter').value='';BLModule._filterBRStockList('','','')" title="${isAR ? 'إعادة ضبط' : 'Réinitialiser'}">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <!-- BR Results List (replaces plain select) -->
+          <div id="br-stock-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg2)">
+            ${openBRs.length ? openBRs.map((br, idx) => {
               const rem = BLModule.getBRRemaining(br.id);
               const supName = supMap[br.supplierId]?.name || '?';
               const dateStr = br.date ? Utils.fmtDate(br.date) : '';
-              const fcfsTag = idx === 0 ? (isAR ? ' [★ أقدم وصل FCFS]' : ' [★ 1er Entré - FCFS]') : '';
-              return `<option value="${br.id}">\u2066${Utils.escHTML(br.ref)}\u2069${fcfsTag} — ${Utils.escHTML(supName)} ${dateStr ? '('+dateStr+')' : ''} — ${isAR ? 'المتبقي:' : 'Reste:'} ${rem.remainingQty} — ${Utils.fmtCurrency(br.totalTTC)}</option>`;
-            }).join('')}
+              const fcfsTag = idx === 0;
+              return `<div class="br-stock-item" data-br-id="${br.id}" data-ref="${(br.ref||'').toLowerCase()}" data-sup-id="${br.supplierId}" data-date="${br.date||''}"
+                style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s"
+                onclick="BLModule._selectBRStockItem(${br.id})"
+                onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"
+              >
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    ${fcfsTag ? `<span class="badge badge-warning" style="font-size:9px;padding:1px 5px">★ FCFS</span>` : ''}
+                    <strong style="color:var(--primary);font-size:13px">${Utils.escHTML(br.ref || `BR/${br.id}`)}</strong>
+                    <span style="font-size:11px;color:var(--text4)">${Utils.escHTML(supName)}</span>
+                  </div>
+                  <div style="font-size:11px;color:var(--text4);display:flex;gap:12px">
+                    <span><i class="fas fa-calendar-alt"></i> ${dateStr}</span>
+                    <span style="color:var(--success);font-weight:700">${isAR ? 'المتبقي:' : 'Reste:'} ${rem.remainingQty}</span>
+                    <span>${Utils.fmtCurrency(br.totalTTC)}</span>
+                  </div>
+                </div>
+                <i class="fas fa-chevron-right" style="color:var(--text4);font-size:12px"></i>
+              </div>`;
+            }).join('') : `<div style="padding:20px;text-align:center;color:var(--text4);font-size:13px"><i class="fas fa-inbox"></i> ${isAR ? 'لا توجد وصولات في المخزون' : 'Aucun BR disponible en stock'}</div>`}
+          </div>
+          <!-- Hidden select to keep existing onChange logic -->
+          <select id="newbl-br" style="display:none" onchange="BLModule._onNewBLBRChange(this.value)">
+            <option value=""></option>
+            ${openBRs.map(br => `<option value="${br.id}">${br.ref}</option>`).join('')}
           </select>
+          <div id="br-selected-badge" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(2,132,199,.1);border:1px solid rgba(2,132,199,.3);border-radius:8px;font-size:13px;font-weight:700;color:var(--primary)">
+            <i class="fas fa-check-circle"></i> <span id="br-selected-text"></span>
+            <button type="button" onclick="BLModule._clearBRStockSelection()" style="float:${isAR?'left':'right'};background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px"><i class="fas fa-times"></i></button>
+          </div>
         </div>
         <div id="newbl-info"></div>
         <div id="newbl-form" style="display:none"><div id="newbl-form-inner"></div></div>
@@ -2831,13 +2884,87 @@ const BLModule = {
       if (bDirect) { bDirect.className = 'btn btn-outline'; }
       if (bStock)  { bStock.className = 'btn btn-primary'; }
 
-      // Auto-select oldest BR in stock (FIFO / FCFS) if not yet chosen
-      const sel = document.getElementById('newbl-br');
-      if (sel && !sel.value && sel.options.length > 1) {
-        sel.selectedIndex = 1;
-        this._onNewBLBRChange(sel.value);
+      // Auto-select oldest BR in stock (FIFO / FCFS) via new card UI
+      const items = document.querySelectorAll('.br-stock-item');
+      if (items.length > 0) {
+        const firstId = items[0]?.dataset?.brId;
+        if (firstId) BLModule._selectBRStockItem(Number(firstId));
       }
     }
+  },
+
+  _filterBRStockList(query, supId, dateVal) {
+    const q = (query || '').toLowerCase().trim();
+    const sup = (supId || '').trim();
+    const dt = (dateVal || '').trim();
+    const items = document.querySelectorAll('.br-stock-item');
+    let visCount = 0;
+    items.forEach(el => {
+      const ref = (el.dataset.ref || '').toLowerCase();
+      const elSup = el.dataset.supId || '';
+      const elDate = el.dataset.date || '';
+      const matchQ = !q || ref.includes(q) || el.textContent.toLowerCase().includes(q);
+      const matchSup = !sup || elSup === sup;
+      const matchDate = !dt || elDate === dt;
+      const show = matchQ && matchSup && matchDate;
+      el.style.display = show ? '' : 'none';
+      if (show) visCount++;
+    });
+    const list = document.getElementById('br-stock-list');
+    const empty = list?.querySelector('.br-no-results');
+    if (visCount === 0 && list) {
+      if (!empty) {
+        const d = document.createElement('div');
+        d.className = 'br-no-results';
+        d.style.cssText = 'padding:18px;text-align:center;color:var(--text4);font-size:13px';
+        const isAR = typeof T !== 'undefined' && T.isRTL();
+        d.innerHTML = `<i class="fas fa-search"></i> ${isAR ? 'لا توجد نتائج' : 'Aucun résultat'}`;
+        list.appendChild(d);
+      }
+    } else if (empty) {
+      empty.remove();
+    }
+  },
+
+  _selectBRStockItem(brId) {
+    // Highlight selected card
+    document.querySelectorAll('.br-stock-item').forEach(el => {
+      const selected = Number(el.dataset.brId) === Number(brId);
+      el.style.background = selected ? 'rgba(2,132,199,.12)' : '';
+      el.style.borderLeft = selected ? '3px solid var(--primary)' : '';
+    });
+    // Sync hidden select
+    const sel = document.getElementById('newbl-br');
+    if (sel) { sel.value = brId; }
+    // Show selected badge
+    const badge = document.getElementById('br-selected-badge');
+    const txt = document.getElementById('br-selected-text');
+    const allBRs = DB.getAll('brs');
+    const br = allBRs.find(b => Number(b.id) === Number(brId));
+    if (badge && txt && br) {
+      const isAR = typeof T !== 'undefined' && T.isRTL();
+      txt.textContent = `${br.ref || 'BR/' + br.id} — ${isAR ? 'محدد' : 'Sélectionné'}`;
+      badge.style.display = 'block';
+    }
+    // Trigger existing form fill logic
+    this._onNewBLBRChange(brId);
+  },
+
+  _clearBRStockSelection() {
+    document.querySelectorAll('.br-stock-item').forEach(el => {
+      el.style.background = '';
+      el.style.borderLeft = '';
+    });
+    const sel = document.getElementById('newbl-br');
+    if (sel) sel.value = '';
+    const badge = document.getElementById('br-selected-badge');
+    if (badge) badge.style.display = 'none';
+    const info = document.getElementById('newbl-info');
+    if (info) info.innerHTML = '';
+    const form = document.getElementById('newbl-form');
+    if (form) form.style.display = 'none';
+    const saveBtns = ['newbl-save', 'newbl-pdf'];
+    saveBtns.forEach(id => { const b = document.getElementById(id); if (b) b.style.display = 'none'; });
   },
 
   _addDirectBCHRow(item = {}) {
@@ -6893,6 +7020,62 @@ const CaisseModule = {
     
     Utils.notify(isAR ? '✅ تم بدء اليومية بنجاح!' : '✅ Journée démarrée avec succès !', 'success');
     App.loadModule(Auth.isSupplier() ? 'supplier_portal' : 'dashboard');
+  },
+
+  // ── Admin: check for unclosed sessions from past days & show inline alert ──
+  checkAndNotifyUnclosedSessions() {
+    if (!Auth.isAdmin()) return;
+    const isAR = typeof T !== 'undefined' && T.isRTL();
+    const today = Utils.today();
+    const allSessions = DB.getAll('sessions');
+    // Find sessions from past days (not today) that are still open
+    const unclosed = allSessions.filter(s => s.date && s.date < today && s.status !== 'closed');
+    if (!unclosed.length) return;
+    const allUsers = DB.getAll('users');
+    const userMap = {};
+    allUsers.forEach(u => { userMap[u.id] = u; });
+    // Group by date
+    const byDate = {};
+    unclosed.forEach(s => {
+      const d = s.date;
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(s);
+    });
+    const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a)); // newest first
+    // Build notification message
+    const lines = sortedDates.map(d => {
+      const sessions = byDate[d];
+      const names = sessions.map(s => userMap[s.userId]?.name || s.userName || `#${s.userId}`).join(', ');
+      return isAR
+        ? `📅 ${Utils.fmtDate(d)} : ${names} (${sessions.length} ${sessions.length > 1 ? 'جلسات' : 'جلسة'})`
+        : `📅 ${Utils.fmtDate(d)} : ${names} (${sessions.length} session${sessions.length > 1 ? 's' : ''})`;
+    });
+    const msg = isAR
+      ? `⚠️ يوجد ${unclosed.length} جلسة/يومية لم تُغلق من أيام سابقة :\n${lines.join('\n')}`
+      : `⚠️ ${unclosed.length} session(s) non clôturée(s) de jours passés :\n${lines.join('\n')}`;
+    // Toast notification
+    Utils.notify(msg, 'warning', 10000);
+    // Add persistent notification
+    if (typeof NotifMgr !== 'undefined') {
+      sortedDates.forEach(d => {
+        const sessions = byDate[d];
+        sessions.forEach(s => {
+          const uName = userMap[s.userId]?.name || s.userName || `#${s.userId}`;
+          const alreadyNotified = DB.getAll ? false : false; // always re-notify on login
+          NotifMgr.add({
+            type: 'session_unclosed',
+            title: isAR
+              ? `🔓 جلسة مفتوحة — ${uName} (${Utils.fmtDate(d)})`
+              : `🔓 Session non clôturée — ${uName} (${Utils.fmtDate(d)})`,
+            message: isAR
+              ? `يومية ${uName} بتاريخ ${Utils.fmtDate(d)} لم تُغلق. انتقل إلى مراقبة الصناديق لإغلاقها.`
+              : `La session de ${uName} du ${Utils.fmtDate(d)} n'est pas clôturée. Allez dans Supervision Mini-Caisses pour la clôturer.`,
+            link: { mod: 'admin_caisse' },
+            data: { sessionId: s.id, userId: s.userId, sessionDate: d }
+          });
+        });
+      });
+    }
   }
 };
 
@@ -6997,6 +7180,8 @@ const AdminCaisseModule = {
   render() {
     if (!Auth.isAdmin()) return `<div style="padding:24px"><div class="alert alert-danger"><i class="fas fa-lock"></i> ${T.isRTL()?"الوصول مخصص للمسؤولين":"Accès réservé aux administrateurs"}</div></div>`;
     const isAR = T.isRTL();
+    // ── Auto-check for unclosed past sessions and notify admin ──
+    try { setTimeout(() => CaisseModule.checkAndNotifyUnclosedSessions?.(), 800); } catch(e) {}
     let tab = this._adminTab || 'journal';
     if (['reconciliation', 'sessions', 'caissiers'].includes(tab)) {
       if (tab === 'sessions') this._miniCaisseSubView = 'sessions';
@@ -8137,6 +8322,7 @@ const AdminCaisseModule = {
                     <button class="btn btn-xs btn-outline" onclick="AdminCaisseModule._miniCaisseSubView='sessions';AdminCaisseModule._filters.dateFrom='${day.date}';AdminCaisseModule._filters.dateTo='${day.date}';App.loadModule('admin_caisse')" title="${isAR ? 'عرض جلسات هذا اليوم' : 'Voir sessions de ce jour'}">
                       <i class="fas fa-eye"></i>
                     </button>
+                    ${!isAllClosed ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="(()=>{const openSess=AdminCaisseModule._getOpenSessionsForDay('${day.date}');if(openSess.length===1){AdminCaisseModule.adminForceClosePastSession(openSess[0].id);}else{AdminCaisseModule._miniCaisseSubView='sessions';AdminCaisseModule._filters.dateFrom='${day.date}';AdminCaisseModule._filters.dateTo='${day.date}';AdminCaisseModule._miniCaisseStatusFilter='open';App.loadModule('admin_caisse');}})();" title="${isAR ? 'إغلاق الجلسات المفتوحة لهذا اليوم' : 'Forcer clôture des sessions ouvertes'}"><i class="fas fa-door-closed"></i></button>` : ''}
                   </td>
                 </tr>`;
               }).join('') : `<tr><td colspan="13" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
@@ -8237,7 +8423,7 @@ const AdminCaisseModule = {
                     <button class="btn btn-xs btn-outline" onclick="AdminCaisseModule.showSessionBCHDetails(${s.id})" title="${isAR ? 'تفاصيل سندات الجلسة' : 'Détail des Bons de la session'}">
                       <i class="fas fa-list"></i>
                     </button>
-                    ${isCl ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;margin-inline-start:4px" onclick="AdminCaisseModule.rectifyUserCloture('${s.id}')" title="${isAR ? 'تصحيح التحويل والإغلاق' : 'Rectifier la clôture'}"><i class="fas fa-edit"></i></button>` : ''}
+                    ${isCl ? `<button class="btn btn-xs" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;margin-inline-start:4px" onclick="AdminCaisseModule.rectifyUserCloture('${s.id}')" title="${isAR ? 'تصحيح التحويل والإغلاق' : 'Rectifier la clôture'}"><i class="fas fa-edit"></i></button>` : `<button class="btn btn-xs" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;margin-inline-start:4px;font-weight:700" onclick="AdminCaisseModule.adminForceClosePastSession('${s.id}')" title="${isAR ? 'إغلاق هذه الجلسة القديمة بأثر رجعي (مشرف)' : 'Forcer la clôture rétroactive de cette session (Admin)'}"><i class="fas fa-door-closed"></i> ${isAR ? 'إغلاق قسري' : 'Forcer Clôture'}</button>`}
                   </td>
                 </tr>`;
               }).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:30px">${T.get('no_data')}</td></tr>`}
@@ -8424,6 +8610,113 @@ const AdminCaisseModule = {
     if (updated) {
       Utils.notify(isAR ? "✅ تم تصحيح تحويل الصندوق بنجاح." : "✅ Versement mini caisse rectifié avec succès.", "success", 5000);
       App.loadModule('admin_caisse');
+    }
+  },
+
+  _getOpenSessionsForDay(date) {
+    return DB.getAll('sessions').filter(s => s.date === date && s.status !== 'closed');
+  },
+
+  async adminForceClosePastSession(sessionId) {
+    const session = DB.getById('sessions', sessionId);
+    if (!session) return;
+    const isAR = T.isRTL();
+    if (session.status === 'closed') {
+      Utils.notify(isAR ? 'هذه الجلسة مغلقة بالفعل.' : 'Cette session est déjà clôturée.', 'warning');
+      return;
+    }
+    if (!Auth.isAdmin()) {
+      Utils.notify(isAR ? '⛔ المشرفون فقط يمكنهم تنفيذ الإغلاق القسري.' : '⛔ Seuls les administrateurs peuvent forcer la clôture.', 'error');
+      return;
+    }
+    const u = DB.getById('users', session.userId);
+    const settings = DB.getSettings();
+    const banks = settings.banks || [];
+    const sum = SessionMgr.getUserDaySummary(session.userId, session.date);
+
+    const bankOptions = banks.map(b => `<option value="${b.id}">${Utils.escHTML(b.name)}</option>`).join('');
+
+    const modalHTML = `
+      <div style="padding:4px 0" ${isAR ? 'dir="rtl"' : ''}>
+        <div class="alert" style="background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.3);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px">
+          <i class="fas fa-exclamation-triangle" style="color:#dc2626"></i>
+          <strong style="color:#dc2626">${isAR ? 'إغلاق قسري بأثر رجعي (مشرف) :' : 'Clôture Forcée Rétroactive (Admin) :'}</strong>
+          ${isAR
+            ? 'سيتم إغلاق هذه الجلسة القديمة بأثر رجعي وإنشاء كشف المبيعات وتحديث الصندوق المركزي تلقائياً.'
+            : "Fermeture rétroactive de cette session passée. Un État de Vente sera généré et la Caisse Principale sera mise à jour automatiquement."}
+        </div>
+        <div style="background:var(--bg-inset,var(--bg3));border-radius:10px;padding:12px;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:var(--text3)">${isAR ? 'أمين الصندوق :' : 'Caissier :'}</span>
+            <strong>${Utils.escHTML(u?.name || (isAR ? 'أمين الصندوق' : 'Caissier'))}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:var(--text3)">${isAR ? 'تاريخ الجلسة :' : 'Date de la session :'}</span>
+            <strong>${Utils.fmtDate(session.date)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:var(--text3)">${isAR ? 'عدد سندات الشحن (BCH) :' : 'Nombre BCH :'}</span>
+            <strong>${sum.bls.length}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:var(--text3)">${isAR ? 'إجمالي المبيعات الخام :' : 'Total Ventes Brut :'}</span>
+            <strong style="color:var(--success)">${Utils.fmtCurrency(sum.totalSalesTTC)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:var(--text3)">${isAR ? 'إجمالي المرتجعات :' : 'Total Retours :'}</span>
+            <strong style="color:var(--danger)">-${Utils.fmtCurrency(sum.totalReturnsTTC)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px">
+            <span style="color:var(--text3)">${isAR ? 'الصافي الفعلي (BCH) :' : 'Net Réel BCH :'}</span>
+            <strong style="color:var(--primary);font-size:15px">${Utils.fmtCurrency(sum.netAmount)}</strong>
+          </div>
+        </div>
+        <div class="form-group mb-2">
+          <label style="font-weight:700;font-size:13px">${isAR ? 'البنك المستهدف للتحويل :' : 'Banque destinataire du versement :'}</label>
+          <select id="force_close_bank" class="input" style="width:100%">
+            ${bankOptions || `<option value="">${isAR ? 'لا توجد بنوك مضبوطة' : 'Aucune banque configurée'}</option>`}
+          </select>
+        </div>
+        <div class="form-group mb-0">
+          <label style="font-weight:700;font-size:13px">${isAR ? 'ملاحظة المشرف (اختياري) :' : 'Note administrateur (optionnelle) :'}</label>
+          <input type="text" id="force_close_note" class="input" style="width:100%"
+            placeholder="${isAR ? 'مثال: المستخدم نسي إغلاق الجلسة بتاريخ ...' : 'Ex: Caissier a oublié de clôturer sa session le ...'}">
+        </div>
+      </div>`;
+
+    const ok = await Dialog.show({
+      title: isAR ? `🔒 إغلاق قسري — ${u?.name || ''} (${Utils.fmtDate(session.date)})` : `🔒 Forcer Clôture — ${u?.name || ''} (${Utils.fmtDate(session.date)})`,
+      message: modalHTML,
+      type: 'danger',
+      confirmText: isAR ? '⚠️ تأكيد الإغلاق القسري' : '⚠️ Confirmer la Clôture Forcée',
+      cancelText: T.get('cancel')
+    });
+
+    if (!ok) return;
+
+    const bankId = document.getElementById('force_close_bank')?.value;
+    const note = document.getElementById('force_close_note')?.value?.trim() ||
+      (isAR ? `إغلاق قسري بأثر رجعي بواسطة المشرف ${Auth.getCurrentUser()?.name || 'admin'}` : `Clôture forcée rétroactive par admin ${Auth.getCurrentUser()?.name || 'admin'}`);
+
+    Utils.notify(isAR ? '⏳ جارٍ إغلاق الجلسة بأثر رجعي...' : '⏳ Clôture rétroactive en cours...', 'info', 2500);
+
+    try {
+      const result = await SessionMgr.closeMiniCaisse(session.userId, bankId || null, note, session.date);
+      if (result && result.session) {
+        Utils.notify(
+          isAR
+            ? `✅ تم إغلاق جلسة ${u?.name || ''} (${Utils.fmtDate(session.date)}) بنجاح — كشف المبيعات: ${result.etatDoc?.ref || ''}`
+            : `✅ Session de ${u?.name || ''} (${Utils.fmtDate(session.date)}) clôturée — État de Vente: ${result.etatDoc?.ref || ''}`,
+          'success', 7000
+        );
+        App.loadModule('admin_caisse');
+      } else {
+        Utils.notify(isAR ? '⚠️ تم تنفيذ الإغلاق لكن تحقق من النتيجة.' : '⚠️ Clôture exécutée, vérifiez le résultat.', 'warning', 5000);
+        App.loadModule('admin_caisse');
+      }
+    } catch (err) {
+      console.error('[AdminForceClose]', err);
+      Utils.notify(isAR ? `❌ خطأ أثناء الإغلاق: ${err?.message || err}` : `❌ Erreur lors de la clôture: ${err?.message || err}`, 'error', 8000);
     }
   },
 
