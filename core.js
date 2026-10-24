@@ -2891,7 +2891,7 @@ const DB = {
       const isHistory = ['history', 'audit_log'].includes(col);
       let data = [];
       
-      const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) { console.warn('[Sync] Quota for', k); } };
+      const safeSet = (k, v) => { try { this._invalidateCache(k); localStorage.setItem(k, v); } catch(e) { console.warn('[Sync] Quota for', k); } };
       
       if (col === '_settings') {
         data = await window.API.getSettings();
@@ -2961,23 +2961,6 @@ const DB = {
       if (document.getElementById('modalOverlay')?.classList.contains('active')) return;
 
       try {
-        // 0. Auto-flush any pending sync items (e.g. documents created during Render spin-up or network hiccup)
-        for (const pCol of ['bls', 'brs']) {
-          const pItems = DB.getAll(pCol);
-          const pendings = pItems.filter(i => i._pendingSync === true);
-          for (const pItem of pendings) {
-            try {
-              const srvRes = await window.API.insert(pCol, pItem);
-              if (srvRes) {
-                pItem._pendingSync = false;
-                pItem.id = srvRes.id || pItem.id;
-                const fresh = DB.getAll(pCol).map(x => x.id === pItem.id ? { ...x, ...srvRes, _pendingSync: false } : x);
-                localStorage.setItem(pCol, JSON.stringify(fresh));
-              }
-            } catch (_) {}
-          }
-        }
-
         // 1. Fetch lightweight version map (no DB reads, just in-memory counters)
         let changed = null;
         try {
@@ -3015,6 +2998,25 @@ const DB = {
           // Differential: only re-download collections that actually changed
           const loaded = Object.keys(this._loaded);
           colsToSync = changed.filter(c => ESSENTIAL.includes(c) || loaded.includes(c));
+        }
+
+        // 2b. Flush pending-sync items ONLY when we actually have changes (not every tick)
+        if (colsToSync.length > 0) {
+          for (const pCol of ['bls', 'brs']) {
+            const pItems = DB.getAll(pCol);
+            const pendings = pItems.filter(i => i._pendingSync === true);
+            for (const pItem of pendings) {
+              try {
+                const srvRes = await window.API.insert(pCol, pItem);
+                if (srvRes) {
+                  pItem._pendingSync = false;
+                  pItem.id = srvRes.id || pItem.id;
+                  const fresh = DB.getAll(pCol).map(x => x.id === pItem.id ? { ...x, ...srvRes, _pendingSync: false } : x);
+                  localStorage.setItem(pCol, JSON.stringify(fresh));
+                }
+              } catch (_) {}
+            }
+          }
         }
 
         // 3. Serialize syncs — don't fire 15+ requests in parallel (protects Render free tier)
@@ -3070,11 +3072,12 @@ const DB = {
         if (indicator) { indicator.style.background = '#ef4444'; indicator.title = isAR ? 'فشلت المزامنة' : 'Sync échoué'; }
       }
     };
-    // Smart LiveSync polling: 10s when active/visible, 45s when tab is hidden/minimized
+    // Smart LiveSync polling: 30s when active, 60s when hidden
     let syncTimer = null;
+    let _tabHiddenAt = 0;
     const scheduleNextSync = () => {
       if (syncTimer) clearTimeout(syncTimer);
-      const delay = (typeof document !== 'undefined' && document.hidden) ? 45000 : 10000;
+      const delay = (typeof document !== 'undefined' && document.hidden) ? 60000 : 30000;
       syncTimer = setTimeout(async () => {
         await doSync();
         scheduleNextSync();
@@ -3082,12 +3085,14 @@ const DB = {
     };
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) {
-          // Invalidate all sync timestamps so coming back to tab always fetches fresh data
-          Object.keys(this._loaded).forEach(c => {
-            localStorage.removeItem(`_sync_ts_${c}`);
-          });
-          this._loaded = {};
+        if (document.hidden) {
+          _tabHiddenAt = Date.now();
+        } else {
+          // Only invalidate cache if tab was hidden > 60s (avoids hammering server on quick tab switches)
+          const hiddenFor = Date.now() - (_tabHiddenAt || 0);
+          if (hiddenFor > 60000) {
+            this._syncVersions = {}; // force version re-check
+          }
           doSync();
           scheduleNextSync();
         }
@@ -3217,12 +3222,31 @@ const DB = {
     return upd;
   },
 
-  // CRUD
-  getAll(col) { try { return JSON.parse(localStorage.getItem(col) || '[]'); } catch { return []; } },
+  // CRUD — with 500ms parse cache to avoid re-parsing huge JSON on every call
+  _getAllCache: {},
+  _getAllCacheTs: {},
+  getAll(col) {
+    try {
+      const now = Date.now();
+      if (this._getAllCache[col] && now - (this._getAllCacheTs[col] || 0) < 500) {
+        return this._getAllCache[col];
+      }
+      const data = JSON.parse(localStorage.getItem(col) || '[]');
+      this._getAllCache[col] = data;
+      this._getAllCacheTs[col] = now;
+      return data;
+    } catch { return []; }
+  },
+  // Invalidate cache when writing
+  _invalidateCache(col) {
+    delete this._getAllCache[col];
+    delete this._getAllCacheTs[col];
+  },
   
   // rawSet: write to localStorage ONLY (fast local cache)
   // Individual insert/update/delete methods handle cloud sync atomically
   rawSet(col, data) {
+    this._invalidateCache(col);
     localStorage.setItem(col, JSON.stringify(data));
   },
   
@@ -3553,25 +3577,13 @@ const DB = {
     const takenSet = new Set(local.takenSet);
     let maxPad = local.maxPad;
 
-    // 3. Online server sync check if available
+    // Server check: use lightweight endpoint only (no full collection download)
     if (window.API) {
       try {
-        const [sBrs, sBls] = await Promise.all([
-          API.getAll('brs').catch(() => null),
-          API.getAll('bls').catch(() => null)
-        ]);
-        (sBrs || []).forEach(b => {
-          const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
-          if (bYear !== y) return;
-          const n = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
-          if (n > 0) takenSet.add(n);
-        });
-        (sBls || []).forEach(b => {
-          const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
-          if (bYear !== y) return;
-          const n = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
-          if (n > 0) takenSet.add(n);
-        });
+        const res = await API.get(`/data/next-num/bls?year=${y}`);
+        if (res && res.num && res.num > 0) {
+          takenSet.add(res.num - 1); // server says next=N, so N-1 is taken
+        }
       } catch(e) {}
     }
 
