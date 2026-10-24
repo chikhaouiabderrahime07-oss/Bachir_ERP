@@ -1730,30 +1730,45 @@
       this._text(doc, (obsText || destWilaya).slice(0, 28), ML + 158, y + 5.5);
       y += transH + 3;
 
-      // ── 8. Triple Signature Boxes ──
-      const stampH = 38;
-      const colW3  = 62;
-      const colGap3 = (CW - colW3 * 3) / 2;
-      const sigCols = [
-        { title: isAR ? 'مصلحة الشحن / المخزن'  : 'SERVICE EXPÉDITION / MAGASIN',   sub: isAR ? '(الاسم، التاريخ والختم)' : '(Nom, Date & Cachet)' },
-        { title: isAR ? 'الناقل / السائق'         : 'LE TRANSPORTEUR / CHAUFFEUR',    sub: isAR ? '(استلام البضاعة)' : '(Prise en charge marchandise)' },
-        { title: isAR ? 'استلام الزبون / الإبراء' : 'RÉCEPTION CLIENT / ACQUIT',      sub: isAR ? '(استلام مطابق للطلب)' : '(Bon pour réception conforme)' },
+      // ── 8. Two Signature Boxes: Company (left) + Client (right) ──
+      const stampH = 40;
+      const colW2sig = (CW - 6) / 2;
+      const companySignName = this._t(s.companyName || 'FOURNISSEUR / EXPÉDITEUR');
+
+      const sig2Cols = [
+        {
+          title: isAR ? 'مصلحة الشحن / المخزن'  : 'SERVICE EXPÉDITION / MAGASIN',
+          name:  companySignName,
+          sub:   isAR ? '(الاسم، التاريخ والختم)' : '(Nom, Date & Cachet)',
+        },
+        {
+          title: isAR ? 'استلام الزبون / الإبراء' : 'RÉCEPTION CLIENT / ACQUIT',
+          name:  this._t(cli.name || bl.clientName || (isAR ? 'الزبون المستلم' : 'CLIENT')),
+          sub:   isAR ? '(استلام مطابق للطلب)' : '(Bon pour réception conforme)',
+        },
       ];
-      sigCols.forEach((col, idx) => {
-        const sx = ML + idx * (colW3 + colGap3);
-        this._rect(doc, sx, y, colW3, stampH, [255, 255, 255], [203, 213, 225]);
+
+      sig2Cols.forEach((col, idx) => {
+        const sx = ML + idx * (colW2sig + 6);
+        this._rect(doc, sx, y, colW2sig, stampH, [255, 255, 255], [203, 213, 225]);
+        // Header band
         doc.setFillColor(241, 245, 249);
-        doc.rect(sx, y, colW3, 6, 'F');
+        doc.rect(sx, y, colW2sig, 6, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(7); this._tc(doc, [30, 41, 59]);
-        this._text(doc, col.title, sx + colW3 / 2, y + 4.2, { align: 'center' });
+        this._text(doc, col.title, sx + colW2sig / 2, y + 4.2, { align: 'center' });
+        // Company/client name
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); this._tc(doc, C.PRIMARY);
+        this._text(doc, col.name.slice(0, 38), sx + colW2sig / 2, y + 12, { align: 'center' });
+        // Subtitle
         doc.setFont('helvetica', 'italic'); doc.setFontSize(6.5); this._tc(doc, [100, 116, 139]);
-        this._text(doc, col.sub, sx + colW3 / 2, y + 9.5, { align: 'center' });
+        this._text(doc, col.sub, sx + colW2sig / 2, y + 17, { align: 'center' });
+        // Dotted signature line
         doc.setFillColor(148, 163, 184);
-        const dotY2 = y + stampH - 9;
-        let lx2 = sx + 5;
-        while (lx2 < sx + colW3 - 5) { doc.circle(lx2, dotY2, 0.35, 'F'); lx2 += 2.2; }
+        const dotY3 = y + stampH - 9;
+        let lx3 = sx + 5;
+        while (lx3 < sx + colW2sig - 5) { doc.circle(lx3, dotY3, 0.35, 'F'); lx3 += 2.2; }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
-        this._text(doc, isAR ? 'التاريخ والختم والتوقيع' : 'Date, Cachet & Signature', sx + colW3 / 2, y + stampH - 3, { align: 'center' });
+        this._text(doc, isAR ? 'التاريخ والختم والتوقيع' : 'Date, Cachet & Signature', sx + colW2sig / 2, y + stampH - 3, { align: 'center' });
       });
       y += stampH + 4;
 

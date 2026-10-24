@@ -1403,10 +1403,54 @@ const DB = {
     },
 
     // ── 5. Master Cortex (0 = 0 Total Balance Overseer) ────────
+    // ── Heal: BRs that still have bcId/bcRef pointing to a returned/cancelled BL ──
+    // These BRs are permanently stuck and never appear in the "new BCH" modal stock list.
+    _healStuckBRs() {
+      try {
+        const allBRs = DB.getAll('brs') || [];
+        const allBLs = DB.getAll('bls') || [];
+        const blMap = {};
+        allBLs.forEach(b => { blMap[b.id] = b; });
+
+        allBRs.forEach(br => {
+          if (!br.bcId) return; // no linked BCH — fine
+          const linkedBL = blMap[br.bcId];
+          if (!linkedBL) {
+            // BCH doesn't exist anymore — clear the stale reference
+            DB.update('brs', br.id, { bcId: null, bcRef: null, linkedBlId: null, linkedBlRef: null },
+              '[AutoHeal] BCH introuvable — référence orpheline effacée');
+            return;
+          }
+          // If the linked BCH is returned or cancelled, free the BR
+          if (linkedBL.status === 'returned' || linkedBL.status === 'cancelled') {
+            DB.update('brs', br.id, {
+              status: 'open',
+              bcId: null,
+              bcRef: null,
+              linkedBlId: null,
+              linkedBlRef: null,
+              deliveredAt: null,
+              deliveredBy: null,
+              deliveredByName: null,
+              isReturned: false,
+              locked: false,
+              isLocked: false,
+            }, `[AutoHeal] BR libéré — BCH ${linkedBL.ref} était retourné/annulé`);
+            if (window._ERP_DEBUG) console.log(`[HealStuckBRs] BR ${br.ref} freed — linked BCH ${linkedBL.ref} was ${linkedBL.status}`);
+          }
+        });
+      } catch(e) {
+        console.warn('[HealStuckBRs] error:', e);
+      }
+    },
+
     recalibrateAll() {
       if (this._running) return;
       this._running = true;
       try {
+        // ── Auto-heal: BRs stuck with bcId pointing to a returned/cancelled BL ──
+        this._healStuckBRs();
+
         const caisseRes = this.CaisseBrain.recalibrate();
         const bankRes = this.BankBrain.recalibrate();
         const supRes = this.SupplierBrain.recalibrate();
@@ -1532,6 +1576,88 @@ const DB = {
       });
 
       DB.rawSet('caisse_admin', caisse);
+
+      // ── 4. Retroactive heal: re-sync État de Vente docs & session totals
+      //    for any session where bon_retours exist but EV doc doesn't reflect them ──
+      const allEVDocs   = DB.getAll('etat_vente_docs') || [];
+      const allBonRets  = DB.getAll('bon_retours') || [];
+      const allSessions = DB.getAll('sessions') || [];
+      let evHealed = 0;
+
+      allSessions.forEach(sess => {
+        if (!sess.userId || !sess.date) return;
+        // Only heal closed sessions (open sessions recalculate live)
+        if (sess.status !== 'closed') return;
+
+        // Find all bon_retours dated on this session's day for this cashier
+        const sessRets = allBonRets.filter(r => {
+          const rDate = (r.date || (r.createdAt || '').slice(0, 10));
+          if (rDate !== sess.date) return false;
+          if (r.cashierId === 'caisse_admin' || r.refundedByCashierId === 'caisse_admin') return false;
+          const refunderId = r.refundedByCashierId || r.cashierId || r.returnedBy || r.userId;
+          return String(refunderId) === String(sess.userId);
+        });
+
+        const retTTC = sessRets.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0);
+        const storedRetTTC = Number(sess.totalReturns || 0);
+
+        // Sync session if mismatch > 1 centime
+        if (Math.abs(retTTC - storedRetTTC) > 0.01) {
+          const newNet = Math.max(0, Math.round(((Number(sess.totalSales || 0)) - retTTC) * 100) / 100);
+          DB.update('sessions', sess.id, {
+            totalReturns: Math.round(retTTC * 100) / 100,
+            returnCount: sessRets.length,
+            closedMonnaie: Math.round(retTTC * 100) / 100,
+            closedNet: newNet,
+            realBchNet: newNet,
+          }, '[AutoHeal] Retours rétroactifs synchronisés avec la session');
+          evHealed++;
+        }
+
+        // Find the matching EV doc
+        const evDoc = sess.etatVenteId
+          ? allEVDocs.find(d => Number(d.id) === Number(sess.etatVenteId))
+          : allEVDocs.find(d => d.ref === sess.etatVenteRef || (d.userId === sess.userId && d.date === sess.date));
+        if (!evDoc) return;
+
+        const storedEVRetTTC = Number(evDoc.totalReturnsTTC || evDoc.returnsTotalTTC || 0);
+        if (Math.abs(retTTC - storedEVRetTTC) > 0.01) {
+          const newRetList = sessRets.map(r => ({
+            id: r.id, ref: r.ref, blRef: r.blRef,
+            clientName: r.clientName || 'Client',
+            totalTTC: Number(r.totalTTC) || 0,
+            date: r.date
+          }));
+          // Recompute net figures — use session's totalSales as fallback for grossTTC
+          const grossTTC = Number(evDoc.grossTotalTTC || evDoc.totalBLsTTC || evDoc.realBchGross || sess.totalSales || 0);
+          // Safety: never patch if grossTTC is unknown (0) — would wrongly zero out deposits
+          if (grossTTC <= 0) return;
+          const netReal  = Math.max(0, Math.round((grossTTC - retTTC) * 100) / 100);
+          DB.update('etat_vente_docs', evDoc.id, {
+            returnList: newRetList,
+            totalReturnsTTC: Math.round(retTTC * 100) / 100,
+            returnsTotalTTC: Math.round(retTTC * 100) / 100,
+            realBchNet: netReal,
+            netTotalTTC: Number(evDoc.totalTTC) || 0, // fiscal TTC stays fixed
+          }, '[AutoHeal] Retours rétroactifs intégrés dans l\'État de Vente');
+
+          // Also patch the matching caisse_admin deposit to reflect actual net
+          // Safety: only patch if netReal > 0 AND is strictly less than current amount (never inflate)
+          const caisseDeposit = caisse.find(e =>
+            e.type === 'deposit' &&
+            (e.source === 'user_cloture' || e.source === 'bch_recettes_reelles') &&
+            (Number(e.sessionId) === Number(sess.id) || (e.sessionDate === sess.date && String(e.userId) === String(sess.userId)))
+          );
+          if (caisseDeposit && netReal > 0 && netReal < Number(caisseDeposit.amount) - 0.01) {
+            DB.update('caisse_admin', caisseDeposit.id, { amount: netReal },
+              '[AutoHeal] Dépôt recettes réelles corrigé après retours rétroactifs');
+            healedCount++;
+          }
+          evHealed++;
+        }
+      });
+
+      if (evHealed > 0) console.log(`[MasterBrain] Retroactive return heal: ${evHealed} États de Vente/sessions updated`);
 
       // 4. Backfill missing client details on old BLs/BCHs
       const bls = DB.getAll('bls') || [];

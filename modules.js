@@ -3411,7 +3411,8 @@ const BLModule = {
           }));
           const brTotalHT = Math.round(brItems.reduce((s, it) => s + it.total, 0) * 100) / 100;
           const brTvaAmount = Math.round(brTotalHT * tvaRate / 100 * 100) / 100;
-          const brTotalTTC = Math.round((brTotalHT + brTvaAmount + timbreAmount) * 100) / 100;
+          const brTimbreAmount = noTimbre ? 0 : DB.calcTimbre(brTotalHT, brTvaAmount); // own timbre, not BCH's
+          const brTotalTTC = Math.round((brTotalHT + brTvaAmount + brTimbreAmount) * 100) / 100;
           DB.update('brs', existing.linkedBrId, {
             ref: DB.buildBRRef(rawNumStr, docYear, sup?.abbrev || sup?.refAbbrev || ''),
             brNum: bchNum,
@@ -3424,7 +3425,7 @@ const BLModule = {
             totalHT: brTotalHT,
             tvaRate,
             tvaAmount: brTvaAmount,
-            timbreAmount,
+            timbreAmount: brTimbreAmount,
             totalTTC: brTotalTTC,
             updatedAt: new Date().toISOString()
           }, 'Synchronisation BCH');
@@ -4790,10 +4791,27 @@ const BLModule = {
     const ret = retours.find(r => Number(r.blId) === Number(blId) || Number(r.bcId) === Number(blId));
     if (ret) DB.delete('bon_retours', ret.id);
 
-    // If BR is exhausted again by this restoration, mark it delivered
+    // If BR is exhausted again by this restoration, mark it delivered and re-link bcId
     const targetBrId = bl.brId || bl.linkedBrId;
-    if (targetBrId && BLModule.getBRRemaining(targetBrId).exhausted) {
-      DB.update('brs', targetBrId, { status: 'delivered' }, 'Quantité ré-épuisée suite à annulation de retour');
+    if (targetBrId) {
+      const rem = BLModule.getBRRemaining(targetBrId);
+      if (rem.exhausted) {
+        DB.update('brs', targetBrId, {
+          status: 'delivered',
+          bcId: bl.id,
+          bcRef: bl.ref,
+          linkedBlId: bl.id,
+          linkedBlRef: bl.ref,
+        }, 'Quantité ré-épuisée + BCH re-lié suite à annulation de retour');
+      } else {
+        // Partially used: keep open, re-link bcId so it shows as "in use" not "free"
+        DB.update('brs', targetBrId, {
+          bcId: bl.id,
+          bcRef: bl.ref,
+          linkedBlId: bl.id,
+          linkedBlRef: bl.ref,
+        }, 'BCH re-lié au BR suite à annulation de retour');
+      }
     }
     
     Utils.notify(isAR ? '✅ تم إلغاء الإرجاع بنجاح' : '✅ Retour annulé — BL restauré en "Livré"', 'success');
@@ -5015,18 +5033,21 @@ const BLModule = {
       if (associatedBR) {
         // Calculate remaining quantities on the BR after this BL return
         const rem = BLModule.getBRRemaining(targetBrId);
-        if (rem.remainingQty > 0 || !rem.exhausted) {
-          DB.update('brs', associatedBR.id, {
-            status: 'open',
-            deliveredAt: null,
-            deliveredBy: null,
-            deliveredByName: null,
-            isReturned: false,
-            locked: false,
-            isLocked: false
-          }, `Stock réouvert suite au retour du BL/BCH ${bl.ref}`);
-          console.log(`[processReturn] Parent BR ${associatedBR.ref} reopened in stock with ${rem.remainingQty} units available`);
-        }
+        // ── FIX: Clear bcId/bcRef so the BR re-appears in the "new BCH" modal stock list ──
+        DB.update('brs', associatedBR.id, {
+          status: 'open',
+          deliveredAt: null,
+          deliveredBy: null,
+          deliveredByName: null,
+          isReturned: false,
+          locked: false,
+          isLocked: false,
+          bcId: null,       // ← critical: was blocking BR from showing in stock list
+          bcRef: null,      // ← critical: was blocking BR from showing in stock list
+          linkedBlId: null,
+          linkedBlRef: null,
+        }, `Stock réouvert + ref BCH effacée suite au retour du BL/BCH ${bl.ref}`);
+        console.log(`[processReturn] Parent BR ${associatedBR.ref} fully freed — ${rem.remainingQty} units back in stock, bcId cleared`);
       }
     }
 
@@ -7022,60 +7043,98 @@ const CaisseModule = {
     App.loadModule(Auth.isSupplier() ? 'supplier_portal' : 'dashboard');
   },
 
-  // ── Admin: check for unclosed sessions from past days & show inline alert ──
+  // ── Admin: check for unclosed sessions from past days & show ONE elegant summary (once per day) ──
   checkAndNotifyUnclosedSessions() {
     if (!Auth.isAdmin()) return;
     const isAR = typeof T !== 'undefined' && T.isRTL();
     const today = Utils.today();
+
+    // ── Fire only once per calendar day per browser session ──
+    const storageKey = `_unclosed_notif_${today}`;
+    if (sessionStorage.getItem(storageKey)) return;
+    sessionStorage.setItem(storageKey, '1');
+
     const allSessions = DB.getAll('sessions');
-    // Find sessions from past days (not today) that are still open
     const unclosed = allSessions.filter(s => s.date && s.date < today && s.status !== 'closed');
     if (!unclosed.length) return;
+
     const allUsers = DB.getAll('users');
     const userMap = {};
     allUsers.forEach(u => { userMap[u.id] = u; });
-    // Group by date
+
+    // Group by date for summary
     const byDate = {};
     unclosed.forEach(s => {
       const d = s.date;
       if (!byDate[d]) byDate[d] = [];
       byDate[d].push(s);
     });
-    const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a)); // newest first
-    // Build notification message
-    const lines = sortedDates.map(d => {
+    const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+
+    // Build compact date list (max 5 lines)
+    const dateLines = sortedDates.slice(0, 5).map(d => {
       const sessions = byDate[d];
       const names = sessions.map(s => userMap[s.userId]?.name || s.userName || `#${s.userId}`).join(', ');
-      return isAR
-        ? `📅 ${Utils.fmtDate(d)} : ${names} (${sessions.length} ${sessions.length > 1 ? 'جلسات' : 'جلسة'})`
-        : `📅 ${Utils.fmtDate(d)} : ${names} (${sessions.length} session${sessions.length > 1 ? 's' : ''})`;
+      return `${Utils.fmtDate(d)} — ${names}`;
     });
-    const msg = isAR
-      ? `⚠️ يوجد ${unclosed.length} جلسة/يومية لم تُغلق من أيام سابقة :\n${lines.join('\n')}`
-      : `⚠️ ${unclosed.length} session(s) non clôturée(s) de jours passés :\n${lines.join('\n')}`;
-    // Toast notification
-    Utils.notify(msg, 'warning', 10000);
-    // Add persistent notification
-    if (typeof NotifMgr !== 'undefined') {
-      sortedDates.forEach(d => {
-        const sessions = byDate[d];
-        sessions.forEach(s => {
-          const uName = userMap[s.userId]?.name || s.userName || `#${s.userId}`;
-          const alreadyNotified = DB.getAll ? false : false; // always re-notify on login
-          NotifMgr.add({
-            type: 'session_unclosed',
-            title: isAR
-              ? `🔓 جلسة مفتوحة — ${uName} (${Utils.fmtDate(d)})`
-              : `🔓 Session non clôturée — ${uName} (${Utils.fmtDate(d)})`,
-            message: isAR
-              ? `يومية ${uName} بتاريخ ${Utils.fmtDate(d)} لم تُغلق. انتقل إلى مراقبة الصناديق لإغلاقها.`
-              : `La session de ${uName} du ${Utils.fmtDate(d)} n'est pas clôturée. Allez dans Supervision Mini-Caisses pour la clôturer.`,
-            link: { mod: 'admin_caisse' },
-            data: { sessionId: s.id, userId: s.userId, sessionDate: d }
-          });
-        });
-      });
-    }
+    const extra = sortedDates.length > 5 ? (isAR ? `+${sortedDates.length - 5} أخرى...` : `+${sortedDates.length - 5} autres...`) : '';
+
+    // ── Render elegant inline banner (not toast) ──
+    const bannerId = '_unclosed_sessions_banner';
+    if (document.getElementById(bannerId)) return; // already shown
+
+    const banner = document.createElement('div');
+    banner.id = bannerId;
+    banner.style.cssText = `
+      position:fixed;
+      ${isAR ? 'left:16px;right:auto;' : 'right:16px;left:auto;'}
+      bottom:24px;
+      z-index:1500;
+      max-width:360px;
+      background:#1e293b;
+      border:1px solid #f59e0b;
+      border-left:${isAR ? '1px' : '4px'} solid #f59e0b;
+      border-right:${isAR ? '4px' : '1px'} solid #f59e0b;
+      border-radius:12px;
+      box-shadow:0 8px 32px rgba(0,0,0,.35);
+      padding:14px 16px;
+      color:#fff;
+      font-family:inherit;
+      font-size:13px;
+      animation:slideIn .35s ease;
+      direction:${isAR ? 'rtl' : 'ltr'};
+    `;
+    banner.innerHTML = `
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">⚠️</span>
+          <span style="font-weight:700;font-size:13px;color:#fbbf24">
+            ${isAR
+              ? `${unclosed.length} يومية لم تُغلق`
+              : `${unclosed.length} session${unclosed.length > 1 ? 's' : ''} non clôturée${unclosed.length > 1 ? 's' : ''}`}
+          </span>
+        </div>
+        <button onclick="document.getElementById('${bannerId}')?.remove()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;line-height:1;padding:0">✕</button>
+      </div>
+      <div style="font-size:11.5px;color:#cbd5e1;line-height:1.7;margin-bottom:10px">
+        ${dateLines.map(l => `<div>• ${l}</div>`).join('')}
+        ${extra ? `<div style="color:#94a3b8;margin-top:2px">${extra}</div>` : ''}
+      </div>
+      <button onclick="App.loadModule('admin_caisse');document.getElementById('${bannerId}')?.remove();"
+        style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#1e293b;font-weight:700;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px">
+        ${isAR ? '→ فتح لوحة الإغلاق' : '→ Ouvrir panneau de clôture'}
+      </button>
+    `;
+
+    document.body.appendChild(banner);
+
+    // Auto-dismiss after 18 seconds (non-intrusive)
+    setTimeout(() => {
+      if (banner.parentNode) {
+        banner.style.animation = 'slideOut .35s ease forwards';
+        setTimeout(() => banner.remove(), 380);
+      }
+    }, 18000);
   }
 };
 
@@ -8969,7 +9028,9 @@ const AdminCaisseModule = {
           });
         });
         const ht = Math.round(Object.values(aggregated).reduce((acc, it) => acc + (it.q * it.p), 0) * 100) / 100;
-        etatVenteTTC = Math.round((ht + (ht * (tvaRate / 100)) + (ht * 0.01)) * 100) / 100;
+        const tva = Math.round(ht * (tvaRate / 100) * 100) / 100;
+        const timbre = Math.round((ht + tva) * 0.01 * 100) / 100; // 1% on (HT + TVA) — correct Algerian fiscal base
+        etatVenteTTC = Math.round((ht + tva + timbre) * 100) / 100;
       }
 
       const ecartFiscal = Math.round((etatVenteTTC - sum.netAmount) * 100) / 100;
@@ -14945,13 +15006,16 @@ const EtatVenteModule = {
     items.forEach(it => { totalMargin += (it.qty || 0) * (it.marginPerUnit || (it.basePrice * marginRate / 100)); });
     totalMargin = Math.round(totalMargin * 100) / 100;
 
-    const grossTotalTTC = bls.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
-    const returnsTotalTTC = retours.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
+    // grossTotalTTC = sum of non-returned BLs only (returned BLs are excluded from items table too)
+    const grossTotalTTC = bls.filter(b => b.status !== 'returned').reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
+    // returnsTotalTTC = cross-day returns only (same-day returns whose BL is already excluded from gross)
+    const sameDayReturnedBlIds = new Set(bls.filter(b => b.status === 'returned').map(b => Number(b.id)));
+    const crossDayReturns = retours.filter(r => !sameDayReturnedBlIds.has(Number(r.blId || r.bcId)));
+    const returnsTotalTTC = crossDayReturns.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
     const netTotalTTC = Math.max(0, Math.round((grossTotalTTC - returnsTotalTTC) * 100) / 100);
 
-    // Differentiate same-period returns (whose original BL is already in this period's BL list and thus already excluded from aggregated items)
-    // vs prior-period / cross-day returns (whose original BL was in a prior period and therefore NOT in aggregated items)
-    const priorPeriodReturns = retours.filter(r => !r.blId || !blIdsInPeriod.has(Number(r.blId)));
+    // priorPeriodReturns = same as crossDayReturns (BLs from outside this period — already excluded from items)
+    const priorPeriodReturns = crossDayReturns;
     const priorReturnsTotalTTC = priorPeriodReturns.reduce((sum, r) => sum + (Number(r.totalTTC) || 0), 0);
 
     return { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC, marginRate, totalMargin, priorReturnsTotalTTC, priorPeriodReturns };
