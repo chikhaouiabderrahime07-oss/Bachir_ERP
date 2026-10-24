@@ -541,6 +541,28 @@ const DB = {
           return true;
         });
 
+        // ── Rule 3b: Purge orphaned bank-transfer withdrawals ──
+        // A transfert_banque_etat_vente withdrawal is orphaned if its sessionId doesn't
+        // match any closed session AND it has no matching État de Vente doc.
+        // These accumulate over time and cause the caisse balance to go deeply negative.
+        const closedSessionIds = new Set(
+          (DB.getAll('sessions') || []).filter(s => s.status === 'closed').map(s => Number(s.id))
+        );
+        const allEvRefs = new Set((DB.getAll('etat_vente_docs') || []).map(d => d.ref).filter(Boolean));
+        cleaned = cleaned.filter(e => {
+          if (e.type === 'withdrawal' && e.source === 'transfert_banque_etat_vente') {
+            // Keep if it belongs to a valid closed session
+            if (e.sessionId != null && closedSessionIds.has(Number(e.sessionId))) return true;
+            // Keep if it belongs to a real État de Vente doc
+            if (e.etatVenteRef && allEvRefs.has(e.etatVenteRef)) return true;
+            // Orphan — purge it
+            if (e.id != null) toRemoveCloud.push(e.id);
+            modified = true;
+            return false;
+          }
+          return true;
+        });
+
         // ── Rule 4: Synchronize all closed sessions & États de Vente in caisse_admin ──
         const closedSessions = (DB.getAll('sessions') || []).filter(s => s.status === 'closed');
         const allEvDocs = DB.getAll('etat_vente_docs') || [];
