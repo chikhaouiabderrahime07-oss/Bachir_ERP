@@ -7068,7 +7068,12 @@ const CaisseModule = {
       // Also check if any BL is linked to this session
       return allBLs.some(b => Number(b.sessionId) === Number(s.id) && b.status !== 'cancelled');
     });
-    if (!unclosed.length) return;
+
+    // If nothing to report, clean up ALL old notification keys and exit silently
+    if (!unclosed.length) {
+      Object.keys(localStorage).forEach(k => { if (k.startsWith('_unclosed_notif_')) localStorage.removeItem(k); });
+      return;
+    }
 
     const allUsers = DB.getAll('users');
     const userMap = {};
@@ -7132,10 +7137,16 @@ const CaisseModule = {
         ${dateLines.map(l => `<div>• ${l}</div>`).join('')}
         ${extra ? `<div style="color:#94a3b8;margin-top:2px">${extra}</div>` : ''}
       </div>
-      <button onclick="App.loadModule('admin_caisse');document.getElementById('${bannerId}')?.remove();"
-        style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#1e293b;font-weight:700;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px">
-        ${isAR ? '→ فتح لوحة الإغلاق' : '→ Ouvrir panneau de clôture'}
-      </button>
+      <div style="display:flex;gap:6px">
+        <button onclick="App.loadModule('admin_caisse');document.getElementById('${bannerId}')?.remove();"
+          style="flex:1;background:linear-gradient(135deg,#f59e0b,#d97706);color:#1e293b;font-weight:700;border:none;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:11px">
+          ${isAR ? '→ فتح لوحة الإغلاق' : '→ Panneau clôture'}
+        </button>
+        <button onclick="try{DB.MasterBrain.healCaisseAdminHistory();DB.MasterBrain.recalibrateAll();}catch(e){}Object.keys(localStorage).forEach(k=>{if(k.startsWith('_unclosed_notif_'))localStorage.removeItem(k);});document.getElementById('${bannerId}')?.remove();App.loadModule('admin_caisse');Utils.notify('${isAR ? 'تمت التسوية بنجاح' : 'Réconciliation effectuée'}','success');"
+          style="flex:1;background:linear-gradient(135deg,#0284c7,#0369a1);color:#fff;font-weight:700;border:none;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:11px">
+          <i class="fas fa-history"></i> ${isAR ? 'تسوية الآن' : 'Réconcilier'}
+        </button>
+      </div>
     `;
 
     document.body.appendChild(banner);
