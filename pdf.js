@@ -1,7 +1,7 @@
 /* ============================================================
    PDF.JS — PROFESSIONAL DOCUMENT GENERATOR v15.0
    Exact match: BC_DG_BC_006_2026-7.pdf reference
-   + Arabic font support (Amiri TTF auto-loaded from CDN)
+   + Arabic font support (Noto Naskh Arabic TTF auto-loaded from CDN)
    ============================================================ */
 (function (global) {
   'use strict';
@@ -15,8 +15,8 @@
   /* ── Arabic font cache (loaded once from CDN) ────────────── */
   let _arFontB64  = null;   /* base64 string of TTF data    */
   let _arFontLoad = null;   /* promise for in-flight fetch  */
-  const AR_FONT_URL = 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf';
-  const AR_FONT_NAME = 'Amiri';
+  const AR_FONT_URL = 'https://fonts.gstatic.com/s/notonaskharabic/v33/RrQ5bpV-9Dd1b1OAGA6M9PkyDuVBePeKoMbKIMIEdFiIHkRx.ttf';
+  const AR_FONT_NAME = 'NotoNaskhArabic';
   const AR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
   /* ── Colours ────────────────────────────────────────────── */
@@ -63,7 +63,7 @@
     /* ── Arabic detection ──────────────────────────────────── */
     _hasAr(text) { return AR_RE.test(String(text||'')); },
 
-    /* ── Load Amiri Arabic font (once, cached) ────────────── */
+    /* ── Load Noto Naskh Arabic font (once, cached) ────────────── */
     async _ensureArabicFont() {
       if (_arFontB64) return true;
       if (_arFontLoad) return _arFontLoad;
@@ -80,10 +80,10 @@
             bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
           }
           _arFontB64 = btoa(bin);
-          console.log('PDFGen: Amiri Arabic font loaded (' + Math.round(buf.byteLength/1024) + ' KB)');
+          console.log('PDFGen: NotoNaskhArabic font loaded (' + Math.round(buf.byteLength/1024) + ' KB)');
           return true;
         } catch(e) {
-          console.warn('PDFGen: could not load Arabic font:', e);
+          console.warn('PDFGen: could not load Noto Naskh Arabic font:', e);
           _arFontB64 = null;
           return false;
         }
@@ -95,13 +95,13 @@
     _registerAr(doc) {
       if (!_arFontB64) return false;
       try {
-        doc.addFileToVFS('Amiri-Regular.ttf', _arFontB64);
-        doc.addFont('Amiri-Regular.ttf', AR_FONT_NAME, 'normal');
+        doc.addFileToVFS('NotoNaskhArabic-Regular.ttf', _arFontB64);
+        doc.addFont('NotoNaskhArabic-Regular.ttf', AR_FONT_NAME, 'normal');
         return true;
       } catch(e) { return false; }
     },
 
-    /* Smart text — auto-switches to Amiri for Arabic content */
+    /* Smart text — auto-switches to NotoNaskhArabic for Arabic content */
     _text(doc, text, x, y, opts) {
       const s = this._t(text);
       if (this._hasAr(s) && _arFontB64) {
@@ -347,7 +347,7 @@
       let cy=y+11;
       lines.filter(l=>l!==null&&l!==undefined&&String(l).trim()).forEach(ln=>{
         const txt = String(ln);
-        /* Switch to Amiri for Arabic, back to helvetica for Latin */
+        /* Switch to NotoNaskhArabic for Arabic, back to helvetica for Latin */
         if (this._hasAr(txt) && _arFontB64) {
           doc.setFont(AR_FONT_NAME,'normal');
         } else {
@@ -514,7 +514,7 @@
       return finalY;
     },
 
-    /* Wrapper for autoTable — ensures Amiri font for Arabic cells */
+    /* Wrapper for autoTable — ensures NotoNaskhArabic font for Arabic cells */
     _autoTable(doc, opts) {
       if (typeof doc.autoTable!=='function') throw new Error('autoTable not loaded');
       if (_arFontB64) {

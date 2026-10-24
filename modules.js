@@ -13653,7 +13653,7 @@ const BankModule = {
 
     if (BankModule._activeBank) return BankModule._renderAccountDetail(BankModule._activeBank);
 
-    if (!BankModule._filters) BankModule._filters = { bankId:'all', type:'all', dateFrom:'', dateTo:'', q:'' };
+    if (!BankModule._filters) BankModule._filters = { bankId:'all', type:'all', subtype:'all', dateFrom:'', dateTo:'', q:'' };
     if (typeof BankModule._page !== 'number') BankModule._page = 0;
 
     window.updateBankFilter = (k,v) => { BankModule._filters[k]=v; BankModule._page=0; App.loadModule('bank'); };
@@ -13675,12 +13675,17 @@ const BankModule = {
     const totalSupPaid = supPays.reduce((s,p) => s+(p.amount||0), 0);
     const totalBR      = DB.getAll('brs').reduce((s,b) => s+(b.totalTTC||0), 0);
     const totalDue     = Math.max(0, totalBR - totalSupPaid);
+    // Breakdown: EV transfers vs direct external deposits vs other
+    const grandInEV    = allTxs.filter(t => t.type==='deposit' && (t.subtype==='etat_vente' || (t.ref||'').startsWith('EV-DEP-'))).reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const grandInExt   = allTxs.filter(t => t.type==='deposit' && t.subtype==='external_deposit').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const grandInCaisse= allTxs.filter(t => t.type==='deposit' && t.subtype==='transfer_from_caisse').reduce((s,t)=>s+(Number(t.amount)||0),0);
 
     // Filter transactions
     const f = BankModule._filters;
     let filteredTxs = allTxs.filter(t => {
       if (f.bankId !== 'all' && t.bankId !== f.bankId) return false;
       if (f.type   !== 'all' && t.type   !== f.type)   return false;
+      if (f.subtype !== 'all' && (t.subtype||'other') !== f.subtype) return false;
       if (f.dateFrom && (t.date||'') < f.dateFrom) return false;
       if (f.dateTo   && (t.date||'') > f.dateTo)   return false;
       if (f.q && !(t.note||'').toLowerCase().includes(f.q.toLowerCase()) &&
@@ -13726,21 +13731,51 @@ const BankModule = {
   </div>
 
   <!-- ── Global KPI strip ── -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px">
     ${[
-      {label:isAR?'إجمالي الرصيد البنكي':'Solde Total Banque', val:Utils.fmtCurrency(grandTotal), icon:'fa-wallet', color:'#3b82f6', bg:'rgba(59,130,246,.1)'},
-      {label:isAR?'إجمالي الإيداعات':'Total Entrants',     val:Utils.fmtCurrency(grandIn),    icon:'fa-arrow-circle-down', color:'#10b981', bg:'rgba(16,185,129,.1)'},
-      {label:isAR?'إجمالي السحوبات':'Total Sortants',     val:Utils.fmtCurrency(grandOut),   icon:'fa-arrow-circle-up',   color:'#ef4444', bg:'rgba(239,68,68,.1)'},
-      {label:isAR?'المدفوع للموردين':'Payé Fournisseurs',  val:Utils.fmtCurrency(totalSupPaid),icon:'fa-building',         color:'#f59e0b', bg:'rgba(245,158,11,.1)'},
-      {label:isAR?'المتبقي للدفع':'Reste à Payer',      val:Utils.fmtCurrency(totalDue),   icon:'fa-exclamation-circle', color:'#e11d48', bg:'rgba(225,29,72,.1)'},
-    ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px">${k.label}</span>
-        <div style="width:30px;height:30px;border-radius:8px;background:${k.bg};display:flex;align-items:center;justify-content:center">
+      {
+        label: isAR?'إجمالي الرصيد البنكي':'Solde Total Banque',
+        val: Utils.fmtCurrency(grandTotal),
+        icon: 'fa-wallet', color: '#3b82f6', bg: 'rgba(59,130,246,.1)',
+        sub: isAR ? 'مجموع كل الحسابات البنكية' : 'Somme de tous les comptes'
+      },
+      {
+        label: isAR?'إجمالي الواردات':'Total Entrants',
+        val: Utils.fmtCurrency(grandIn),
+        icon: 'fa-arrow-circle-down', color: '#10b981', bg: 'rgba(16,185,129,.1)',
+        sub: isAR
+          ? `ك.م ${Utils.fmtCurrency(grandInEV)} · خارجي ${Utils.fmtCurrency(grandInExt)}`
+          : `EV ${Utils.fmtCurrency(grandInEV)} · Ext. ${Utils.fmtCurrency(grandInExt)}`
+      },
+      {
+        label: isAR?'إجمالي الصادرات':'Total Sortants',
+        val: Utils.fmtCurrency(grandOut),
+        icon: 'fa-arrow-circle-up', color: '#ef4444', bg: 'rgba(239,68,68,.1)',
+        sub: isAR ? 'مدفوعات الموردين من البنك' : 'Paiements fournisseurs'
+      },
+      {
+        label: isAR?'المدفوع للموردين':'Payé Fournisseurs',
+        val: Utils.fmtCurrency(totalSupPaid),
+        icon: 'fa-building', color: '#f59e0b', bg: 'rgba(245,158,11,.1)',
+        sub: isAR ? `من أصل ${Utils.fmtCurrency(totalBR)} فواتير شراء` : `Sur ${Utils.fmtCurrency(totalBR)} de BRs achetés`
+      },
+      {
+        label: isAR?'المتبقي للدفع للموردين':'Reste à Payer (Fournisseurs)',
+        val: Utils.fmtCurrency(totalDue),
+        icon: 'fa-exclamation-circle', color: totalDue>0?'#e11d48':'#10b981', bg: totalDue>0?'rgba(225,29,72,.1)':'rgba(16,185,129,.1)',
+        sub: isAR
+          ? (totalDue>0 ? `${Utils.fmtCurrency(totalBR)} مشتريات − ${Utils.fmtCurrency(totalSupPaid)} مدفوع` : '✅ كل الموردين مسددون')
+          : (totalDue>0 ? `${Utils.fmtCurrency(totalBR)} BRs − ${Utils.fmtCurrency(totalSupPaid)} payé` : '✅ Tous fournisseurs réglés')
+      },
+    ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.5px;line-height:1.3">${k.label}</span>
+        <div style="width:30px;height:30px;border-radius:8px;background:${k.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0">
           <i class="fas ${k.icon}" style="color:${k.color};font-size:13px"></i>
         </div>
       </div>
-      <div style="font-size:18px;font-weight:800;color:var(--text)">${k.val}</div>
+      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${k.val}</div>
+      ${k.sub ? `<div style="font-size:10px;color:var(--text4);line-height:1.4">${k.sub}</div>` : ''}
     </div>`).join('')}
   </div>
 
@@ -13803,6 +13838,13 @@ const BankModule = {
           <option value="all">${isAR ? 'كل الأنواع' : 'Tous types'}</option>
           <option value="deposit" ${f.type==='deposit'?'selected':''}>${isAR ? 'واردات (+)' : 'Entrants (+)'}</option>
           <option value="payment" ${f.type==='payment'?'selected':''}>${isAR ? 'صادرات (−)' : 'Sortants (−)'}</option>
+        </select>
+        <select onchange="updateBankFilter('subtype',this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px">
+          <option value="all">${isAR ? 'كل الأصناف' : 'Tous sous-types'}</option>
+          <option value="etat_vente" ${f.subtype==='etat_vente'?'selected':''}>${isAR ? '📄 كشوفات مبيعات (EV)' : '📄 États de Vente (EV)'}</option>
+          <option value="external_deposit" ${f.subtype==='external_deposit'?'selected':''}>${isAR ? '💵 إيداع خارجي' : '💵 Dépôts Externes'}</option>
+          <option value="transfer_from_caisse" ${f.subtype==='transfer_from_caisse'?'selected':''}>${isAR ? '🔄 تحويل من الصندوق' : '🔄 Virements Caisse'}</option>
+          <option value="supplier_payment" ${f.subtype==='supplier_payment'?'selected':''}>${isAR ? '🏭 مدفوعات موردين' : '🏭 Paiements Fournisseurs'}</option>
         </select>
         <input type="text" id="bank-search-input" placeholder="${isAR ? '🔍 بحث...' : '🔍 Recherche...'}" value="${Utils.escHTML(f.q||'')}" oninput="BankModule._filters.q=this.value;BankModule._page=0;App.reloadDebounced('bank')" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;min-width:150px">
         <button class="btn btn-xs" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)" onclick="BankModule.exportExcel()">
@@ -16192,6 +16234,44 @@ const EtatVenteModule = {
         netTotalTTC: calculatedTTC, 
         totalTTCFiscal: calculatedTTC 
       });
+    }
+
+    // ── Self-heal: rebuild blList from sessionId / date+userId if missing or empty ──
+    if (!(doc.blList || []).length) {
+      let healBls = [];
+      // Try by sessionId first (most accurate)
+      if (doc.sessionId) {
+        healBls = (DB.getAll('bls') || []).filter(b =>
+          Number(b.sessionId) === Number(doc.sessionId) && b.status !== 'cancelled'
+        );
+      }
+      // Fallback: match by date + userId
+      if (!healBls.length && doc.userId && (doc.dateStart || doc.date)) {
+        const evDate = (doc.dateStart || doc.date || '').slice(0, 10);
+        healBls = (DB.getAll('bls') || []).filter(b =>
+          (b.date || '').slice(0, 10) === evDate &&
+          String(b.userId) === String(doc.userId) &&
+          b.status !== 'cancelled'
+        );
+      }
+      if (healBls.length > 0) {
+        const healedBlList = healBls.map(b => ({
+          id: b.id,
+          ref: b.ref || '',
+          date: b.date || '',
+          clientName: b.clientName || b.client || 'Client Comptoir',
+          status: b.status || 'delivered',
+          totalHT: Number(b.totalHT) || 0,
+          tvaAmount: Number(b.tvaAmount || b.tva) || 0,
+          timbreAmount: Number(b.timbreAmount || b.timbre) || 0,
+          totalTTC: Number(b.totalTTC || b.montantTTC) || 0
+        }));
+        doc.blList = healedBlList;
+        if (doc.id) {
+          DB.update('etat_vente_docs', doc.id, { blList: healedBlList, blIds: healedBlList.map(b => b.id), blCount: healedBlList.length });
+        }
+        console.log('[EtatVente] Self-healed: restored', healedBlList.length, 'BLs into blList from sessionId/date');
+      }
     }
 
     // ── Self-heal: re-aggregate items from BLs if doc.items is missing/empty ──
