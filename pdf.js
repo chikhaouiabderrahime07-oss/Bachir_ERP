@@ -15,8 +15,8 @@
   /* ── Arabic font cache (loaded once from CDN) ────────────── */
   let _arFontB64  = null;   /* base64 string of TTF data    */
   let _arFontLoad = null;   /* promise for in-flight fetch  */
-  const AR_FONT_URL = 'https://fonts.gstatic.com/s/notonaskharabic/v33/RrQ5bpV-9Dd1b1OAGA6M9PkyDuVBePeKoMbKIMIEdFiIHkRx.ttf';
-  const AR_FONT_NAME = 'NotoNaskhArabic';
+  const AR_FONT_URL = 'https://fonts.gstatic.com/s/readexpro/v9/SLXYc1bJ7HE5YDoGPuzj_dh8na74KiwZQQzfm4w-ZEk.ttf';
+  const AR_FONT_NAME = 'ReadexPro';
   const AR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
   /* ── Colours ────────────────────────────────────────────── */
@@ -63,7 +63,7 @@
     /* ── Arabic detection ──────────────────────────────────── */
     _hasAr(text) { return AR_RE.test(String(text||'')); },
 
-    /* ── Load Noto Naskh Arabic font (once, cached) ────────────── */
+    /* ── Load Readex Pro font (once, cached — best for Arabic/Latin mix) ────────────── */
     async _ensureArabicFont() {
       if (_arFontB64) return true;
       if (_arFontLoad) return _arFontLoad;
@@ -80,7 +80,7 @@
             bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
           }
           _arFontB64 = btoa(bin);
-          console.log('PDFGen: NotoNaskhArabic font loaded (' + Math.round(buf.byteLength/1024) + ' KB)');
+          console.log('PDFGen: ReadexPro font loaded (' + Math.round(buf.byteLength/1024) + ' KB)');
           return true;
         } catch(e) {
           console.warn('PDFGen: could not load Noto Naskh Arabic font:', e);
@@ -95,8 +95,8 @@
     _registerAr(doc) {
       if (!_arFontB64) return false;
       try {
-        doc.addFileToVFS('NotoNaskhArabic-Regular.ttf', _arFontB64);
-        doc.addFont('NotoNaskhArabic-Regular.ttf', AR_FONT_NAME, 'normal');
+        doc.addFileToVFS('ReadexPro-Regular.ttf', _arFontB64);
+        doc.addFont('ReadexPro-Regular.ttf', AR_FONT_NAME, 'normal');
         return true;
       } catch(e) { return false; }
     },

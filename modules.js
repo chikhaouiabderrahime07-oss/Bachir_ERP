@@ -13731,10 +13731,10 @@ const BankModule = {
   </div>
 
   <!-- ── Global KPI strip ── -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:14px;margin-bottom:16px">
     ${[
       {
-        label: isAR?'إجمالي الرصيد البنكي':'Solde Total Banque',
+        label: isAR?'الرصيد البنكي الكلي':'Solde Total Banque',
         val: Utils.fmtCurrency(grandTotal),
         icon: 'fa-wallet', color: '#3b82f6', bg: 'rgba(59,130,246,.1)',
         sub: isAR ? 'مجموع كل الحسابات البنكية' : 'Somme de tous les comptes'
@@ -13760,11 +13760,11 @@ const BankModule = {
         sub: isAR ? `من أصل ${Utils.fmtCurrency(totalBR)} فواتير شراء` : `Sur ${Utils.fmtCurrency(totalBR)} de BRs achetés`
       },
       {
-        label: isAR?'المتبقي للدفع للموردين':'Reste à Payer (Fournisseurs)',
+        label: isAR?'المتبقي للدفع (الموردون)':'Reste à Payer (Fourn.)',
         val: Utils.fmtCurrency(totalDue),
         icon: 'fa-exclamation-circle', color: totalDue>0?'#e11d48':'#10b981', bg: totalDue>0?'rgba(225,29,72,.1)':'rgba(16,185,129,.1)',
         sub: isAR
-          ? (totalDue>0 ? `${Utils.fmtCurrency(totalBR)} مشتريات − ${Utils.fmtCurrency(totalSupPaid)} مدفوع` : '✅ كل الموردين مسددون')
+          ? (totalDue>0 ? `${Utils.fmtCurrency(totalBR)} − ${Utils.fmtCurrency(totalSupPaid)} مدفوع` : '✅ كل الموردين مسددون')
           : (totalDue>0 ? `${Utils.fmtCurrency(totalBR)} BRs − ${Utils.fmtCurrency(totalSupPaid)} payé` : '✅ Tous fournisseurs réglés')
       },
     ].map(k=>`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative">
@@ -13777,6 +13777,44 @@ const BankModule = {
       <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${k.val}</div>
       ${k.sub ? `<div style="font-size:10px;color:var(--text4);line-height:1.4">${k.sub}</div>` : ''}
     </div>`).join('')}
+  </div>
+
+  <!-- ── Entrées Breakdown: Caisse vs EV vs Externe ── -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:20px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text4);letter-spacing:.7px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+      <i class="fas fa-chart-pie" style="color:#3b82f6"></i>
+      ${isAR ? 'تفصيل مصادر الإيداعات البنكية' : 'Détail des sources de dépôts bancaires'}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+      <div style="background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2);border-radius:10px;padding:12px 14px">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#8b5cf6;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-file-invoice"></i> ${isAR ? 'كشوفات المبيعات (EV)' : 'États de Vente (EV)'}
+        </div>
+        <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(grandInEV)}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'تحويل الصندوق → بنك عبر EV' : 'Transferts caisse → banque via EV'}</div>
+      </div>
+      <div style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:12px 14px">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#10b981;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-exchange-alt"></i> ${isAR ? 'تحويل مباشر من الصندوق' : 'Virement direct Caisse'}
+        </div>
+        <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(grandInCaisse)}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'تحويل يدوي من الصندوق' : 'Virement manuel depuis caisse'}</div>
+      </div>
+      <div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:12px 14px">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#f59e0b;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-coins"></i> ${isAR ? 'إيداع خارجي' : 'Dépôt Externe'}
+        </div>
+        <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(grandInExt)}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'إيداع نقدي مباشر بالبنك' : 'Cash déposé directement en banque'}</div>
+      </div>
+      <div style="background:rgba(100,116,139,.07);border:1px solid rgba(100,116,139,.2);border-radius:10px;padding:12px 14px">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#64748b;letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;gap:5px">
+          <i class="fas fa-ellipsis-h"></i> ${isAR ? 'مصادر أخرى' : 'Autres sources'}
+        </div>
+        <div style="font-size:17px;font-weight:900;color:var(--text)">${Utils.fmtCurrency(Math.max(0, grandIn - grandInEV - grandInExt - grandInCaisse))}</div>
+        <div style="font-size:9px;color:var(--text4);margin-top:3px">${isAR ? 'إيداعات متنوعة أخرى' : 'Corrections / divers'}</div>
+      </div>
+    </div>
   </div>
 
   <!-- ── Account cards ── -->
@@ -16245,9 +16283,21 @@ const EtatVenteModule = {
           Number(b.sessionId) === Number(doc.sessionId) && b.status !== 'cancelled'
         );
       }
-      // Fallback: match by date + userId
+      // Fallback 1: match session by etatVenteRef or etatVenteId
+      if (!healBls.length && doc.ref) {
+        const linkedSess = (DB.getAll('sessions') || []).find(s =>
+          s.etatVenteRef === doc.ref || String(s.etatVenteId) === String(doc.id)
+        );
+        if (linkedSess) {
+          healBls = (DB.getAll('bls') || []).filter(b =>
+            Number(b.sessionId) === Number(linkedSess.id) && b.status !== 'cancelled'
+          );
+          if (healBls.length && !doc.sessionId) doc.sessionId = linkedSess.id;
+        }
+      }
+      // Fallback 2: match by date + userId (doc uses 'date' for retroactive EVs)
       if (!healBls.length && doc.userId && (doc.dateStart || doc.date)) {
-        const evDate = (doc.dateStart || doc.date || '').slice(0, 10);
+        const evDate = (doc.dateStart || doc.dateEnd || doc.date || '').slice(0, 10);
         healBls = (DB.getAll('bls') || []).filter(b =>
           (b.date || '').slice(0, 10) === evDate &&
           String(b.userId) === String(doc.userId) &&
@@ -16270,7 +16320,7 @@ const EtatVenteModule = {
         if (doc.id) {
           DB.update('etat_vente_docs', doc.id, { blList: healedBlList, blIds: healedBlList.map(b => b.id), blCount: healedBlList.length });
         }
-        console.log('[EtatVente] Self-healed: restored', healedBlList.length, 'BLs into blList from sessionId/date');
+        console.log('[EtatVente] Self-healed: restored', healedBlList.length, 'BLs into blList from sessionId/date/ref');
       }
     }
 
