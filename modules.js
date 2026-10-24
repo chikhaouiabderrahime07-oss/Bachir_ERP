@@ -7266,6 +7266,31 @@ const AdminCaisseModule = {
     try { DB.recalibrateCaisse?.(); } catch(e) {}
     try { this._syncCaisseCharges?.(); } catch(e) {}
 
+    // ── Auto-close zero-movement past sessions silently on every render ──
+    try {
+      const todayStr = Utils.today();
+      const allSessNow = DB.getAll('sessions') || [];
+      const allBLsNow = DB.getAll('bls') || [];
+      allSessNow.forEach(sess => {
+        if (sess.status === 'closed') return;
+        if (!sess.date || sess.date >= todayStr) return;
+        const sales   = Number(sess.totalSales   || sess.realBchGross   || 0);
+        const returns = Number(sess.totalReturns || sess.realBchReturns || 0);
+        if (sales > 0.001 || returns > 0.001) return;
+        const hasBL = allBLsNow.some(b => Number(b.sessionId) === Number(sess.id) && b.status !== 'cancelled');
+        if (hasBL) return;
+        DB.update('sessions', sess.id, {
+          status: 'closed',
+          closedAt: sess.date + 'T23:59:59.000Z',
+          closedBy: 'system',
+          closedByName: 'Clôture automatique',
+          closedNote: 'Clôture automatique — aucun mouvement enregistré',
+          totalSales: 0, totalReturns: 0,
+          realBchGross: 0, realBchReturns: 0, realBchNet: 0, closedNet: 0,
+        }, '[AutoHeal] Clôture automatique — session sans mouvement');
+      });
+    } catch(e) { console.warn('[AutoClose] error:', e); }
+
     // ── Raw data (no filter applied to globals) ──
     const caAll = DB.getAll('caisse_admin').sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     const allDeposits   = caAll.filter(t=>t.type==='deposit');
@@ -7960,7 +7985,16 @@ const AdminCaisseModule = {
       }
     });
 
-    const sortedDailyList = Object.values(dayMap).sort((a,b) => b.date.localeCompare(a.date));
+    // Hide days that have zero everything (no sales, no returns, no charges, no bank transfers)
+    // These are purely phantom days from auto-closed zero-movement sessions with no caisse activity
+    const sortedDailyList = Object.values(dayMap)
+      .filter(day => {
+        const hasMovement = day.realBchGross > 0.001 || day.realBchReturns > 0.001 ||
+          day.etatVenteTTC > 0.001 || day.bankAmount > 0.001 || day.caisseAdminAmount > 0.001 ||
+          day.chargesAmount > 0.001 || day.directReturnsAmount > 0.001 || day.otherWithdrawalsAmount > 0.001;
+        return hasMovement;
+      })
+      .sort((a,b) => b.date.localeCompare(a.date));
 
     // Cashier Aggregation for View 3 (Synthèse par Caissier)
     const cashierSummary = users.map(u => {
