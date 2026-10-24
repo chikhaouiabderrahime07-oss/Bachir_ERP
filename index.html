@@ -238,20 +238,11 @@
         <span class="clock-date" id="clockDate">--/--/----</span>
       </div>
 
-      <!-- Autocorrect & Data Integrity Monitor -->
-      <div class="integrity-widget" id="topIntegrityWidget" onclick="if(window.AutocorrectBrain) AutocorrectBrain.showDetailsModal()" title="Moniteur d'intégrité et auto-correction (Toutes les 15 min)">
-        <div class="integrity-pulse" id="integrityPulse"></div>
-        <i class="fas fa-shield-alt" id="integrityIcon" style="color:var(--success);font-size:12px"></i>
-        <span id="integrityLabel" style="font-size:11px;font-weight:700;color:var(--text)">Intégrité: 100%</span>
-        <span id="integrityTimer" style="font-size:10px;color:var(--text4);font-family:var(--font-mono)">15:00</span>
-      </div>
+      <!-- Autocorrect & Data Integrity Monitor — DISABLED -->
+      <div class="integrity-widget" id="topIntegrityWidget" style="display:none"></div>
 
-      <!-- Guardian Shield Widget (Bouclier Anti-Disparition) -->
-      <div id="guardian-shield-badge" class="integrity-widget" style="cursor:pointer;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:4px 10px;display:flex;align-items:center;gap:6px" onclick="if(window.DB && window.DB.Guardian) { const v = DB.Guardian.getVault(); UI.showModal('🛡️ Bouclier Anti-Disparition BCH & BR', '<div style=\'padding:16px\'><p style=\'margin-bottom:12px\'><b>Statut du Coffre-Fort Immuable :</b></p><div style=\'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px\'><div style=\'padding:12px;background:var(--bg3);border-radius:8px\'><b>BCH Sécurisés :</b> ' + v.length + '</div><div style=\'padding:12px;background:var(--bg3);border-radius:8px\'><b>Verrouillage BR :</b> ACTIF</div></div><p style=\'font-size:12px;color:var(--text3)\'>Ce bouclier surveille en temps réel la mémoire locale et MongoDB. Aucun Bon de Chargement ne peut disparaître ou être écrasé lors d\'une panne réseau, et aucun Bon de Réception lié ne peut être rouvert.</p></div>'); }" title="Bouclier Anti-Disparition BCH & BR : ACTIF">
-        <i class="fas fa-shield-alt" style="color:#10b981;font-size:12px"></i>
-        <span style="font-size:11px;font-weight:700;color:#10b981">Bouclier Actif</span>
-      </div>
-
+      <!-- Guardian Shield removed -->
+      <div id="guardian-shield-badge" style="display:none"></div>
       <!-- Language -->
       <div class="lang-toggle">
         <button class="lang-btn active" id="topLangFR" onclick="App.setLang('fr')">FR</button>

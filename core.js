@@ -324,15 +324,9 @@ const DB = {
     // ── Run data migrations on every boot (idempotent) ──
     this.runMigrations();
 
-    // ── Enforce Guardian Anti-Disappearance Shield on boot ──
-    try {
-      this.Guardian.auditAndEnforce();
-    } catch(e) { console.warn('[Guardian] boot error:', e); }
-
-    // ── Start 15-Minute Data Integrity & Autocorrect Daemon ──
-    try {
-      this.MasterBrain.AutocorrectBrain.init();
-    } catch(e) { console.warn('[AutocorrectBrain] init err:', e); }
+    // ── Guardian & AutocorrectBrain DISABLED — user requested removal ──
+    // No automatic background data modification. Math recalibration still
+    // runs on-demand when user saves/closes sessions.
 
     // Cloud mode: if localStorage appears empty or cleared, restore from MongoDB
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -736,7 +730,15 @@ const DB = {
               }
             }
           } else if (expectedEvTTC > 0 || expectedRealBchNet > 0) {
-            // Auto-create missing withdrawal for this État de Vente transfer
+            // SAFETY: double-check cleaned array for any existing withdrawal with same sessionId
+            // (prevents duplicates when refs mismatch between BankBrain and HistoricalBrain)
+            const alreadyHasWit = cleaned.some(e =>
+              e.type === 'withdrawal' && e.source === 'transfert_banque_etat_vente' &&
+              e.sessionId != null && Number(e.sessionId) === Number(s.id)
+            );
+            if (alreadyHasWit) {
+              // skip — already exists with same sessionId but different ref
+            } else {
             const maxId = cleaned.reduce((m, e) => Math.max(m, e.id || 0), 0);
             wit = {
               id: maxId + 1,
@@ -766,6 +768,7 @@ const DB = {
             if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
               window.API.insert('caisse_admin', wit).catch(() => {});
             }
+            } // end alreadyHasWit else
           }
         });
 
@@ -1457,6 +1460,7 @@ const DB = {
                   e.source === 'transfert_banque_etat_vente' && 
                   ((sess && Number(e.sessionId) === Number(sess.id)) || 
                    (effectiveEVRef && e.etatVenteRef === effectiveEVRef) ||
+                   (effectiveEV && effectiveEV.id && Number(e.etatVenteId) === Number(effectiveEV.id)) ||
                    (e.sessionDate === d && (e.userId === uId || String(e.userId) === String(uId))))
                 );
                 const caisseWithData = {
@@ -1844,13 +1848,14 @@ const DB = {
 
       init() {
         window.AutocorrectBrain = this;
-        // Do NOT run on startup — prevents background CPU freezes and database write thrashing.
-        // Background checks are scheduled every 15 min and remain strictly read-only diagnostics.
-        if (this._timer) clearInterval(this._timer);
-        this._timer = setInterval(() => this.runCheck(false), this._intervalMs);
-
-        if (this._tickerTimer) clearInterval(this._tickerTimer);
-        this._tickerTimer = setInterval(() => this.updateTicker(), 1000);
+        // DISABLED: The 15-min auto-interval was the root cause of duplicate
+        // caisse/bank entries AND severe performance degradation.
+        // All integrity checks are now MANUAL-ONLY (triggered by user button).
+        if (this._timer) { clearInterval(this._timer); this._timer = null; }
+        if (this._tickerTimer) { clearInterval(this._tickerTimer); this._tickerTimer = null; }
+        // Hide the timer widget since there's no auto-countdown
+        const w = document.getElementById('topIntegrityWidget');
+        if (w) w.style.display = 'none';
       },
 
       updateTicker() {
@@ -1863,6 +1868,11 @@ const DB = {
       },
 
       async runCheck(isManual = false) {
+        // GUARD: Only allow manual execution — auto calls are blocked
+        if (!isManual) {
+          console.log('[AutocorrectBrain] Automatic run blocked — manual only.');
+          return;
+        }
         this._nextRunTime = Date.now() + this._intervalMs;
         const widget = document.getElementById('topIntegrityWidget');
         const pulse = document.getElementById('integrityPulse');
@@ -3256,9 +3266,6 @@ const DB = {
     };
     items.push(item);
     this.rawSet(col, items);
-    if (col === 'bls' && this.Guardian) {
-      this.Guardian.saveVault(item);
-    }
     this._audit('CREATE', col, id, null, item);
     this._history(col, id, 'CREATE', 'Création', null, item);
 
@@ -3273,7 +3280,6 @@ const DB = {
             current[idx]._pendingSync = true;
             localStorage.setItem(col, JSON.stringify(current));
           }
-          if (col === 'bls' && this.Guardian) this.Guardian.saveVault(item);
           return;
         }
         // Merge server-confirmed item with local item to preserve any intermediate updates
@@ -3284,9 +3290,6 @@ const DB = {
           return i;
         });
         localStorage.setItem(col, JSON.stringify(latest));
-        if (col === 'bls' && this.Guardian) {
-          this.Guardian.saveVault({ ...serverItem, ...item });
-        }
 
         const hasBrChange = col === 'brs' && serverItem.brNum !== item.brNum;
         const hasBlChange = col === 'bls' && serverItem.ref && serverItem.ref !== item.ref;
@@ -3306,9 +3309,6 @@ const DB = {
           current[idx]._pendingSync = true;
           current[idx]._lastSyncError = e.message || 'En attente réseau';
           localStorage.setItem(col, JSON.stringify(current));
-        }
-        if (col === 'bls' && this.Guardian) {
-          this.Guardian.saveVault(item);
         }
         const isAR = typeof T !== 'undefined' && T.isRTL();
         if (typeof Utils !== 'undefined') {
@@ -3334,9 +3334,6 @@ const DB = {
       updatedByName: u?.name || 'Système'
     };
     this.rawSet(col, items);
-    if (col === 'bls' && this.Guardian) {
-      this.Guardian.saveVault(items[idx]);
-    }
     this._audit('UPDATE', col, id, old, items[idx]);
     this._history(col, id, 'UPDATE', note, old, items[idx]);
     // ── Cloud: atomic PATCH (only changed fields — safe for concurrent users) ──
@@ -3662,10 +3659,11 @@ const DB = {
     return `BR/${n}/${y}`;
   },
 
-  buildBCHRef(num, year, partNum, abbrev) {
+  buildBCHRef(num, year, partNum, abbrev, prefix) {
     const s = String(num != null ? num : '').trim();
     const n = s ? s.padStart(Math.max(4, s.length), '0') : '0001';
-    const base = `BCH-${n}`;
+    const pfx = prefix || 'BCH';
+    const base = `${pfx}-${n}`;
     if (partNum) return `${base}-P${String(partNum).padStart(2,'0')}`;
     return base;
   },
