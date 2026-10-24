@@ -5453,7 +5453,13 @@ const GlobalSearch = {
     this._activeCategory = cat;
     const input = document.getElementById('global-omni-search-input');
     const q = input ? input.value : '';
-    this.open(q);
+    // Update active button visually without re-creating the whole modal
+    document.querySelectorAll('.omni-cat-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = [...document.querySelectorAll('.omni-cat-btn')].find(b => b.onclick?.toString().includes(`'${cat}'`));
+    if (activeBtn) activeBtn.classList.add('active');
+    // Re-run search with new category
+    if (q.trim()) this.search(q.trim().toLowerCase());
+    else this.renderEmptyState();
   },
 
   handleInput(query) {
