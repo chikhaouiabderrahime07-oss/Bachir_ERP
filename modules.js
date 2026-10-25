@@ -7936,10 +7936,10 @@ const AdminCaisseModule = {
         etatVenteTTC = Math.round((etatVenteHT + etatVenteTVA + etatVenteTimbre) * 100) / 100;
       }
 
-      // 3. Strict Écart Fiscal TTC = Net Réel BCH (Caisse) - État de Vente TTC
-      // Positive = BCH collected MORE than EV declared (normal with returns)
-      // Negative = EV declared MORE than BCH collected (fiscal gap)
-      const ecartFiscal = Math.round((realBchNet - etatVenteTTC) * 100) / 100;
+      // 3. Strict Écart Fiscal TTC = État de Vente TTC - Net Réel BCH (Caisse)
+      // Positive = EV declared MORE than BCH collected (normal — includes timbre/faida)
+      // Negative = BCH collected MORE than EV declared (fiscal gap)
+      const ecartFiscal = Math.round((etatVenteTTC - realBchNet) * 100) / 100;
 
       // 4. Versement Banque
       const bankTx = s.bankTxId ? DB.getById('bank_transactions', s.bankTxId) : allBankTxs.find(t => (evDoc && t.etatVenteId === evDoc.id) || (s.etatVenteRef && t.etatVenteRef === s.etatVenteRef));
@@ -8455,10 +8455,8 @@ const AdminCaisseModule = {
             <tbody>
               ${sortedDailyList.length ? sortedDailyList.map(day => {
                 const dayCharges = (day.chargesAmount || 0) + (day.directReturnsAmount || 0) + (day.otherWithdrawalsAmount || 0);
-                // Écart fiscal = EV TTC - (BCH net + expected 1% timbre on BCH net)
-                // This isolates the true fiscal gap beyond what the timbre explains
-                const dayTimbreExpected = Math.round(day.realBchNet * 0.01 * 100) / 100;
-                const dayDiff = Math.round((day.etatVenteTTC - day.realBchNet - dayTimbreExpected) * 100) / 100;
+                // Écart fiscal = EV TTC - BCH net (same convention as core.js: EV - BCH)
+                const dayDiff = Math.round((day.etatVenteTTC - day.realBchNet) * 100) / 100;
                 const daySolde = Math.round((day.realBchNet - day.etatVenteTTC - dayCharges) * 100) / 100;
                 const closedInDay = day.sessions.filter(s => s.session.status === 'closed').length;
                 const noSessions  = day.sessions.length === 0;
@@ -9190,7 +9188,7 @@ const AdminCaisseModule = {
     const sum = SessionMgr.getUserDaySummary(session.userId, session.date);
     const evDoc = session.etatVenteId ? DB.getById('etat_vente_docs', session.etatVenteId) : null;
     const etatVenteTTC = evDoc ? Number(evDoc.totalTTC) || 0 : (session.closedNet || sum.netAmount);
-    const ecartFiscal = Math.round((sum.netAmount - etatVenteTTC) * 100) / 100;
+    const ecartFiscal = Math.round((etatVenteTTC - sum.netAmount) * 100) / 100;
 
     const bchRows = sum.bls.length ? sum.bls.map(b => {
       const cli = DB.getById('clients', b.clientId);
@@ -9393,7 +9391,7 @@ const AdminCaisseModule = {
         etatVenteTTC = Math.round((ht + tva + timbre) * 100) / 100;
       }
 
-      const ecartFiscal = Math.round((sum.netAmount - etatVenteTTC) * 100) / 100;
+      const ecartFiscal = Math.round((etatVenteTTC - sum.netAmount) * 100) / 100;
       const bankTx = s.bankTxId ? DB.getById('bank_transactions', s.bankTxId) : allBankTxs.find(t => (evDoc && t.etatVenteId === evDoc.id) || (s.etatVenteRef && t.etatVenteRef === s.etatVenteRef));
       const targetBank = bankList.find(b => String(b.id) === String(s.targetBankId || s.bankId || bankTx?.bankId || evDoc?.bankId));
       const bankAmount = bankTx ? Number(bankTx.amount) || 0 : (isCl ? etatVenteTTC : 0);
@@ -15518,7 +15516,7 @@ const EtatVenteModule = {
     // Deduct returns of prior periods / cross-day returns to accurately reflect net cash received
     const totalEV_TTC = Math.max(0, Math.round((grossEV_TTC - (priorReturnsTotalTTC || 0)) * 100) / 100);
     const netTotalEV = totalEV_TTC;
-    const ecartFiscal = Math.round((netTotalTTC - netTotalEV) * 100) / 100;
+    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
 
     let html = `
     <!-- Filter bar -->
@@ -16111,7 +16109,7 @@ const EtatVenteModule = {
     // Deduct returns of prior periods / cross-day returns to accurately reflect net cash received
     const totalEV_TTC = Math.max(0, Math.round((grossEV_TTC - (priorReturnsTotalTTC || 0)) * 100) / 100);
     const netTotalEV = totalEV_TTC;
-    const ecartFiscal = Math.round((netTotalTTC - netTotalEV) * 100) / 100;
+    const ecartFiscal = Math.round((netTotalEV - netTotalTTC) * 100) / 100;
 
     // Double confirmation to avoid miss clicks
     const confirmed = await Utils.confirm2(
@@ -16276,7 +16274,7 @@ const EtatVenteModule = {
          userId: u?.id,
          userName: u?.name || (isAR ? 'الإدارة' : 'Administration'),
          sessionDate: this._getDateEnd(),
-         amount: netTotalTTC,
+         amount: netTotalEV,
          targetBankId: selectedBankId,
          etatVenteRef: ref,
          etatVenteId: savedDoc.id,

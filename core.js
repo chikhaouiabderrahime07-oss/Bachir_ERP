@@ -5134,6 +5134,39 @@ const SessionMgr = {
         }
       });
     });
+
+    // Subtract same-day returned BL lines from aggregated items
+    summary.bls.filter(b => b.status === 'returned').forEach(bl => {
+      (bl.lines || []).forEach(line => {
+        const key = (line.designation || line.articleName || line.name || '').trim();
+        if (!key || !aggregated[key]) return;
+        const qty = Number(line.qtyDelivered || line.qty) || 0;
+        aggregated[key].qty -= qty;
+      });
+    });
+
+    // Subtract cross-day returns (bon_retour docs) from aggregated items
+    const sameDayReturnedBlIds = new Set(summary.bls.filter(b => b.status === 'returned').map(b => Number(b.id)));
+    const crossDayRetours = (summary.retours || []).filter(r => !sameDayReturnedBlIds.has(Number(r.blId || r.bcId)));
+    crossDayRetours.forEach(r => {
+      const rLines = r.lines || r.items || [];
+      rLines.forEach(line => {
+        const key = (line.designation || line.articleName || line.name || '').trim();
+        if (!key) return;
+        const qty = Number(line.qtyReturned || line.qty) || 0;
+        const price = Number(line.price || line.unitPrice) || 0;
+        const disc = Number(line.disc) || 0;
+        const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+        const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+        const effectivePrice = Math.round((basePrice + marginPerUnit) * 100) / 100;
+        if (aggregated[key]) {
+          aggregated[key].qty -= qty;
+        } else {
+          aggregated[key] = { designation: key, unit: line.unit || 'U', qty: -qty, basePrice, marginRate, marginPerUnit, unitPrice: effectivePrice };
+        }
+      });
+    });
+
     const items = Object.values(aggregated).filter(it => it.qty > 0.0001);
     const totalHT = Math.round(items.reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
     const totalMargin = Math.round(items.reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
