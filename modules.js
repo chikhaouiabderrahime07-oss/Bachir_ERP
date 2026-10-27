@@ -1334,24 +1334,27 @@ const BRModule = {
   },
 
   // ── Line row HTML ────────────────────────────────────────
-  _lineRowHTML(line={}, idx) {
+  _lineRowHTML(line={}, idx, isLocked=false) {
     const qty = line.qty ?? 1;
     const price = line.price ?? 0;
     const disc = line.disc ?? 0;
     const tot = Math.round(qty * price * (1 - disc/100) * 100) / 100;
+    const lockedStyle = isLocked ? 'opacity:0.65;pointer-events:none' : '';
+    const lockedAttr = isLocked ? ' readonly tabindex="-1"' : '';
     return `<tr id="br-line-${idx}">
       <td class="col-num" style="text-align:center;color:var(--text4);font-size:11px">${idx+1}</td>
       <td class="col-designation">
         <div class="autocomplete-wrap">
           <input type="text" id="br-des-${idx}" value="${Utils.escHTML(line.designation||'')}"
             placeholder="${T.get('br_designation')}"
+            style="${lockedStyle}" ${lockedAttr}
             oninput="BRModule._onDesInput(${idx},this.value)"
             onfocus="BRModule._onDesInput(${idx},this.value)"
             onblur="setTimeout(()=>BRModule._closeAC(${idx}),200)">
           <div class="autocomplete-dropdown" id="br-ac-${idx}"></div>
         </div>
       </td>
-      <td class="col-unit"><input type="text" id="br-unit-${idx}" value="${Utils.escHTML(line.unit||'')}" placeholder="${T.isRTL() ? 'وحدة' : 'u'}"></td>
+      <td class="col-unit"><input type="text" id="br-unit-${idx}" value="${Utils.escHTML(line.unit||'')}" placeholder="${T.isRTL() ? 'وحدة' : 'u'}" style="${lockedStyle}" ${lockedAttr}></td>
       <td class="col-qty">
         ${QtyPaletteCalc.renderField({
           id: `br-qty-${idx}`,
@@ -1360,13 +1363,15 @@ const BRModule = {
           count: line.paletteCount,
           unitQty: line.paletteUnitQty,
           unit: line.unit || '',
+          inputStyle: isLocked ? 'width:90px;text-align:center;opacity:0.65;pointer-events:none' : 'width:90px;text-align:center',
+          extraAttrs: isLocked ? ' readonly tabindex="-1"' : '',
           onRecalc: `BRModule._recalcLine(${idx})`
         })}
       </td>
-      <td class="col-price"><input type="number" id="br-price-${idx}" value="${price}" min="0" step="any" oninput="BRModule._recalcLine(${idx})"></td>
-      <td class="col-disc"><input type="number" id="br-disc-${idx}" value="${disc}" min="0" max="100" step="any" oninput="BRModule._recalcLine(${idx})"></td>
+      <td class="col-price"><input type="number" id="br-price-${idx}" value="${price}" min="0" step="any" style="${lockedStyle}" ${lockedAttr} oninput="BRModule._recalcLine(${idx})"></td>
+      <td class="col-disc"><input type="number" id="br-disc-${idx}" value="${disc}" min="0" max="100" step="any" style="${lockedStyle}" ${lockedAttr} oninput="BRModule._recalcLine(${idx})"></td>
       <td class="col-total" id="br-ltot-${idx}">${Utils.fmtCurrency(tot)}</td>
-      <td class="col-del"><button class="btn btn-xs btn-danger btn-icon-only" onclick="BRModule._removeLine(${idx})"><i class="fas fa-times"></i></button></td>
+      <td class="col-del">${isLocked ? '<span style="color:var(--text4);font-size:11px" title="Verrouillé"><i class="fas fa-lock"></i></span>' : `<button class="btn btn-xs btn-danger btn-icon-only" onclick="BRModule._removeLine(${idx})"><i class="fas fa-times"></i></button>`}</td>
     </tr>`;
   },
 
@@ -1546,7 +1551,9 @@ const BRModule = {
     const brNum = br ? String(br.brNum).padStart(4, '0') : nextDoc.formatted;
     const brYear = br ? br.year : year;
     const initLines = br ? (br.lines||[]) : [{}];
+    const isLocked = br && (br.status === 'delivered' || br.status === 'locked' || DB.getAll('bls').some(b => Number(b.brId) === Number(br.id) && b.status !== 'returned' && b.status !== 'cancelled'));
     return `
+    ${isLocked ? `<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:#d97706;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px"><i class="fas fa-lock"></i> ${T.isRTL() ? 'وصل الاستلام مرتبط بسندات شحن: الكميات والأسعار مقفلة نهائياً (يمكن تعديل المورد، التاريخ، والملاحظات فقط)' : 'BR rattaché à une livraison : quantités et prix verrouillés (seuls le fournisseur, date, notes et récepteurs sont modifiables).'}</div>` : ''}
     <div class="form-grid cols-2" style="margin-bottom:10px">
       <div class="form-group">
         <label class="required" style="display:flex;justify-content:space-between;align-items:center"><span>${T.get('br_supplier')}</span><button type="button" class="btn btn-xs btn-outline" onclick="BLModule.quickAddSupplier('br-supplier')" title="${T.get('sup_new')}" style="padding:1px 6px;font-size:10px"><i class="fas fa-plus"></i> ${T.get('sup_new')}</button></label>
@@ -1600,23 +1607,23 @@ const BRModule = {
           <th></th>
         </tr></thead>
         <tbody id="br-lines-body">
-          ${initLines.map((l,i)=>this._lineRowHTML(l,i)).join('')}
+          ${initLines.map((l,i)=>this._lineRowHTML(l,i,isLocked)).join('')}
         </tbody>
       </table>
     </div>
-    <button class="btn btn-outline btn-sm" onclick="BRModule._addLine({})" style="margin-bottom:12px">
+    ${isLocked ? '' : `<button class="btn btn-outline btn-sm" onclick="BRModule._addLine({})" style="margin-bottom:12px">
       <i class="fas fa-plus"></i> ${T.isRTL()?'إضافة سطر':'Ajouter ligne'}
-    </button>
+    </button>`}
 
     <div class="form-grid cols-2">
       <div class="form-group">
         <label>${T.isRTL()?'مصاريف إضافية':'Frais supplémentaires'}</label>
-        <input type="number" id="br-extra" value="${br?.extraFees||0}" min="0" step="any"
+        <input type="number" id="br-extra" value="${br?.extraFees||0}" min="0" step="any" ${isLocked ? 'readonly tabindex="-1" style="opacity:0.65;pointer-events:none"' : ''}
           oninput="BRModule._recalcTotals()">
       </div>
       <div class="form-group">
         <label>${T.isRTL()?'نسبة TVA (%)':'Taux TVA (%)'}</label>
-        <input type="number" id="br-tva-rate" value="${(br?.tvaRate??DB.getSettings().tvaRate??19)}" min="0" max="100" step="0.1"
+        <input type="number" id="br-tva-rate" value="${(br?.tvaRate??DB.getSettings().tvaRate??19)}" min="0" max="100" step="0.1" ${isLocked ? 'readonly tabindex="-1" style="opacity:0.65;pointer-events:none"' : ''}
           oninput="BRModule._recalcTotals()">
       </div>
       <div class="form-group">
@@ -1626,9 +1633,9 @@ const BRModule = {
             const isNoTimbre = br ? (br.noTimbre ?? (Number(br.timbreAmount || 0) === 0)) : true;
             return `
             <input type="number" id="br-timbre" value="${(br?.timbreAmount||0).toFixed(2)}" min="0" step="any"
-              oninput="this.dataset.manual='1';BRModule._recalcTotals()" style="flex:1" ${isNoTimbre ? 'disabled' : ''}>
+              oninput="this.dataset.manual='1';BRModule._recalcTotals()" style="flex:1" ${(isNoTimbre || isLocked) ? 'disabled' : ''}>
             <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer;margin:0">
-              <input type="checkbox" id="br-no-timbre" ${isNoTimbre ? 'checked' : ''} onchange="BRModule._toggleTimbre(this.checked)">
+              <input type="checkbox" id="br-no-timbre" ${isNoTimbre ? 'checked' : ''} ${isLocked ? 'disabled' : ''} onchange="BRModule._toggleTimbre(this.checked)">
               ${T.isRTL() ? 'بدون طابع' : 'Sans timbre'}
             </label>`;
           })()}
@@ -1730,11 +1737,12 @@ const BRModule = {
     const totalHT  = Math.round((lines.reduce((s,l)=>s+l.total,0) + extraFees) * 100) / 100;
     const tvaAmount = Math.round(totalHT * tvaRate / 100 * 100) / 100;
     const totalTTC = Math.round((totalHT + tvaAmount + timbre) * 100) / 100;
-    const suppAbbrev = DB.getById('suppliers', supplierId)?.abbrev || '';
+    const supp = DB.getById('suppliers', supplierId);
+    const suppAbbrev = supp?.abbrev || '';
     const ref      = DB.buildBRRef(brNumRaw, year, suppAbbrev);
 
     const data = {
-      ref, brNum, year, supplierId, date, lines, extraFees,
+      ref, brNum, year, supplierId, supplierName: supp?.name || '', date, lines, extraFees,
       totalHT, tvaRate, tvaAmount, timbreAmount: timbre, noTimbre, totalTTC,
       notes, receivedBy, controlledBy, status: 'open'
     };
@@ -1757,17 +1765,51 @@ const BRModule = {
     if (editId) {
       const before = DB.getById('brs', editId);
       if (!Auth.canEdit(before)) { Utils.notify(isAR ? '🔒 التعديل غير مسموح' : '🔒 Modification interdite', 'error'); UI.closeModal(); return; }
+      const isLocked = before && (before.status === 'delivered' || before.status === 'locked' || DB.getAll('bls').some(b => Number(b.brId) === Number(before.id) && b.status !== 'returned' && b.status !== 'cancelled'));
+      if (isLocked) {
+        const origLines = before.lines || [];
+        const linesChanged = origLines.length !== lines.length || origLines.some((bl, idx) => {
+          const nl = lines[idx];
+          return !nl || Math.abs((Number(nl.qty)||0) - (Number(bl.qty)||0)) > 0.0001 ||
+                        Math.abs((Number(nl.price)||0) - (Number(bl.price)||0)) > 0.0001 ||
+                        Math.abs((Number(nl.disc)||0) - (Number(bl.disc)||0)) > 0.0001;
+        });
+        if (linesChanged) {
+          Utils.notify(isAR ? '⛔ لا يمكن تعديل الكميات أو الأسعار لسند مرتبط بتسليم أو كشف مبيعات!' : '⛔ Impossible de modifier les quantités ou prix d’un document déjà livré ou rattaché à un État de Vente !', 'error', 6000);
+          return;
+        }
+        data.lines = origLines;
+        data.totalHT = before.totalHT;
+        data.tvaRate = before.tvaRate;
+        data.tvaAmount = before.tvaAmount;
+        data.timbreAmount = before.timbreAmount;
+        data.noTimbre = before.noTimbre;
+        data.totalTTC = before.totalTTC;
+        data.extraFees = before.extraFees;
+      }
+      data.supplierName = supp?.name || before.supplierName || '';
       savedBR = DB.update('brs', editId, data);
-      // Re-sync linked BCH refs ONLY if the BR number changed (keep partial suffix -Pxx)
-      if (before && (Number(before.brNum) !== Number(brNum) || Number(before.year) !== Number(year))) {
+      // Re-sync linked BCH refs or supplier if supplier/num/year changed
+      const numOrYearChanged = before && (Number(before.brNum) !== Number(brNum) || Number(before.year) !== Number(year));
+      const supChanged = before && (Number(before.supplierId) !== Number(supplierId));
+      if (numOrYearChanged || supChanged) {
         DB.getAll('bls').filter(b=>Number(b.brId)===Number(editId)).forEach(bl => {
-          DB.update('bls', bl.id, { ref: DB.buildBCHRef(brNum, year, bl.partNum || null, suppAbbrev) }, 'Sync avec BR modifié');
+          const syncPatch = {
+            ref: DB.buildBCHRef(brNum, year, bl.partNum || null, suppAbbrev)
+          };
+          if (supChanged) {
+            syncPatch.supplierId = Number(supplierId);
+            syncPatch.supplierName = supp?.name || '';
+          }
+          DB.update('bls', bl.id, syncPatch, 'Sync avec BR modifié');
         });
       }
-      Utils.notify((T.isRTL()?'تم تعديل وصل الاستلام':'BR modifié avec succès'), 'success');
+      DB.MasterBrain.recalibrateAll();
+      Utils.notify((T.isRTL()?'تم تعديل وصل الاستلام بنجاح':'BR modifié avec succès'), 'success');
     } else {
       data.status = 'open';
       savedBR = DB.insert('brs', data);
+      DB.MasterBrain.recalibrateAll();
       Utils.notify((T.isRTL()?'تم إنشاء وصل الاستلام':'BR créé avec succès'), 'success');
     }
     UI.closeModal();
@@ -3005,7 +3047,7 @@ const BLModule = {
     saveBtns.forEach(id => { const b = document.getElementById(id); if (b) b.style.display = 'none'; });
   },
 
-  _addDirectBCHRow(item = {}) {
+  _addDirectBCHRow(item = {}, isLocked = false) {
     const tbody = document.getElementById('direct-bch-rows');
     if (!tbody) return;
     const idx = (BLModule._directBCHRows = BLModule._directBCHRows || []).length;
@@ -3016,15 +3058,17 @@ const BLModule = {
     const initBuy = item.purchasePrice != null ? item.purchasePrice : '';
     const initDisc = item.disc != null ? item.disc : 0;
     const initTot = (initQty && initPrice) ? Math.round(initQty * initPrice * (1 - (initDisc || 0) / 100) * 100) / 100 : 0;
+    const lockedStyle = isLocked ? 'opacity:0.65;pointer-events:none;' : '';
+    const lockedAttr = isLocked ? ' readonly tabindex="-1"' : '';
 
     const tr = document.createElement('tr');
     tr.id = `direct-bch-tr-${idx}`;
     tr.innerHTML = `
       <td>
-        <input type="text" id="direct-bch-des-${idx}" list="bch-articles-list" class="input" style="padding:6px 8px;font-size:12px" placeholder="${T.isRTL() ? 'تعيين البضاعة...' : 'Désignation marchandise...'}" value="${Utils.escHTML(item.designation||'')}" oninput="BLModule._onDirectArticleSelect(${idx}, this.value)">
+        <input type="text" id="direct-bch-des-${idx}" list="bch-articles-list" class="input" style="padding:6px 8px;font-size:12px;${lockedStyle}" placeholder="${T.isRTL() ? 'تعيين البضاعة...' : 'Désignation marchandise...'}" value="${Utils.escHTML(item.designation||'')}" ${lockedAttr} oninput="BLModule._onDirectArticleSelect(${idx}, this.value)">
       </td>
       <td>
-        <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" placeholder="${T.isRTL() ? 'وحدة' : 'U'}" value="${Utils.escHTML(item.unit||'U')}">
+        <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center;${lockedStyle}" placeholder="${T.isRTL() ? 'وحدة' : 'U'}" value="${Utils.escHTML(item.unit||'U')}" ${lockedAttr}>
       </td>
       <td>
         ${QtyPaletteCalc.renderField({
@@ -3035,24 +3079,25 @@ const BLModule = {
           unitQty: item.paletteUnitQty,
           unit: item.unit || 'U',
           inputClass: 'input',
-          inputStyle: 'padding:6px 8px;font-size:12px;text-align:center',
+          inputStyle: isLocked ? 'padding:6px 8px;font-size:12px;text-align:center;opacity:0.65;pointer-events:none' : 'padding:6px 8px;font-size:12px;text-align:center',
+          extraAttrs: isLocked ? ' readonly tabindex="-1"' : '',
           onRecalc: `BLModule._recalcDirectBCHRow(${idx})`
         })}
       </td>
       <td>
-        <input type="number" id="direct-bch-price-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${initPrice}" oninput="BLModule._recalcDirectBCHRow(${idx})">
+        <input type="number" id="direct-bch-price-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right;${lockedStyle}" min="0" step="any" placeholder="0.00" value="${initPrice}" ${lockedAttr} oninput="BLModule._recalcDirectBCHRow(${idx})">
       </td>
       <td>
-        <input type="number" id="direct-bch-buy-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right" min="0" step="any" placeholder="0.00" value="${initBuy}">
+        <input type="number" id="direct-bch-buy-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:right;${lockedStyle}" min="0" step="any" placeholder="0.00" value="${initBuy}" ${lockedAttr}>
       </td>
       <td>
-        <input type="number" id="direct-bch-disc-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center" min="0" max="100" step="any" placeholder="0" value="${initDisc}" oninput="BLModule._recalcDirectBCHRow(${idx})">
+        <input type="number" id="direct-bch-disc-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center;${lockedStyle}" min="0" max="100" step="any" placeholder="0" value="${initDisc}" ${lockedAttr} oninput="BLModule._recalcDirectBCHRow(${idx})">
       </td>
       <td style="text-align:right;font-weight:700;vertical-align:middle">
         <span id="direct-bch-tot-${idx}">${Utils.fmtCurrency(initTot)}</span>
       </td>
       <td style="text-align:center;vertical-align:middle">
-        <button type="button" class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="BLModule._removeDirectBCHRow(${idx})"><i class="fas fa-trash"></i></button>
+        ${isLocked ? '<span style="color:var(--text4);font-size:11px" title="Verrouillé"><i class="fas fa-lock"></i></span>' : `<button type="button" class="btn btn-xs btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="BLModule._removeDirectBCHRow(${idx})"><i class="fas fa-trash"></i></button>`}
       </td>
     `;
     tbody.appendChild(tr);
@@ -3318,6 +3363,66 @@ const BLModule = {
     if (!rawNumStr) {
       Utils.notify(isAR ? 'يرجى إدخال رقم سند الشحن' : 'Veuillez saisir le numéro du BCH', 'error');
       numInput?.focus();
+      return;
+    }
+
+
+    // ── FAST-PATH: Minor edit on delivered/locked direct BCH (supplier, client, driver — no qty/amount changes) ──
+    if (editId && existing && (existing.status === 'delivered' || existing.status === 'locked')) {
+      const rows = document.querySelectorAll('#direct-bch-rows tr');
+      let directQtyChanged = false;
+      rows.forEach(tr => {
+        const idx = tr.id.replace('direct-bch-tr-', '');
+        const des = (document.getElementById(`direct-bch-des-${idx}`)?.value || '').trim();
+        const qtyInp = document.getElementById(`direct-bch-qty-${idx}`);
+        const qty = QtyPaletteCalc.parseVal(qtyInp?.value) || 0;
+        const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
+        const orig = (existing.lines || []).find(x => (x.designation || '').trim() === des);
+        if (orig) {
+          if (Math.abs(qty - (orig.qtyDelivered ?? orig.qty ?? 0)) > 0.0001 || Math.abs(price - (orig.price ?? 0)) > 0.0001) {
+            directQtyChanged = true;
+          }
+        }
+      });
+      if (directQtyChanged) {
+        Utils.notify(isAR ? '⛔ لا يمكن تعديل الكميات أو الأسعار لسند شحن مسلّم أو مدرج في كشف مبيعات!' : '⛔ Impossible de modifier les quantités ou prix d’un Bon de Chargement déjà livré ou inclus dans un État de Vente !', 'error', 6000);
+        return;
+      }
+      const supplierId2 = document.getElementById('direct-bch-supplier')?.value;
+      const clientId2   = document.getElementById('direct-bch-client')?.value;
+      const driverName2 = (document.getElementById('direct-bch-driver')?.value||'').trim();
+      const truckIMM2   = (document.getElementById('direct-bch-truck')?.value||'').trim();
+      const destAddr2   = (document.getElementById('direct-bch-dest')?.value||'').trim();
+      const date2       = document.getElementById('direct-bch-date')?.value || Utils.today();
+      const sup2 = supplierId2 ? DB.getById('suppliers', Number(supplierId2)) : null;
+      const cli2 = clientId2 ? DB.getById('clients', Number(clientId2)) : null;
+      if (driverName2) DB.saveDriver(driverName2, truckIMM2);
+      const minorUpdate = {
+        supplierId: supplierId2 ? Number(supplierId2) : existing.supplierId,
+        supplierName: sup2?.name || existing.supplierName,
+        clientId: clientId2 ? Number(clientId2) : existing.clientId,
+        clientName: cli2?.name || existing.clientName || '',
+        clientPhone: cli2?.phone || existing.clientPhone || '',
+        clientNif: cli2?.nif || existing.clientNif || '',
+        clientRc: cli2?.rc || existing.clientRc || '',
+        clientNis: cli2?.nis || existing.clientNis || '',
+        clientAddress: cli2?.address || existing.clientAddress || '',
+        destinationAddress: destAddr2 || cli2?.address || existing.destinationAddress || '',
+        driverName: driverName2 || existing.driverName,
+        truckIMM: truckIMM2 || existing.truckIMM,
+        date: date2
+      };
+      if (adminOverride) {
+        const adminU = Auth.getCurrentUser();
+        minorUpdate.lastAdminEdit = new Date().toISOString();
+        minorUpdate.lastAdminEditBy = adminU?.name;
+      }
+      DB.update('bls', editId, minorUpdate,
+        adminOverride ? `Admin minor edit (${Auth.getCurrentUser()?.name})` : 'Modification mineure (fournisseur/client/chauffeur)');
+      DB.MasterBrain.recalibrateAll();
+      Utils.notify(isAR ? '✅ تم تعديل البيانات (المورد/العميل/السائق)' : '✅ Données modifiées (fournisseur/client/chauffeur)', 'success');
+      UI.closeModal();
+      BLModule.render();
       return;
     }
 
@@ -3714,8 +3819,11 @@ const BLModule = {
     const blNum = bl.bchNum ? String(bl.bchNum).padStart(4, '0') : (bl.ref ? (bl.ref.match(/(\d+)/) || [])[1] : '0001');
     const blYear = bl.year || (bl.date ? parseInt(bl.date.substring(0, 4)) : new Date().getFullYear());
 
+    const isDocLocked = bl.status === 'delivered' || bl.status === 'locked';
+
     const modalHTML = `
     <div style="margin-bottom:12px">
+      ${isDocLocked ? `<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:#d97706;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px"><i class="fas fa-lock"></i> ${isAR ? 'سند الشحن مسلّم: الكميات والأسعار مقفلة نهائياً (يمكن تعديل المورد، الزبون، السائق، العنوان، والتاريخ فقط)' : 'BCH déjà livré : quantités et prix verrouillés (seuls le fournisseur, client, chauffeur, destination et date sont modifiables).'}</div>` : ''}
       <div style="background:var(--bg2);padding:14px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
         <div class="form-row-4" style="margin-bottom:10px">
           <div class="form-group mb-0">
@@ -3775,7 +3883,7 @@ const BLModule = {
       <!-- Articles Table -->
       <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:var(--text);display:flex;justify-content:space-between;align-items:center">
         <span><i class="fas fa-list"></i> ${isAR ? 'البضائع المراد شحنها' : 'Marchandises à charger'}</span>
-        <button type="button" class="btn btn-xs btn-outline" onclick="BLModule._addDirectBCHRow()"><i class="fas fa-plus"></i> ${isAR ? 'إضافة سطر' : 'Ajouter ligne'}</button>
+        ${isDocLocked ? `<span class="badge badge-warning" style="font-size:11px"><i class="fas fa-lock"></i> ${isAR ? 'الكميات مقفلة' : 'Quantités verrouillées'}</span>` : `<button type="button" class="btn btn-xs btn-outline" onclick="BLModule._addDirectBCHRow()"><i class="fas fa-plus"></i> ${isAR ? 'إضافة سطر' : 'Ajouter ligne'}</button>`}
       </div>
 
       <datalist id="bch-articles-list">
@@ -3851,9 +3959,9 @@ const BLModule = {
     BLModule._directBCHRows = [];
     const lines = (bl.lines && bl.lines.length) ? bl.lines : (bl.items || []);
     if (lines.length) {
-      lines.forEach(item => BLModule._addDirectBCHRow(item));
+      lines.forEach(item => BLModule._addDirectBCHRow(item, isDocLocked));
     } else {
-      BLModule._addDirectBCHRow();
+      BLModule._addDirectBCHRow({}, isDocLocked);
     }
     BLModule._recalcDirectBCHTotals();
     setTimeout(() => {
@@ -4055,8 +4163,8 @@ const BLModule = {
                   min: 0,
                   max: maxQty,
                   step: 'any',
-                  inputStyle: 'width:90px;text-align:center',
-                  extraAttrs: `data-brqty="${l.qty||0}" data-price="${l.price||0}" data-disc="${l.disc||0}"`,
+                  inputStyle: 'width:90px;text-align:center' + ((bl?.status === 'delivered' || bl?.status === 'locked') ? ';opacity:0.6;pointer-events:none' : ''),
+                  extraAttrs: `data-brqty="${l.qty||0}" data-price="${l.price||0}" data-disc="${l.disc||0}"` + ((bl?.status === 'delivered' || bl?.status === 'locked') ? ' readonly tabindex="-1"' : ''),
                   onRecalc: `BLModule._recalcBLLine(${i})`,
                   unit: l.unit || 'U'
                 })}
@@ -4309,6 +4417,57 @@ const BLModule = {
     }
     if (!driverName) { Utils.notify(T.get('bl_driver')+(isAR?' مطلوب':' requis'), 'error'); return; }
     if (!truckIMM)   { Utils.notify(T.get('bl_truck')+(isAR?' مطلوب':' requis'), 'error'); return; }
+
+
+    // ── FAST-PATH: Minor edit on delivered/locked BCH (client, driver, address — no qty/amount changes) ──
+    if (editBlId) {
+      const existingBL = DB.getById('bls', editBlId);
+      if (existingBL && (existingBL.status === 'delivered' || existingBL.status === 'locked')) {
+        const brLines = br?.lines || [];
+        let qtyChanged = false;
+        brLines.forEach((l, i) => {
+          const qtyInp = document.getElementById(`bl-qty-${i}`);
+          if (qtyInp) {
+            const val = QtyPaletteCalc.parseVal(qtyInp.value) || 0;
+            const orig = (existingBL.lines || []).find(x => (x.designation || '').trim() === (l.designation || '').trim());
+            const origQty = orig ? (orig.qtyDelivered ?? orig.qty ?? 0) : 0;
+            if (Math.abs(val - origQty) > 0.0001) qtyChanged = true;
+          }
+        });
+        if (qtyChanged) {
+          Utils.notify(isAR ? '⛔ لا يمكن تعديل كميات سند شحن تم تسليمه أو إدراجه في كشف مبيعات!' : '⛔ Impossible de modifier les quantités d’un Bon de Chargement déjà livré ou inclus dans un État de Vente !', 'error', 6000);
+          return;
+        }
+        const cli = DB.getById('clients', Number(clientId));
+        const destAddr = (document.getElementById('bl-destination')?.value||'').trim();
+        DB.saveDriver(driverName, truckIMM);
+        const minorUpdate = {
+          clientId: Number(clientId),
+          clientName: cli?.name || '',
+          clientPhone: cli?.phone || '',
+          clientNif: cli?.nif || '',
+          clientRc: cli?.rc || '',
+          clientNis: cli?.nis || '',
+          clientAddress: cli?.address || '',
+          destinationAddress: destAddr || cli?.address || '',
+          driverName, truckIMM,
+          date,
+          notes
+        };
+        if (adminOverride) {
+          const adminU = Auth.getCurrentUser();
+          minorUpdate.lastAdminEdit = new Date().toISOString();
+          minorUpdate.lastAdminEditBy = adminU?.name;
+        }
+        const savedBL = DB.update('bls', editBlId, minorUpdate,
+          adminOverride ? `Admin minor edit (${Auth.getCurrentUser()?.name})` : 'Modification mineure (client/chauffeur/adresse)');
+        DB.MasterBrain.recalibrateAll();
+        Utils.notify(isAR ? '✅ تم تعديل البيانات (العميل/السائق/العنوان)' : '✅ Données modifiées (client/chauffeur/adresse)', 'success');
+        UI.closeModal();
+        BLModule.render();
+        return;
+      }
+    }
 
     const check = DB.checkDocNum(rawNumStr, docYear, { excludeBlId: editBlId, parentBrId: brId });
     if (!check.valid) {

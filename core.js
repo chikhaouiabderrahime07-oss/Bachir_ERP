@@ -3699,6 +3699,10 @@ const DB = {
     const takenBR = this.getAll('brs').find(b => {
       if (excludeBrId && Number(b.id) === Number(excludeBrId)) return false;
       if (parentBrId && Number(b.id) === Number(parentBrId)) return false;
+      if (excludeBlId) {
+        const bl = this.getById('bls', excludeBlId);
+        if (bl && Number(b.id) === Number(bl.brId)) return false;
+      }
       const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
       if (bYear !== y) return false;
       const bNum = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
@@ -3710,8 +3714,11 @@ const DB = {
     }
 
     // Check in BLs / BCHs — SKIP returned/cancelled (they free the number for R-/P- reuse)
+    // Also ignore any BL that belongs to the BR currently being excluded or parented
     const takenBL = this.getAll('bls').find(b => {
       if (excludeBlId && Number(b.id) === Number(excludeBlId)) return false;
+      if (excludeBrId && Number(b.brId) === Number(excludeBrId)) return false;
+      if (parentBrId && Number(b.brId) === Number(parentBrId)) return false;
       if (b.status === 'returned' || b.status === 'cancelled') return false;
       const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
       if (bYear !== y) return false;
