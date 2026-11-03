@@ -968,14 +968,40 @@
           {label:isAR ? 'الخصم ك.ر' : 'DÉDUCTION TTC', width:40, halign:'right'}
         ];
 
-        const retRows = returnList.map((r, i) => [
-          String(i+1).padStart(2, '0'),
-          this._t(r.ref || '—'),
-          this._t(r.blRef || '—'),
-          this._fmtDate(r.date),
-          this._t((r.clientName ? r.clientName + (r.motif ? ' - ' + r.motif : '') : (r.motif || (isAR ? 'إرجاع' : 'Retour')))),
-          '- ' + this._fmtMoney(r.totalTTC || 0)
-        ]);
+        const retRows = [];
+        returnList.forEach((r, i) => {
+          // Main BR row
+          retRows.push([
+            String(i+1).padStart(2, '0'),
+            this._t(r.ref || '—'),
+            this._t(r.blRef || '—'),
+            this._fmtDate(r.date),
+            this._t((r.clientName ? r.clientName + (r.motif ? ' - ' + r.motif : '') : (r.motif || (isAR ? 'إرجاع' : 'Retour')))),
+            '- ' + this._fmtMoney(r.totalTTC || 0)
+          ]);
+
+          // Article detail sub-rows for this BR
+          let brItems = r.items || r.lines || [];
+          if (brItems.length === 0 && typeof DB !== 'undefined' && r.id) {
+            const brDoc = DB.getById('bon_retours', r.id);
+            if (brDoc) brItems = brDoc.items || brDoc.lines || [];
+          }
+          if (brItems.length > 0) {
+            brItems.forEach(item => {
+              const artName = item.designation || item.name || item.article || (isAR ? 'مادة' : 'Article');
+              const artQty = Number(item.qty || item.quantity || item.qte || 0);
+              const artUnit = item.unit || item.unite || 'U';
+              retRows.push([
+                { content: '', styles: { fillColor: [254, 249, 249] } },
+                { content: '', styles: { fillColor: [254, 249, 249] } },
+                { content: isAR ? '↞ مادة مرتجعة' : '↪ Art. retourné', styles: { fontStyle: 'italic', fontSize: 6.8, textColor: [156, 163, 175], fillColor: [254, 249, 249], halign: 'center' } },
+                { content: '', styles: { fillColor: [254, 249, 249] } },
+                { content: this._t(artName), styles: { fontStyle: 'italic', fontSize: 7, textColor: [107, 114, 128], fillColor: [254, 249, 249], halign: isAR ? 'right' : 'left' } },
+                { content: artQty + ' ' + this._t(artUnit), styles: { fontStyle: 'bold', fontSize: 7, textColor: [220, 38, 38], fillColor: [254, 249, 249], halign: 'right' } }
+              ]);
+            });
+          }
+        });
 
         // Total row for Returns
         retRows.push([

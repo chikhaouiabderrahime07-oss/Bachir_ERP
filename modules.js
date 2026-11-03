@@ -16918,7 +16918,8 @@ const EtatVenteModule = {
           clientName: r.clientName || 'Client',
           motif: r.reason || r.motif || 'Retour marchandise',
           reason: r.reason || r.motif || 'Retour marchandise',
-          totalTTC: Number(r.totalTTC) || 0
+          totalTTC: Number(r.totalTTC) || 0,
+          items: r.items || r.lines || []
         }));
         doc.returnList = docReturns;
         const totalRet = docReturns.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0);

@@ -1355,7 +1355,7 @@ const DB = {
                   isReturned: b.status === 'returned',
                   date: b.date
                 })),
-                returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || 'Client', totalTTC: Number(r.totalTTC) || 0, date: r.date })),
+                returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || 'Client', totalTTC: Number(r.totalTTC) || 0, date: r.date, items: r.items || r.lines || [] })),
                 totalBLsTTC: summary.totalSalesTTC,
                 grossTotalTTC: summary.totalSalesTTC,
                 totalReturnsTTC: summary.totalReturnsTTC,
@@ -5212,7 +5212,7 @@ const SessionMgr = {
         isReturned: b.status === 'returned' || b.isReturned === true,
         date: b.date
       })),
-      returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || (isAR ? 'عميل' : 'Client'), totalTTC: Number(r.totalTTC)||0, date: r.date })),
+      returnList: summary.retours.map(r => ({ id: r.id, ref: r.ref, blRef: r.blRef, clientName: r.clientName || (isAR ? 'عميل' : 'Client'), totalTTC: Number(r.totalTTC)||0, date: r.date, items: r.items || r.lines || [] })),
       totalBLsTTC: summary.totalSalesTTC,
       grossTotalTTC: summary.totalSalesTTC,
       totalReturnsTTC: summary.totalReturnsTTC,
