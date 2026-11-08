@@ -2479,6 +2479,257 @@
       this._save(doc,`FICHE_PAIE_${(data.employeeName||'').replace(/\s/g,'_')}_${(data.monthLabel||'').replace(/[\s\/]/g,'_')}.pdf`);
     },
 
+    /* ══════════════════════════════════════════════════════════
+       SUIVI CAISSE PRINCIPALE ↔ VALIDATION USINE ↔ ÉTAT DE VENTE
+    ══════════════════════════════════════════════════════════ */
+    async exportCaisseUsineFollowup(reportData) {
+      try {
+        await this._ensureArabicFont();
+        this._exportCaisseUsineFollowup(reportData);
+      } catch (e) {
+        console.error(e);
+        this._notify('Erreur export PDF Suivi Caisse/Usine: ' + e.message, 'error');
+      }
+    },
+
+    _exportCaisseUsineFollowup(reportData) {
+      const data = reportData || (typeof SessionMgr !== 'undefined' && SessionMgr.computeUsineCaisseFollowup ? SessionMgr.computeUsineCaisseFollowup({}) : null);
+      if (!data) { this._notify('Données introuvables', 'error'); return; }
+      const isAR = typeof T !== 'undefined' && T.isRTL();
+      const s = this._settings();
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      if (_arFontB64) {
+        try {
+          doc.addFileToVFS('Amiri-Regular.ttf', _arFontB64);
+          doc.addFont('Amiri-Regular.ttf', AR_FONT_NAME, 'normal');
+          doc.addFont('Amiri-Regular.ttf', AR_FONT_NAME, 'bold');
+        } catch (_) {}
+      }
+
+      const LW = 297, LH = 210, LML = 8, LMR = 8, LCW = LW - LML - LMR;
+      const fmtM = v => this._fmtMoney(Number(v) || 0);
+      const fmtSigned = v => {
+        const n = Math.round((Number(v) || 0) * 100) / 100;
+        return (n > 0 ? '+' : '') + this._fmtMoney(n);
+      };
+
+      let y = 8;
+      this._rect(doc, LML, y, LCW, 13, C.PRIMARY, C.PRIMARY);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      this._tc(doc, C.WHITE);
+      this._text(doc, this._t(s.companyName || 'ENTREPRISE'), LML + 4, y + 5.5);
+      doc.setFontSize(10);
+      this._text(
+        doc,
+        isAR ? 'متابعة الصندوق الرئيسي - تأكيد المصنع - كشف المبيعات (البنك)' : 'SUIVI CAISSE PRINCIPALE <-> VALIDATION USINE <-> ETAT DE VENTE (BANQUE)',
+        LW - LMR - 4,
+        y + 5.5,
+        { align: 'right' }
+      );
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      const flt = data.filters || {};
+      const periodStr = (flt.dateFrom || flt.dateTo)
+        ? `${flt.dateFrom || '...'} -> ${flt.dateTo || '...'}`
+        : (isAR ? 'كل الفترات' : 'Toutes les periodes');
+      const marginRate = data.settings?.marginRate || 0;
+      const tvaRate = data.settings?.tvaRate || 19;
+      this._text(
+        doc,
+        `Periode: ${periodStr}   |   Marge EV: ${marginRate}%   |   TVA: ${tvaRate}%   |   Timbre EV: 1%   |   Edite le: ${new Date().toLocaleString('fr-FR')}`,
+        LML + 4,
+        y + 10.8
+      );
+      y += 16;
+
+      const k = data.kpis || {};
+      const kpiCards = [
+        { lbl: 'Entrees Caisse (Net BCH)', val: fmtM(k.totalCaisseNetTTC), sub: `${k.totalCaisseBchCount || 0} BCH (-${k.totalCaisseReturnCount || 0} ret.)`, col: [15, 23, 42] },
+        { lbl: 'Transfere EV / Banque (1%)', val: fmtM(k.totalEvActualTTC), sub: `${k.totalEvBchCount || 0} BCH valides (Base: ${fmtM(k.totalEvBchBaseTTC)})`, col: [3, 105, 161] },
+        { lbl: 'En Attente Usine (en Caisse)', val: fmtM(k.pendingNowTTC), sub: `${k.pendingNowCount || 0} BCH non valides usine`, col: [180, 83, 9] },
+        { lbl: 'Rattrapage Usine (J precedent -> EV)', val: fmtM(k.rattrapageMovedToEvTTC), sub: `${k.rattrapageCount || 0} BCH valides jour ulterieur`, col: [109, 40, 217] },
+        { lbl: 'Ecart Timbre 1% & Marge %', val: fmtSigned(k.totalDiffFiscalAndMarginDA), sub: `Marge: ${fmtSigned(k.totalDiffMarginDA)} | Timbre 1%: ${fmtSigned(k.totalDiffTimbre1PctDA)}`, col: [190, 18, 60] },
+        { lbl: 'Solde Cumule Caisse (Fin)', val: fmtM(k.soldeCumuleFinal), sub: `Report initial: ${fmtM(k.reportInitial)} | Charges: ${fmtM(k.totalChargesTTC)}`, col: [5, 150, 105] }
+      ];
+      const cardW = (LCW - 10) / 6;
+      kpiCards.forEach((c, idx) => {
+        const cx = LML + idx * (cardW + 2);
+        this._rect(doc, cx, y, cardW, 16, [248, 250, 252], C.BORDER);
+        this._rect(doc, cx, y, cardW, 3.8, c.col, c.col);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.3);
+        this._tc(doc, C.WHITE);
+        doc.text(c.lbl, cx + 2, y + 2.8);
+        doc.setFontSize(8.5);
+        this._tc(doc, c.col);
+        doc.text(c.val, cx + 2, y + 9.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        this._tc(doc, C.GRAY_TXT);
+        doc.text(c.sub, cx + 2, y + 14);
+      });
+      y += 19;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      this._tc(doc, C.PRIMARY_DARK);
+      doc.text('I. TABLEAU JOURNALIER & CUMULATIF (REPORT J-1 -> CAISSE -> ATTENTE USINE -> RATTRAPAGE -> EV 1% -> ECARTS -> SOLDE CUMULE)', LML, y);
+      y += 2;
+
+      const dailyAsc = (data.dailyRows || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const dailyBody = dailyAsc.map(r => [
+        r.date,
+        fmtM(r.reportVeille),
+        `${fmtM(r.caisseNetTTC)}\n(${r.caisseBchCount} BCH)`,
+        r.pendingOnDayCount > 0 ? `+${fmtM(r.pendingStayInCaisseTTC)}\n(${r.pendingOnDayCount} BCH)` : '0.00',
+        r.rattrapageCount > 0 ? `-${fmtM(r.rattrapageMovedToEvTTC)}\n(${r.rattrapageCount} BCH)` : '0.00',
+        `${fmtM(r.evBchBaseTTC)}\n(${r.evBchCount} BCH)`,
+        fmtSigned(r.diffMarginDA),
+        fmtSigned(r.diffTimbre1PctDA + r.diffTvaOnMarginDA),
+        `${fmtM(r.evActualTTC)}\n${(r.evRefs || []).join(', ') || (r.hasEvDoc ? 'EV' : 'Theo.')}`,
+        fmtSigned(r.diffCaisseVsEvDA),
+        r.chargesTTC > 0 ? `-${fmtM(r.chargesTTC)}` : '0.00',
+        fmtSigned(r.resteJour),
+        fmtM(r.soldeCumuleFinJour)
+      ]);
+
+      dailyBody.push([
+        'TOTAL / FIN',
+        fmtM(k.reportInitial),
+        `${fmtM(k.totalCaisseNetTTC)} (${k.totalCaisseBchCount || 0})`,
+        `+${fmtM(k.pendingStayInCaisseTTC)} (${k.pendingOnPeriodCount || 0})`,
+        `-${fmtM(k.rattrapageMovedToEvTTC)} (${k.rattrapageCount || 0})`,
+        `${fmtM(k.totalEvBchBaseTTC)} (${k.totalEvBchCount || 0})`,
+        fmtSigned(k.totalDiffMarginDA),
+        fmtSigned((k.totalDiffTimbre1PctDA || 0) + (k.totalDiffTvaOnMarginDA || 0)),
+        fmtM(k.totalEvActualTTC),
+        fmtSigned(k.totalDiffCaisseVsEvDA),
+        `-${fmtM(k.totalChargesTTC)}`,
+        fmtSigned(k.totalRestePeriode),
+        fmtM(k.soldeCumuleFinal)
+      ]);
+
+      if (doc.autoTable) {
+        doc.autoTable({
+          startY: y,
+          margin: { left: LML, right: LMR },
+          head: [[
+            'Date',
+            'Report J-1',
+            'Entree Caisse (J)',
+            'Attente Usine (+Caisse)',
+            'Rattrapage (-Caisse->EV)',
+            'Base BCH EV',
+            `Marge (${marginRate}%)`,
+            'Ecart Timbre 1% + TVA',
+            'Total EV / Banque',
+            'Ecart Caisse - EV',
+            'Charges',
+            'Flux Net Jour',
+            'Solde Cumule Fin J'
+          ]],
+          body: dailyBody,
+          theme: 'grid',
+          styles: { fontSize: 6.3, cellPadding: 1.4, valign: 'middle', halign: 'right', lineColor: [203, 213, 225], lineWidth: 0.15 },
+          headStyles: { fillColor: C.PRIMARY, textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6.3 },
+          columnStyles: { 0: { halign: 'center', fontStyle: 'bold', cellWidth: 18 } },
+          didParseCell: (hookData) => {
+            if (hookData.section === 'body' && hookData.row.index === dailyBody.length - 1) {
+              hookData.cell.styles.fontStyle = 'bold';
+              hookData.cell.styles.fillColor = [226, 232, 240];
+              hookData.cell.styles.textColor = [15, 23, 42];
+            }
+          }
+        });
+        y = doc.lastAutoTable.finalY + 6;
+      }
+
+      if (y > LH - 40) {
+        doc.addPage();
+        y = 12;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      this._tc(doc, C.PRIMARY_DARK);
+      doc.text('II. TRACABILITE DETAILLEE DES BCH (ENTREE CAISSE -> VALIDATION USINE -> ETAT DE VENTE & BANQUE)', LML, y);
+      y += 2;
+
+      const statusLbl = (b) => {
+        if (b.isReturned) return 'Retourne';
+        if (b.isPendingUsine) return 'En Attente Usine';
+        if (b.isStock) return 'Stock Direct';
+        if (b.usineStatus === 'validated_later_day') return `Valide J+${b.delayDays || 1} (${b.validationDate})`;
+        return 'Valide Meme Jour';
+      };
+      const cashLbl = (b) => {
+        if (b.cashLocation === 'returned') return 'Annule / Retour';
+        if (b.cashLocation === 'in_caisse_pending_usine') return 'Dans Caisse (Attente Usine)';
+        if (b.cashLocation === 'in_ev_bank') return `Transfere EV / Banque (${b.evRef || b.evDate || ''})`;
+        return 'Dans Caisse (Attente Cloture EV)';
+      };
+
+      const bchBody = (data.bchRows || []).map(b => [
+        b.ref || `#${b.id}`,
+        this._t(b.clientName || '-'),
+        b.creationDate || '-',
+        b.isPendingUsine ? 'Non valide' : (b.validationDate || (b.isStock ? 'Stock' : b.creationDate || '-')),
+        b.evDate || (b.effectiveEvDate || '-'),
+        statusLbl(b),
+        fmtM(b.bchTTC),
+        fmtSigned(b.evMarginDA),
+        fmtSigned(b.timbreDiffDA),
+        fmtM(b.evTTC),
+        cashLbl(b)
+      ]);
+
+      if (doc.autoTable) {
+        doc.autoTable({
+          startY: y,
+          margin: { left: LML, right: LMR },
+          head: [[
+            'Ref BCH',
+            'Client',
+            'Date Caisse (Creation)',
+            'Date Valid. Usine',
+            'Date EV Effective',
+            'Statut Usine',
+            'Montant BCH TTC',
+            `Marge EV (${marginRate}%)`,
+            'Ecart Timbre 1% + TVA',
+            'Equiv. EV TTC',
+            'Position Actuelle Argent'
+          ]],
+          body: bchBody,
+          theme: 'striped',
+          styles: { fontSize: 6.3, cellPadding: 1.3, valign: 'middle', lineColor: [203, 213, 225], lineWidth: 0.1 },
+          headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6.3 },
+          columnStyles: {
+            0: { fontStyle: 'bold', cellWidth: 22 },
+            2: { halign: 'center', cellWidth: 20 },
+            3: { halign: 'center', cellWidth: 20 },
+            4: { halign: 'center', cellWidth: 20 },
+            6: { halign: 'right', fontStyle: 'bold' },
+            7: { halign: 'right' },
+            8: { halign: 'right' },
+            9: { halign: 'right', fontStyle: 'bold' }
+          }
+        });
+      }
+
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        this._tc(doc, C.GRAY_TXT);
+        doc.text(`Suivi Caisse Principale <-> Validation Usine <-> Etat de Vente   |   Page ${p} / ${totalPages}`, LW / 2, LH - 4, { align: 'center' });
+      }
+
+      const todayStr = (typeof Utils !== 'undefined' && Utils.today) ? Utils.today() : new Date().toISOString().slice(0, 10);
+      this._save(doc, `Suivi_Caisse_Usine_EV_${todayStr}.pdf`);
+    },
+
   }; /* end PDFGen */
 
 

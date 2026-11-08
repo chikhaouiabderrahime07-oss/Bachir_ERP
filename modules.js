@@ -6851,9 +6851,11 @@ const CaisseModule = {
     const netCaisse = summary.netAmount; // caisseBrut - totalReturns
     
     // Etat de vente with timbre & article benefit margin (calculated as % of each article's base price)
+    const evSummary = (typeof SessionMgr.getEvDaySummary === 'function') ? SessionMgr.getEvDaySummary(u.id, today) : summary;
+    const usineRule = (typeof SessionMgr.getEvUsineRule === 'function') ? SessionMgr.getEvUsineRule() : { active: false, covers: () => false };
     const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
     const aggregated = {};
-    summary.bls.filter(b => b.status !== 'returned').forEach(bl => {
+    (evSummary.bls || []).filter(b => b.status !== 'returned').forEach(bl => {
       (bl.lines || []).forEach(line => {
         const key = (line.designation || '').trim();
         if (!key) return;
@@ -6872,6 +6874,21 @@ const CaisseModule = {
         }
       });
     });
+    const evSameDayRetBlIds = new Set((evSummary.bls || []).filter(b => b.status === 'returned').map(b => Number(b.id)));
+    ((evSummary.retours || []).filter(r => !evSameDayRetBlIds.has(Number(r.blId || r.bcId)))).forEach(r => {
+      (r.lines || r.items || []).forEach(line => {
+        const key = (line.designation || '').trim();
+        if (!key) return;
+        const qty = Number(line.qtyReturned || line.qty) || 0;
+        const price = Number(line.price) || 0;
+        const disc = Number(line.disc) || 0;
+        const basePrice = Math.round(price * (1 - disc / 100) * 100) / 100;
+        const marginPerUnit = Math.round(basePrice * (marginRate / 100) * 100) / 100;
+        const ep = Math.round((basePrice + marginPerUnit) * 100) / 100;
+        if (aggregated[key]) aggregated[key].qty -= qty;
+        else aggregated[key] = { qty: -qty, basePrice, unitPrice: ep, marginPerUnit, marginRate };
+      });
+    });
     const totalHT = Math.round(Object.values(aggregated).reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
     const totalMargin = Math.round(Object.values(aggregated).reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;
@@ -6884,8 +6901,13 @@ const CaisseModule = {
     // Build BCH detail rows
     const bchRows = summary.bls.map((b, i) => {
       const cli = DB.getById('clients', b.clientId);
+      const bCreationDate = b.date || (b.createdAt || '').slice(0, 10);
+      const isPendingUsineExcl = b.status === 'pending_usine' && usineRule.active && usineRule.covers(bCreationDate);
+      const pendingBadge = isPendingUsineExcl
+        ? `<div style="margin-top:3px"><span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(245,158,11,.15);color:#d97706;border:1px solid rgba(245,158,11,.3)">⏳ ${isAR ? 'في انتظار المصنع (الصندوق نعم / كشف لا)' : 'En attente usine (Caisse oui / ÉV non)'}</span></div>`
+        : '';
       return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--bg-inset)':''}">
-        <td style="padding:8px 10px;font-weight:700;color:var(--primary);font-size:12px">${Utils.escHTML(b.ref||'')}</td>
+        <td style="padding:8px 10px;font-weight:700;color:var(--primary);font-size:12px">${Utils.escHTML(b.ref||'')}${pendingBadge}</td>
         <td style="padding:8px 10px;font-size:12px">${Utils.escHTML(cli?.name||b.clientName||'—')}</td>
         <td style="padding:8px 10px;font-size:11px;color:var(--text4)">${b.createdAt?new Date(b.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
         <td style="padding:8px 10px;text-align:center;font-size:11px">${(b.lines||[]).length} ${isAR?'سلعة':'art.'}</td>
@@ -6954,6 +6976,24 @@ const CaisseModule = {
               </tr></tfoot>
             </table>
           </div>
+        </div>` : ''}
+
+        <!-- Usine <-> EV Reconciliation Banner -->
+        ${((evSummary.pendingExcludedBls?.length || 0) > 0 || (evSummary.priorValidatedBls?.length || 0) > 0) ? `
+        <div style="background:linear-gradient(135deg,rgba(245,158,11,.12),rgba(13,148,136,.08));border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px">
+          <div style="font-weight:800;color:#b45309;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+            <i class="fas fa-industry"></i> ${isAR ? 'تسوية المصنع وكشف المبيعات (القاعدة المفعلة)' : 'Règle Validation Usine ↔ État de Vente'}
+          </div>
+          ${(evSummary.pendingExcludedBls?.length || 0) > 0 ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;color:#92400e">
+            <span>⏳ ${isAR ? `سندات في الصندوق اليوم ولكن مستبعدة من كشف المبيعات (في انتظار تأكيد المصنع):` : `BCH encaissés aujourd'hui mais exclus de l'ÉV (en attente validation usine) :`} <strong>${evSummary.pendingExcludedBls.length} BCH</strong></span>
+            <strong style="color:#d97706">-${Utils.fmtCurrency(evSummary.pendingExcludedTTC || 0)}</strong>
+          </div>` : ''}
+          ${(evSummary.priorValidatedBls?.length || 0) > 0 ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;color:#0f766e">
+            <span>🔄 ${isAR ? `سندات أيام سابقة تم تأكيدها من المصنع اليوم وأُدرجت في كشف المبيعات:` : `BCH de jours précédents validés par l'usine aujourd'hui et inclus dans l'ÉV :`} <strong>${evSummary.priorValidatedBls.length} BCH</strong></span>
+            <strong style="color:#0d9488">+${Utils.fmtCurrency(evSummary.priorValidatedTTC || 0)}</strong>
+          </div>` : ''}
         </div>` : ''}
 
         <!-- Fiscal Breakdown: Caisse Brute vs Etat de Vente -->
@@ -7375,10 +7415,12 @@ const CaisseModule = {
 // ═══════════════════════════════════════════════════════════════
 const AdminCaisseModule = {
   _filterType: 'all',
-  _adminTab: 'overview',  /* overview | deposits | withdrawals | mini_caisses */
+  _adminTab: 'overview',  /* overview | deposits | withdrawals | mini_caisses | suivi_usine_ev */
   _miniCaisseSubView: 'daily', /* daily | sessions | caissiers */
   _miniCaisseStatusFilter: 'all', /* all | closed | open */
   _filters: { q:'', dateFrom:'', dateTo:'', userId:'all', type:'all' },
+  _suiviFilters: { dateFrom: '', dateTo: '', userId: 'all', statusFilter: 'all', dateMode: 'creation', q: '', subView: 'both', selectedDay: '' },
+  _suiviExpandedDays: {},
   _charts: {},
 
   isChargeTx(t) {
@@ -7583,13 +7625,14 @@ const AdminCaisseModule = {
       return md-mw;
     })();
 
-    // ── Tab label builder (Unified Super-Hub: 5 tabs) ──
+    // ── Tab label builder (Unified Super-Hub: 6 tabs) ──
     const TABS = [
       {id:'journal',        icon:'fa-exchange-alt',          label:isAR?'السجل الموحد (إيداعات وسحوبات)':'Journal Général (Entrées & Sorties)', accent:'#6366f1'},
       {id:'overview',       icon:'fa-th-large',              label:isAR?'نظرة عامة':'Vue d\'ensemble'},
       {id:'deposits',       icon:'fa-arrow-alt-circle-down', label:isAR?'الإيداعات':'Dépôts',   accent:'#22c55e'},
       {id:'withdrawals',    icon:'fa-arrow-alt-circle-up',   label:isAR?'السحوبات والمصاريف':'Retraits & Charges', accent:'#ef4444'},
       {id:'mini_caisses',   icon:'fa-cash-register',         label:isAR?'مراقبة وتسوية الصناديق':'Supervision & Rapprochement Mini-Caisses', accent:'#0284c7'},
+      {id:'suivi_usine_ev', icon:'fa-project-diagram',       label:isAR?'متابعة الصندوق ↔ المصنع ↔ كشف المبيعات':'Suivi Caisse ↔ Usine ↔ ÉV (Banque)', accent:'#0d9488'},
     ];
 
     // ── Vault banner (always visible with Deduction & Charges recap aside) ──
@@ -8944,6 +8987,7 @@ const AdminCaisseModule = {
       : tab==='deposits'       ? tabDeposits
       : tab==='withdrawals'    ? tabWithdrawals
       : tab==='mini_caisses'   ? tabMiniCaisses
+      : tab==='suivi_usine_ev' ? this._renderSuiviUsineEvTab()
       : tabJournal;
 
     return `<div style="padding:24px" ${isAR?'dir="rtl"':''}>
@@ -9909,6 +9953,556 @@ const AdminCaisseModule = {
       : `✅ Session rectifiée${cascadeCount > 0 ? ` + ${cascadeCount} session(s) en cascade` : ''}`;
     Utils.notify(msg, 'success', 4000);
     App.loadModule('admin_caisse');
+  },
+
+  _renderSuiviUsineEvTab() {
+    const isAR = T.isRTL();
+    const f = this._suiviFilters || { dateFrom: '', dateTo: '', userId: 'all', statusFilter: 'all', dateMode: 'creation', q: '', subView: 'both', selectedDay: '' };
+    const data = (typeof SessionMgr !== 'undefined' && typeof SessionMgr.computeUsineCaisseFollowup === 'function')
+      ? SessionMgr.computeUsineCaisseFollowup(f)
+      : { dailyRows: [], bchRows: [], kpis: { totalCaisseNetTTC:0, totalCaisseBchCount:0, totalEvTTC:0, totalEvBchCount:0, pendingInCaisseTTC:0, pendingInCaisseCount:0, rattrapageTTC:0, rattrapageCount:0, totalDiffMarginDA:0, totalDiffTimbreDA:0, totalDiffFiscalDA:0, totalChargesTTC:0, finalCumulBalance:0, marginRate:0 } };
+    const k = data.kpis || {};
+    const users = (DB.getAll('users') || []).filter(u => u.role === 'user');
+    const lblS = 'font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text4);display:block;margin-bottom:4px';
+    const inpS = 'padding:8px 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:12px;width:100%';
+
+    return `
+      <!-- Header & Action Bar -->
+      <div style="background:linear-gradient(135deg,rgba(13,148,136,.12),rgba(2,132,199,.06));border:1px solid rgba(13,148,136,.3);border-radius:14px;padding:18px 20px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
+        <div style="max-width:760px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <span style="width:36px;height:36px;border-radius:10px;background:#0d9488;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:16px"><i class="fas fa-project-diagram"></i></span>
+            <h3 style="margin:0;font-size:17px;font-weight:900;color:var(--text)">${isAR ? 'المتابعة الشاملة والتسوية التراكمية: الصندوق ↔ المصنع ↔ كشف المبيعات (البنك)' : 'Suivi Complet & Rapprochement Cumulatif : Caisse ↔ Usine ↔ État de Vente (Banque)'}</h3>
+          </div>
+          <p style="margin:0;font-size:12px;color:var(--text3);line-height:1.5">
+            ${isAR
+              ? 'يتتبع هذا الجدول مسار كل وصل شحن (BCH) من لحظة قبض ثمنه في الصندوق، مروراً بتأكيد المصنع (أو بقائه معلقاً في الصندوق لليوم الموالي)، وصولاً إلى إدراجه في كشف المبيعات (طابع 1% + هامش الربح) وتحويله للبنك مع حساب الرصيد التراكمي يومياً.'
+              : 'Suivez chaque BCH depuis son encaissement en Caisse, sa validation par l\'Usine (ou son maintien en Caisse si non validé le jour J), jusqu\'à son passage en État de Vente (1% Timbre + Marge) et la réconciliation cumulative jour après jour.'}
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:#dc2626;color:#fff;font-weight:700" onclick="AdminCaisseModule.exportSuiviUsinePDF()">
+            <i class="fas fa-file-pdf"></i> ${isAR ? 'تصدير PDF شامل' : 'Exporter PDF'}
+          </button>
+          <button class="btn btn-sm" style="background:#16a34a;color:#fff;font-weight:700" onclick="AdminCaisseModule.exportSuiviUsineExcel()">
+            <i class="fas fa-file-excel"></i> ${isAR ? 'تصدير Excel (.xls)' : 'Exporter Excel (.xls)'}
+          </button>
+          <button class="btn btn-sm btn-outline" onclick="AdminCaisseModule._suiviFilters={dateFrom:'',dateTo:'',userId:'all',statusFilter:'all',dateMode:'creation',q:'',subView:'both',selectedDay:''};AdminCaisseModule._suiviExpandedDays={};App.loadModule('admin_caisse')">
+            <i class="fas fa-undo"></i> ${isAR ? 'إعادة ضبط الفلاتر' : 'Réinitialiser Filtres'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter Bar -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;align-items:end">
+          <div>
+            <label style="${lblS}">${isAR ? 'من تاريخ' : 'Du'}</label>
+            <input type="date" value="${f.dateFrom||''}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateFrom=this.value;App.loadModule('admin_caisse')">
+          </div>
+          <div>
+            <label style="${lblS}">${isAR ? 'إلى تاريخ' : 'Au'}</label>
+            <input type="date" value="${f.dateTo||''}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateTo=this.value;App.loadModule('admin_caisse')">
+          </div>
+          <div>
+            <label style="${lblS}">${isAR ? 'نمط الفلترة الزمنية' : 'Mode de date'}</label>
+            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateMode=this.value;App.loadModule('admin_caisse')">
+              <option value="creation" ${f.dateMode==='creation'?'selected':''}>${isAR ? '📅 تاريخ دخول الصندوق (إنشاء BCH)' : '📅 Date Entrée Caisse (BCH)'}</option>
+              <option value="validation" ${f.dateMode==='validation'?'selected':''}>${isAR ? '🏭 تاريخ تأكيد المصنع' : '🏭 Date Validation Usine'}</option>
+              <option value="ev" ${f.dateMode==='ev'?'selected':''}>${isAR ? '🏛️ تاريخ كشف المبيعات (ÉV)' : '🏛️ Date État de Vente'}</option>
+            </select>
+          </div>
+          <div>
+            <label style="${lblS}">${isAR ? 'أمين الصندوق' : 'Caissier'}</label>
+            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.userId=this.value;App.loadModule('admin_caisse')">
+              <option value="all">${isAR ? 'كل أمناء الصناديق' : 'Tous les caissiers'}</option>
+              ${users.map(u => `<option value="${u.id}" ${String(f.userId)===String(u.id)?'selected':''}>${Utils.escHTML(u.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="${lblS}">${isAR ? 'حالة ومسار BCH' : 'Statut BCH'}</label>
+            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.statusFilter=this.value;App.loadModule('admin_caisse')">
+              <option value="all" ${f.statusFilter==='all'?'selected':''}>${isAR ? 'جميع وصولات الشحن (BCH)' : 'Tous les BCH'}</option>
+              <option value="in_caisse_pending_usine" ${f.statusFilter==='in_caisse_pending_usine'?'selected':''}>${isAR ? '⏳ في انتظار المصنع (المال في الصندوق / خارج ÉV)' : '⏳ En attente Usine (Argent en Caisse, hors ÉV)'}</option>
+              <option value="validated_later_day" ${f.statusFilter==='validated_later_day'?'selected':''}>${isAR ? '🔄 استدراك المصنع (مؤكد J+1 ودخل ÉV)' : '🔄 Rattrapage Usine (Validés J+1 et passés en ÉV)'}</option>
+              <option value="validated_same_day" ${f.statusFilter==='validated_same_day'?'selected':''}>${isAR ? '✅ مؤكد من المصنع في نفس اليوم' : '✅ Validés Usine le même jour'}</option>
+              <option value="stock" ${f.statusFilter==='stock'?'selected':''}>${isAR ? '📦 مباع من المخزون المتوفر' : '📦 Vendus depuis Stock disponible'}</option>
+              <option value="in_ev_bank" ${f.statusFilter==='in_ev_bank'?'selected':''}>${isAR ? '🏛️ مدرج في كشف المبيعات / البنك' : '🏛️ Inclus dans ÉV / Banque'}</option>
+              <option value="in_caisse_awaiting_ev" ${f.statusFilter==='in_caisse_awaiting_ev'?'selected':''}>${isAR ? '💵 في الصندوق (لم يدرج بعد في ÉV)' : '💵 En Caisse (Non encore en ÉV)'}</option>
+            </select>
+          </div>
+          <div>
+            <label style="${lblS}">${isAR ? 'بحث سريع' : 'Recherche'}</label>
+            <input type="text" value="${Utils.escHTML(f.q||'')}" placeholder="${isAR ? 'مرجع BCH، مرجع ÉV، زبون...' : 'Réf BCH, Réf ÉV, Client...'}" style="${inpS}" oninput="AdminCaisseModule._suiviFilters.q=this.value;App.loadModule('admin_caisse')">
+          </div>
+        </div>
+        ${this._renderSuiviSubViewBar(f, data, isAR)}
+      </div>
+      ${this._renderSuiviKpiCards(k, isAR)}
+      ${(f.subView === 'both' || f.subView === 'daily') ? this._buildSuiviDailyTable(data, isAR) : ''}
+      ${(f.subView === 'both' || f.subView === 'bch') ? this._buildSuiviBchTable(data, isAR) : ''}
+    `;
+  },
+
+  _renderSuiviSubViewBar(f, data, isAR) {
+    const sv = f.subView || 'both';
+    const btnS = (active) => `padding:6px 14px;border-radius:8px;border:1px solid ${active?'#0d9488':'var(--border)'};background:${active?'#0d9488':'var(--bg)'};color:${active?'#fff':'var(--text3)'};font-size:11px;font-weight:700;cursor:pointer`;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;font-weight:700;color:var(--text4)">${isAR ? 'طريقة العرض :' : 'Affichage :'}</span>
+          <button style="${btnS(sv==='both')}" onclick="AdminCaisseModule._suiviFilters.subView='both';App.loadModule('admin_caisse')">
+            <i class="fas fa-layer-group"></i> ${isAR ? 'عرض شامل (اليومي + تتبع BCH)' : 'Vue Complète (Jour + BCH)'}
+          </button>
+          <button style="${btnS(sv==='daily')}" onclick="AdminCaisseModule._suiviFilters.subView='daily';App.loadModule('admin_caisse')">
+            <i class="fas fa-calendar-check"></i> ${isAR ? '1. الجدول اليومي والتراكمي' : '1. Tableau Journalier & Cumulatif'} (${(data.dailyRows||[]).length})
+          </button>
+          <button style="${btnS(sv==='bch')}" onclick="AdminCaisseModule._suiviFilters.subView='bch';App.loadModule('admin_caisse')">
+            <i class="fas fa-truck-loading"></i> ${isAR ? '2. التتبع التفصيلي لكل BCH' : '2. Traçabilité par BCH'} (${(data.bchRows||[]).length})
+          </button>
+        </div>
+        ${f.selectedDay ? `
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(13,148,136,.12);border:1px solid rgba(13,148,136,.35);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#0d9488">
+          <span><i class="fas fa-filter"></i> ${isAR ? 'يوم محدد :' : 'Jour filtré :'} ${Utils.fmtDate(f.selectedDay)}</span>
+          <button onclick="AdminCaisseModule._suiviFilters.selectedDay='';App.loadModule('admin_caisse')" style="border:none;background:transparent;color:#dc2626;cursor:pointer;font-weight:900">✕</button>
+        </div>` : ''}
+      </div>`;
+  },
+
+  _renderSuiviKpiCards(k, isAR) {
+    const cardS = (borderCol, bgCol) => `background:${bgCol||'var(--bg2)'};border:1px solid var(--border);border-left:4px solid ${borderCol};border-radius:12px;padding:14px 16px`;
+    return `
+      <!-- 6 KPI Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px">
+        <div style="${cardS('#16a34a')}">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR ? '1. إجمالي مداخيل الصندوق (BCH المباعة)' : '1. Total Entrées Caisse (BCH vendus)'}</div>
+          <div style="font-size:21px;font-weight:900;color:#16a34a;margin:4px 0">+${Utils.fmtCurrency(k.totalCaisseNetTTC || 0)}</div>
+          <div style="font-size:11px;color:var(--text3)"><i class="fas fa-receipt"></i> <strong>${k.totalCaisseBchCount || 0}</strong> ${isAR ? 'وصل شحن مقبوض في الصندوق' : 'BCH encaissés en Caisse'}</div>
+        </div>
+        <div style="${cardS('#4f46e5')}">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">${isAR ? '2. إجمالي المحول لكشف المبيعات / البنك (1% طابع)' : '2. Total Envoyé en ÉV / Banque (1% Timbre)'}</div>
+          <div style="font-size:21px;font-weight:900;color:#4f46e5;margin:4px 0">${Utils.fmtCurrency(k.totalEvTTC || 0)}</div>
+          <div style="font-size:11px;color:var(--text3)"><i class="fas fa-university"></i> <strong>${k.totalEvBchCount || 0}</strong> ${isAR ? 'سندات مؤكدة من المصنع / المخزون' : 'BCH validés usine / stock'}</div>
+        </div>
+        <div style="${cardS('#d97706', 'linear-gradient(135deg,rgba(245,158,11,.12),rgba(239,68,68,.05))')}">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#b45309">⏳ ${isAR ? '3. سندات في انتظار المصنع (المال محتفظ به في الصندوق)' : '3. BCH En Attente Usine (Argent gardé en Caisse)'}</div>
+          <div style="font-size:21px;font-weight:900;color:#d97706;margin:4px 0">${Utils.fmtCurrency(k.pendingInCaisseTTC || 0)}</div>
+          <div style="font-size:11px;color:#92400e;font-weight:700"><i class="fas fa-clock"></i> <strong>${k.pendingInCaisseCount || 0}</strong> ${isAR ? 'سند غير مؤكد بعد — لم يخرج للبنك' : 'BCH non validés — argent en Caisse hors ÉV'}</div>
+        </div>
+        <div style="${cardS('#0d9488')}">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">🔄 ${isAR ? '4. استدراك المصنع (سندات J-1 المؤكدة لاحقاً)' : '4. Rattrapage Usine (BCH J-1 validés après)'}</div>
+          <div style="font-size:21px;font-weight:900;color:#0d9488;margin:4px 0">+${Utils.fmtCurrency(k.rattrapageTTC || 0)}</div>
+          <div style="font-size:11px;color:var(--text3)"><i class="fas fa-sync-alt"></i> <strong>${k.rattrapageCount || 0}</strong> ${isAR ? 'سندات مؤجلة دخلت في كشف المبيعات' : 'BCH décalés passés en ÉV'}</div>
+        </div>
+        <div style="${cardS('#7c3aed')}">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text4)">⚖️ ${isAR ? '5. تفصيل الفوارق (طابع 1% وهامش الربح %)' : '5. Décomposition Écarts (Timbre 1% & Marge %)'}</div>
+          <div style="font-size:20px;font-weight:900;color:#7c3aed;margin:4px 0">${(k.totalDiffFiscalDA||0)>=0?'+':''}${Utils.fmtCurrency(k.totalDiffFiscalDA || 0)}</div>
+          <div style="font-size:10.5px;color:var(--text3);display:flex;flex-direction:column;gap:2px">
+            <span>• ${isAR ? 'فارق الطابع 1% مقابل BCH:' : 'Timbre 1% vs BCH:'} <strong>${(k.totalDiffTimbreDA||0)>=0?'+':''}${Utils.fmtCurrency(k.totalDiffTimbreDA || 0)}</strong></span>
+            <span>• ${isAR ? `هامش الربح (${k.marginRate||0}%):` : `Marge (${k.marginRate||0}%):`} <strong style="color:#10b981">+${Utils.fmtCurrency(k.totalDiffMarginDA || 0)}</strong></span>
+          </div>
+        </div>
+        <div style="${cardS('#0284c7', 'linear-gradient(135deg,rgba(2,132,199,.10),rgba(13,148,136,.04))')}">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#0369a1">💰 ${isAR ? '6. الرصيد التراكمي المتبقي في الصندوق' : '6. Solde Cumulé Restant en Caisse'}</div>
+          <div style="font-size:21px;font-weight:900;color:${(k.finalCumulBalance||0)>=0?'#0284c7':'#dc2626'};margin:4px 0">${Utils.fmtCurrency(k.finalCumulBalance || 0)}</div>
+          <div style="font-size:11px;color:var(--text3)">${isAR ? 'بعد خصم تحويلات ÉV والمصاريف' : 'Après transferts ÉV & charges'} (<strong>-${Utils.fmtCurrency(k.totalChargesTTC || 0)}</strong>)</div>
+        </div>
+      </div>`;
+  },
+
+  _buildSuiviDailyRow(d, i, isAR) {
+    const isSel = this._suiviFilters?.selectedDay === d.date;
+    const isExp = !!this._suiviExpandedDays?.[d.date];
+    const tdR = 'padding:9px 8px;text-align:right;font-size:11.5px;white-space:nowrap';
+    const pendList = d.pendingOnDayBchs || [];
+    const rattList = d.rattrapageTodayBchs || [];
+    const evRefsStr = (d.evRefs && d.evRefs.length) ? d.evRefs.join(', ') : (isAR ? 'محسوب' : 'Calculé');
+
+    const mainRow = `
+      <tr style="border-bottom:1px solid var(--border);background:${isSel?'rgba(13,148,136,.12)':(i%2?'var(--bg-inset)':'transparent')}">
+        <td style="padding:9px 8px;font-weight:800;font-size:12px;white-space:nowrap;color:var(--text)">${Utils.fmtDate(d.date)}</td>
+        <td style="${tdR};font-weight:700;color:var(--text3)">${Utils.fmtCurrency(d.reportVeille || 0)}</td>
+        <td style="${tdR}">
+          <div style="font-weight:800;color:#16a34a">+${Utils.fmtCurrency(d.caisseNetTTC || 0)}</div>
+          <div style="font-size:10px;color:var(--text4)">${d.caisseBchCount || 0} BCH${(d.caisseReturnsTTC||0)>0?` (-${Utils.fmtCurrency(d.caisseReturnsTTC)} ret.)`:''}</div>
+        </td>
+        <td style="${tdR}">
+          ${(d.pendingOnDayCount || 0) > 0 ? `
+            <div style="font-weight:800;color:#d97706">${Utils.fmtCurrency(d.pendingOnDayTTC || 0)}</div>
+            <div style="font-size:10px">
+              <span style="background:rgba(245,158,11,.15);color:#b45309;padding:1px 5px;border-radius:4px;font-weight:700">${d.pendingOnDayCount} BCH</span>
+              ${(d.stillPendingNowCount||0)>0 ? `<span style="color:#dc2626;font-weight:700"> (${d.stillPendingNowCount} ${isAR?'معلق':'en att.'})</span>` : `<span style="color:#16a34a"> (✓ ${isAR?'سُوي':'apuré'})</span>`}
+            </div>
+          ` : `<span style="color:var(--text4)">0.00 DA</span>`}
+        </td>
+        <td style="${tdR}">
+          ${(d.rattrapageTodayCount || 0) > 0 ? `
+            <div style="font-weight:800;color:#0d9488">+${Utils.fmtCurrency(d.rattrapageTodayTTC || 0)}</div>
+            <div style="font-size:10px"><span style="background:rgba(13,148,136,.15);color:#0f766e;padding:1px 5px;border-radius:4px;font-weight:700">🔄 ${d.rattrapageTodayCount} BCH</span></div>
+          ` : `<span style="color:var(--text4)">0.00 DA</span>`}
+        </td>
+        <td style="${tdR}">
+          <div style="font-weight:700;color:var(--text2)">${Utils.fmtCurrency(d.evBchBaseTTC || 0)}</div>
+          <div style="font-size:10px;color:var(--text4)">${d.evBchCount || 0} BCH</div>
+        </td>
+        <td style="${tdR}">
+          <div style="font-weight:800;color:#4f46e5">-${Utils.fmtCurrency(d.evActualTTC || 0)}</div>
+          <div style="font-size:10px;color:var(--text4)">${Utils.escHTML(evRefsStr)}</div>
+        </td>
+        <td style="${tdR}">
+          <div style="font-weight:800;color:#7c3aed">${(d.diffFiscalAndMarginDA||0)>=0?'+':''}${Utils.fmtCurrency(d.diffFiscalAndMarginDA || 0)}</div>
+          <div style="font-size:9.5px;color:var(--text4)">T:${(d.diffTimbre1PctDA||0)>=0?'+':''}${Utils.fmtCurrency(d.diffTimbre1PctDA||0)} | M:+${Utils.fmtCurrency(d.diffMarginDA||0)}</div>
+        </td>
+        <td style="${tdR};font-weight:800;color:${(d.diffCaisseVsEvDA||0)>=0?'#0d9488':'#d97706'}">
+          ${(d.diffCaisseVsEvDA||0)>=0?'+':''}${Utils.fmtCurrency(d.diffCaisseVsEvDA || 0)}
+        </td>
+        <td style="${tdR};font-weight:700;color:${(d.chargesTTC||0)>0?'#dc2626':'var(--text4)'}">
+          ${(d.chargesTTC||0)>0 ? '-' + Utils.fmtCurrency(d.chargesTTC) : '0.00 DA'}
+        </td>
+        <td style="${tdR};font-weight:800;color:${(d.resteJour||0)>=0?'#16a34a':'#dc2626'}">
+          ${(d.resteJour||0)>=0?'+':''}${Utils.fmtCurrency(d.resteJour || 0)}
+        </td>
+        <td style="${tdR};background:rgba(2,132,199,.06);font-weight:900;font-size:12.5px;color:${(d.soldeCumuleFinJour||0)>=0?'#0284c7':'#dc2626'}">
+          ${Utils.fmtCurrency(d.soldeCumuleFinJour || 0)}
+        </td>
+        <td style="padding:9px 8px;text-align:center;white-space:nowrap">
+          <button class="btn btn-xs ${isExp?'btn-primary':'btn-outline'}" onclick="AdminCaisseModule._suiviExpandedDays['${d.date}']=!AdminCaisseModule._suiviExpandedDays['${d.date}'];App.loadModule('admin_caisse')" title="${isAR?'تفاصيل اليوم':'Détails du jour'}">
+            <i class="fas ${isExp?'fa-chevron-up':'fa-list-ul'}"></i>
+          </button>
+          <button class="btn btn-xs ${isSel?'btn-success':'btn-outline'}" onclick="AdminCaisseModule._suiviFilters.selectedDay=(AdminCaisseModule._suiviFilters.selectedDay==='${d.date}'?'':'${d.date}');App.loadModule('admin_caisse')" title="${isAR?'تصفية سندات هذا اليوم':'Filtrer les BCH de ce jour'}">
+            <i class="fas fa-filter"></i>
+          </button>
+        </td>
+      </tr>`;
+
+    if (!isExp) return mainRow;
+    return mainRow + this._buildSuiviDailyExpandedRow(d, pendList, rattList, isAR);
+  },
+
+  _buildSuiviDailyExpandedRow(d, pendList, rattList, isAR) {
+    return `
+      <tr style="background:rgba(13,148,136,.05);border-bottom:2px solid #0d9488">
+        <td colspan="13" style="padding:12px 16px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div style="background:var(--bg);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:10px 12px">
+              <div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:6px">
+                ⏳ ${isAR ? `سندات دخلت الصندوق يوم ${Utils.fmtDate(d.date)} وبقيت في انتظار المصنع (${pendList.length})` : `BCH encaissés le ${Utils.fmtDate(d.date)} restés en attente Usine (${pendList.length})`}
+              </div>
+              ${pendList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${pendList.map(b => `
+                <span onclick="BLModule.showDetail(${b.id})" style="cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);border-radius:6px;padding:3px 8px;font-size:11px">
+                  <strong>${Utils.escHTML(b.ref)}</strong> (${Utils.escHTML(b.clientName||'—')}) : <strong style="color:#d97706">${Utils.fmtCurrency(b.totalTTC||0)}</strong>
+                  ${b.validationDate ? `<small style="color:#0d9488">➔ Validé ${Utils.fmtDate(b.validationDate)}</small>` : `<small style="color:#dc2626">➔ Toujours en attente</small>`}
+                </span>`).join('')}</div>` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'لا يوجد أي سند معلق في هذا اليوم' : 'Aucun BCH en attente sur cette journée'}</div>`}
+            </div>
+            <div style="background:var(--bg);border:1px solid rgba(13,148,136,.35);border-radius:10px;padding:10px 12px">
+              <div style="font-size:11px;font-weight:800;color:#0f766e;margin-bottom:6px">
+                🔄 ${isAR ? `سندات أيام سابقة أكدها المصنع يوم ${Utils.fmtDate(d.date)} ودخلت في كشف المبيعات (${rattList.length})` : `Rattrapage Usine : BCH de jours précédents validés le ${Utils.fmtDate(d.date)} et inclus en ÉV (${rattList.length})`}
+              </div>
+              ${rattList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${rattList.map(b => `
+                <span onclick="BLModule.showDetail(${b.id})" style="cursor:pointer;background:rgba(13,148,136,.12);border:1px solid rgba(13,148,136,.35);border-radius:6px;padding:3px 8px;font-size:11px">
+                  <strong>${Utils.escHTML(b.ref)}</strong> (${isAR?'أُنشئ':'créé'} ${Utils.fmtDate(b.creationDate)}) : <strong style="color:#0d9488">+${Utils.fmtCurrency(b.totalTTC||0)}</strong>
+                </span>`).join('')}</div>` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'لا توجد سندات مستدركة في هذا اليوم' : 'Aucun BCH de rattrapage sur cette journée'}</div>`}
+            </div>
+          </div>
+        </td>
+      </tr>`;
+  },
+
+  _buildSuiviDailyTable(data, isAR) {
+    const rows = data.dailyRows || [];
+    const thS = 'padding:9px 8px;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);border-bottom:2px solid var(--border);white-space:nowrap';
+    const totCaisse = rows.reduce((s, r) => s + (r.caisseNetTTC || 0), 0);
+    const totPend = rows.reduce((s, r) => s + (r.pendingOnDayTTC || 0), 0);
+    const totRatt = rows.reduce((s, r) => s + (r.rattrapageTodayTTC || 0), 0);
+    const totEvBase = rows.reduce((s, r) => s + (r.evBchBaseTTC || 0), 0);
+    const totEvAct = rows.reduce((s, r) => s + (r.evActualTTC || 0), 0);
+    const totDiffFisc = rows.reduce((s, r) => s + (r.diffFiscalAndMarginDA || 0), 0);
+    const totDiffCaisseEv = rows.reduce((s, r) => s + (r.diffCaisseVsEvDA || 0), 0);
+    const totCharges = rows.reduce((s, r) => s + (r.chargesTTC || 0), 0);
+    const totReste = rows.reduce((s, r) => s + (r.resteJour || 0), 0);
+    const finalCumul = rows.length ? (rows[0].soldeCumuleFinJour || 0) : 0;
+
+    return `
+      <!-- Section 1: Tableau Journalier & Cumulatif -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:20px">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--bg-inset)">
+          <div>
+            <h4 style="margin:0;font-size:14px;font-weight:900;color:var(--text)"><i class="fas fa-calendar-alt" style="color:#0d9488"></i> ${isAR ? '1. الجدول اليومي والتراكمي (من الأمس إلى الغد — الصندوق ↔ المصنع ↔ كشف المبيعات)' : '1. Tableau Journalier & Cumulatif (Jour par Jour — de la veille au lendemain)'}</h4>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'يوضح الرصيد المرحل من الأمس، مقبوضات اليوم، المبالغ المعلقة في انتظار المصنع، الاستدراك، التحويل الفعلي للبنك، والرصيد التراكمي النهائي.' : 'Affiche le report de la veille, les entrées Caisse du jour, les BCH retenus en attente Usine, le rattrapage des jours précédents, la sortie ÉV/Banque et le solde cumulé fin de journée.'}</div>
+          </div>
+          <span class="badge" style="background:#0d9488;color:#fff;font-size:11px">${rows.length} ${isAR ? 'يوم' : 'jour(s)'}</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr style="background:var(--bg3)">
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'التاريخ' : 'Date'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'ترحيل الأمس (J-1)' : 'Report Veille (J-1)'}</th>
+                <th style="${thS};text-align:right;color:#16a34a">${isAR ? 'مداخيل الصندوق (J)' : 'Entrées Caisse (J)'}</th>
+                <th style="${thS};text-align:right;color:#d97706">${isAR ? 'منها في انتظار المصنع (J)' : 'Dont En Attente Usine (J)'}</th>
+                <th style="${thS};text-align:right;color:#0d9488">${isAR ? 'استدراك المصنع (+ÉV)' : 'Rattrapage Usine (+ÉV)'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'قاعدة BCH في ÉV' : 'Base BCH en ÉV'}</th>
+                <th style="${thS};text-align:right;color:#4f46e5">${isAR ? 'خروج ÉV / البنك (1%)' : 'Sortie ÉV / Banque (1%)'}</th>
+                <th style="${thS};text-align:right;color:#7c3aed">${isAR ? 'فارق طابع 1% والهامش' : 'Écart Timbre 1% & Marge %'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'فارق الصندوق مقابل ÉV' : 'Écart Caisse vs ÉV (J)'}</th>
+                <th style="${thS};text-align:right;color:#dc2626">${isAR ? 'المصاريف (−)' : 'Charges & Retraits (−)'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'باقي اليوم (تدفق J)' : 'Reste du Jour (Flux J)'}</th>
+                <th style="${thS};text-align:right;background:rgba(2,132,199,.08);color:#0284c7">${isAR ? 'الرصيد التراكمي نهاية J (➔ J+1)' : 'Solde Cumulé Fin J (➔ J+1)'}</th>
+                <th style="${thS};text-align:center">${isAR ? 'تفاصيل' : 'Détail'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((d, i) => this._buildSuiviDailyRow(d, i, isAR)).join('') : `<tr><td colspan="13" style="padding:28px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد بيانات مطابقة للفلاتر' : 'Aucune donnée pour cette période'}</td></tr>`}
+            </tbody>
+            ${rows.length ? `
+            <tfoot>
+              <tr style="background:var(--bg-inset);border-top:2px solid var(--border);font-weight:900;font-size:12px">
+                <td style="padding:10px 8px">TOTAL (${rows.length} j)</td>
+                <td style="padding:10px 8px;text-align:right;color:var(--text4)">—</td>
+                <td style="padding:10px 8px;text-align:right;color:#16a34a">+${Utils.fmtCurrency(totCaisse)}</td>
+                <td style="padding:10px 8px;text-align:right;color:#d97706">${Utils.fmtCurrency(totPend)}</td>
+                <td style="padding:10px 8px;text-align:right;color:#0d9488">+${Utils.fmtCurrency(totRatt)}</td>
+                <td style="padding:10px 8px;text-align:right">${Utils.fmtCurrency(totEvBase)}</td>
+                <td style="padding:10px 8px;text-align:right;color:#4f46e5">-${Utils.fmtCurrency(totEvAct)}</td>
+                <td style="padding:10px 8px;text-align:right;color:#7c3aed">${totDiffFisc>=0?'+':''}${Utils.fmtCurrency(totDiffFisc)}</td>
+                <td style="padding:10px 8px;text-align:right;color:${totDiffCaisseEv>=0?'#0d9488':'#d97706'}">${totDiffCaisseEv>=0?'+':''}${Utils.fmtCurrency(totDiffCaisseEv)}</td>
+                <td style="padding:10px 8px;text-align:right;color:#dc2626">-${Utils.fmtCurrency(totCharges)}</td>
+                <td style="padding:10px 8px;text-align:right;color:${totReste>=0?'#16a34a':'#dc2626'}">${totReste>=0?'+':''}${Utils.fmtCurrency(totReste)}</td>
+                <td style="padding:10px 8px;text-align:right;background:rgba(2,132,199,.12);color:${finalCumul>=0?'#0284c7':'#dc2626'};font-size:13px">${Utils.fmtCurrency(finalCumul)}</td>
+                <td></td>
+              </tr>
+            </tfoot>` : ''}
+          </table>
+        </div>
+      </div>`;
+  },
+
+  _buildSuiviBchRow(b, i, isAR) {
+    let usineBadge = '';
+    if (b.usineStatus === 'stock' || b.source === 'stock') {
+      usineBadge = `<span style="background:rgba(2,132,199,.12);color:#0284c7;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">📦 ${isAR ? 'مخزون متوفر (Stock)' : 'Stock disponible'}</span>`;
+    } else if (b.usineStatus === 'pending_usine' || b.status === 'pending_usine') {
+      usineBadge = `<span style="background:rgba(245,158,11,.15);color:#d97706;border:1px solid rgba(245,158,11,.35);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:800">⏳ ${isAR ? 'في انتظار تأكيد المصنع' : 'En attente Usine'}</span>`;
+    } else if (b.usineStatus === 'validated_later_day') {
+      usineBadge = `<div><span style="background:rgba(13,148,136,.15);color:#0f766e;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:800">🏭 ${isAR ? 'مؤكد من المصنع يوم' : 'Validé Usine le'} ${Utils.fmtDate(b.validationDate)}</span> <span style="background:#f59e0b;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:800">+${b.delayDays||1} j</span></div>`;
+    } else if (b.usineStatus === 'returned' || b.status === 'returned') {
+      usineBadge = `<span style="background:rgba(239,68,68,.12);color:#dc2626;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">🔄 ${isAR ? 'مرتجع' : 'Retourné'}</span>`;
+    } else {
+      usineBadge = `<span style="background:rgba(22,163,74,.12);color:#16a34a;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">🏭 ${isAR ? 'مؤكد في نفس اليوم' : 'Validé Usine le'} ${Utils.fmtDate(b.validationDate || b.creationDate)}</span>`;
+    }
+
+    const evBadge = b.inEv
+      ? `<div><span style="background:rgba(79,70,229,.12);color:#4f46e5;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">🏛️ ${isAR ? 'مدرج في' : 'Inclus dans'} ${Utils.escHTML(b.evRef || 'ÉV')}</span><div style="font-size:10px;color:var(--text4);margin-top:2px">${isAR ? 'تاريخ ÉV:' : 'Date ÉV :'} <strong>${Utils.fmtDate(b.evDate)}</strong></div></div>`
+      : `<span style="background:rgba(245,158,11,.14);color:#b45309;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">⚠️ ${isAR ? 'غير مدرج — المال في الصندوق' : 'Non inclus — Argent en Caisse'}</span>`;
+
+    let locBadge = '';
+    if (b.cashLocation === 'in_ev_bank') {
+      locBadge = `<span style="background:#4f46e5;color:#fff;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block">🏛️ ${isAR ? 'محول للبنك (ÉV)' : 'Versé en Banque (ÉV)'}</span>`;
+    } else if (b.cashLocation === 'in_caisse_pending_usine') {
+      locBadge = `<span style="background:#d97706;color:#fff;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block">💵 ${isAR ? 'في الصندوق (انتظار المصنع)' : 'En Caisse (Attente Usine)'}</span>`;
+    } else if (b.cashLocation === 'returned') {
+      locBadge = `<span style="background:#dc2626;color:#fff;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block">🔄 ${isAR ? 'مسترجع (مرتجع)' : 'Retourné'}</span>`;
+    } else {
+      locBadge = `<span style="background:#0284c7;color:#fff;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block">🔓 ${isAR ? 'في الصندوق (جلسة مفتوحة)' : 'En Caisse (Session ouverte)'}</span>`;
+    }
+
+    return `
+      <tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--bg-inset)':''}">
+        <td style="padding:9px 10px;font-weight:800;color:var(--primary);font-size:12px;white-space:nowrap">${Utils.escHTML(b.ref || '')}</td>
+        <td style="padding:9px 10px;font-size:12px">
+          <div style="font-weight:700;color:var(--text)">${Utils.escHTML(b.clientName || '—')}</div>
+          <div style="font-size:10px;color:var(--text4)"><i class="fas fa-user"></i> ${Utils.escHTML(b.cashierName || '—')}</div>
+        </td>
+        <td style="padding:9px 10px;font-size:11.5px;white-space:nowrap">
+          <div style="font-weight:700">${Utils.fmtDate(b.creationDate)}</div>
+          <span style="font-size:9.5px;background:rgba(22,163,74,.12);color:#16a34a;padding:1px 5px;border-radius:4px;font-weight:700">✓ ${isAR ? 'دخل الصندوق' : 'Entré en Caisse'}</span>
+        </td>
+        <td style="padding:9px 10px;text-align:right;white-space:nowrap">
+          <div style="font-weight:800;color:#16a34a;font-size:12.5px">${Utils.fmtCurrency(b.totalTTC || 0)}</div>
+          <div style="font-size:9.5px;color:var(--text4)">HT: ${Utils.fmtCurrency(b.totalHT||0)} | Timbre: ${Utils.fmtCurrency(b.timbreAmount||0)}</div>
+        </td>
+        <td style="padding:9px 10px;font-size:11px">${usineBadge}</td>
+        <td style="padding:9px 10px;font-size:11px">${evBadge}</td>
+        <td style="padding:9px 10px;text-align:right;white-space:nowrap">
+          <div style="font-weight:800;color:${b.inEv?'#4f46e5':'var(--text4)'};font-size:12.5px">${Utils.fmtCurrency(b.evTTC || 0)}</div>
+          <div style="font-size:9.5px;color:var(--text4)">${b.inEv ? (isAR ? 'مبلغ ÉV الفعلي' : 'Montant ÉV réel') : (isAR ? 'تقديري عند التأكيد' : 'Théorique après valid.')}</div>
+        </td>
+        <td style="padding:9px 10px;text-align:right;white-space:nowrap">
+          <div style="font-weight:800;color:#7c3aed;font-size:12px">${(b.totalEvDiffDA||0)>=0?'+':''}${Utils.fmtCurrency(b.totalEvDiffDA || 0)}</div>
+          <div style="font-size:9.5px;color:var(--text4)">T:${(b.timbreDiffDA||0)>=0?'+':''}${Utils.fmtCurrency(b.timbreDiffDA||0)} | M:+${Utils.fmtCurrency(b.marginDiffDA||0)}</div>
+        </td>
+        <td style="padding:9px 10px;text-align:center;white-space:nowrap">${locBadge}</td>
+        <td style="padding:9px 10px;text-align:center">
+          <button class="btn btn-xs btn-outline" onclick="BLModule.showDetail(${b.id})" title="${isAR?'عرض السند':'Voir BCH'}"><i class="fas fa-eye"></i></button>
+        </td>
+      </tr>`;
+  },
+
+  _buildSuiviBchTable(data, isAR) {
+    const selDay = this._suiviFilters?.selectedDay || '';
+    let rows = data.bchRows || [];
+    if (selDay) {
+      rows = rows.filter(b => b.creationDate === selDay || b.validationDate === selDay || b.evDate === selDay);
+    }
+    const thS = 'padding:9px 10px;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);border-bottom:2px solid var(--border);white-space:nowrap';
+    const totBchTTC = rows.reduce((s, b) => s + (b.status === 'returned' ? 0 : (b.totalTTC || 0)), 0);
+    const totEvTTC = rows.reduce((s, b) => s + (b.inEv ? (b.evTTC || 0) : 0), 0);
+    const totDiff = rows.reduce((s, b) => s + (b.status === 'returned' ? 0 : (b.totalEvDiffDA || 0)), 0);
+
+    return `
+      <!-- Section 2: Traçabilité Détaillée par BCH -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--bg-inset)">
+          <div>
+            <h4 style="margin:0;font-size:14px;font-weight:900;color:var(--text)"><i class="fas fa-route" style="color:#4f46e5"></i> ${isAR ? '2. التتبع التفصيلي لكل وصل شحن (الصندوق ➔ تأكيد المصنع ➔ كشف المبيعات / البنك)' : '2. Traçabilité Détaillée par BCH (Caisse ➔ Validation Usine ➔ État de Vente / Banque)'}</h4>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'تحقق من كل وصل شحن: متى دخل الصندوق، متى أكده المصنع، في أي كشف مبيعات أُدرج، وأين يوجد ماله حالياً.' : 'Vérifiez pour chaque BCH : sa date d\'encaissement Caisse, sa validation Usine, son inclusion dans l\'État de Vente et la position actuelle de son argent.'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${selDay ? `<button class="btn btn-xs btn-outline" onclick="AdminCaisseModule._suiviFilters.selectedDay='';App.loadModule('admin_caisse')">✕ ${isAR ? 'إلغاء فلتر اليوم' : 'Effacer filtre jour'} (${Utils.fmtDate(selDay)})</button>` : ''}
+            <span class="badge" style="background:#4f46e5;color:#fff;font-size:11px">${rows.length} BCH</span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;max-height:600px;overflow-y:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead style="position:sticky;top:0;z-index:2;background:var(--bg3)">
+              <tr>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'مرجع BCH' : 'Réf BCH'}</th>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'الزبون وأمين الصندوق' : 'Client & Caissier'}</th>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'تاريخ دخول الصندوق' : 'Date Entrée Caisse'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'مبلغ BCH (الصندوق TTC)' : 'Montant BCH (Caisse TTC)'}</th>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'المصدر وتأكيد المصنع' : 'Source & Validation Usine'}</th>
+                <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'حالة كشف المبيعات / البنك' : 'Statut État de Vente / Banque'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'المبلغ في ÉV (1% طابع)' : 'Montant en ÉV (1% Timbre)'}</th>
+                <th style="${thS};text-align:right">${isAR ? 'الفارق (طابع 1% + هامش)' : 'Écart (Timbre 1% + Marge)'}</th>
+                <th style="${thS};text-align:center">${isAR ? 'موقع المال حالياً' : 'Position Actuelle de l\'Argent'}</th>
+                <th style="${thS};text-align:center">${isAR ? 'إجراء' : 'Actions'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length ? rows.map((b, i) => this._buildSuiviBchRow(b, i, isAR)).join('') : `<tr><td colspan="10" style="padding:28px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد سندات مطابقة للفلاتر' : 'Aucun BCH correspondant aux filtres'}</td></tr>`}
+            </tbody>
+            ${rows.length ? `
+            <tfoot>
+              <tr style="background:var(--bg-inset);border-top:2px solid var(--border);font-weight:900;font-size:12px">
+                <td colspan="3" style="padding:10px">TOTAL (${rows.length} BCH)</td>
+                <td style="padding:10px;text-align:right;color:#16a34a">${Utils.fmtCurrency(totBchTTC)}</td>
+                <td colspan="2"></td>
+                <td style="padding:10px;text-align:right;color:#4f46e5">${Utils.fmtCurrency(totEvTTC)}</td>
+                <td style="padding:10px;text-align:right;color:#7c3aed">${totDiff>=0?'+':''}${Utils.fmtCurrency(totDiff)}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>` : ''}
+          </table>
+        </div>
+      </div>`;
+  },
+
+  exportSuiviUsinePDF() {
+    if (typeof SessionMgr === 'undefined' || typeof SessionMgr.computeUsineCaisseFollowup !== 'function') {
+      Utils.notify('Fonction de calcul non disponible', 'error');
+      return;
+    }
+    const reportData = SessionMgr.computeUsineCaisseFollowup(this._suiviFilters || {});
+    if (typeof PDFGen !== 'undefined' && typeof PDFGen.exportCaisseUsineFollowup === 'function') {
+      PDFGen.exportCaisseUsineFollowup(reportData);
+    } else {
+      Utils.notify('Export PDF non disponible', 'warning');
+    }
+  },
+
+  exportSuiviUsineExcel() {
+    if (typeof SessionMgr === 'undefined' || typeof SessionMgr.computeUsineCaisseFollowup !== 'function') {
+      Utils.notify('Fonction de calcul non disponible', 'error');
+      return;
+    }
+    const data = SessionMgr.computeUsineCaisseFollowup(this._suiviFilters || {});
+    const k = data.kpis || {};
+    const daily = data.dailyRows || [];
+    const bchs = data.bchRows || [];
+    const fmtN = n => (Number(n) || 0).toFixed(2);
+    const esc = s => Utils.escHTML(String(s ?? ''));
+
+    const dailyTrs = daily.map(d => `
+      <tr>
+        <td>${esc(d.date)}</td>
+        <td style="text-align:right">${fmtN(d.reportVeille)}</td>
+        <td style="text-align:center">${d.caisseBchCount || 0}</td>
+        <td style="text-align:right;color:#16a34a;font-weight:bold">${fmtN(d.caisseNetTTC)}</td>
+        <td style="text-align:center">${d.pendingOnDayCount || 0}</td>
+        <td style="text-align:right;color:#d97706">${fmtN(d.pendingOnDayTTC)}</td>
+        <td style="text-align:center">${d.rattrapageTodayCount || 0}</td>
+        <td style="text-align:right;color:#0d9488">${fmtN(d.rattrapageTodayTTC)}</td>
+        <td style="text-align:right">${fmtN(d.evBchBaseTTC)}</td>
+        <td style="text-align:right;color:#4f46e5;font-weight:bold">${fmtN(d.evActualTTC)}</td>
+        <td style="text-align:right">${fmtN(d.diffTimbre1PctDA)}</td>
+        <td style="text-align:right">${fmtN(d.diffMarginDA)}</td>
+        <td style="text-align:right;color:#7c3aed">${fmtN(d.diffFiscalAndMarginDA)}</td>
+        <td style="text-align:right">${fmtN(d.diffCaisseVsEvDA)}</td>
+        <td style="text-align:right;color:#dc2626">${fmtN(d.chargesTTC)}</td>
+        <td style="text-align:right;font-weight:bold">${fmtN(d.resteJour)}</td>
+        <td style="text-align:right;font-weight:bold;background:#e0f2fe">${fmtN(d.soldeCumuleFinJour)}</td>
+      </tr>`).join('');
+
+    const bchTrs = bchs.map(b => `
+      <tr>
+        <td>${esc(b.ref)}</td>
+        <td>${esc(b.clientName)}</td>
+        <td>${esc(b.cashierName)}</td>
+        <td>${esc(b.creationDate)}</td>
+        <td style="text-align:right">${fmtN(b.totalHT)}</td>
+        <td style="text-align:right">${fmtN(b.tvaAmount)}</td>
+        <td style="text-align:right">${fmtN(b.timbreAmount)}</td>
+        <td style="text-align:right;font-weight:bold;color:#16a34a">${fmtN(b.totalTTC)}</td>
+        <td>${esc(b.usineStatus)}</td>
+        <td>${esc(b.validationDate || '—')}</td>
+        <td style="text-align:center">${b.delayDays || 0}</td>
+        <td>${b.inEv ? 'OUI' : 'NON'}</td>
+        <td>${esc(b.evRef || '—')}</td>
+        <td>${esc(b.evDate || '—')}</td>
+        <td style="text-align:right;color:#4f46e5">${fmtN(b.evTTC)}</td>
+        <td style="text-align:right">${fmtN(b.timbreDiffDA)}</td>
+        <td style="text-align:right">${fmtN(b.marginDiffDA)}</td>
+        <td style="text-align:right;color:#7c3aed">${fmtN(b.totalEvDiffDA)}</td>
+        <td>${esc(b.cashLocation)}</td>
+      </tr>`).join('');
+
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="UTF-8"><style>table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:11px}th,td{border:1px solid #cbd5e1;padding:6px 8px}th{background:#0f172a;color:#ffffff;font-weight:bold}</style></head>
+      <body>
+        <h2>SUIVI CUMULATIF : CAISSE <-> VALIDATION USINE <-> ETAT DE VENTE (BANQUE)</h2>
+        <p><strong>Total Caisse Net:</strong> ${fmtN(k.totalCaisseNetTTC)} DA (${k.totalCaisseBchCount||0} BCH) | <strong>Total EV / Banque:</strong> ${fmtN(k.totalEvTTC)} DA (${k.totalEvBchCount||0} BCH) | <strong>En Attente Usine (en Caisse):</strong> ${fmtN(k.pendingInCaisseTTC)} DA (${k.pendingInCaisseCount||0} BCH) | <strong>Solde Cumule Final:</strong> ${fmtN(k.finalCumulBalance)} DA</p>
+        <h3>1. TABLEAU JOURNALIER & CUMULATIF (JOUR PAR JOUR)</h3>
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Report Veille (J-1)</th><th>Nb BCH Caisse</th><th>Entrees Caisse Net (J)</th>
+            <th>Nb Attente Usine</th><th>Montant Attente Usine (J)</th><th>Nb Rattrapage</th><th>Montant Rattrapage (+EV)</th>
+            <th>Base BCH en EV</th><th>Sortie EV / Banque (1%)</th><th>Ecart Timbre 1%</th><th>Ecart Marge</th>
+            <th>Ecart Total Fiscal/Marge</th><th>Ecart Caisse vs EV</th><th>Charges (-)</th><th>Reste du Jour</th><th>Solde Cumule Fin J</th>
+          </tr></thead>
+          <tbody>${dailyTrs}</tbody>
+        </table>
+        <br/>
+        <h3>2. TRACABILITE DETAILLEE PAR BCH</h3>
+        <table>
+          <thead><tr>
+            <th>Ref BCH</th><th>Client</th><th>Caissier</th><th>Date Entree Caisse</th>
+            <th>HT</th><th>TVA</th><th>Timbre BCH</th><th>TTC Caisse</th>
+            <th>Statut Usine</th><th>Date Validation Usine</th><th>Delai (Jours)</th>
+            <th>Inclus en EV</th><th>Ref EV</th><th>Date EV</th><th>Montant EV (1%)</th>
+            <th>Ecart Timbre</th><th>Ecart Marge</th><th>Ecart Total EV</th><th>Position Argent</th>
+          </tr></thead>
+          <tbody>${bchTrs}</tbody>
+        </table>
+      </body></html>`;
+
+    const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Suivi_Caisse_Usine_EV_${typeof Utils.today === 'function' ? Utils.today() : new Date().toISOString().slice(0,10)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
   }
 };
 
@@ -15600,13 +16194,32 @@ const EtatVenteModule = {
       return d.slice(0, 10);
     };
 
-    // Filter BLs (Delivered, locked, and returned — so returned BCHs appear with their reference)
+    const usineRule = (typeof SessionMgr !== 'undefined' && SessionMgr.getEvUsineRule) ? SessionMgr.getEvUsineRule() : { active: false, covers: () => false };
+    const toLocalDate = iso => {
+      if (!iso) return '';
+      if (typeof SessionMgr !== 'undefined' && typeof SessionMgr._isoToLocalDate === 'function') return SessionMgr._isoToLocalDate(iso);
+      const dt = new Date(iso);
+      if (!isNaN(dt.getTime())) {
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      }
+      return normDate(iso);
+    };
+
+    // Filter BLs (Delivered, locked, validated_usine, and returned — excluding pending_usine when usine rule covers creationDate)
     const allBLs = DB.getAll('bls');
     const bls = allBLs.filter(b => {
-      const bDate = normDate(b.date) || normDate(b.createdAt);
+      const creationDate = normDate(b.date) || normDate(b.createdAt);
+      let bDate = creationDate;
+      if (usineRule.active && usineRule.covers(creationDate)) {
+        if (b.status === 'pending_usine') return false;
+        if (b.source !== 'stock') {
+          if (!b.validatedAt && b.status !== 'validated_usine' && b.status !== 'delivered' && b.status !== 'locked' && b.status !== 'returned') return false;
+          if (b.validatedAt) bDate = toLocalDate(b.validatedAt) || creationDate;
+        }
+      }
       if (bDate < ds || bDate > de) return false;
-      // Include delivered, locked, or returned BLs
-      if (b.status !== 'delivered' && b.status !== 'locked' && b.status !== 'returned') return false;
+      // Include delivered, locked, validated_usine, or returned BLs
+      if (b.status !== 'delivered' && b.status !== 'locked' && b.status !== 'validated_usine' && b.status !== 'returned') return false;
       if (uf !== 'all' && String(b.createdBy) !== String(uf) && String(b.userId) !== String(uf)) return false;
       return true;
     });
