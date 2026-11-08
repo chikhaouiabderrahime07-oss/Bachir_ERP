@@ -12383,6 +12383,26 @@ const SettingsModule = {
       </div>
     `)}
 
+    ${sectionBox('industry','#dc2626','rgba(220,38,38,.1)',isAR?'كشف المبيعات : سندات مؤكدة من المصنع فقط':'État de Vente : BCH validés usine uniquement',`
+      <div style="margin-bottom:12px;font-size:12px;color:var(--text3);line-height:1.6">
+        ${isAR
+          ? 'عند التفعيل، لا تدخل في كشف المبيعات (ولا في الصندوق أو الإيداع البنكي) إلا سندات الشحن المؤكدة من المصنع أو المباعة من المخزون المتوفر. السندات «بانتظار المصنع» تُستبعد وتدخل في يوم تأكيد المصنع.'
+          : 'Une fois activée, seuls les BCH <strong>validés par l\'usine</strong> et ceux <strong>vendus depuis le stock disponible</strong> entrent dans l\'État de Vente (et la caisse / le versement banque). Les BCH <strong>en attente usine</strong> sont exclus et entrent le jour où l\'usine les valide.'}
+      </div>
+      ${s.evUsineOnlyActive ? `
+        <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.35);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px">
+          <i class="fas fa-lock" style="color:#10b981;font-size:16px"></i>
+          <span>${isAR ? 'مفعّل منذ' : 'Activé depuis le'} <strong>${Utils.escHTML(String(s.evUsineOnlySince||''))}</strong> — ${isAR ? 'لا يمكن التراجع عنه.' : 'irréversible.'}</span>
+        </div>` : `
+        <div style="background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.3);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:11.5px;color:var(--text2)">
+          <i class="fas fa-exclamation-triangle" style="color:#dc2626"></i>
+          ${isAR ? '<strong>تنبيه :</strong> العملية نهائية ولا رجعة فيها. تسري من اليوم، ولا تتأثر الأيام والكشوفات السابقة.' : '<strong>Attention :</strong> action <u>définitive et irréversible</u>. Effective à partir d\'aujourd\'hui ; les jours et États de Vente passés ne sont jamais modifiés.'}
+        </div>
+        <button class="btn" onclick="SettingsModule._activateEvUsineOnly()" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;font-weight:800;border-radius:10px;padding:10px 18px">
+          <i class="fas fa-industry"></i> ${isAR ? 'تفعيل (نهائي)' : 'Activer (définitif)'}
+        </button>`}
+    `)}
+
     <button class="btn btn-primary" onclick="SettingsModule._saveEtatVente()" style="width:100%;padding:12px;font-size:14px;font-weight:800;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6)">
       <i class="fas fa-save"></i> ${isAR ? 'حفظ إعدادات كشف المبيعات' : "Enregistrer les paramètres de l'État de Vente"}
     </button>`;
@@ -12407,6 +12427,39 @@ const SettingsModule = {
       evMarginAmount: marginVal
     });
     Utils.notify(T.isRTL() ? 'تم حفظ إعدادات كشف المبيعات' : 'Paramètres de l\'État de Vente enregistrés', 'success');
+  },
+
+  async _activateEvUsineOnly() {
+    const isAR = T.isRTL();
+    if (!Auth.isAdmin()) {
+      Utils.notify(isAR ? 'للمسؤول فقط' : 'Réservé à l\'administrateur', 'error');
+      return;
+    }
+    const cur = DB.getSettings();
+    if (cur.evUsineOnlyActive) return;
+    const today = Utils.today();
+    const closedToday = (DB.getAll('sessions') || []).some(x => x.date === today && x.status === 'closed');
+    const evToday = (DB.getAll('etat_vente_docs') || []).some(d => d.dateStart === today || d.date === today || d.dateEnd === today);
+    if (closedToday || evToday) {
+      Utils.notify(isAR
+        ? '⛔ لا يمكن التفعيل: يوجد صندوق مغلق أو كشف مبيعات منشأ اليوم. أعد المحاولة غداً.'
+        : '⛔ Activation impossible : une session est déjà clôturée ou un État de Vente est déjà généré aujourd\'hui. Réessayez demain.', 'error', 7000);
+      return;
+    }
+    const ok = await Utils.confirm2(
+      isAR ? 'تفعيل «سندات مؤكدة من المصنع فقط»' : 'Activer « BCH validés usine uniquement »',
+      isAR ? 'هذه العملية نهائية ولا يمكن التراجع عنها أبداً. تأكيد؟' : 'Cette action est DÉFINITIVE et IRRÉVERSIBLE. Les BCH en attente usine seront exclus de l\'État de Vente à partir d\'aujourd\'hui. Confirmer ?'
+    );
+    if (!ok) return;
+    const u = Auth.getCurrentUser();
+    DB.saveSettings({
+      evUsineOnlyActive: true,
+      evUsineOnlySince: today,
+      evUsineOnlyActivatedAt: new Date().toISOString(),
+      evUsineOnlyActivatedBy: u?.name || u?.username || 'Admin'
+    });
+    Utils.notify(isAR ? 'تم التفعيل نهائياً' : 'Option activée définitivement', 'success');
+    App.loadModule('settings');
   },
 
 

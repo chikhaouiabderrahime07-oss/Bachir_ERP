@@ -3279,6 +3279,11 @@ const DB = {
   saveSettings(d) {
     const cur = this.getSettings();
     const upd = { ...cur, ...d };
+    // IRREVERSIBLE: once "État de Vente — validé usine uniquement" is activated it can never be turned off or re-dated
+    if (cur.evUsineOnlyActive) {
+      upd.evUsineOnlyActive = true;
+      upd.evUsineOnlySince = cur.evUsineOnlySince;
+    }
     localStorage.setItem('settings', JSON.stringify(upd));
     // Cloud sync — silent background, never show UI error (runs before/after login)
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -4953,6 +4958,18 @@ const SessionMgr = {
       .sort((a,b)=>b.date.localeCompare(a.date))[0] || null;
   },
 
+  /* Option "État de Vente — validé usine uniquement": irreversible, effective from evUsineOnlySince (inclusive). */
+  getEvUsineRule(date) {
+    try {
+      const s = DB.getSettings() || {};
+      const since = s.evUsineOnlySince ? String(s.evUsineOnlySince).slice(0, 10) : '';
+      const active = !!s.evUsineOnlyActive && !!since && String(date || '').slice(0, 10) >= since;
+      return { active, since };
+    } catch (_) {
+      return { active: false, since: '' };
+    }
+  },
+
   getUserDaySummary(userId, date = Utils.today()) {
     const isUserMatch = (creatorId) => {
       if (userId === 'all') return true;
@@ -4981,13 +4998,31 @@ const SessionMgr = {
       if (b.ref) blMap.set(String(b.ref).trim(), b);
     });
 
+    // ── Option "ÉV validé usine uniquement" (irréversible, effective à partir de evUsineOnlySince) ──
+    const usineRule = this.getEvUsineRule(date);
+    const localDay = (iso) => {
+      if (!iso) return '';
+      const dt = new Date(iso);
+      if (isNaN(dt.getTime())) return normDate(String(iso));
+      return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+    };
+
     // Filter BLs: Match single effective date (prefer b.date, fallback to b.createdAt)
     const rawBLs = allBLs.filter(b => {
       const creatorMatch = isUserMatch(b.createdBy) || isUserMatch(b.userId);
       const deliveryMatch = b.deliveredBy != null && isUserMatch(b.deliveredBy);
       const legacyAdminMatch = (b.createdBy == null && b.userId == null && (userId === 1 || userId === '1' || userId === 'admin'));
       if (!creatorMatch && !deliveryMatch && !legacyAdminMatch) return false;
-      const docDate = normDate(b.date) || normDate(b.createdAt);
+      let docDate = normDate(b.date) || normDate(b.createdAt);
+      if (usineRule.active) {
+        // Money not yet validated by usine is NOT ours: exclude pending BCH entirely.
+        if (b.status === 'pending_usine') return false;
+        // BCH created before activation were already settled in old EVs → never re-counted.
+        // BCH validated by usine (not sold from stock) count on their validation day.
+        if (docDate >= usineRule.since && b.source !== 'stock' && b.validatedAt) {
+          docDate = localDay(b.validatedAt) || docDate;
+        }
+      }
       if (docDate !== date) return false;
       return b.status !== 'draft' && b.status !== 'cancelled';
     });
@@ -5007,6 +5042,14 @@ const SessionMgr = {
     const rawRetours = DB.getAll('bon_retours').filter(r => {
       const rDocDate = normDate(r.date) || normDate(r.createdAt);
       if (rDocDate !== date) return false;
+
+      // Option ÉV validé usine: a return linked to a still-pending (never counted) BCH deducts nothing
+      if (usineRule.active) {
+        const pendLinked = (r.blId && blMap.get(Number(r.blId))) ||
+                           (r.bcId && blMap.get(Number(r.bcId))) ||
+                           (r.blRef && blMap.get(String(r.blRef).trim())) || null;
+        if (pendLinked && pendLinked.status === 'pending_usine') return false;
+      }
 
       // If return was refunded directly from central safe (caisse_admin), do not deduct from cashier drawers
       if (r.cashierId === 'caisse_admin' || r.refundedByCashierId === 'caisse_admin') {
