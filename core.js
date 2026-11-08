@@ -3279,11 +3279,6 @@ const DB = {
   saveSettings(d) {
     const cur = this.getSettings();
     const upd = { ...cur, ...d };
-    // IRREVERSIBLE: once "État de Vente — validé usine uniquement" is activated it can never be turned off or re-dated
-    if (cur.evUsineOnlyActive) {
-      upd.evUsineOnlyActive = true;
-      upd.evUsineOnlySince = cur.evUsineOnlySince;
-    }
     localStorage.setItem('settings', JSON.stringify(upd));
     // Cloud sync — silent background, never show UI error (runs before/after login)
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -4958,16 +4953,34 @@ const SessionMgr = {
       .sort((a,b)=>b.date.localeCompare(a.date))[0] || null;
   },
 
-  /* Option "État de Vente — validé usine uniquement": irreversible, effective from evUsineOnlySince (inclusive). */
-  getEvUsineRule(date) {
+  /* Option "État de Vente — validé usine uniquement".
+     Active periods [since, until) — until = null while still active. The rule is keyed on the BCH CREATION day:
+     a BCH created inside an active period is excluded while pending_usine and counts on its usine-validation day.
+     Any BCH created outside a period keeps the normal behaviour (counted on its creation day). */
+  getEvUsinePeriods() {
     try {
       const s = DB.getSettings() || {};
-      const since = s.evUsineOnlySince ? String(s.evUsineOnlySince).slice(0, 10) : '';
-      const active = !!s.evUsineOnlyActive && !!since && String(date || '').slice(0, 10) >= since;
-      return { active, since };
+      let periods = Array.isArray(s.evUsinePeriods) ? s.evUsinePeriods.slice() : [];
+      if (!periods.length && s.evUsineOnlyActive && s.evUsineOnlySince) {
+        periods = [{ since: String(s.evUsineOnlySince).slice(0, 10), until: null }];
+      }
+      return periods
+        .filter(p => p && p.since)
+        .map(p => ({ since: String(p.since).slice(0, 10), until: p.until ? String(p.until).slice(0, 10) : null }));
     } catch (_) {
-      return { active: false, since: '' };
+      return [];
     }
+  },
+
+  getEvUsineRule() {
+    const periods = this.getEvUsinePeriods();
+    const covers = (day) => {
+      const d = String(day || '').slice(0, 10);
+      if (!d) return false;
+      return periods.some(p => d >= p.since && (p.until === null || d < p.until));
+    };
+    const last = periods[periods.length - 1];
+    return { active: periods.length > 0, currentlyOn: !!last && last.until === null, periods, covers };
   },
 
   getUserDaySummary(userId, date = Utils.today()) {
@@ -5014,12 +5027,11 @@ const SessionMgr = {
       const legacyAdminMatch = (b.createdBy == null && b.userId == null && (userId === 1 || userId === '1' || userId === 'admin'));
       if (!creatorMatch && !deliveryMatch && !legacyAdminMatch) return false;
       let docDate = normDate(b.date) || normDate(b.createdAt);
-      if (usineRule.active) {
-        // Money not yet validated by usine is NOT ours: exclude pending BCH entirely.
+      if (usineRule.active && usineRule.covers(docDate)) {
+        // BCH created while the option was ON: money not yet validated by usine is NOT ours → excluded while pending.
         if (b.status === 'pending_usine') return false;
-        // BCH created before activation were already settled in old EVs → never re-counted.
         // BCH validated by usine (not sold from stock) count on their validation day.
-        if (docDate >= usineRule.since && b.source !== 'stock' && b.validatedAt) {
+        if (b.source !== 'stock' && b.validatedAt) {
           docDate = localDay(b.validatedAt) || docDate;
         }
       }
@@ -5048,7 +5060,8 @@ const SessionMgr = {
         const pendLinked = (r.blId && blMap.get(Number(r.blId))) ||
                            (r.bcId && blMap.get(Number(r.bcId))) ||
                            (r.blRef && blMap.get(String(r.blRef).trim())) || null;
-        if (pendLinked && pendLinked.status === 'pending_usine') return false;
+        if (pendLinked && pendLinked.status === 'pending_usine' &&
+            usineRule.covers(normDate(pendLinked.date) || normDate(pendLinked.createdAt))) return false;
       }
 
       // If return was refunded directly from central safe (caisse_admin), do not deduct from cashier drawers

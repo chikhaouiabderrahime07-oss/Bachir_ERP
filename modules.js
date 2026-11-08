@@ -12389,18 +12389,22 @@ const SettingsModule = {
           ? 'عند التفعيل، لا تدخل في كشف المبيعات (ولا في الصندوق أو الإيداع البنكي) إلا سندات الشحن المؤكدة من المصنع أو المباعة من المخزون المتوفر. السندات «بانتظار المصنع» تُستبعد وتدخل في يوم تأكيد المصنع.'
           : 'Une fois activée, seuls les BCH <strong>validés par l\'usine</strong> et ceux <strong>vendus depuis le stock disponible</strong> entrent dans l\'État de Vente (et la caisse / le versement banque). Les BCH <strong>en attente usine</strong> sont exclus et entrent le jour où l\'usine les valide.'}
       </div>
-      ${s.evUsineOnlyActive ? `
-        <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.35);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px">
-          <i class="fas fa-lock" style="color:#10b981;font-size:16px"></i>
-          <span>${isAR ? 'مفعّل منذ' : 'Activé depuis le'} <strong>${Utils.escHTML(String(s.evUsineOnlySince||''))}</strong> — ${isAR ? 'لا يمكن التراجع عنه.' : 'irréversible.'}</span>
-        </div>` : `
+      ${(() => { const _r = SessionMgr.getEvUsineRule(); return _r.currentlyOn ? `
+        <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.35);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:8px">
+          <i class="fas fa-check-circle" style="color:#10b981;font-size:16px"></i>
+          <span>${isAR ? 'مفعّل منذ' : 'Activé depuis le'} <strong>${Utils.escHTML(String(_r.periods[_r.periods.length-1].since))}</strong></span>
+        </div>
+        <button class="btn" onclick="SettingsModule._disableEvUsineOnly()" style="background:linear-gradient(135deg,#475569,#334155);color:#fff;border:none;font-weight:800;border-radius:10px;padding:10px 18px">
+          <i class="fas fa-undo"></i> ${isAR ? 'إلغاء التفعيل (العودة للوضع العادي)' : 'Désactiver (retour au fonctionnement normal)'}
+        </button>` : `
+        ${_r.active ? `<div style="font-size:11.5px;color:var(--text3);margin-bottom:10px"><i class="fas fa-info-circle"></i> ${isAR ? 'تم إلغاء التفعيل سابقاً — الوضع عادي حالياً.' : 'Option désactivée — fonctionnement normal actuellement.'}</div>` : ''}
         <div style="background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.3);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:11.5px;color:var(--text2)">
           <i class="fas fa-exclamation-triangle" style="color:#dc2626"></i>
-          ${isAR ? '<strong>تنبيه :</strong> العملية نهائية ولا رجعة فيها. تسري من اليوم، ولا تتأثر الأيام والكشوفات السابقة.' : '<strong>Attention :</strong> action <u>définitive et irréversible</u>. Effective à partir d\'aujourd\'hui ; les jours et États de Vente passés ne sont jamais modifiés.'}
+          ${isAR ? '<strong>تنبيه :</strong> تسري من اليوم، ولا تتأثر الأيام والكشوفات السابقة. يمكن إلغاؤها لاحقاً.' : '<strong>Attention :</strong> effective à partir d\'aujourd\'hui ; les jours et États de Vente passés ne sont jamais modifiés. Désactivable ultérieurement.'}
         </div>
         <button class="btn" onclick="SettingsModule._activateEvUsineOnly()" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;font-weight:800;border-radius:10px;padding:10px 18px">
-          <i class="fas fa-industry"></i> ${isAR ? 'تفعيل (نهائي)' : 'Activer (définitif)'}
-        </button>`}
+          <i class="fas fa-industry"></i> ${isAR ? 'تفعيل' : 'Activer'}
+        </button>`; })()}
     `)}
 
     <button class="btn btn-primary" onclick="SettingsModule._saveEtatVente()" style="width:100%;padding:12px;font-size:14px;font-weight:800;border-radius:12px;background:linear-gradient(135deg,#0d9488,#14b8a6)">
@@ -12429,36 +12433,71 @@ const SettingsModule = {
     Utils.notify(T.isRTL() ? 'تم حفظ إعدادات كشف المبيعات' : 'Paramètres de l\'État de Vente enregistrés', 'success');
   },
 
-  async _activateEvUsineOnly() {
+  _evUsineGate() {
     const isAR = T.isRTL();
     if (!Auth.isAdmin()) {
       Utils.notify(isAR ? 'للمسؤول فقط' : 'Réservé à l\'administrateur', 'error');
-      return;
+      return false;
     }
-    const cur = DB.getSettings();
-    if (cur.evUsineOnlyActive) return;
     const today = Utils.today();
     const closedToday = (DB.getAll('sessions') || []).some(x => x.date === today && x.status === 'closed');
     const evToday = (DB.getAll('etat_vente_docs') || []).some(d => d.dateStart === today || d.date === today || d.dateEnd === today);
     if (closedToday || evToday) {
       Utils.notify(isAR
-        ? '⛔ لا يمكن التفعيل: يوجد صندوق مغلق أو كشف مبيعات منشأ اليوم. أعد المحاولة غداً.'
-        : '⛔ Activation impossible : une session est déjà clôturée ou un État de Vente est déjà généré aujourd\'hui. Réessayez demain.', 'error', 7000);
-      return;
+        ? '⛔ غير ممكن: يوجد صندوق مغلق أو كشف مبيعات منشأ اليوم. أعد المحاولة غداً.'
+        : '⛔ Impossible : une session est déjà clôturée ou un État de Vente est déjà généré aujourd\'hui. Réessayez demain.', 'error', 7000);
+      return false;
     }
+    return true;
+  },
+
+  async _activateEvUsineOnly() {
+    const isAR = T.isRTL();
+    if (SessionMgr.getEvUsineRule().currentlyOn) return;
+    if (!this._evUsineGate()) return;
     const ok = await Utils.confirm2(
       isAR ? 'تفعيل «سندات مؤكدة من المصنع فقط»' : 'Activer « BCH validés usine uniquement »',
-      isAR ? 'هذه العملية نهائية ولا يمكن التراجع عنها أبداً. تأكيد؟' : 'Cette action est DÉFINITIVE et IRRÉVERSIBLE. Les BCH en attente usine seront exclus de l\'État de Vente à partir d\'aujourd\'hui. Confirmer ?'
+      isAR ? 'ستُستبعد السندات «بانتظار المصنع» من كشف المبيعات ابتداءً من اليوم. تأكيد؟' : 'Les BCH en attente usine seront exclus de l\'État de Vente à partir d\'aujourd\'hui. Confirmer ?'
     );
     if (!ok) return;
+    const today = Utils.today();
+    const periods = SessionMgr.getEvUsinePeriods();
+    periods.push({ since: today, until: null });
     const u = Auth.getCurrentUser();
     DB.saveSettings({
+      evUsinePeriods: periods,
       evUsineOnlyActive: true,
       evUsineOnlySince: today,
       evUsineOnlyActivatedAt: new Date().toISOString(),
       evUsineOnlyActivatedBy: u?.name || u?.username || 'Admin'
     });
-    Utils.notify(isAR ? 'تم التفعيل نهائياً' : 'Option activée définitivement', 'success');
+    Utils.notify(isAR ? 'تم التفعيل' : 'Option activée', 'success');
+    App.loadModule('settings');
+  },
+
+  async _disableEvUsineOnly() {
+    const isAR = T.isRTL();
+    const rule = SessionMgr.getEvUsineRule();
+    if (!rule.currentlyOn) return;
+    if (!this._evUsineGate()) return;
+    const ok = await Utils.confirm2(
+      isAR ? 'إلغاء تفعيل «سندات مؤكدة من المصنع فقط»' : 'Désactiver « BCH validés usine uniquement »',
+      isAR
+        ? 'ابتداءً من اليوم تعود كل السندات للحساب العادي (حسب تاريخ الإنشاء). السندات المنشأة خلال فترة التفعيل والتي لم يؤكدها المصنع بعد تُحتسب يوم تأكيد المصنع. تأكيد؟'
+        : 'À partir d\'aujourd\'hui, tous les BCH sont de nouveau comptés normalement (jour de création). Les BCH créés pendant la période d\'activation et encore en attente usine seront comptés le jour où l\'usine les valide. Confirmer ?'
+    );
+    if (!ok) return;
+    const today = Utils.today();
+    const periods = SessionMgr.getEvUsinePeriods();
+    periods[periods.length - 1].until = today;
+    const u = Auth.getCurrentUser();
+    DB.saveSettings({
+      evUsinePeriods: periods,
+      evUsineOnlyActive: false,
+      evUsineOnlyDisabledAt: new Date().toISOString(),
+      evUsineOnlyDisabledBy: u?.name || u?.username || 'Admin'
+    });
+    Utils.notify(isAR ? 'تم إلغاء التفعيل' : 'Option désactivée', 'success');
     App.loadModule('settings');
   },
 
