@@ -7419,7 +7419,7 @@ const AdminCaisseModule = {
   _miniCaisseSubView: 'daily', /* daily | sessions | caissiers */
   _miniCaisseStatusFilter: 'all', /* all | closed | open */
   _filters: { q:'', dateFrom:'', dateTo:'', userId:'all', type:'all' },
-  _suiviFilters: { dateFrom: '', dateTo: '', userId: 'all', statusFilter: 'all', dateMode: 'creation', q: '', subView: 'both', selectedDay: '' },
+  _suiviFilters: { dateFrom: '', dateTo: '', userId: 'all', statusFilter: 'all', dateMode: 'creation', q: '', subView: 'daily', selectedDay: '', dailyPage: 1, bchPage: 1, pageSize: 10, dayInspectTab: 'all' },
   _suiviExpandedDays: {},
   _charts: {},
 
@@ -9957,7 +9957,8 @@ const AdminCaisseModule = {
 
   _renderSuiviUsineEvTab() {
     const isAR = T.isRTL();
-    const f = this._suiviFilters || { dateFrom: '', dateTo: '', userId: 'all', statusFilter: 'all', dateMode: 'creation', q: '', subView: 'both', selectedDay: '' };
+    const f = this._suiviFilters || { dateFrom: '', dateTo: '', userId: 'all', statusFilter: 'all', dateMode: 'creation', q: '', subView: 'daily', selectedDay: '', dailyPage: 1, bchPage: 1, pageSize: 10, dayInspectTab: 'all' };
+    if (f.subView === 'both' || !f.subView) f.subView = 'daily';
     const data = (typeof SessionMgr !== 'undefined' && typeof SessionMgr.computeUsineCaisseFollowup === 'function')
       ? SessionMgr.computeUsineCaisseFollowup(f)
       : { dailyRows: [], bchRows: [], kpis: { totalCaisseNetTTC:0, totalCaisseBchCount:0, totalEvTTC:0, totalEvBchCount:0, pendingInCaisseTTC:0, pendingInCaisseCount:0, rattrapageTTC:0, rattrapageCount:0, totalDiffMarginDA:0, totalDiffTimbreDA:0, totalDiffFiscalDA:0, totalChargesTTC:0, finalCumulBalance:0, marginRate:0 } };
@@ -9987,7 +9988,7 @@ const AdminCaisseModule = {
           <button class="btn btn-sm" style="background:#16a34a;color:#fff;font-weight:700" onclick="AdminCaisseModule.exportSuiviUsineExcel()">
             <i class="fas fa-file-excel"></i> ${isAR ? 'تصدير Excel (.xls)' : 'Exporter Excel (.xls)'}
           </button>
-          <button class="btn btn-sm btn-outline" onclick="AdminCaisseModule._suiviFilters={dateFrom:'',dateTo:'',userId:'all',statusFilter:'all',dateMode:'creation',q:'',subView:'both',selectedDay:''};AdminCaisseModule._suiviExpandedDays={};App.loadModule('admin_caisse')">
+          <button class="btn btn-sm btn-outline" onclick="AdminCaisseModule._suiviFilters={dateFrom:'',dateTo:'',userId:'all',statusFilter:'all',dateMode:'creation',q:'',subView:'daily',selectedDay:'',dailyPage:1,bchPage:1,pageSize:10,dayInspectTab:'all'};AdminCaisseModule._suiviExpandedDays={};App.loadModule('admin_caisse')">
             <i class="fas fa-undo"></i> ${isAR ? 'إعادة ضبط الفلاتر' : 'Réinitialiser Filtres'}
           </button>
         </div>
@@ -9998,15 +9999,15 @@ const AdminCaisseModule = {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;align-items:end">
           <div>
             <label style="${lblS}">${isAR ? 'من تاريخ' : 'Du'}</label>
-            <input type="date" value="${f.dateFrom||''}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateFrom=this.value;App.loadModule('admin_caisse')">
+            <input type="date" value="${f.dateFrom||''}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateFrom=this.value;AdminCaisseModule._suiviFilters.dailyPage=1;AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
           </div>
           <div>
             <label style="${lblS}">${isAR ? 'إلى تاريخ' : 'Au'}</label>
-            <input type="date" value="${f.dateTo||''}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateTo=this.value;App.loadModule('admin_caisse')">
+            <input type="date" value="${f.dateTo||''}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateTo=this.value;AdminCaisseModule._suiviFilters.dailyPage=1;AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
           </div>
           <div>
             <label style="${lblS}">${isAR ? 'نمط الفلترة الزمنية' : 'Mode de date'}</label>
-            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateMode=this.value;App.loadModule('admin_caisse')">
+            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.dateMode=this.value;AdminCaisseModule._suiviFilters.dailyPage=1;AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
               <option value="creation" ${f.dateMode==='creation'?'selected':''}>${isAR ? '📅 تاريخ دخول الصندوق (إنشاء BCH)' : '📅 Date Entrée Caisse (BCH)'}</option>
               <option value="validation" ${f.dateMode==='validation'?'selected':''}>${isAR ? '🏭 تاريخ تأكيد المصنع' : '🏭 Date Validation Usine'}</option>
               <option value="ev" ${f.dateMode==='ev'?'selected':''}>${isAR ? '🏛️ تاريخ كشف المبيعات (ÉV)' : '🏛️ Date État de Vente'}</option>
@@ -10014,14 +10015,14 @@ const AdminCaisseModule = {
           </div>
           <div>
             <label style="${lblS}">${isAR ? 'أمين الصندوق' : 'Caissier'}</label>
-            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.userId=this.value;App.loadModule('admin_caisse')">
+            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.userId=this.value;AdminCaisseModule._suiviFilters.dailyPage=1;AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
               <option value="all">${isAR ? 'كل أمناء الصناديق' : 'Tous les caissiers'}</option>
               ${users.map(u => `<option value="${u.id}" ${String(f.userId)===String(u.id)?'selected':''}>${Utils.escHTML(u.name)}</option>`).join('')}
             </select>
           </div>
           <div>
             <label style="${lblS}">${isAR ? 'حالة ومسار BCH' : 'Statut BCH'}</label>
-            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.statusFilter=this.value;App.loadModule('admin_caisse')">
+            <select style="${inpS}" onchange="AdminCaisseModule._suiviFilters.statusFilter=this.value;AdminCaisseModule._suiviFilters.dailyPage=1;AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
               <option value="all" ${f.statusFilter==='all'?'selected':''}>${isAR ? 'جميع وصولات الشحن (BCH)' : 'Tous les BCH'}</option>
               <option value="in_caisse_pending_usine" ${f.statusFilter==='in_caisse_pending_usine'?'selected':''}>${isAR ? '⏳ في انتظار المصنع (المال في الصندوق / خارج ÉV)' : '⏳ En attente Usine (Argent en Caisse, hors ÉV)'}</option>
               <option value="validated_later_day" ${f.statusFilter==='validated_later_day'?'selected':''}>${isAR ? '🔄 استدراك المصنع (مؤكد J+1 ودخل ÉV)' : '🔄 Rattrapage Usine (Validés J+1 et passés en ÉV)'}</option>
@@ -10033,38 +10034,34 @@ const AdminCaisseModule = {
           </div>
           <div>
             <label style="${lblS}">${isAR ? 'بحث سريع' : 'Recherche'}</label>
-            <input type="text" value="${Utils.escHTML(f.q||'')}" placeholder="${isAR ? 'مرجع BCH، مرجع ÉV، زبون...' : 'Réf BCH, Réf ÉV, Client...'}" style="${inpS}" oninput="AdminCaisseModule._suiviFilters.q=this.value;App.loadModule('admin_caisse')">
+            <input type="text" value="${Utils.escHTML(f.q||'')}" placeholder="${isAR ? 'مرجع BCH، مرجع ÉV، زبون...' : 'Réf BCH, Réf ÉV, Client...'}" style="${inpS}" onchange="AdminCaisseModule._suiviFilters.q=this.value;AdminCaisseModule._suiviFilters.dailyPage=1;AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
           </div>
         </div>
         ${this._renderSuiviSubViewBar(f, data, isAR)}
       </div>
       ${this._renderSuiviKpiCards(k, isAR)}
-      ${(f.subView === 'both' || f.subView === 'daily') ? this._buildSuiviDailyTable(data, isAR) : ''}
-      ${(f.subView === 'both' || f.subView === 'bch') ? this._buildSuiviBchTable(data, isAR) : ''}
+      ${f.subView === 'bch' ? this._buildSuiviBchTable(data, isAR) : this._buildSuiviDailyTable(data, isAR)}
     `;
   },
 
   _renderSuiviSubViewBar(f, data, isAR) {
-    const sv = f.subView || 'both';
-    const btnS = (active) => `padding:6px 14px;border-radius:8px;border:1px solid ${active?'#0d9488':'var(--border)'};background:${active?'#0d9488':'var(--bg)'};color:${active?'#fff':'var(--text3)'};font-size:11px;font-weight:700;cursor:pointer`;
+    const sv = f.subView === 'bch' ? 'bch' : 'daily';
+    const btnS = (active) => `padding:7px 16px;border-radius:8px;border:1px solid ${active?'#0d9488':'var(--border)'};background:${active?'#0d9488':'var(--bg)'};color:${active?'#fff':'var(--text3)'};font-size:11.5px;font-weight:800;cursor:pointer`;
     return `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <span style="font-size:11px;font-weight:700;color:var(--text4)">${isAR ? 'طريقة العرض :' : 'Affichage :'}</span>
-          <button style="${btnS(sv==='both')}" onclick="AdminCaisseModule._suiviFilters.subView='both';App.loadModule('admin_caisse')">
-            <i class="fas fa-layer-group"></i> ${isAR ? 'عرض شامل (اليومي + تتبع BCH)' : 'Vue Complète (Jour + BCH)'}
-          </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;font-weight:700;color:var(--text4)">${isAR ? 'القسم المعروض (10 في كل صفحة) :' : 'Vue active (10 lignes / page) :'}</span>
           <button style="${btnS(sv==='daily')}" onclick="AdminCaisseModule._suiviFilters.subView='daily';App.loadModule('admin_caisse')">
-            <i class="fas fa-calendar-check"></i> ${isAR ? '1. الجدول اليومي والتراكمي' : '1. Tableau Journalier & Cumulatif'} (${(data.dailyRows||[]).length})
+            <i class="fas fa-calendar-check"></i> ${isAR ? '1. الجدول اليومي والتراكمي (يوم بيوم)' : '1. Tableau Journalier & Cumulatif (Jour par Jour)'} (${(data.dailyRows||[]).length})
           </button>
           <button style="${btnS(sv==='bch')}" onclick="AdminCaisseModule._suiviFilters.subView='bch';App.loadModule('admin_caisse')">
-            <i class="fas fa-truck-loading"></i> ${isAR ? '2. التتبع التفصيلي لكل BCH' : '2. Traçabilité par BCH'} (${(data.bchRows||[]).length})
+            <i class="fas fa-truck-loading"></i> ${isAR ? '2. التتبع التفصيلي لكل BCH (المؤكدة وغير المؤكدة)' : '2. Traçabilité par BCH (Validés & Non Validés)'} (${(data.bchRows||[]).length})
           </button>
         </div>
         ${f.selectedDay ? `
         <div style="display:flex;align-items:center;gap:8px;background:rgba(13,148,136,.12);border:1px solid rgba(13,148,136,.35);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;color:#0d9488">
           <span><i class="fas fa-filter"></i> ${isAR ? 'يوم محدد :' : 'Jour filtré :'} ${Utils.fmtDate(f.selectedDay)}</span>
-          <button onclick="AdminCaisseModule._suiviFilters.selectedDay='';App.loadModule('admin_caisse')" style="border:none;background:transparent;color:#dc2626;cursor:pointer;font-weight:900">✕</button>
+          <button onclick="AdminCaisseModule._suiviFilters.selectedDay='';AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')" style="border:none;background:transparent;color:#dc2626;cursor:pointer;font-weight:900">✕</button>
         </div>` : ''}
       </div>`;
   },
@@ -10114,8 +10111,12 @@ const AdminCaisseModule = {
     const isSel = this._suiviFilters?.selectedDay === d.date;
     const isExp = !!this._suiviExpandedDays?.[d.date];
     const tdR = 'padding:9px 8px;text-align:right;font-size:11.5px;white-space:nowrap';
-    const pendList = d.pendingOnDayBchs || [];
-    const rattList = d.rattrapageTodayBchs || [];
+    const valList = d.validatedBchsOfDay || d.sameDayEvBchs || [];
+    const unvalList = d.unvalidatedBchsOfDay || d.pendingOnDayBchs || [];
+    const valCount = d.validatedOfDayCount ?? (valList.length || Math.max(0, (d.caisseBchCount || 0) - unvalList.length));
+    const valTTC = d.validatedOfDayTTC ?? (d.sameDayEvTTC || 0);
+    const unvalCount = d.unvalidatedOfDayCount ?? (d.pendingOnDayCount ?? unvalList.length);
+    const unvalTTC = d.unvalidatedOfDayTTC ?? (d.pendingOnDayTTC || 0);
     const evRefsStr = (d.evRefs && d.evRefs.length) ? d.evRefs.join(', ') : (isAR ? 'محسوب' : 'Calculé');
 
     const mainRow = `
@@ -10123,8 +10124,11 @@ const AdminCaisseModule = {
         <td style="padding:9px 8px;font-weight:800;font-size:12px;white-space:nowrap;color:var(--text)">${Utils.fmtDate(d.date)}</td>
         <td style="${tdR};font-weight:700;color:var(--text3)">${Utils.fmtCurrency(d.reportVeille || 0)}</td>
         <td style="${tdR}">
-          <div style="font-weight:800;color:#16a34a">+${Utils.fmtCurrency(d.caisseNetTTC || 0)}</div>
-          <div style="font-size:10px;color:var(--text4)">${d.caisseBchCount || 0} BCH${(d.caisseReturnsTTC||0)>0?` (-${Utils.fmtCurrency(d.caisseReturnsTTC)} ret.)`:''}</div>
+          <div style="font-weight:800;color:#16a34a">+${Utils.fmtCurrency(d.caisseNetTTC || 0)} <span style="font-size:10px;color:var(--text4)">(${d.caisseBchCount || 0} BCH)</span></div>
+          <div style="font-size:10px;margin-top:2px;display:flex;flex-direction:column;gap:1px">
+            <span style="color:#16a34a;font-weight:700">✅ ${valCount} ${isAR?'مؤكد':'validés'} (+${Utils.fmtCurrency(valTTC)})</span>
+            <span style="color:${unvalCount>0?'#d97706':'var(--text4)'};font-weight:700">⏳ ${unvalCount} ${isAR?'غير مؤكد':'non validés'} (${Utils.fmtCurrency(unvalTTC)})</span>
+          </div>
         </td>
         <td style="${tdR}">
           ${(d.pendingOnDayCount || 0) > 0 ? `
@@ -10166,50 +10170,107 @@ const AdminCaisseModule = {
           ${Utils.fmtCurrency(d.soldeCumuleFinJour || 0)}
         </td>
         <td style="padding:9px 8px;text-align:center;white-space:nowrap">
-          <button class="btn btn-xs ${isExp?'btn-primary':'btn-outline'}" onclick="AdminCaisseModule._suiviExpandedDays['${d.date}']=!AdminCaisseModule._suiviExpandedDays['${d.date}'];App.loadModule('admin_caisse')" title="${isAR?'تفاصيل اليوم':'Détails du jour'}">
-            <i class="fas ${isExp?'fa-chevron-up':'fa-list-ul'}"></i>
+          <button class="btn btn-xs ${isExp?'btn-primary':'btn-outline'}" onclick="AdminCaisseModule._suiviExpandedDays['${d.date}']=!AdminCaisseModule._suiviExpandedDays['${d.date}'];App.loadModule('admin_caisse')" title="${isAR?'عرض السندات المؤكدة وغير المؤكدة لهذا اليوم':'Détails BCH (Validés & Non Validés)'}">
+            <i class="fas ${isExp?'fa-chevron-up':'fa-chevron-down'}"></i> ${isAR?'BCH':'Détails BCH'}
           </button>
-          <button class="btn btn-xs ${isSel?'btn-success':'btn-outline'}" onclick="AdminCaisseModule._suiviFilters.selectedDay=(AdminCaisseModule._suiviFilters.selectedDay==='${d.date}'?'':'${d.date}');App.loadModule('admin_caisse')" title="${isAR?'تصفية سندات هذا اليوم':'Filtrer les BCH de ce jour'}">
-            <i class="fas fa-filter"></i>
+          <button class="btn btn-xs ${isSel?'btn-success':'btn-outline'}" onclick="AdminCaisseModule._suiviFilters.selectedDay='${d.date}';AdminCaisseModule._suiviFilters.subView='bch';AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')" title="${isAR?'فتح تتبع سندات هذا اليوم (10 في كل صفحة)':'Filtrer ces BCH dans l\'onglet BCH'}">
+            🔍 ${isAR?'تصفية':'Filtrer ces BCH'}
           </button>
         </td>
       </tr>`;
 
     if (!isExp) return mainRow;
-    return mainRow + this._buildSuiviDailyExpandedRow(d, pendList, rattList, isAR);
+    return mainRow + this._buildSuiviDailyExpandedRow(d, isAR);
   },
 
-  _buildSuiviDailyExpandedRow(d, pendList, rattList, isAR) {
+  _buildSuiviDailyExpandedRow(d, isAR) {
+    const valList = d.validatedBchsOfDay || d.sameDayEvBchs || [];
+    const unvalList = d.unvalidatedBchsOfDay || d.pendingOnDayBchs || [];
+    const rattList = d.rattrapageTodayBchs || [];
+    const cap = 15;
+    const moreBtn = (count, statusVal) => count > cap ? `
+      <button class="btn btn-xs btn-outline" style="margin-top:6px" onclick="AdminCaisseModule._suiviFilters.selectedDay='${d.date}';AdminCaisseModule._suiviFilters.statusFilter='${statusVal}';AdminCaisseModule._suiviFilters.subView='bch';AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">
+        ${isAR ? `عرض الكل (${count}) في تبويب BCH ➔` : `Voir tous (${count}) dans l'onglet BCH ➔`}
+      </button>` : '';
+
     return `
       <tr style="background:rgba(13,148,136,.05);border-bottom:2px solid #0d9488">
         <td colspan="13" style="padding:12px 16px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+            <!-- 1. Validated BCHs of Day -->
+            <div style="background:var(--bg);border:1px solid rgba(22,163,74,.35);border-radius:10px;padding:10px 12px">
+              <div style="font-size:11px;font-weight:800;color:#15803d;margin-bottom:6px">
+                ✅ ${isAR ? `سندات اليوم المؤكدة من المصنع / المخزون (${valList.length})` : `BCH du jour Validés Usine / Stock (${valList.length})`}
+              </div>
+              ${valList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${valList.slice(0, cap).map(b => `
+                <span onclick="BLModule.showDetail(${b.id})" style="cursor:pointer;background:rgba(22,163,74,.10);border:1px solid rgba(22,163,74,.3);border-radius:6px;padding:3px 8px;font-size:11px">
+                  <strong>${Utils.escHTML(b.ref)}</strong> (${Utils.escHTML(b.clientName||'—')}) : <strong style="color:#16a34a">+${Utils.fmtCurrency(b.totalTTC||0)}</strong>
+                  <small style="color:#0d9488">${b.source==='stock'?'[Stock]':(b.delayDays>0?`[Validé J+${b.delayDays} le ${Utils.fmtDate(b.validationDate)}]`:`[Validé J0]`)}</small>
+                </span>`).join('')}</div>${moreBtn(valList.length, 'all')}` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'لا توجد سندات مؤكدة لهذا اليوم' : 'Aucun BCH validé pour ce jour'}</div>`}
+            </div>
+            <!-- 2. Unvalidated / En Attente Usine BCHs of Day -->
             <div style="background:var(--bg);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:10px 12px">
               <div style="font-size:11px;font-weight:800;color:#b45309;margin-bottom:6px">
-                ⏳ ${isAR ? `سندات دخلت الصندوق يوم ${Utils.fmtDate(d.date)} وبقيت في انتظار المصنع (${pendList.length})` : `BCH encaissés le ${Utils.fmtDate(d.date)} restés en attente Usine (${pendList.length})`}
+                ⏳ ${isAR ? `سندات اليوم غير المؤكدة / في انتظار المصنع (${unvalList.length})` : `BCH du jour Non Validés / En Attente Usine (${unvalList.length})`}
               </div>
-              ${pendList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${pendList.map(b => `
+              ${unvalList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${unvalList.slice(0, cap).map(b => `
                 <span onclick="BLModule.showDetail(${b.id})" style="cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);border-radius:6px;padding:3px 8px;font-size:11px">
                   <strong>${Utils.escHTML(b.ref)}</strong> (${Utils.escHTML(b.clientName||'—')}) : <strong style="color:#d97706">${Utils.fmtCurrency(b.totalTTC||0)}</strong>
-                  ${b.validationDate ? `<small style="color:#0d9488">➔ Validé ${Utils.fmtDate(b.validationDate)}</small>` : `<small style="color:#dc2626">➔ Toujours en attente</small>`}
-                </span>`).join('')}</div>` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'لا يوجد أي سند معلق في هذا اليوم' : 'Aucun BCH en attente sur cette journée'}</div>`}
+                  ${b.validationDate ? `<small style="color:#0d9488">➔ Validé ${Utils.fmtDate(b.validationDate)} (+${b.delayDays||1}j)</small>` : `<small style="color:#dc2626">➔ En attente (${b.delayDays||0}j) — Retenu en Caisse</small>`}
+                </span>`).join('')}</div>${moreBtn(unvalList.length, 'in_caisse_pending_usine')}` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'كل سندات هذا اليوم مؤكدة' : 'Aucun BCH non validé sur cette journée'}</div>`}
             </div>
+            <!-- 3. Rattrapage Usine Validated Today -->
             <div style="background:var(--bg);border:1px solid rgba(13,148,136,.35);border-radius:10px;padding:10px 12px">
               <div style="font-size:11px;font-weight:800;color:#0f766e;margin-bottom:6px">
-                🔄 ${isAR ? `سندات أيام سابقة أكدها المصنع يوم ${Utils.fmtDate(d.date)} ودخلت في كشف المبيعات (${rattList.length})` : `Rattrapage Usine : BCH de jours précédents validés le ${Utils.fmtDate(d.date)} et inclus en ÉV (${rattList.length})`}
+                🔄 ${isAR ? `استدراك المصنع المؤكد في هذا اليوم (${rattList.length})` : `Rattrapage Usine validés ce jour (${rattList.length})`}
               </div>
-              ${rattList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${rattList.map(b => `
+              ${rattList.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px">${rattList.slice(0, cap).map(b => `
                 <span onclick="BLModule.showDetail(${b.id})" style="cursor:pointer;background:rgba(13,148,136,.12);border:1px solid rgba(13,148,136,.35);border-radius:6px;padding:3px 8px;font-size:11px">
-                  <strong>${Utils.escHTML(b.ref)}</strong> (${isAR?'أُنشئ':'créé'} ${Utils.fmtDate(b.creationDate)}) : <strong style="color:#0d9488">+${Utils.fmtCurrency(b.totalTTC||0)}</strong>
-                </span>`).join('')}</div>` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'لا توجد سندات مستدركة في هذا اليوم' : 'Aucun BCH de rattrapage sur cette journée'}</div>`}
+                  <strong>${Utils.escHTML(b.ref)}</strong> (${isAR?'أُنشئ':'Créé le'} ${Utils.fmtDate(b.creationDate)} — Validé après +${b.delayDays||1} j) : <strong style="color:#0d9488">+${Utils.fmtCurrency(b.totalTTC||0)}</strong>
+                </span>`).join('')}</div>${moreBtn(rattList.length, 'validated_later_day')}` : `<div style="font-size:11px;color:var(--text4)">${isAR ? 'لا توجد سندات مستدركة في هذا اليوم' : 'Aucun BCH de rattrapage sur cette journée'}</div>`}
             </div>
           </div>
         </td>
       </tr>`;
   },
 
+  _renderSuiviPaginationBar(pageKey, page, totalPages, totalItems, unitLabel, isAR) {
+    if (totalItems <= 0) return '';
+    const startIdx = (page - 1) * 10 + 1;
+    const endIdx = Math.min(totalItems, page * 10);
+    const pages = [];
+    const pStart = Math.max(1, page - 2);
+    const pEnd = Math.min(totalPages, page + 2);
+    for (let p = pStart; p <= pEnd; p++) pages.push(p);
+    const btnS = (act, dis) => `padding:5px 11px;border-radius:6px;border:1px solid ${act?'#0d9488':'var(--border)'};background:${act?'#0d9488':'var(--bg)'};color:${act?'#fff':(dis?'var(--text4)':'var(--text)')};font-size:11px;font-weight:700;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?.5:1}`;
+
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px;background:var(--bg-inset);border-top:1px solid var(--border)">
+        <div style="font-size:11.5px;color:var(--text3);font-weight:700">
+          ${isAR ? `الصفحة ${page} / ${totalPages} — عرض ${startIdx} إلى ${endIdx} من أصل ${totalItems} ${unitLabel} (10 في كل صفحة)` : `Page ${page} / ${totalPages} — Affichage ${startIdx}–${endIdx} sur ${totalItems} ${unitLabel} (10 par page)`}
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <button style="${btnS(false, page <= 1)}" ${page <= 1 ? 'disabled' : `onclick="AdminCaisseModule._suiviFilters.${pageKey}=${page - 1};App.loadModule('admin_caisse')"`}>
+            « ${isAR ? 'السابق' : 'Précédent'}
+          </button>
+          ${pStart > 1 ? `<button style="${btnS(false, false)}" onclick="AdminCaisseModule._suiviFilters.${pageKey}=1;App.loadModule('admin_caisse')">1</button><span style="color:var(--text4);padding:0 4px">…</span>` : ''}
+          ${pages.map(p => `<button style="${btnS(p === page, false)}" onclick="AdminCaisseModule._suiviFilters.${pageKey}=${p};App.loadModule('admin_caisse')">${p}</button>`).join('')}
+          ${pEnd < totalPages ? `<span style="color:var(--text4);padding:0 4px">…</span><button style="${btnS(false, false)}" onclick="AdminCaisseModule._suiviFilters.${pageKey}=${totalPages};App.loadModule('admin_caisse')">${totalPages}</button>` : ''}
+          <button style="${btnS(false, page >= totalPages)}" ${page >= totalPages ? 'disabled' : `onclick="AdminCaisseModule._suiviFilters.${pageKey}=${page + 1};App.loadModule('admin_caisse')"`}>
+            ${isAR ? 'التالي' : 'Suivant'} »
+          </button>
+        </div>
+      </div>`;
+  },
+
   _buildSuiviDailyTable(data, isAR) {
     const rows = data.dailyRows || [];
+    const f = this._suiviFilters || {};
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const page = Math.min(totalPages, Math.max(1, Number(f.dailyPage) || 1));
+    const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+
     const thS = 'padding:9px 8px;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);border-bottom:2px solid var(--border);white-space:nowrap';
     const totCaisse = rows.reduce((s, r) => s + (r.caisseNetTTC || 0), 0);
     const totPend = rows.reduce((s, r) => s + (r.pendingOnDayTTC || 0), 0);
@@ -10228,9 +10289,9 @@ const AdminCaisseModule = {
         <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--bg-inset)">
           <div>
             <h4 style="margin:0;font-size:14px;font-weight:900;color:var(--text)"><i class="fas fa-calendar-alt" style="color:#0d9488"></i> ${isAR ? '1. الجدول اليومي والتراكمي (من الأمس إلى الغد — الصندوق ↔ المصنع ↔ كشف المبيعات)' : '1. Tableau Journalier & Cumulatif (Jour par Jour — de la veille au lendemain)'}</h4>
-            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'يوضح الرصيد المرحل من الأمس، مقبوضات اليوم، المبالغ المعلقة في انتظار المصنع، الاستدراك، التحويل الفعلي للبنك، والرصيد التراكمي النهائي.' : 'Affiche le report de la veille, les entrées Caisse du jour, les BCH retenus en attente Usine, le rattrapage des jours précédents, la sortie ÉV/Banque et le solde cumulé fin de journée.'}</div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'يوضح الرصيد المرحل من الأمس، مقبوضات اليوم (المؤكدة وغير المؤكدة)، الاستدراك، التحويل الفعلي للبنك، والرصيد التراكمي النهائي (10 أيام في كل صفحة).' : 'Affiche le report de la veille, les entrées Caisse du jour (validés vs non validés), le rattrapage, la sortie ÉV/Banque et le solde cumulé fin de journée (10 jours par page).'}</div>
           </div>
-          <span class="badge" style="background:#0d9488;color:#fff;font-size:11px">${rows.length} ${isAR ? 'يوم' : 'jour(s)'}</span>
+          <span class="badge" style="background:#0d9488;color:#fff;font-size:11px">Page ${page}/${totalPages} · ${rows.length} ${isAR ? 'يوم' : 'jour(s)'}</span>
         </div>
         <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse">
@@ -10238,7 +10299,7 @@ const AdminCaisseModule = {
               <tr style="background:var(--bg3)">
                 <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'التاريخ' : 'Date'}</th>
                 <th style="${thS};text-align:right">${isAR ? 'ترحيل الأمس (J-1)' : 'Report Veille (J-1)'}</th>
-                <th style="${thS};text-align:right;color:#16a34a">${isAR ? 'مداخيل الصندوق (J)' : 'Entrées Caisse (J)'}</th>
+                <th style="${thS};text-align:right;color:#16a34a">${isAR ? 'مداخيل الصندوق (مؤكد / غير مؤكد)' : 'Entrées Caisse (Validés / Non Validés)'}</th>
                 <th style="${thS};text-align:right;color:#d97706">${isAR ? 'منها في انتظار المصنع (J)' : 'Dont En Attente Usine (J)'}</th>
                 <th style="${thS};text-align:right;color:#0d9488">${isAR ? 'استدراك المصنع (+ÉV)' : 'Rattrapage Usine (+ÉV)'}</th>
                 <th style="${thS};text-align:right">${isAR ? 'قاعدة BCH في ÉV' : 'Base BCH en ÉV'}</th>
@@ -10252,7 +10313,7 @@ const AdminCaisseModule = {
               </tr>
             </thead>
             <tbody>
-              ${rows.length ? rows.map((d, i) => this._buildSuiviDailyRow(d, i, isAR)).join('') : `<tr><td colspan="13" style="padding:28px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد بيانات مطابقة للفلاتر' : 'Aucune donnée pour cette période'}</td></tr>`}
+              ${pageRows.length ? pageRows.map((d, i) => this._buildSuiviDailyRow(d, i, isAR)).join('') : `<tr><td colspan="13" style="padding:28px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد بيانات مطابقة للفلاتر' : 'Aucune donnée pour cette période'}</td></tr>`}
             </tbody>
             ${rows.length ? `
             <tfoot>
@@ -10274,6 +10335,7 @@ const AdminCaisseModule = {
             </tfoot>` : ''}
           </table>
         </div>
+        ${this._renderSuiviPaginationBar('dailyPage', page, totalPages, rows.length, isAR ? 'يوم' : 'jours', isAR)}
       </div>`;
   },
 
@@ -10339,11 +10401,17 @@ const AdminCaisseModule = {
   },
 
   _buildSuiviBchTable(data, isAR) {
-    const selDay = this._suiviFilters?.selectedDay || '';
+    const f = this._suiviFilters || {};
+    const selDay = f.selectedDay || '';
     let rows = data.bchRows || [];
     if (selDay) {
       rows = rows.filter(b => b.creationDate === selDay || b.validationDate === selDay || b.evDate === selDay);
     }
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const page = Math.min(totalPages, Math.max(1, Number(f.bchPage) || 1));
+    const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+
     const thS = 'padding:9px 10px;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);border-bottom:2px solid var(--border);white-space:nowrap';
     const totBchTTC = rows.reduce((s, b) => s + (b.status === 'returned' ? 0 : (b.totalTTC || 0)), 0);
     const totEvTTC = rows.reduce((s, b) => s + (b.inEv ? (b.evTTC || 0) : 0), 0);
@@ -10355,16 +10423,16 @@ const AdminCaisseModule = {
         <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--bg-inset)">
           <div>
             <h4 style="margin:0;font-size:14px;font-weight:900;color:var(--text)"><i class="fas fa-route" style="color:#4f46e5"></i> ${isAR ? '2. التتبع التفصيلي لكل وصل شحن (الصندوق ➔ تأكيد المصنع ➔ كشف المبيعات / البنك)' : '2. Traçabilité Détaillée par BCH (Caisse ➔ Validation Usine ➔ État de Vente / Banque)'}</h4>
-            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'تحقق من كل وصل شحن: متى دخل الصندوق، متى أكده المصنع، في أي كشف مبيعات أُدرج، وأين يوجد ماله حالياً.' : 'Vérifiez pour chaque BCH : sa date d\'encaissement Caisse, sa validation Usine, son inclusion dans l\'État de Vente et la position actuelle de son argent.'}</div>
+            <div style="font-size:11px;color:var(--text4);margin-top:2px">${isAR ? 'تحقق من كل وصل شحن: متى دخل الصندوق، متى أكده المصنع، في أي كشف مبيعات أُدرج، وأين يوجد ماله حالياً (10 سندات في كل صفحة).' : 'Vérifiez pour chaque BCH : sa date d\'encaissement Caisse, sa validation Usine, son inclusion dans l\'État de Vente et la position actuelle de son argent (10 BCH par page).'}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            ${selDay ? `<button class="btn btn-xs btn-outline" onclick="AdminCaisseModule._suiviFilters.selectedDay='';App.loadModule('admin_caisse')">✕ ${isAR ? 'إلغاء فلتر اليوم' : 'Effacer filtre jour'} (${Utils.fmtDate(selDay)})</button>` : ''}
-            <span class="badge" style="background:#4f46e5;color:#fff;font-size:11px">${rows.length} BCH</span>
+            ${selDay ? `<button class="btn btn-xs btn-outline" onclick="AdminCaisseModule._suiviFilters.selectedDay='';AdminCaisseModule._suiviFilters.bchPage=1;App.loadModule('admin_caisse')">✕ ${isAR ? 'إلغاء فلتر اليوم' : 'Effacer filtre jour'} (${Utils.fmtDate(selDay)})</button>` : ''}
+            <span class="badge" style="background:#4f46e5;color:#fff;font-size:11px">Page ${page}/${totalPages} · ${rows.length} BCH</span>
           </div>
         </div>
-        <div style="overflow-x:auto;max-height:600px;overflow-y:auto">
+        <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse">
-            <thead style="position:sticky;top:0;z-index:2;background:var(--bg3)">
+            <thead style="background:var(--bg3)">
               <tr>
                 <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'مرجع BCH' : 'Réf BCH'}</th>
                 <th style="${thS};text-align:${isAR?'right':'left'}">${isAR ? 'الزبون وأمين الصندوق' : 'Client & Caissier'}</th>
@@ -10379,7 +10447,7 @@ const AdminCaisseModule = {
               </tr>
             </thead>
             <tbody>
-              ${rows.length ? rows.map((b, i) => this._buildSuiviBchRow(b, i, isAR)).join('') : `<tr><td colspan="10" style="padding:28px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد سندات مطابقة للفلاتر' : 'Aucun BCH correspondant aux filtres'}</td></tr>`}
+              ${pageRows.length ? pageRows.map((b, i) => this._buildSuiviBchRow(b, i, isAR)).join('') : `<tr><td colspan="10" style="padding:28px;text-align:center;color:var(--text4)">${isAR ? 'لا توجد سندات مطابقة للفلاتر' : 'Aucun BCH correspondant aux filtres'}</td></tr>`}
             </tbody>
             ${rows.length ? `
             <tfoot>
@@ -10394,6 +10462,7 @@ const AdminCaisseModule = {
             </tfoot>` : ''}
           </table>
         </div>
+        ${this._renderSuiviPaginationBar('bchPage', page, totalPages, rows.length, 'BCH', isAR)}
       </div>`;
   },
 

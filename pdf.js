@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    PDF.JS — PROFESSIONAL DOCUMENT GENERATOR v15.0
    Exact match: BC_DG_BC_006_2026-7.pdf reference
    + Arabic font support (Noto Naskh Arabic TTF auto-loaded from CDN)
@@ -167,7 +167,53 @@
       this._registerAr(doc);
       return doc;
     },
-    _save(doc, fn) { doc.save(fn); const isAR = typeof T !== 'undefined' && T.isRTL(); this._notify(isAR ? 'تم إنشاء ملف PDF بنجاح' : 'PDF généré','success'); },
+    _currentQr: null,
+    _isQrRegenerating: false,
+
+    _stampQrBoxOnDoc(doc, x, y, boxSize = 14, labelTxt = 'SCAN PDF') {
+      const qr = this._currentQr || this._buildFallbackQr({ type: 'doc', ref: 'PDF' });
+      if (!qr || !qr.dataUrl) return;
+      try {
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.roundedRect(x - 0.8, y - 0.8, boxSize + 1.6, boxSize + (labelTxt ? 3.2 : 1.6), 1, 1, 'FD');
+        doc.addImage(qr.dataUrl, 'PNG', x, y, boxSize, boxSize);
+        if (labelTxt) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(4.2);
+          doc.setTextColor(71, 85, 105);
+          doc.text(labelTxt, x + boxSize / 2, y + boxSize + 1.8, { align: 'center' });
+        }
+      } catch (e) {
+        console.warn('[PDFGen QR stamp]', e);
+      }
+    },
+
+    _save(doc, fn) {
+      try {
+        if (!this._currentQr) {
+          this._currentQr = this._buildFallbackQr({ type: 'doc', ref: fn || 'PDF' });
+        }
+        if (!doc._qrAlreadyStamped && this._currentQr && this._currentQr.dataUrl) {
+          const totalPages = doc.internal.getNumberOfPages();
+          doc.setPage(totalPages);
+          const pH = doc.internal.pageSize.getHeight();
+          const pW = doc.internal.pageSize.getWidth();
+          const qrSize = 14;
+          const qrX = pW - MR - qrSize - 0.5;
+          const qrY = pH - qrSize - 5;
+          this._stampQrBoxOnDoc(doc, qrX, qrY, qrSize, 'VÉRIF QR');
+          doc._qrAlreadyStamped = true;
+        }
+      } catch (e) {
+        console.warn('[PDFGen _save QR]', e);
+      }
+      this._currentQr = null;
+      doc.save(fn);
+      const isAR = typeof T !== 'undefined' && T.isRTL();
+      this._notify(isAR ? 'تم إنشاء ملف PDF بنجاح' : 'PDF généré', 'success');
+    },
 
     /* ── Drawing ────────────────────────────────────────────  */
     _fill(doc,rgb)   { doc.setFillColor(rgb[0],rgb[1],rgb[2]); },
@@ -392,7 +438,8 @@
         this._fill(doc,C.GRAY_TXT);
         const dotY=y+blockH-10;
         let lx=x+5;
-        while(lx<x+cw-5){doc.circle(lx,dotY,0.35,'F');lx+=2.2;}
+        while(lx<x+cw-(i===0?17:5)){doc.circle(lx,dotY,0.35,'F');lx+=2.2;}
+        /* QR now stamped by _save() at very bottom */
       });
       return y+blockH+4;
     },
@@ -535,15 +582,15 @@
     /* ══════════════════════════════════════════════════════════
        ROUTER (async — waits for Arabic font before generating)
     ══════════════════════════════════════════════════════════ */
-    async exportBR(id)       { try{ await this._ensureArabicFont(); this._exportBR(id);       }catch(e){console.error(e);this._notify('Erreur BR: '+e.message,'error');} },
-    async exportBonChargement(id) { try{ await this._ensureArabicFont(); this._exportBonChargement(id); }catch(e){console.error(e);this._notify('Erreur Bon de Chargement: '+e.message,'error');} },
-    async exportBLRoute(id)       { try{ await this._ensureArabicFont(); this._exportBL(id, true); }catch(e){console.error(e);this._notify('Erreur BL Route: '+e.message,'error');} },
-    async exportTempoBL(id)       { try{ await this._ensureArabicFont(); this._exportTempoBL(id); }catch(e){console.error(e);this._notify('Erreur Tempo BL: '+e.message,'error');} },
-    async exportBL(id)            { try{ await this._ensureArabicFont(); this._exportBL(id); }catch(e){console.error(e);this._notify('Erreur BL: '+e.message,'error');} },
-    async exportBonRetour(id)     { try{ await this._ensureArabicFont(); this._exportBonRetour(id); }catch(e){console.error(e);this._notify('Erreur Bon de Retour: '+e.message,'error');} },
-    async exportDecharge(id) { try{ await this._ensureArabicFont(); this._exportDecharge(id); }catch(e){console.error(e);this._notify('Erreur Decharge: '+e.message,'error');} },
-    async exportBankDecharge(id) { try{ await this._ensureArabicFont(); this._exportBankDecharge(id); }catch(e){console.error(e);this._notify('Erreur Bank Decharge: '+e.message,'error');} },
-    async exportSupplierPayDecharge(id) { try{ await this._ensureArabicFont(); this._exportSupplierPayDecharge(id); }catch(e){console.error(e);this._notify('Erreur Pay Decharge: '+e.message,'error');} },
+    async exportBR(id)            { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'br', id, col:'brs', ref:DB.getById('brs',id)?.ref }); this._exportBR(id); }catch(e){console.error(e);this._notify('Erreur BR: '+e.message,'error');} },
+    async exportBonChargement(id) { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'bch', id, col:'bls', ref:DB.getById('bls',id)?.ref }); this._exportBonChargement(id); }catch(e){console.error(e);this._notify('Erreur Bon de Chargement: '+e.message,'error');} },
+    async exportBLRoute(id)       { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'bl_route', id, col:'bls', ref:DB.getById('bls',id)?.ref }); this._exportBL(id, true); }catch(e){console.error(e);this._notify('Erreur BL Route: '+e.message,'error');} },
+    async exportTempoBL(id)       { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'tempo_bl', id, col:'bls', ref:DB.getById('bls',id)?.ref }); this._exportTempoBL(id); }catch(e){console.error(e);this._notify('Erreur Tempo BL: '+e.message,'error');} },
+    async exportBL(id)            { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'bl', id, col:'bls', ref:DB.getById('bls',id)?.ref }); this._exportBL(id); }catch(e){console.error(e);this._notify('Erreur BL: '+e.message,'error');} },
+    async exportBonRetour(id)     { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'bon_retour', id, col:'bon_retours', ref:DB.getById('bon_retours',id)?.ref }); this._exportBonRetour(id); }catch(e){console.error(e);this._notify('Erreur Bon de Retour: '+e.message,'error');} },
+    async exportDecharge(id)      { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'decharge', id, col:'caisse_admin', ref:`TX-${id}` }); this._exportDecharge(id); }catch(e){console.error(e);this._notify('Erreur Decharge: '+e.message,'error');} },
+    async exportBankDecharge(id)  { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'bank_decharge', id, col:'bank_transactions', ref:`BANK-${id}` }); this._exportBankDecharge(id); }catch(e){console.error(e);this._notify('Erreur Bank Decharge: '+e.message,'error');} },
+    async exportSupplierPayDecharge(id) { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'supplier_pay_decharge', id, col:'supplier_payments', ref:`PAY-${id}` }); this._exportSupplierPayDecharge(id); }catch(e){console.error(e);this._notify('Erreur Pay Decharge: '+e.message,'error');} },
 
 
 
@@ -655,7 +702,7 @@
     },
 
     exportEtatVente(data) {
-      this._ensureArabicFont().then(() => this._exportEtatVente(data)).catch(e => {
+      this._ensureArabicFont().then(() => this._prepareQrMeta({ type: 'etat_vente', id: data?.id || null, col: 'etat_vente_docs', ref: data?.ref || data?.period, snap: data })).then(() => this._exportEtatVente(data)).catch(e => {
         console.error(e);
         this._notify('Erreur: ' + e.message, 'error');
       });
@@ -1374,6 +1421,7 @@
         this._text(doc, isAR ? 'تأشيرة / أمين الصندوق' : 'VISA / CAISSIER ÉMETTEUR', ML + 2, y + 3);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
         this._text(doc, isAR ? 'التاريخ وختم الصندوق' : 'Date & Cachet Caisse', ML + 2, y + sigH - 1.5);
+        /* QR now stamped by _save() at very bottom */
 
         // Sig 2: Chauffeur
         this._rect(doc, ML + sigW + 2, y, sigW, sigH, [255, 255, 255], [203, 213, 225]);
@@ -1388,6 +1436,10 @@
         this._text(doc, isAR ? 'تأكيد المصنع / الشحن' : 'VALIDATION USINE / CHARGEMENT', ML + (sigW + 2) * 2 + 2, y + 3);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(5); this._tc(doc, [148, 163, 184]);
         this._text(doc, isAR ? 'ختم المصنع والموافقة على الشحن' : 'Cachet Usine & Bon à charger', ML + (sigW + 2) * 2 + 2, y + sigH - 1.5);
+
+        // QR code at very bottom-right of each volet
+        const qrSz = 11;
+        this._stampQrBoxOnDoc(doc, ML + CW - qrSz - 0.5, y + sigH + 1, qrSz, '');
       };
 
       // ── DRAW VOLET 1 (Top Half: Chauffeur / Transporteur) ──
@@ -1412,6 +1464,7 @@
 
       // ── DRAW VOLET 2 (Bottom Half: Usine / Fournisseur Chargement) ──
       drawSingleVolet(152, 2, 'USINE / FOURNISSEUR (CHARGEMENT & SOUCHE)', '(À conserver par l\'usine après validation)', [30, 41, 59]);
+      doc._qrAlreadyStamped = true;
 
       // Strictly enforce 1 single page!
       while (doc.getNumberOfPages() > 1) {
@@ -1779,6 +1832,7 @@
       while (lx3 < sx + sigW - 5) { doc.circle(lx3, dotY3, 0.35, 'F'); lx3 += 2.2; }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
       this._text(doc, isAR ? 'التاريخ والختم والتوقيع' : 'Date, Cachet & Signature', sx + sigW / 2, y + stampH - 3, { align: 'center' });
+      /* QR now stamped by _save() at very bottom */
       y += stampH + 4;
 
       // ── 9. Company Legal Footer (bottom — only entreprise info) ──
@@ -2092,6 +2146,7 @@
       doc.text('LE CLIENT / EXPEDITEUR', ML + 3, sigY + 4);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(6); this._tc(doc, [148, 163, 184]);
       doc.text('Cachet et Signature', ML + 3, sigY + sigH - 2);
+      /* QR now stamped by _save() at very bottom */
 
       // Sig 2: Chauffeur
       this._rect(doc, ML + sigW2 + 3, sigY, sigW2, sigH, [255, 255, 255], [252, 165, 165]);
@@ -2358,7 +2413,7 @@
     /* ══════════════════════════════════════════════════════════
        FICHE DE PAIE — Simple Payroll Slip
     ══════════════════════════════════════════════════════════ */
-    async exportFicheDePayeSimple(data) { try{ await this._ensureArabicFont(); this._exportFicheDePayeSimple(data); }catch(e){console.error(e);this._notify('Erreur Fiche de Paie: '+e.message,'error');} },
+    async exportFicheDePayeSimple(data) { try{ await this._ensureArabicFont(); await this._prepareQrMeta({ type:'fiche_paie', id:data?.id||null, ref:data?.monthLabel||'PAIE', snap:data }); this._exportFicheDePayeSimple(data); }catch(e){console.error(e);this._notify('Erreur Fiche de Paie: '+e.message,'error');} },
 
     _exportFicheDePayeSimple(data) {
       if (!data) { this._notify('Donnees manquantes','error'); return; }
@@ -2485,6 +2540,7 @@
     async exportCaisseUsineFollowup(reportData) {
       try {
         await this._ensureArabicFont();
+        await this._prepareQrMeta({ type: 'suivi_caisse', ref: 'SUIVI-CAISSE', snap: reportData });
         this._exportCaisseUsineFollowup(reportData);
       } catch (e) {
         console.error(e);
@@ -2728,6 +2784,307 @@
 
       const todayStr = (typeof Utils !== 'undefined' && Utils.today) ? Utils.today() : new Date().toISOString().slice(0, 10);
       this._save(doc, `Suivi_Caisse_Usine_EV_${todayStr}.pdf`);
+    },
+
+    _buildFallbackQr(meta) {
+      const origin = (typeof location !== 'undefined' && location.origin && location.origin !== 'null' && !location.origin.startsWith('file'))
+        ? location.origin
+        : 'https://erp-bachir.local';
+      const raw = JSON.stringify({ t: meta?.type || 'doc', i: meta?.id || 0, r: meta?.ref || '', d: Date.now().toString(36) });
+      const b64 = (typeof btoa === 'function' ? btoa(unescape(encodeURIComponent(raw))) : 'QR')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const sig = Array.from(raw).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0x811c9dc5);
+      const hex = Math.abs(sig).toString(16).padStart(8, '0') + Math.abs(sig * 31337).toString(16).padStart(8, '0');
+      const token = `${b64}.${hex}`;
+      const url = `${origin}/v/${token}`;
+      return { url, token, dataUrl: this._makeQrDataUrl(url, 220), type: meta?.type || 'doc' };
+    },
+
+    async _prepareQrMeta(meta) {
+      if (this._isQrRegenerating && this._currentQr) return this._currentQr;
+      try {
+        if (typeof fetch === 'function' && typeof location !== 'undefined' && location.protocol !== 'file:') {
+          const slimSnap = meta?.snap ? this._slimQrSnapshot(meta.type, meta.snap) : undefined;
+          const res = await fetch('/api/qr-verify/mint', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: meta?.type || 'doc',
+              id: meta?.id ?? null,
+              col: meta?.col || null,
+              ref: meta?.ref || '',
+              snap: slimSnap
+            })
+          });
+          if (res.ok) {
+            const j = await res.json();
+            if (j && j.url) {
+              this._currentQr = { url: j.url, token: j.token, dataUrl: this._makeQrDataUrl(j.url, 220), type: meta?.type };
+              return this._currentQr;
+            }
+          }
+        }
+      } catch (_) {}
+      this._currentQr = this._buildFallbackQr(meta);
+      return this._currentQr;
+    },
+
+    _slimQrSnapshot(type, snap) {
+      if (!snap || typeof snap !== 'object') return undefined;
+      if (type === 'etat_vente') {
+        return {
+          ref: snap.ref, period: snap.period, date: snap.date, createdAt: snap.createdAt,
+          createdByName: snap.createdByName, totalHT: snap.totalHT, tvaAmt: snap.tvaAmt,
+          tvaRate: snap.tvaRate, timbreAmt: snap.timbreAmt, totalTTC: snap.totalTTC,
+          marginRate: snap.marginRate, totalMargin: snap.totalMargin,
+          items: (snap.items || []).slice(0, 35).map(it => ({
+            designation: it.designation, unit: it.unit, qty: it.qty, unitPrice: it.unitPrice, totalHT: it.totalHT
+          }))
+        };
+      }
+      if (type === 'fiche_paie') return snap;
+      if (type === 'suivi_caisse') {
+        return { kpis: snap.kpis, dailyRows: (snap.dailyRows || []).slice(0, 15), bchRows: (snap.bchRows || []).slice(0, 20) };
+      }
+      return undefined;
+    },
+
+    async regenerateFromQrPayload(payload) {
+      if (!payload) return;
+      this._isQrRegenerating = true;
+      try {
+        const verifyUrl = payload.url || ((typeof location !== 'undefined' ? location.origin : '') + '/v/' + (payload.token || 'QR'));
+        this._currentQr = { url: verifyUrl, token: payload.token || '', dataUrl: this._makeQrDataUrl(verifyUrl, 220), type: payload.type };
+        await this._ensureArabicFont();
+        const t = payload.type;
+        if (t === 'br') this._exportBR(payload.id);
+        else if (t === 'bch') this._exportBonChargement(payload.id);
+        else if (t === 'bl') this._exportBL(payload.id, false);
+        else if (t === 'bl_route') this._exportBL(payload.id, true);
+        else if (t === 'tempo_bl') this._exportTempoBL(payload.id);
+        else if (t === 'bon_retour') this._exportBonRetour(payload.id);
+        else if (t === 'decharge') this._exportDecharge(payload.id);
+        else if (t === 'bank_decharge') this._exportBankDecharge(payload.id);
+        else if (t === 'supplier_pay_decharge') this._exportSupplierPayDecharge(payload.id);
+        else if (t === 'fiche_paie') this._exportFicheDePayeSimple(payload.snap || {});
+        else if (t === 'suivi_caisse') this._exportCaisseUsineFollowup(payload.snap || {});
+        else if (t === 'etat_vente') {
+          let evData = payload.snap;
+          if (!evData || !evData.items) {
+            const docObj = (payload.id && DB.getById('etat_vente_docs', payload.id)) || (DB.getAll('etat_vente_docs') || [])[0] || {};
+            evData = {
+              ref: docObj.ref || payload.ref || 'EV',
+              period: docObj.date || docObj.period || '',
+              createdAt: docObj.createdAt || docObj.date,
+              createdByName: docObj.userName || docObj.createdByName || '',
+              items: docObj.items || docObj.lines || [],
+              totalHT: docObj.totalHT || 0,
+              tvaAmt: docObj.tvaAmount || docObj.tvaAmt || 0,
+              tvaRate: docObj.tvaRate || 19,
+              timbreAmt: docObj.timbreAmount || docObj.timbreAmt || 0,
+              totalTTC: docObj.totalTTC || 0,
+              bls: DB.getAll('bls') || [],
+              retours: DB.getAll('bon_retours') || []
+            };
+          }
+          this._exportEtatVente(evData);
+        }
+      } finally {
+        this._isQrRegenerating = false;
+      }
+    },
+
+    _makeQrDataUrl(text, sizePx = 220) {
+      try {
+        if (typeof document === 'undefined') return '';
+        const matrix = this._encodeQrMatrix(String(text || 'https://erp.local'));
+        if (!matrix || !matrix.length) return '';
+        const n = matrix.length;
+        const quiet = 2;
+        const totalMods = n + quiet * 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = sizePx;
+        canvas.height = sizePx;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, sizePx, sizePx);
+        const scale = sizePx / totalMods;
+        ctx.fillStyle = '#0f172a';
+        for (let r = 0; r < n; r++) {
+          for (let c = 0; c < n; c++) {
+            if (matrix[r][c]) {
+              const x0 = Math.floor((c + quiet) * scale);
+              const y0 = Math.floor((r + quiet) * scale);
+              const x1 = Math.ceil((c + quiet + 1) * scale);
+              const y1 = Math.ceil((r + quiet + 1) * scale);
+              ctx.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
+            }
+          }
+        }
+        return canvas.toDataURL('image/png');
+      } catch (e) {
+        console.warn('[PDFGen _makeQrDataUrl]', e);
+        return '';
+      }
+    },
+
+    _encodeQrMatrix(text) {
+      const utf8 = [];
+      for (let i = 0; i < text.length; i++) {
+        let code = text.charCodeAt(i);
+        if (code < 0x80) utf8.push(code);
+        else if (code < 0x800) { utf8.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f)); }
+        else { utf8.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f)); }
+      }
+      const V_SPEC = [
+        null,
+        [19, 7, [[1, 19]], [], 0],
+        [34, 10, [[1, 34]], [6, 18], 0],
+        [55, 15, [[1, 55]], [6, 22], 0],
+        [80, 20, [[1, 80]], [6, 26], 0],
+        [108, 26, [[1, 108]], [6, 30], 0],
+        [136, 18, [[2, 68]], [6, 34], 0],
+        [156, 20, [[2, 78]], [6, 22, 38], 0x07C94],
+        [194, 24, [[2, 97]], [6, 24, 42], 0x085BC],
+        [232, 30, [[2, 116]], [6, 26, 46], 0x09A99],
+        [274, 18, [[2, 68], [2, 69]], [6, 28, 50], 0x0A4D3],
+        [324, 20, [[4, 81]], [6, 30, 54], 0x0BBF6],
+        [370, 24, [[2, 92], [2, 93]], [6, 32, 58], 0x0C762],
+        [428, 26, [[4, 107]], [6, 34, 62], 0x0D847],
+        [461, 30, [[3, 115], [1, 116]], [6, 26, 46, 66], 0x0E60D]
+      ];
+      let ver = 1;
+      while (ver < 14) {
+        const cap = V_SPEC[ver][0] - (ver <= 9 ? 2 : 3);
+        if (utf8.length <= cap) break;
+        ver++;
+      }
+      const [totalDataCw, ecCw, blkGroups, alignPos, verInfoBits] = V_SPEC[ver];
+      const maxCap = totalDataCw - (ver <= 9 ? 2 : 3);
+      const dataBytes = utf8.slice(0, maxCap);
+      const bits = [];
+      const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+      pushBits(0b0100, 4);
+      pushBits(dataBytes.length, ver <= 9 ? 8 : 16);
+      dataBytes.forEach(b => pushBits(b, 8));
+      const maxBits = totalDataCw * 8;
+      for (let i = 0; i < 4 && bits.length < maxBits; i++) bits.push(0);
+      while (bits.length % 8 !== 0) bits.push(0);
+      const dataCw = [];
+      for (let i = 0; i < bits.length; i += 8) {
+        let b = 0;
+        for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
+        dataCw.push(b);
+      }
+      for (let p = 0; dataCw.length < totalDataCw; p++) dataCw.push(p % 2 === 0 ? 0xEC : 0x11);
+      return this._buildQrMatrixFromCodewords(ver, dataCw, ecCw, blkGroups, alignPos, verInfoBits);
+    },
+
+    _buildQrMatrixFromCodewords(ver, dataCw, ecCw, blkGroups, alignPos, verInfoBits) {
+      const gfExp = new Uint8Array(512), gfLog = new Uint8Array(256);
+      let x = 1;
+      for (let i = 0; i < 255; i++) { gfExp[i] = x; gfLog[x] = i; x = (x << 1) ^ ((x & 0x80) ? 0x11d : 0); }
+      for (let i = 255; i < 512; i++) gfExp[i] = gfExp[i - 255];
+      const gfMul = (a, b) => (a === 0 || b === 0) ? 0 : gfExp[gfLog[a] + gfLog[b]];
+
+      let gen = [1];
+      for (let i = 0; i < ecCw; i++) {
+        const next = new Array(gen.length + 1).fill(0);
+        const factor = gfExp[i];
+        for (let j = 0; j < gen.length; j++) { next[j] ^= gen[j]; next[j + 1] ^= gfMul(gen[j], factor); }
+        gen = next;
+      }
+
+      const dataBlocks = [], ecBlocks = [];
+      let offset = 0;
+      blkGroups.forEach(([numBlks, cwPerBlk]) => {
+        for (let b = 0; b < numBlks; b++) {
+          const blk = dataCw.slice(offset, offset + cwPerBlk);
+          offset += cwPerBlk;
+          dataBlocks.push(blk);
+          const rem = new Uint8Array(ecCw);
+          for (let i = 0; i < blk.length; i++) {
+            const lead = blk[i] ^ rem[0];
+            for (let j = 0; j < ecCw - 1; j++) rem[j] = rem[j + 1] ^ gfMul(gen[j + 1], lead);
+            rem[ecCw - 1] = gfMul(gen[ecCw], lead);
+          }
+          ecBlocks.push(Array.from(rem));
+        }
+      });
+
+      const finalCw = [];
+      const maxDataLen = Math.max(...dataBlocks.map(b => b.length));
+      for (let i = 0; i < maxDataLen; i++) dataBlocks.forEach(b => { if (i < b.length) finalCw.push(b[i]); });
+      for (let i = 0; i < ecCw; i++) ecBlocks.forEach(b => finalCw.push(b[i]));
+
+      const N = 17 + 4 * ver;
+      const mat = Array.from({ length: N }, () => new Array(N).fill(false));
+      const isFunc = Array.from({ length: N }, () => new Array(N).fill(false));
+      const setMod = (r, c, dark) => { if (r >= 0 && r < N && c >= 0 && c < N) { mat[r][c] = !!dark; isFunc[r][c] = true; } };
+
+      const drawFinder = (r0, c0) => {
+        for (let dr = -1; dr <= 7; dr++) {
+          for (let dc = -1; dc <= 7; dc++) {
+            const dark = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6 && (dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4));
+            setMod(r0 + dr, c0 + dc, dark);
+          }
+        }
+      };
+      drawFinder(0, 0); drawFinder(0, N - 7); drawFinder(N - 7, 0);
+
+      for (let i = 8; i < N - 8; i++) { setMod(6, i, i % 2 === 0); setMod(i, 6, i % 2 === 0); }
+
+      for (let i = 0; i < alignPos.length; i++) {
+        for (let j = 0; j < alignPos.length; j++) {
+          if ((i === 0 && j === 0) || (i === 0 && j === alignPos.length - 1) || (i === alignPos.length - 1 && j === 0)) continue;
+          const ar = alignPos[i], ac = alignPos[j];
+          for (let dr = -2; dr <= 2; dr++) {
+            for (let dc = -2; dc <= 2; dc++) setMod(ar + dr, ac + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+          }
+        }
+      }
+
+      setMod(4 * ver + 9, 8, true);
+      for (let i = 0; i < 9; i++) { if (!isFunc[8][i]) isFunc[8][i] = true; if (!isFunc[i][8]) isFunc[i][8] = true; }
+      for (let i = 0; i < 8; i++) { isFunc[8][N - 1 - i] = true; isFunc[N - 1 - i][8] = true; }
+      if (ver >= 7 && verInfoBits) {
+        for (let i = 0; i < 18; i++) {
+          const bit = ((verInfoBits >> i) & 1) === 1;
+          const r = Math.floor(i / 3), c = N - 11 + (i % 3);
+          setMod(r, c, bit); setMod(c, r, bit);
+        }
+      }
+
+      let bitIdx = 0, upward = true;
+      for (let col = N - 1; col >= 1; col -= 2) {
+        if (col === 6) col = 5;
+        for (let step = 0; step < N; step++) {
+          const r = upward ? (N - 1 - step) : step;
+          for (let dc = 0; dc < 2; dc++) {
+            const c = col - dc;
+            if (!isFunc[r][c]) {
+              const byteIdx = bitIdx >> 3, bShift = 7 - (bitIdx & 7);
+              const rawBit = byteIdx < finalCw.length ? (((finalCw[byteIdx] >> bShift) & 1) === 1) : false;
+              mat[r][c] = rawBit !== ((r + c) % 2 === 0);
+              bitIdx++;
+            }
+          }
+        }
+        upward = !upward;
+      }
+
+      const fmtBits = 0x77C4;
+      for (let i = 0; i < 15; i++) {
+        const bit = ((fmtBits >> (14 - i)) & 1) === 1;
+        if (i < 6) mat[8][i] = bit;
+        else if (i === 6) mat[8][7] = bit;
+        else if (i === 7) mat[8][8] = bit;
+        else if (i === 8) mat[7][8] = bit;
+        else mat[14 - i][8] = bit;
+        if (i < 7) mat[N - 1 - i][8] = bit;
+        else mat[8][N - 15 + i] = bit;
+      }
+      return mat;
     },
 
   }; /* end PDFGen */

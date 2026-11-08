@@ -11,6 +11,7 @@ const path       = require('path');
 const authRoutes   = require('./routes/auth');
 const dataRoutes   = require('./routes/data');
 const { router: backupRoutes } = require('./routes/backup');
+const qrVerifyRoutes = require('./routes/qr_verify');
 const { startBackupCron } = require('./cron/backup');
 const { bumpAll } = require('./lib/versions');
 
@@ -67,6 +68,7 @@ app.use('/api', rateLimit({
 app.use('/api/auth',   authRoutes);
 app.use('/api/data',   dataRoutes);
 app.use('/api/backup', backupRoutes);
+app.use(qrVerifyRoutes);
 
 // ─── Admin: Full Reset (wipes ALL data from MongoDB) ─────────────
 app.post('/api/admin/reset-all', async (req, res) => {

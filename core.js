@@ -5097,12 +5097,33 @@ const SessionMgr = {
       }
       return s.slice(0, 10);
     };
+    const localDayCache = new Map();
     const localDay = (iso) => {
       if (!iso) return '';
-      const dt = new Date(iso);
-      if (isNaN(dt.getTime())) return normDate(String(iso));
-      return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      const s = String(iso);
+      if (s.length === 10 && s[4] === '-' && s[7] === '-') return s;
+      const cacheK = s.slice(0, 16);
+      let cached = localDayCache.get(cacheK);
+      if (cached !== undefined) return cached;
+      const dt = new Date(s);
+      cached = isNaN(dt.getTime())
+        ? normDate(s)
+        : (dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'));
+      localDayCache.set(cacheK, cached);
+      return cached;
     };
+    const dayMsCache = new Map();
+    const dayMs = (d) => {
+      if (!d) return 0;
+      let ms = dayMsCache.get(d);
+      if (ms === undefined) {
+        ms = Date.parse(d) || 0;
+        dayMsCache.set(d, ms);
+      }
+      return ms;
+    };
+    const todayRef = (typeof Utils !== 'undefined' && typeof Utils.today === 'function') ? Utils.today() : new Date().toISOString().slice(0, 10);
+    const todayRefMs = dayMs(todayRef);
 
     const allBLs = DB.getAll('bls');
     const blMap = new Map();
@@ -5637,26 +5658,33 @@ const SessionMgr = {
     let evBaseHT = 0;
     let evMarginDA = 0;
     let evHT = 0;
-    const lines = Array.isArray(b.lines) ? b.lines : [];
-    if (lines.length > 0) {
-      lines.forEach(line => {
-        const qty = Number(line.qtyDelivered ?? line.qty) || 0;
-        const price = Number(line.price ?? line.unitPrice) || 0;
-        const disc = Number(line.disc) || 0;
-        const basePrice = r2(price * (1 - disc / 100));
-        const marginPerUnit = r2(basePrice * (marginRate / 100));
-        const effectivePrice = r2(basePrice + marginPerUnit);
-        evBaseHT += qty * basePrice;
-        evMarginDA += qty * marginPerUnit;
-        evHT += qty * effectivePrice;
-      });
-      evBaseHT = r2(evBaseHT);
-      evMarginDA = r2(evMarginDA);
-      evHT = r2(evHT);
-    } else {
+    if (marginRate === 0 && bchHT > 0) {
       evBaseHT = bchHT;
-      evMarginDA = r2(bchHT * (marginRate / 100));
-      evHT = r2(evBaseHT + evMarginDA);
+      evMarginDA = 0;
+      evHT = bchHT;
+    } else {
+      const lines = Array.isArray(b.lines) ? b.lines : [];
+      if (lines.length > 0) {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const qty = Number(line.qtyDelivered ?? line.qty) || 0;
+          const price = Number(line.price ?? line.unitPrice) || 0;
+          const disc = Number(line.disc) || 0;
+          const basePrice = r2(price * (1 - disc / 100));
+          const marginPerUnit = r2(basePrice * (marginRate / 100));
+          const effectivePrice = r2(basePrice + marginPerUnit);
+          evBaseHT += qty * basePrice;
+          evMarginDA += qty * marginPerUnit;
+          evHT += qty * effectivePrice;
+        }
+        evBaseHT = r2(evBaseHT);
+        evMarginDA = r2(evMarginDA);
+        evHT = r2(evHT);
+      } else {
+        evBaseHT = bchHT;
+        evMarginDA = r2(bchHT * (marginRate / 100));
+        evHT = r2(evBaseHT + evMarginDA);
+      }
     }
 
     const evTVA = r2(evHT * (tvaRate / 100));
@@ -5709,12 +5737,33 @@ const SessionMgr = {
       }
       return s.slice(0, 10);
     };
+    const localDayCache = new Map();
     const localDay = (iso) => {
       if (!iso) return '';
-      const dt = new Date(iso);
-      if (isNaN(dt.getTime())) return normDate(String(iso));
-      return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      const s = String(iso);
+      if (s.length === 10 && s[4] === '-' && s[7] === '-') return s;
+      const cacheK = s.slice(0, 16);
+      let cached = localDayCache.get(cacheK);
+      if (cached !== undefined) return cached;
+      const dt = new Date(s);
+      cached = isNaN(dt.getTime())
+        ? normDate(s)
+        : (dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'));
+      localDayCache.set(cacheK, cached);
+      return cached;
     };
+    const dayMsCache = new Map();
+    const dayMs = (d) => {
+      if (!d) return 0;
+      let ms = dayMsCache.get(d);
+      if (ms === undefined) {
+        ms = Date.parse(d) || 0;
+        dayMsCache.set(d, ms);
+      }
+      return ms;
+    };
+    const todayRef = (typeof Utils !== 'undefined' && typeof Utils.today === 'function') ? Utils.today() : new Date().toISOString().slice(0, 10);
+    const todayRefMs = dayMs(todayRef);
 
     const usineRule = this.getEvUsineRule();
     const usersMap = new Map(DB.getAll('users').map(u => [String(u.id), u.name]));
@@ -5768,8 +5817,10 @@ const SessionMgr = {
       const isHeldBackFromEv = !explicitEv && coveredByUsineRule && isPendingUsine;
 
       const delayDays = (validationDate && creationDate && validationDate > creationDate)
-        ? Math.max(0, Math.round((new Date(validationDate) - new Date(creationDate)) / 86400000))
-        : 0;
+        ? Math.max(0, Math.round((dayMs(validationDate) - dayMs(creationDate)) / 86400000))
+        : (isPendingUsine && creationDate && todayRef > creationDate)
+          ? Math.max(0, Math.round((todayRefMs - dayMs(creationDate)) / 86400000))
+          : 0;
       const usineStatus = isReturned ? 'returned'
         : isPendingUsine ? 'pending_usine'
         : isStock ? 'stock'
@@ -5814,8 +5865,32 @@ const SessionMgr = {
         cashLocation,
         status: b.status,
         source: b.source || 'usine',
-        ...metrics
+        bchHT: metrics.bchHT,
+        totalHT: metrics.bchHT,
+        bchTVA: metrics.bchTVA,
+        tvaAmount: metrics.bchTVA,
+        bchTimbre: metrics.bchTimbre,
+        timbreAmount: metrics.bchTimbre,
+        bchTTC: metrics.bchTTC,
+        totalTTC: metrics.bchTTC,
+        evBaseHT: metrics.evBaseHT,
+        evMarginDA: metrics.evMarginDA,
+        marginDiffDA: metrics.evMarginDA,
+        evHT: metrics.evHT,
+        evTVA: metrics.evTVA,
+        evTimbre1Pct: metrics.evTimbre1Pct,
+        evTTC: metrics.evTTC,
+        tvaOnMarginDA: metrics.tvaOnMarginDA,
+        timbreOnlyDiffDA: metrics.timbreOnlyDiffDA,
+        timbreDiffDA: metrics.timbreDiffDA,
+        totalEvDiffDA: metrics.totalEvDiffDA
       });
+    });
+
+    allBchRows.sort((a, b) => {
+      const ca = a.creationDate || '', cb = b.creationDate || '';
+      if (cb !== ca) return cb < ca ? -1 : 1;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
 
     return { allBchRows, evDocs, sessions, usineRule, normDate, isUserMatch };
@@ -5823,19 +5898,104 @@ const SessionMgr = {
 
   _buildUsineFollowupDailyRows(baseData, userId = 'all') {
     const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
-    const { allBchRows, evDocs, sessions, normDate } = baseData;
+    const { allBchRows, evDocs, sessions, usineRule, normDate, isUserMatch } = baseData;
     const caisseEntries = DB.getAll('caisse_admin');
     const dateSet = new Set();
 
-    allBchRows.forEach(b => {
-      if (b.creationDate) dateSet.add(b.creationDate);
-      if (b.effectiveEvDate) dateSet.add(b.effectiveEvDate);
+    const byCreationDate = new Map();
+    const byEffectiveEvDate = new Map();
+    for (let i = 0; i < allBchRows.length; i++) {
+      const b = allBchRows[i];
+      if (b.creationDate) {
+        dateSet.add(b.creationDate);
+        let arr = byCreationDate.get(b.creationDate);
+        if (!arr) { arr = []; byCreationDate.set(b.creationDate, arr); }
+        arr.push(b);
+      }
+      if (b.effectiveEvDate) {
+        dateSet.add(b.effectiveEvDate);
+        let arr = byEffectiveEvDate.get(b.effectiveEvDate);
+        if (!arr) { arr = []; byEffectiveEvDate.set(b.effectiveEvDate, arr); }
+        arr.push(b);
+      }
       if (b.coveredByUsineRule && b.validationDate) dateSet.add(b.validationDate);
-    });
+    }
+
+    const caisseRetsByDate = new Map();
+    const evRetsByDate = new Map();
+    const allRetours = DB.getAll('bon_retours');
+    if (allRetours.length > 0) {
+      const bchLookup = new Map();
+      for (let i = 0; i < allBchRows.length; i++) {
+        const b = allBchRows[i];
+        if (b.id != null) bchLookup.set(Number(b.id), b);
+        if (b.ref) bchLookup.set(String(b.ref).trim(), b);
+      }
+      const rawBlMap = new Map();
+      DB.getAll('bls').forEach(b => {
+        if (b.id != null) rawBlMap.set(Number(b.id), b);
+        if (b.ref) rawBlMap.set(String(b.ref).trim(), b);
+      });
+      const seenRetRefs = new Set();
+      allRetours.forEach(r => {
+        const k = r.ref ? String(r.ref) : `id_${r.id}`;
+        if (seenRetRefs.has(k)) return;
+        const rDocDate = normDate(r.date) || normDate(r.createdAt);
+        if (!rDocDate) return;
+        const linkedBch = (r.blId && bchLookup.get(Number(r.blId))) ||
+                          (r.bcId && bchLookup.get(Number(r.bcId))) ||
+                          (r.blRef && bchLookup.get(String(r.blRef).trim())) || null;
+        const linkedRawBl = !linkedBch ? ((r.blId && rawBlMap.get(Number(r.blId))) ||
+                          (r.bcId && rawBlMap.get(Number(r.bcId))) ||
+                          (r.blRef && rawBlMap.get(String(r.blRef).trim())) || null) : null;
+        let matchesUser = false;
+        if (r.cashierId === 'caisse_admin' || r.refundedByCashierId === 'caisse_admin') {
+          matchesUser = (userId === 'all');
+        } else if (userId === 'all') {
+          matchesUser = true;
+        } else {
+          const blCreator = linkedBch ? linkedBch.userId : (linkedRawBl && (linkedRawBl.createdBy || linkedRawBl.userId));
+          const refundCashierId = r.refundedByCashierId || r.cashierId || blCreator || r.userId;
+          matchesUser = isUserMatch(refundCashierId);
+        }
+        if (!matchesUser) return;
+        seenRetRefs.add(k);
+        let cArr = caisseRetsByDate.get(rDocDate);
+        if (!cArr) { cArr = []; caisseRetsByDate.set(rDocDate, cArr); }
+        cArr.push(r);
+
+        const isHeldBack = linkedBch
+          ? linkedBch.isHeldBackFromEv
+          : !!(usineRule.active && linkedRawBl && linkedRawBl.status === 'pending_usine' && usineRule.covers(normDate(linkedRawBl.date) || normDate(linkedRawBl.createdAt)));
+        if (!isHeldBack) {
+          let eArr = evRetsByDate.get(rDocDate);
+          if (!eArr) { eArr = []; evRetsByDate.set(rDocDate, eArr); }
+          eArr.push(r);
+        }
+      });
+    }
+
     sessions.forEach(s => { const d = normDate(s.date); if (d) dateSet.add(d); });
-    evDocs.forEach(ev => { const d = normDate(ev.date || ev.dateStart); if (d) dateSet.add(d); });
+    const evDocsByDate = new Map();
+    evDocs.forEach(ev => {
+      const d = normDate(ev.date || ev.dateStart);
+      if (!d) return;
+      dateSet.add(d);
+      let arr = evDocsByDate.get(d);
+      if (!arr) { arr = []; evDocsByDate.set(d, arr); }
+      arr.push(ev);
+    });
+
+    const chargesByDate = new Map();
     if (userId === 'all' || !userId) {
-      caisseEntries.forEach(e => { const d = normDate(e.date || e.sessionDate || e.createdAt); if (d) dateSet.add(d); });
+      caisseEntries.forEach(e => {
+        const ed = normDate(e.date || e.sessionDate || e.createdAt);
+        if (!ed) return;
+        dateSet.add(ed);
+        if (e.type !== 'withdrawal' && e.type !== 'expense' && e.type !== 'charge') return;
+        if (e.source === 'transfert_banque_etat_vente' || e.source === 'bank_transfer' || e.subtype === 'etat_vente') return;
+        chargesByDate.set(ed, (chargesByDate.get(ed) || 0) + (Number(e.amount) || 0));
+      });
     }
 
     const sortedDatesAsc = Array.from(dateSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
@@ -5844,21 +6004,22 @@ const SessionMgr = {
 
     sortedDatesAsc.forEach(d => {
       const reportVeille = cumulBalance;
-      const caisseBchs = allBchRows.filter(b => b.creationDate === d);
-      const dayCaisseSum = this.getUserDaySummary(userId, d);
-      const dayEvSum = this.getEvDaySummary(userId, d);
-      const caisseRets = dayCaisseSum.retours || [];
-      const evRetsToday = dayEvSum.retours || [];
+      const caisseBchs = byCreationDate.get(d) || [];
+      const caisseRets = caisseRetsByDate.get(d) || [];
+      const evRetsToday = evRetsByDate.get(d) || [];
 
       const caisseGrossTTC = r2(caisseBchs.reduce((s, b) => s + b.bchTTC, 0));
       const caisseReturnsTTC = r2(caisseRets.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0));
       const caisseNetTTC = Math.max(0, r2(caisseGrossTTC - caisseReturnsTTC));
 
       const sameDayEvBchs = caisseBchs.filter(b => b.effectiveEvDate === d && !b.isHeldBackFromEv);
+      const validatedBchsOfDay = caisseBchs.filter(b => !b.isPendingUsine && !b.isReturned && (!b.validationDate || b.validationDate <= d));
+      const unvalidatedBchsOfDay = caisseBchs.filter(b => b.isPendingUsine || (!b.isReturned && b.validationDate && b.validationDate > d));
       const pendingOnDayBchs = caisseBchs.filter(b => b.coveredByUsineRule && (b.isHeldBackFromEv || (b.effectiveEvDate && b.effectiveEvDate > d)));
       const stillPendingNowBchs = pendingOnDayBchs.filter(b => b.isHeldBackFromEv);
       const laterValidatedFromDayBchs = pendingOnDayBchs.filter(b => !b.isHeldBackFromEv && b.effectiveEvDate && b.effectiveEvDate > d);
-      const rattrapageTodayBchs = allBchRows.filter(b => b.coveredByUsineRule && b.creationDate && b.creationDate < d && b.effectiveEvDate === d && !b.isHeldBackFromEv);
+      const effOnD = byEffectiveEvDate.get(d) || [];
+      const rattrapageTodayBchs = effOnD.filter(b => b.coveredByUsineRule && b.creationDate && b.creationDate < d && !b.isHeldBackFromEv);
       const evBchsToday = [...sameDayEvBchs, ...rattrapageTodayBchs];
 
       const evReturnsTTC = r2(evRetsToday.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0));
@@ -5874,7 +6035,7 @@ const SessionMgr = {
       const theoEvTimbre1Pct = r2(evBchsToday.reduce((s, b) => s + b.evTimbre1Pct, 0));
       const theoEvTTC = Math.max(0, r2(evBchsToday.reduce((s, b) => s + b.evTTC, 0) - evReturnsTTC));
 
-      const dayEvDocs = evDocs.filter(ev => normDate(ev.date || ev.dateStart) === d);
+      const dayEvDocs = evDocsByDate.get(d) || [];
       const hasEvDoc = dayEvDocs.length > 0;
       const evRefs = dayEvDocs.map(ev => ev.ref).filter(Boolean);
       const evActualTTC = hasEvDoc ? r2(dayEvDocs.reduce((s, doc) => s + (Number(doc.totalTTC) || 0), 0)) : theoEvTTC;
@@ -5894,15 +6055,7 @@ const SessionMgr = {
       const diffFiscalAndMarginDA = r2(evActualTTC - evBchBaseTTC);
       const diffCaisseVsEvDA = r2(caisseNetTTC - evActualTTC);
 
-      let chargesTTC = 0;
-      if (userId === 'all' || !userId) {
-        chargesTTC = r2(caisseEntries.filter(e => {
-          const ed = normDate(e.date || e.sessionDate || e.createdAt);
-          if (ed !== d) return false;
-          if (e.type !== 'withdrawal' && e.type !== 'expense' && e.type !== 'charge') return false;
-          return e.source !== 'transfert_banque_etat_vente' && e.source !== 'bank_transfer' && e.subtype !== 'etat_vente';
-        }).reduce((s, e) => s + (Number(e.amount) || 0), 0));
-      }
+      const chargesTTC = (userId === 'all' || !userId) ? r2(chargesByDate.get(d) || 0) : 0;
 
       const resteJour = r2(caisseNetTTC - evActualTTC - chargesTTC);
       const soldeCumuleFinJour = r2(reportVeille + resteJour);
@@ -5916,14 +6069,24 @@ const SessionMgr = {
         caisseGrossTTC,
         caisseReturnsTTC,
         caisseNetTTC,
+        sameDayEvBchs,
         sameDayEvCount: sameDayEvBchs.length,
+        sameDayEvBchCount: sameDayEvBchs.length,
         sameDayEvTTC: r2(sameDayEvBchs.reduce((s, b) => s + b.bchTTC, 0)),
+        validatedBchsOfDay,
+        validatedOfDayCount: validatedBchsOfDay.length,
+        validatedOfDayTTC: r2(validatedBchsOfDay.reduce((s, b) => s + b.bchTTC, 0)),
+        unvalidatedBchsOfDay,
+        unvalidatedOfDayCount: unvalidatedBchsOfDay.length,
+        unvalidatedOfDayTTC: r2(unvalidatedBchsOfDay.reduce((s, b) => s + b.bchTTC, 0)),
         pendingOnDayCount: pendingOnDayBchs.length,
         pendingStayInCaisseTTC,
         pendingOnDayTTC: pendingStayInCaisseTTC,
         pendingOnDayBchs,
+        stillPendingNowBchs,
         stillPendingNowCount: stillPendingNowBchs.length,
         stillPendingNowTTC,
+        laterValidatedFromDayBchs,
         laterValidatedFromDayCount: laterValidatedFromDayBchs.length,
         laterValidatedFromDayTTC,
         rattrapageCount: rattrapageTodayBchs.length,
@@ -5975,15 +6138,23 @@ const SessionMgr = {
     const tvaRate = Number(settings.tvaRate) || 19;
     const marginRate = Number(settings.evMarginRate ?? settings.evMarginPercent ?? settings.evMarginAmount ?? 0);
 
-    const baseData = this._buildUsineFollowupBchRows(userId, marginRate, tvaRate);
-    const chronologicalDailyRows = this._buildUsineFollowupDailyRows(baseData, userId);
+    const allBls = DB.getAll('bls');
+    const pendingBlCount = allBls.reduce((n, b) => n + (b.status === 'pending_usine' ? 1 : 0), 0);
+    const cacheKey = `${userId}|${marginRate}|${tvaRate}|${allBls.length}|${pendingBlCount}|${DB.getAll('etat_vente_docs').length}|${JSON.stringify(this.getEvUsinePeriods())}`;
+    const nowTs = Date.now();
+    if (!this._usineFollowupCache || this._usineFollowupCache.key !== cacheKey || (nowTs - this._usineFollowupCache.ts) > 1500) {
+      const baseData = this._buildUsineFollowupBchRows(userId, marginRate, tvaRate);
+      const chronologicalDailyRows = this._buildUsineFollowupDailyRows(baseData, userId);
+      this._usineFollowupCache = { key: cacheKey, ts: nowTs, baseData, chronologicalDailyRows };
+    }
+    const { baseData, chronologicalDailyRows } = this._usineFollowupCache;
 
     const filteredDailyAsc = chronologicalDailyRows.filter(row => {
       if (dateFrom && row.date < dateFrom) return false;
       if (dateTo && row.date > dateTo) return false;
       return true;
     });
-    const dailyRows = filteredDailyAsc.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const dailyRows = filteredDailyAsc.slice().reverse();
 
     const qNorm = String(q || '').trim().toLowerCase();
     const bchRows = baseData.allBchRows.filter(b => {
@@ -6005,9 +6176,6 @@ const SessionMgr = {
         if (!hay.includes(qNorm)) return false;
       }
       return true;
-    }).sort((a, b) => {
-      const cmp = String(b.creationDate || '').localeCompare(String(a.creationDate || ''));
-      return cmp !== 0 ? cmp : (Number(b.id) || 0) - (Number(a.id) || 0);
     });
 
     const sumDay = key => r2(filteredDailyAsc.reduce((s, r) => s + (Number(r[key]) || 0), 0));
