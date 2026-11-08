@@ -4961,8 +4961,8 @@ const SessionMgr = {
     try {
       const s = DB.getSettings() || {};
       let periods = Array.isArray(s.evUsinePeriods) ? s.evUsinePeriods.slice() : [];
-      if (!periods.length && s.evUsineOnlyActive) {
-        periods = [{ since: String(s.evUsineOnlySince || '2000-01-01').slice(0, 10), until: null }];
+      if (!periods.length && s.evUsineOnlyActive && s.evUsineOnlySince) {
+        periods = [{ since: String(s.evUsineOnlySince).slice(0, 10), until: null }];
       }
       return periods
         .filter(p => p && p.since)
@@ -5754,13 +5754,18 @@ const SessionMgr = {
       const isReturned = b.status === 'returned' || b.isReturned === true;
       const isPendingUsine = b.status === 'pending_usine';
       const isValidatedUsine = !isStock && !isPendingUsine && (b.status === 'validated_usine' || !!b.validatedAt || b.status === 'delivered' || b.status === 'locked');
-      const coveredByUsineRule = usineRule.active ? usineRule.covers(creationDate) : true;
+      const explicitEv = evByBlId.get(Number(b.id)) || evByBlRef.get(String(b.ref || '').trim()) || null;
+      const coveredByUsineRule = !!(usineRule.active && usineRule.covers(creationDate));
 
       let effectiveEvDate = creationDate;
-      if (coveredByUsineRule) {
+      if (explicitEv) {
+        effectiveEvDate = normDate(explicitEv.date || explicitEv.dateStart) || creationDate;
+      } else if (coveredByUsineRule) {
         if (isPendingUsine) effectiveEvDate = null;
         else if (!isStock && validationDate) effectiveEvDate = validationDate;
       }
+
+      const isHeldBackFromEv = !explicitEv && coveredByUsineRule && isPendingUsine;
 
       const delayDays = (validationDate && creationDate && validationDate > creationDate)
         ? Math.max(0, Math.round((new Date(validationDate) - new Date(creationDate)) / 86400000))
@@ -5771,11 +5776,11 @@ const SessionMgr = {
         : (validationDate && validationDate > creationDate) ? 'validated_later_day'
         : 'validated_same_day';
 
-      const linkedEv = evByBlId.get(Number(b.id)) || evByBlRef.get(String(b.ref || '').trim()) || (!isPendingUsine && effectiveEvDate ? evByDateMap.get(effectiveEvDate) : null) || null;
-      const inEv = !isPendingUsine && (!!linkedEv || (effectiveEvDate !== null && closedDatesSet.has(effectiveEvDate)));
+      const linkedEv = explicitEv || (!isHeldBackFromEv && effectiveEvDate ? evByDateMap.get(effectiveEvDate) : null) || null;
+      const inEv = !isHeldBackFromEv && (!!linkedEv || (effectiveEvDate !== null && closedDatesSet.has(effectiveEvDate)));
       const evDate = linkedEv ? normDate(linkedEv.date || linkedEv.dateStart) : (inEv ? effectiveEvDate : null);
       const cashLocation = isReturned ? 'returned'
-        : isPendingUsine ? 'in_caisse_pending_usine'
+        : isHeldBackFromEv ? 'in_caisse_pending_usine'
         : inEv ? 'in_ev_bank'
         : 'in_caisse_awaiting_ev';
 
@@ -5802,6 +5807,7 @@ const SessionMgr = {
         isStock,
         isReturned,
         isPendingUsine,
+        isHeldBackFromEv,
         isValidatedUsine,
         coveredByUsineRule,
         usineStatus,
@@ -5824,7 +5830,7 @@ const SessionMgr = {
     allBchRows.forEach(b => {
       if (b.creationDate) dateSet.add(b.creationDate);
       if (b.effectiveEvDate) dateSet.add(b.effectiveEvDate);
-      if (b.validationDate) dateSet.add(b.validationDate);
+      if (b.coveredByUsineRule && b.validationDate) dateSet.add(b.validationDate);
     });
     sessions.forEach(s => { const d = normDate(s.date); if (d) dateSet.add(d); });
     evDocs.forEach(ev => { const d = normDate(ev.date || ev.dateStart); if (d) dateSet.add(d); });
@@ -5848,11 +5854,11 @@ const SessionMgr = {
       const caisseReturnsTTC = r2(caisseRets.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0));
       const caisseNetTTC = Math.max(0, r2(caisseGrossTTC - caisseReturnsTTC));
 
-      const sameDayEvBchs = caisseBchs.filter(b => b.effectiveEvDate === d && !b.isPendingUsine);
-      const pendingOnDayBchs = caisseBchs.filter(b => b.isPendingUsine || (b.effectiveEvDate && b.effectiveEvDate > d));
-      const stillPendingNowBchs = pendingOnDayBchs.filter(b => b.isPendingUsine);
-      const laterValidatedFromDayBchs = pendingOnDayBchs.filter(b => !b.isPendingUsine && b.effectiveEvDate && b.effectiveEvDate > d);
-      const rattrapageTodayBchs = allBchRows.filter(b => b.creationDate && b.creationDate < d && b.effectiveEvDate === d && !b.isPendingUsine);
+      const sameDayEvBchs = caisseBchs.filter(b => b.effectiveEvDate === d && !b.isHeldBackFromEv);
+      const pendingOnDayBchs = caisseBchs.filter(b => b.coveredByUsineRule && (b.isHeldBackFromEv || (b.effectiveEvDate && b.effectiveEvDate > d)));
+      const stillPendingNowBchs = pendingOnDayBchs.filter(b => b.isHeldBackFromEv);
+      const laterValidatedFromDayBchs = pendingOnDayBchs.filter(b => !b.isHeldBackFromEv && b.effectiveEvDate && b.effectiveEvDate > d);
+      const rattrapageTodayBchs = allBchRows.filter(b => b.coveredByUsineRule && b.creationDate && b.creationDate < d && b.effectiveEvDate === d && !b.isHeldBackFromEv);
       const evBchsToday = [...sameDayEvBchs, ...rattrapageTodayBchs];
 
       const evReturnsTTC = r2(evRetsToday.reduce((s, r) => s + (Number(r.totalTTC) || 0), 0));
@@ -6005,7 +6011,7 @@ const SessionMgr = {
     });
 
     const sumDay = key => r2(filteredDailyAsc.reduce((s, r) => s + (Number(r[key]) || 0), 0));
-    const pendingNowList = baseData.allBchRows.filter(b => b.isPendingUsine && (!dateFrom || b.creationDate >= dateFrom) && (!dateTo || b.creationDate <= dateTo));
+    const pendingNowList = baseData.allBchRows.filter(b => b.isHeldBackFromEv && (!dateFrom || b.creationDate >= dateFrom) && (!dateTo || b.creationDate <= dateTo));
     const reportInitial = filteredDailyAsc.length > 0 ? filteredDailyAsc[0].reportVeille : 0;
     const soldeCumuleFinal = filteredDailyAsc.length > 0
       ? filteredDailyAsc[filteredDailyAsc.length - 1].soldeCumuleFinJour
