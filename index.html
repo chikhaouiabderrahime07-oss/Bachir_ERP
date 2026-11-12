@@ -364,10 +364,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=47.0"></script>
-<script src="core.js?v=47.0"></script>
-<script src="modules.js?v=47.0"></script>
-<script src="pdf.js?v=47.0"></script>
+<script src="api.js?v=48.1"></script>
+<script src="core.js?v=48.1"></script>
+<script src="modules.js?v=48.1"></script>
+<script src="pdf.js?v=48.1"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -607,7 +607,11 @@ const App = {
     }, 2500);
     
     // ── Monthly Pack Fee Auto-Deduction ──
-    setTimeout(() => {
+    // SAFETY: only runs once bank_charges is really loaded from the cloud, otherwise an empty local cache
+    // (new device / slow sync) would wrongly re-create the monthly fee a second time.
+    setTimeout(async () => {
+      try { if (Auth.isAdmin() && typeof DB.ensureLoaded === 'function') await DB.ensureLoaded(['bank_charges', 'bank_transactions']); } catch (_) {}
+      if (Auth.isAdmin() && DB._loaded && !DB._loaded['bank_charges']) return;
       if (Auth.isAdmin() && typeof DB !== 'undefined') {
         const settings = DB.getSettings();
         const banks = settings.banks || [];
@@ -963,7 +967,7 @@ const App = {
 
     // --- LAZY LOADING DATA (non-blocking: render from cache, sync in background) ---
     const needs = {
-      dashboard: ['brs', 'bls', 'clients', 'suppliers', 'sessions', 'bon_retours'],
+      dashboard: ['brs', 'bls', 'clients', 'suppliers', 'sessions', 'bon_retours', ...(Auth.isAdmin() ? ['caisse_admin', 'bank_transactions'] : [])],
       bls: ['bls', 'brs', 'clients', 'suppliers', 'users', 'bon_retours'],
       brs: ['brs', 'bls', 'suppliers', 'articles', 'users'],
       pointage: ['users', 'work_log', 'rh_rectifications'],
@@ -1031,6 +1035,7 @@ const App = {
         if (typeof BLModule !== 'undefined') BLModule._displayLimit = 50;
         if (typeof BRModule !== 'undefined') BRModule._displayLimit = 50;
         if (typeof ChargesModule !== 'undefined') ChargesModule._displayLimit = 50;
+        if (mod === 'bc_supervision' && typeof BCSupervisionModule !== 'undefined') BCSupervisionModule.resetToToday();
         this._lastModule = mod;
       }
       // Use rAF so the opacity fade paints BEFORE heavy render work

@@ -3094,6 +3094,7 @@ const DB = {
   },
 
   _flushingPending: false,
+  _flushTries: {},
   async flushPendingToCloud() {
     if (this._flushingPending || typeof window.API === 'undefined' || location.protocol === 'file:') return 0;
     this._flushingPending = true;
@@ -3103,6 +3104,11 @@ const DB = {
         const pItems = this.getAll(pCol);
         const pendings = Array.isArray(pItems) ? pItems.filter(i => i && i._pendingSync === true) : [];
         for (const pItem of pendings) {
+          // Back-off: max 8 attempts per item, at least 45 s apart (a permanently rejected doc, e.g. 409 duplicate, must not hammer the server)
+          const tk = `${pCol}:${pItem.id}`;
+          const tr = this._flushTries[tk] || { n: 0, t: 0 };
+          if (tr.n >= 8 || Date.now() - tr.t < 45000) continue;
+          this._flushTries[tk] = { n: tr.n + 1, t: Date.now() };
           try {
             const payload = { ...pItem };
             delete payload._pendingSync;
@@ -4155,6 +4161,26 @@ const DB = {
         });
       }
       return existingBR;
+    }
+    // ── Factory (supplier) users cannot see BRs: the BR was already reserved at BCH creation and is linked by id/ref.
+    // NEVER create a phantom BR with a local id — only validate the BCH; the server atomically promotes the real BR.
+    if (bc.linkedBrId && !this.getById('brs', bc.linkedBrId) && (typeof Auth !== 'undefined' && (Auth.isSupplier() || bc.linkedBrRef))) {
+      this.update('bls', bc.id, {
+        status: 'validated_usine',
+        validatedAt: new Date().toISOString(),
+        validatedBy: validatorUser?.name || 'Usine',
+        ticketPesee: ticketPesee || ''
+      }, `Validé par l'usine — BR ${bc.linkedBrRef || bc.linkedBrId} confirmé (serveur)`);
+      if (typeof NotifMgr !== 'undefined') {
+        NotifMgr.add({
+          type: 'bc_validated',
+          title: T.isRTL() ? 'تم تأكيد شحن المصنع' : 'Chargement Usine Validé',
+          message: T.isRTL() ? `أكد المصنع شحن ${bc.ref}.` : `L'usine a validé le chargement ${bc.ref}. Le BR ${bc.linkedBrRef || ''} est confirmé.`,
+          link: { mod: 'bls', id: bc.id },
+          data: { bcId: bc.id, brId: bc.linkedBrId }
+        });
+      }
+      return { id: bc.linkedBrId, ref: bc.linkedBrRef || '' };
     }
     const year = bc.year || new Date().getFullYear();
     const brNum = bc.bchNum ? parseInt(bc.bchNum) : (await this.getNextBRNum());
@@ -5628,17 +5654,7 @@ const SessionMgr = {
       });
     });
 
-    // Subtract same-day returned BL lines from aggregated items
-    evSummary.bls.filter(b => b.status === 'returned').forEach(bl => {
-      (bl.lines || []).forEach(line => {
-        const key = (line.designation || line.articleName || line.name || '').trim();
-        if (!key || !aggregated[key]) return;
-        const qty = Number(line.qtyDelivered || line.qty) || 0;
-        aggregated[key].qty -= qty;
-      });
-    });
-
-    // Subtract cross-day returns (bon_retour docs) from aggregated items
+    // Same-day returned BLs are already excluded above (net 0); subtract cross-day returns (bon_retour docs)
     const sameDayReturnedBlIds = new Set(evSummary.bls.filter(b => b.status === 'returned').map(b => Number(b.id)));
     const crossDayRetours = (evSummary.retours || []).filter(r => !sameDayReturnedBlIds.has(Number(r.blId || r.bcId)));
     crossDayRetours.forEach(r => {
@@ -5660,7 +5676,7 @@ const SessionMgr = {
       });
     });
 
-    const items = Object.values(aggregated).filter(it => it.qty > 0.0001);
+    const items = Object.values(aggregated).filter(it => Math.abs(it.qty) > 0.0001);
     const totalHT = Math.round(items.reduce((s, it) => s + (it.qty * it.unitPrice), 0) * 100) / 100;
     const totalMargin = Math.round(items.reduce((s, it) => s + (it.qty * (it.marginPerUnit || (it.basePrice * marginRate / 100))), 0) * 100) / 100;
     const tvaRate = Number(settings.tvaRate) || 19;

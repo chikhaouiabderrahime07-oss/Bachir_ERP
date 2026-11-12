@@ -859,6 +859,44 @@ router.patch('/:col/:id', adminOnlyForUsers, supplierWriteGuard, async (req, res
     }
     if (!doc) return res.status(404).json({ error: 'Non trouvé' });
 
+    // ── Server-side referential guarantee: factory validation of a BCH ──
+    // Factory (supplier) users cannot see BRs, so their browser can never promote the reserved BR itself.
+    // Whenever a BCH becomes 'validated_usine', the server finds ITS real BR (by bcId / bcRef / linked id),
+    // re-links the BCH to the real BR id and promotes the BR from 'reserved' to 'delivered'.
+    if (col === 'bls' && patch.status === 'validated_usine' && doc.data) {
+      try {
+        const bch = doc.data;
+        const orClauses = [{ 'data.bcId': Number(bch.id) }];
+        if (bch.ref) orClauses.push({ 'data.bcRef': bch.ref });
+        if (bch.brId) orClauses.push(idQuery('brs', bch.brId));
+        if (bch.linkedBrId) orClauses.push(idQuery('brs', bch.linkedBrId));
+        const cands = await Document.find({ col: 'brs', $or: orClauses }).lean();
+        const real = cands.find(r => Number(r.data?.bcId) === Number(bch.id) || (bch.ref && r.data?.bcRef === bch.ref)) || cands[0];
+        if (real && real.data) {
+          const nowD = new Date();
+          if (Number(bch.brId) !== Number(real.data.id) || Number(bch.linkedBrId) !== Number(real.data.id) || bch.linkedBrRef !== real.data.ref) {
+            await Document.updateOne({ _id: doc._id }, { $set: { 'data.brId': real.data.id, 'data.linkedBrId': real.data.id, 'data.linkedBrRef': real.data.ref, updatedAt: nowD } });
+            doc.data.brId = real.data.id; doc.data.linkedBrId = real.data.id; doc.data.linkedBrRef = real.data.ref;
+          }
+          if (real.data.status === 'reserved' || real.data.status === 'open' || !real.data.status) {
+            await Document.updateOne({ _id: real._id }, { $set: {
+              'data.status': 'delivered',
+              'data.ticketPesee': bch.ticketPesee || real.data.ticketPesee || '',
+              'data.validatedAt': bch.validatedAt || nowIso,
+              'data.validatedBy': bch.validatedBy || 'Usine',
+              'data.notes': `Validé par l'usine — BCH ${bch.ref}`,
+              'data.updatedAt': nowIso,
+              updatedAt: nowD
+            } });
+            bump('brs');
+          }
+          bump('bls');
+        }
+      } catch (linkErr) {
+        console.warn('[SERVER BCH-VALIDATION->BR SYNC]', linkErr.message);
+      }
+    }
+
     bump(col);
     res.json(publicData(col, doc.data));
   } catch (e) {
