@@ -314,28 +314,45 @@ const T = {
 // ─── DATABASE ──────────────────────────────────────────────────
 const DB = {
   _cols: ['users','suppliers','clients','brs','bls','articles','drivers','sessions','caisse_admin','work_log','history','audit_log','recycle_bin','bank_transactions','supplier_payments','etat_vente_docs','bon_retours','bank_charges','notifications','fiches_paie','rh_rectifications','recurring_charges','bank_accounts','paie_validations','pointage_validations'],
+  _heavyCols: ['bls','brs','audit_log','history','etat_vente_docs','notifications','drivers','work_log','bank_transactions','caisse_admin'],
   _loaded: {},
+  _mem: {},
+  _idb: null,
+  _idbReady: false,
+  _idbInitPromise: null,
 
   init() {
-    this._cols.forEach(c => { if (!localStorage.getItem(c)) localStorage.setItem(c, '[]'); });
+    if (this._idbReady) { try { localStorage.removeItem('_immutable_bch_vault'); } catch (_) {} }
+    this._cols.forEach(c => {
+      if (!Array.isArray(this._mem[c])) {
+        if (!this._idbReady) {
+          try {
+            const raw = localStorage.getItem(c);
+            this._mem[c] = raw ? JSON.parse(raw) : [];
+          } catch (_) { this._mem[c] = []; }
+        } else {
+          this._mem[c] = [];
+        }
+      }
+      if (!this._idbReady && !this._heavyCols.includes(c) && !localStorage.getItem(c)) {
+        try { localStorage.setItem(c, '[]'); } catch (_) {}
+      }
+    });
     if (!localStorage.getItem('settings')) this._resetSettings();
     if (!this.getAll('users').length) this._seed();
 
     // ── Run data migrations on every boot (idempotent) ──
     this.runMigrations();
 
-    // ── Guardian & AutocorrectBrain DISABLED — user requested removal ──
-    // No automatic background data modification. Math recalibration still
-    // runs on-demand when user saves/closes sessions.
-
     // ── Remote Force Reset: admin sets flag in DB, all clients auto-wipe ──
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       try {
-        window.API.get('/data/_versions').then(res => {
+        window.API.get('/data/_versions').then(async res => {
           const resetTs = res && (res.force_reset || (res.v && res.v.force_reset));
           const lastReset = localStorage.getItem('_last_force_reset');
           if (resetTs && String(resetTs) !== String(lastReset)) {
             console.log('[ForceReset] Remote reset detected — wiping all caches');
+            await this._idbClear();
             localStorage.clear();
             sessionStorage.clear();
             document.cookie.split(';').forEach(c => {
@@ -349,18 +366,6 @@ const DB = {
           }
         }).catch(() => {});
       } catch(_) {}
-    }
-
-    // Cloud mode: if localStorage appears empty or cleared, restore from MongoDB
-    if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
-      const hasData = this._cols.some(c => this.getAll(c).length > 0);
-      if (!hasData) {
-        // Silently restore in background — login will also do a full sync
-        window.API.syncCloudToLocal().then(() => {
-          // If we now have users, reload the page so the login screen picks them up
-          if (this.getAll('users').length > 1) location.reload();
-        }).catch(() => {});
-      }
     }
   },
 
@@ -390,16 +395,10 @@ const DB = {
   // ══════════════════════════════════════════════════════════════════════
   Guardian: {
     VAULT_KEY: '_immutable_bch_vault',
-    _vaultCache: null,
+    _vaultCache: [],
 
     getVault() {
-      if (this._vaultCache !== null) return this._vaultCache;
-      try {
-        const raw = localStorage.getItem(this.VAULT_KEY);
-        this._vaultCache = raw ? JSON.parse(raw) : [];
-      } catch (_) {
-        this._vaultCache = [];
-      }
+      if (!Array.isArray(this._vaultCache)) this._vaultCache = [];
       return this._vaultCache;
     },
 
@@ -413,8 +412,8 @@ const DB = {
         } else {
           vault.push({ ...blItem, _vaultedAt: new Date().toISOString() });
         }
+        if (vault.length > 2000) vault.splice(0, vault.length - 2000);
         this._vaultCache = vault;
-        localStorage.setItem(this.VAULT_KEY, JSON.stringify(vault.slice(-10000)));
       } catch (e) {
         console.warn('[Guardian.saveVault]', e);
       }
@@ -433,8 +432,6 @@ const DB = {
         });
         if (filtered.length !== vault.length) {
           this._vaultCache = filtered;
-          localStorage.setItem(this.VAULT_KEY, JSON.stringify(filtered.slice(-10000)));
-          console.log(`🛡️ [Guardian] Purged item #${id} (${ref}) permanently from vault.`);
         }
       } catch (e) {
         console.warn('[Guardian.purgeFromVault]', e);
@@ -2934,7 +2931,38 @@ const DB = {
 
     if (toLoad.length === 0) return false;
     await Promise.all(toLoad.map(c => this._syncCollection(c)));
+    // A collection whose fetch failed (cold start, 5xx, network) is NOT marked loaded → retry it
+    // automatically in the background instead of leaving the screen empty until the user presses F5.
+    const failed = toLoad.filter(c => !this._loaded[c]);
+    if (failed.length) this._scheduleRetry(failed);
     return true;
+  },
+
+  _failedRetry: { timer: null, attempt: 0, cols: new Set() },
+  _scheduleRetry(cols) {
+    const R = this._failedRetry;
+    cols.forEach(c => R.cols.add(c));
+    if (R.timer) return;
+    const run = async () => {
+      R.timer = null;
+      const pending = [...R.cols].filter(c => !this._loaded[c]);
+      if (!pending.length) { R.cols.clear(); R.attempt = 0; return; }
+      R.attempt++;
+      await Promise.all(pending.map(c => this._syncCollection(c)));
+      const ok = pending.filter(c => this._loaded[c]);
+      ok.forEach(c => R.cols.delete(c));
+      if (ok.length && typeof App !== 'undefined' && App._currentModule) {
+        const modalOpen = document.getElementById('modalOverlay')?.classList.contains('active') || !!document.querySelector('.dlg-overlay');
+        const ae = document.activeElement;
+        const typing = ae && (['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName) || ae.isContentEditable);
+        if (!modalOpen && !typing && App._currentModule !== 'settings') App.reloadDebounced(App._currentModule, 60);
+      }
+      const still = [...R.cols].filter(c => !this._loaded[c]);
+      if (still.length && R.attempt < 10) {
+        R.timer = setTimeout(run, Math.min(2000 * R.attempt, 15000));
+      } else { R.attempt = 0; R.cols.clear(); }
+    };
+    R.timer = setTimeout(run, 2000);
   },
 
   async _syncCollection(col) {
@@ -2944,6 +2972,7 @@ const DB = {
       const isLarge = ['bls', 'brs', 'work_log', 'bank_transactions', 'supplier_payments', 'bank_charges'].includes(col);
       const isHistory = ['history', 'audit_log'].includes(col);
       let data = [];
+      let _probe = null;
       
       const safeSet = (k, v) => { try { this._invalidateCache(k); localStorage.setItem(k, v); } catch(e) { console.warn('[Sync] Quota for', k); } };
       
@@ -2958,13 +2987,53 @@ const DB = {
           safeSet('timbre_slabs_data', JSON.stringify(data));
         }
       } else {
+        // ── DELTA SYNC: fetch only docs changed since last sync (typically 0-5 docs instead of thousands) ──
+        const _dTs = parseInt(localStorage.getItem(`_delta_ts_${col}`) || '0');
+        const _fTs = parseInt(localStorage.getItem(`_full_ts_${col}`) || '0');
+        const _hasLocalCol = this._idbReady
+          ? (Array.isArray(this._mem[col]) && this._mem[col].length > 0)
+          : !!localStorage.getItem(col);
+        const _canDelta = !isHistory && typeof window.API.getDelta === 'function' && _dTs > 0
+          && _hasLocalCol && (Date.now() - _fTs) < 30 * 60 * 1000; // full re-sync every 30 min as safety net (count check catches deletions)
+        if (_canDelta) {
+          const dr = await window.API.getDelta(col, _dTs - 5000); // 5s overlap for in-flight writes
+          if (dr && Array.isArray(dr.docs)) {
+            let localArr = this.getAll(col);
+            if (!Array.isArray(localArr)) localArr = [];
+            const pending = localArr.filter(x => x && x._pendingSync === true);
+            const settled = localArr.filter(x => x && x._pendingSync !== true);
+            // Collections whose docs have no 'id' can't be merged safely → use the authoritative full fetch
+            const _idSafe = !settled.some(x => x.id === undefined || x.id === null) && !dr.docs.some(x => !x || x.id === undefined || x.id === null);
+            if (_idSafe && dr.docs.length === 0 && settled.length === dr.total) {
+              // Nothing changed — no parse/stringify/localStorage write at all
+              safeSet(`_delta_ts_${col}`, String(dr.serverTime));
+              this._loaded[col] = true;
+              safeSet(`_sync_ts_${col}`, Date.now().toString());
+              return;
+            }
+            const byId = new Map(settled.map(x => [String(x.id), x]));
+            dr.docs.forEach(d => { if (d) byId.set(String(d.id), d); });
+            if (_idSafe && byId.size === dr.total) {
+              this.rawSet(col, [...byId.values(), ...pending]);
+              safeSet(`_delta_ts_${col}`, String(dr.serverTime));
+              this._loaded[col] = true;
+              safeSet(`_sync_ts_${col}`, Date.now().toString());
+              return;
+            }
+            // Count mismatch (deletion or missed doc) → fall through to the authoritative full fetch below
+          }
+        }
+
         let qs = isLarge ? '?limit=10000' : '';
+        // Probe server time in parallel with the full fetch so the NEXT sync can be a delta
+        const _probeP = (!isHistory && typeof window.API.getDelta === 'function')
+          ? window.API.getDelta(col, 9999999999999).catch(() => null) : Promise.resolve(null);
         data = await window.API.getAll(col, qs);
         if (!data || !Array.isArray(data)) return; // Null/failed response: NEVER touch local storage!
+        _probe = await _probeP;
         
         // ── CRITICAL SYNC GUARD: NEVER overwrite populated cache with [] on transient errors ──
-        const existingRaw = localStorage.getItem(col);
-        const existingLocal = existingRaw ? JSON.parse(existingRaw) : [];
+        const existingLocal = this.getAll(col);
         if (data.length === 0 && Array.isArray(existingLocal) && existingLocal.length > 0) {
           const u = Auth.getCurrentUser();
           const isSupplier = u?.role === 'supplier' || u?.role === 'supplier_agent';
@@ -2980,25 +3049,79 @@ const DB = {
         }
 
         if (isHistory) {
-          const local = JSON.parse(localStorage.getItem(col) || '[]');
+          const local = this.getAll(col);
           const serverIds = new Set(data.map(e => `${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
           const uniqueLocal = local.filter(e => !serverIds.has(`${e.ts}|${e.action||e.collection||''}|${e.docId||''}`));
-          safeSet(col, JSON.stringify([...data, ...uniqueLocal].slice(-5000)));
+          this.rawSet(col, [...data, ...uniqueLocal].slice(-5000));
         } else {
-          // ── MONGODB IS THE SOLE SOURCE OF TRUTH ──
-          // When LiveSync downloads server data, only retain un-synced local items explicitly marked _pendingSync.
-          // Confirmed database records from MongoDB are authoritative.
-          const local = JSON.parse(localStorage.getItem(col) || '[]');
-          const inFlightLocal = Array.isArray(local) ? local.filter(item => item && item._pendingSync === true) : [];
-          safeSet(col, JSON.stringify([...data, ...inFlightLocal]));
+          // ── MONGODB IS THE SOLE SOURCE OF TRUTH + LOCAL STUCK RECORD RESCUE ──
+          const local = this.getAll(col);
+          const serverIds = new Set(data.map(d => d && d.id !== undefined ? String(d.id) : null).filter(Boolean));
+          const serverRefs = new Set(data.map(d => d && d.ref ? String(d.ref) : null).filter(Boolean));
+          const binRefs = new Set((this.getAll('recycle_bin') || []).filter(b => b && b.collection === col && b.item).map(b => String(b.item.ref || b.item.id || '')));
+          const nowMs = Date.now();
+          const inFlightLocal = Array.isArray(local) ? local.filter(item => {
+            if (!item) return false;
+            if (item.id !== undefined && serverIds.has(String(item.id))) return false;
+            if (item.ref && serverRefs.has(String(item.ref))) return false;
+            if (item._pendingSync === true) return true;
+            // Also rescue any BCH/BR created in the last 12h that never reached MongoDB (e.g. tab closed mid-request)
+            if ((col === 'bls' || col === 'brs') && item.createdAt) {
+              const ageMs = nowMs - Date.parse(item.createdAt);
+              if (ageMs >= 0 && ageMs < 12 * 3600 * 1000 && !binRefs.has(String(item.ref || '')) && !binRefs.has(String(item.id || ''))) {
+                item._pendingSync = true;
+                return true;
+              }
+            }
+            return false;
+          }) : [];
+          this.rawSet(col, [...data, ...inFlightLocal]);
+          if (inFlightLocal.length > 0) {
+            setTimeout(() => this.flushPendingToCloud().catch(() => {}), 100);
+          }
         }
       }
       
       this._loaded[col] = true;
       safeSet(`_sync_ts_${col}`, Date.now().toString());
+      if (_probe && _probe.serverTime) {
+        safeSet(`_delta_ts_${col}`, String(_probe.serverTime));
+        safeSet(`_full_ts_${col}`, Date.now().toString());
+      }
     } catch (e) {
       console.warn(`[Sync] Error syncing collection ${col}:`, e);
     }
+  },
+
+  _flushingPending: false,
+  async flushPendingToCloud() {
+    if (this._flushingPending || typeof window.API === 'undefined' || location.protocol === 'file:') return 0;
+    this._flushingPending = true;
+    let uploaded = 0;
+    try {
+      for (const pCol of ['bls', 'brs', 'bon_retours', 'etat_vente_docs', 'caisse_admin', 'bank_transactions']) {
+        const pItems = this.getAll(pCol);
+        const pendings = Array.isArray(pItems) ? pItems.filter(i => i && i._pendingSync === true) : [];
+        for (const pItem of pendings) {
+          try {
+            const payload = { ...pItem };
+            delete payload._pendingSync;
+            delete payload._lastSyncError;
+            const srvRes = await window.API.insert(pCol, payload);
+            if (srvRes) {
+              const oldId = pItem.id;
+              const fresh = this.getAll(pCol).map(x => x && x.id === oldId ? { ...x, ...srvRes, id: srvRes.id || x.id, _pendingSync: false } : x);
+              this.rawSet(pCol, fresh);
+              uploaded++;
+              console.log(`☁️ [AutoFlush] Uploaded local pending ${pCol} (${srvRes.ref || srvRes.id}) to MongoDB`);
+            }
+          } catch (_) {}
+        }
+      }
+    } finally {
+      this._flushingPending = false;
+    }
+    return uploaded;
   },
 
   // ─── Live sync: poll MongoDB every 4s so all users see fresh data ───
@@ -3026,6 +3149,7 @@ const DB = {
             if (resetTs && resetTs > 0 && String(resetTs) !== String(lastReset)) {
               console.log('[LiveSync] Remote force-reset detected — wiping all caches');
               const marker = String(resetTs);
+              await this._idbClear();
               localStorage.clear();
               sessionStorage.clear();
               document.cookie.split(';').forEach(c => {
@@ -3070,28 +3194,13 @@ const DB = {
           colsToSync = changed.filter(c => ESSENTIAL.includes(c) || loaded.includes(c));
         }
 
-        // 2b. Flush pending-sync items ONLY when we actually have changes (not every tick)
-        if (colsToSync.length > 0) {
-          for (const pCol of ['bls', 'brs']) {
-            const pItems = DB.getAll(pCol);
-            const pendings = pItems.filter(i => i._pendingSync === true);
-            for (const pItem of pendings) {
-              try {
-                const srvRes = await window.API.insert(pCol, pItem);
-                if (srvRes) {
-                  pItem._pendingSync = false;
-                  pItem.id = srvRes.id || pItem.id;
-                  const fresh = DB.getAll(pCol).map(x => x.id === pItem.id ? { ...x, ...srvRes, _pendingSync: false } : x);
-                  localStorage.setItem(pCol, JSON.stringify(fresh));
-                }
-              } catch (_) {}
-            }
-          }
-        }
+        // 2b. Always flush any local pending-sync items to MongoDB immediately
+        await this.flushPendingToCloud();
 
-        // 3. Serialize syncs — don't fire 15+ requests in parallel (protects Render free tier)
-        for (const c of colsToSync) {
-          await this._syncCollection(c);
+        // 3. Parallel sync in batches of 3 — faster than serial but gentle on Render free tier
+        for (let i = 0; i < colsToSync.length; i += 3) {
+          const batch = colsToSync.slice(i, i + 3);
+          await Promise.all(batch.map(c => this._syncCollection(c)));
         }
 
         // Update sync indicator dot only — NO page reload (that destroys open modals/forms)
@@ -3292,10 +3401,179 @@ const DB = {
     return upd;
   },
 
-  // CRUD — with 500ms parse cache to avoid re-parsing huge JSON on every call
+  // ─── High-Speed RAM + IndexedDB Storage Engine ──────────────────
+  async initStorage() {
+    if (this._idbReady) return true;
+    if (this._idbInitPromise) return this._idbInitPromise;
+    if (typeof indexedDB === 'undefined') return false;
+
+    this._idbInitPromise = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('erp_bachir_idb', 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+        };
+        req.onsuccess = (e) => {
+          const db = e.target.result;
+          this._idb = db;
+          try {
+            const tx = db.transaction('kv', 'readonly');
+            const store = tx.objectStore('kv');
+            const keysReq = store.getAllKeys();
+            const valsReq = store.getAll();
+            tx.oncomplete = () => {
+              const keys = keysReq.result || [];
+              const vals = valsReq.result || [];
+              for (let i = 0; i < keys.length; i++) {
+                if (Array.isArray(vals[i])) this._mem[keys[i]] = vals[i];
+              }
+              this._cols.forEach(c => {
+                if (!Array.isArray(this._mem[c]) || this._mem[c].length === 0) {
+                  try {
+                    const raw = localStorage.getItem(c);
+                    if (raw) {
+                      const parsed = JSON.parse(raw);
+                      if (Array.isArray(parsed) && parsed.length > 0) {
+                        this._mem[c] = parsed;
+                        this._idbSet(c, parsed);
+                      }
+                    }
+                  } catch (_) {}
+                }
+                if (!Array.isArray(this._mem[c])) this._mem[c] = [];
+                if (this._heavyCols.includes(c)) {
+                  try { localStorage.removeItem(c); } catch (_) {}
+                }
+              });
+              // Rescue any recent BCH from legacy _immutable_bch_vault before removing it
+              try {
+                const rawVault = localStorage.getItem('_immutable_bch_vault');
+                if (rawVault) {
+                  const vaultArr = JSON.parse(rawVault);
+                  if (Array.isArray(vaultArr) && vaultArr.length > 0) {
+                    const bls = this._mem['bls'] || [];
+                    const knownRefs = new Set(bls.map(b => b && b.ref ? String(b.ref) : ''));
+                    const nowMs = Date.now();
+                    let rescued = false;
+                    vaultArr.forEach(v => {
+                      const ts = Date.parse(v?.createdAt || v?._vaultedAt || '');
+                      if (v && v.ref && !knownRefs.has(String(v.ref)) && ts && (nowMs - ts) < 12 * 3600 * 1000) {
+                        bls.push({ ...v, _pendingSync: true });
+                        knownRefs.add(String(v.ref));
+                        rescued = true;
+                      }
+                    });
+                    if (rescued) {
+                      this._mem['bls'] = bls;
+                      this._idbSet('bls', bls);
+                    }
+                  }
+                }
+                localStorage.removeItem('_immutable_bch_vault');
+              } catch (_) {}
+              this._idbReady = true;
+              resolve(true);
+            };
+            tx.onerror = () => { this._idbReady = false; resolve(false); };
+          } catch (_) {
+            this._idbReady = false;
+            resolve(false);
+          }
+        };
+        req.onerror = () => { this._idbReady = false; resolve(false); };
+      } catch (_) {
+        this._idbReady = false;
+        resolve(false);
+      }
+    });
+    return this._idbInitPromise;
+  },
+
+  _idbSet(key, val) {
+    if (!this._idb) return;
+    try {
+      const tx = this._idb.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(val, key);
+    } catch (_) {}
+  },
+
+  async _idbClear() {
+    this._mem = {};
+    if (!this._idb) return;
+    return new Promise((resolve) => {
+      try {
+        const tx = this._idb.transaction('kv', 'readwrite');
+        tx.objectStore('kv').clear();
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (_) { resolve(false); }
+    });
+  },
+
+  hasLocalData() {
+    return this.getAll('bls').length > 0 || this.getAll('brs').length > 0 || this.getAll('clients').length > 0 || this.getAll('suppliers').length > 0;
+  },
+
+  async bootstrapFromCloud(onProgress) {
+    await this.initStorage();
+    this.flushPendingToCloud().catch(() => {});
+    const ACTIVE_COLS = ['users','sessions','notifications','_settings','_timbre_slabs','articles','clients','suppliers','drivers','bls','brs','caisse_admin','etat_vente_docs','bank_transactions','bon_retours','supplier_payments','bank_charges','work_log','recycle_bin','fiches_paie','rh_rectifications','recurring_charges','bank_accounts','paie_validations','pointage_validations'];
+    if (this.hasLocalData()) {
+      this.ensureLoaded(ACTIVE_COLS).catch(() => {});
+      return true;
+    }
+    try {
+      if (typeof onProgress === 'function') onProgress(25, 'Connexion au serveur cloud…');
+      const res = (typeof window.API !== 'undefined' && typeof window.API.bootstrap === 'function')
+        ? await window.API.bootstrap()
+        : null;
+      if (res && res.collections && typeof res.collections === 'object') {
+        if (typeof onProgress === 'function') onProgress(75, 'Enregistrement local haute vitesse…');
+        if (res.settings && typeof res.settings === 'object' && Object.keys(res.settings).length) {
+          try { localStorage.setItem('settings', JSON.stringify(res.settings)); } catch (_) {}
+        }
+        if (Array.isArray(res.timbre_slabs)) {
+          try { localStorage.setItem('timbre_slabs_data', JSON.stringify(res.timbre_slabs)); } catch (_) {}
+        }
+        const nowStr = String(Date.now());
+        const srvTimeStr = String(res.serverTime || Date.now());
+        for (const [col, docs] of Object.entries(res.collections)) {
+          if (Array.isArray(docs)) {
+            this.rawSet(col, docs);
+            this._loaded[col] = true;
+            try {
+              localStorage.setItem(`_sync_ts_${col}`, nowStr);
+              localStorage.setItem(`_delta_ts_${col}`, srvTimeStr);
+              localStorage.setItem(`_full_ts_${col}`, nowStr);
+            } catch (_) {}
+          }
+        }
+        this._loaded['_settings'] = true;
+        this._loaded['_timbre_slabs'] = true;
+        if (res.versions) {
+          if (res.versions.v) Object.assign(this._syncVersions, res.versions.v);
+          if (res.versions.epoch) this._lastServerEpoch = res.versions.epoch;
+        }
+        if (typeof onProgress === 'function') onProgress(100, 'Prêt !');
+        return true;
+      }
+    } catch (e) {
+      console.warn('[DB.bootstrapFromCloud] Fallback to ensureLoaded:', e);
+    }
+    if (typeof onProgress === 'function') onProgress(50, 'Synchronisation des collections…');
+    await this.ensureLoaded(ACTIVE_COLS);
+    if (typeof onProgress === 'function') onProgress(100, 'Prêt !');
+    return true;
+  },
+
+  // CRUD — backed by RAM (_mem) + IndexedDB, with 500ms localStorage fallback for non-IDB environments
   _getAllCache: {},
   _getAllCacheTs: {},
   getAll(col) {
+    if (this._idbReady && Array.isArray(this._mem[col])) {
+      return this._mem[col];
+    }
     try {
       const now = Date.now();
       if (this._getAllCache[col] && now - (this._getAllCacheTs[col] || 0) < 500) {
@@ -3307,17 +3585,22 @@ const DB = {
       return data;
     } catch { return []; }
   },
-  // Invalidate cache when writing
   _invalidateCache(col) {
     delete this._getAllCache[col];
     delete this._getAllCacheTs[col];
   },
-  
-  // rawSet: write to localStorage ONLY (fast local cache)
-  // Individual insert/update/delete methods handle cloud sync atomically
   rawSet(col, data) {
     this._invalidateCache(col);
-    localStorage.setItem(col, JSON.stringify(data));
+    const arr = Array.isArray(data) ? data : [];
+    this._mem[col] = arr;
+    if (this._idbReady) {
+      this._idbSet(col, arr);
+      if (!this._heavyCols.includes(col)) {
+        try { localStorage.setItem(col, JSON.stringify(arr)); } catch (_) {}
+      }
+    } else {
+      try { localStorage.setItem(col, JSON.stringify(arr)); } catch (_) {}
+    }
   },
   
   getById(col, id) {
@@ -3372,18 +3655,26 @@ const DB = {
           const idx = current.findIndex(i => Number(i.id) === Number(item.id));
           if (idx !== -1) {
             current[idx]._pendingSync = true;
-            localStorage.setItem(col, JSON.stringify(current));
+            this.rawSet(col, current);
           }
           return;
         }
         // Merge server-confirmed item with local item to preserve any intermediate updates
+        let inFlightPatch = null;
         const latest = this.getAll(col).map(i => {
           if (i.id === item.id) {
+            if (i.updatedAt && i.updatedAt !== item.updatedAt) {
+              inFlightPatch = { ...i, id: serverItem.id || i.id };
+              delete inFlightPatch._pendingSync;
+            }
             return { ...serverItem, ...i, id: serverItem.id || i.id, _pendingSync: false };
           }
           return i;
         });
-        localStorage.setItem(col, JSON.stringify(latest));
+        this.rawSet(col, latest);
+        if (inFlightPatch) {
+          window.API.update(col, serverItem.id || item.id, inFlightPatch).catch(() => {});
+        }
 
         const hasBrChange = col === 'brs' && serverItem.brNum !== item.brNum;
         const hasBlChange = col === 'bls' && serverItem.ref && serverItem.ref !== item.ref;
@@ -3402,7 +3693,7 @@ const DB = {
         if (idx !== -1) {
           current[idx]._pendingSync = true;
           current[idx]._lastSyncError = e.message || 'En attente réseau';
-          localStorage.setItem(col, JSON.stringify(current));
+          this.rawSet(col, current);
         }
         const isAR = typeof T !== 'undefined' && T.isRTL();
         if (typeof Utils !== 'undefined') {
@@ -3463,7 +3754,7 @@ const DB = {
         deletedByName: u?.name || u?.username || 'Système',
         restored: false
       });
-      localStorage.setItem('recycle_bin', JSON.stringify(bin));
+      this.rawSet('recycle_bin', bin);
       // Cloud sync recycle bin entry with server ID reconciliation
       if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
         window.API.insert('recycle_bin', bin[bin.length-1]).then(serverBin => {
@@ -3472,7 +3763,7 @@ const DB = {
             const target = currentBin.find(e => e.deletedAt === bin[bin.length-1].deletedAt && e.collection === col);
             if (target) {
               target.id = serverBin.id;
-              localStorage.setItem('recycle_bin', JSON.stringify(currentBin));
+              this.rawSet('recycle_bin', currentBin);
             }
           }
         }).catch(() => {});
@@ -4167,7 +4458,9 @@ const DB = {
           unit: a.unit || 'U',
           price: Number(a.price) || 0,
           purchasePrice: Number(a.purchasePrice || a.priceBuy || 0),
-          count: a.count || 1
+          count: a.count || 1,
+          paletteSize: Number(a.paletteSize) || 0,
+          paletteLabel: a.paletteLabel || ''
         });
       }
     });
@@ -4226,9 +4519,12 @@ const DB = {
     const arts = this.getAll('articles');
     const idx = arts.findIndex(a => a && a.name && a.name.toLowerCase() === cleanName.toLowerCase());
     if (idx >= 0) {
+      // Never overwrite a PAL unit with generic U — keep the palette config
+      const existingUnit = arts[idx].unit;
+      const newUnit = (unit && unit !== 'U') ? unit : (existingUnit || unit || 'U');
       arts[idx] = { 
         ...arts[idx], 
-        unit: unit || arts[idx].unit, 
+        unit: newUnit, 
         price: Number(price) || arts[idx].price,
         purchasePrice: purchasePrice !== null ? Number(purchasePrice) : (arts[idx].purchasePrice || arts[idx].priceBuy || 0),
         count: (arts[idx].count || 1) + 1
@@ -4306,6 +4602,7 @@ const DB = {
     if (!ok1) return;
     const ok2 = await Dialog.confirm(T.isRTL() ? 'تأكيد نهائي' : 'CONFIRMATION FINALE', T.isRTL() ? 'تأكيد نهائي — سيتم حذف جميع البيانات نهائياً.' : 'CONFIRMATION FINALE — Toutes les données seront effacées.', 'danger');
     if (!ok2) return;
+    await this._idbClear();
     localStorage.clear(); this.init(); location.reload();
   }
 };
@@ -4332,18 +4629,21 @@ const Auth = {
     return finalUser;
   },
 
-  logout() {
+  async logout() {
     const u = this.getCurrentUser();
     if (u) WorkLog.logOut(u.id);
     localStorage.removeItem('currentUser');
     localStorage.removeItem('_erp_token');
-    // Clear sync timestamps so the next user immediately syncs fresh data from cloud
+    // Clear sync timestamps and IDB cache so next user (e.g. supplier vs admin) starts clean
     try {
       Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('_sync_ts_')) localStorage.removeItem(k);
+        if (k.startsWith('_sync_ts_') || k.startsWith('_delta_ts_') || k.startsWith('_full_ts_')) localStorage.removeItem(k);
       });
     } catch (_) {}
-    if (typeof DB !== 'undefined') DB._loaded = {};
+    if (typeof DB !== 'undefined') {
+      DB._loaded = {};
+      if (typeof DB._idbClear === 'function') await DB._idbClear();
+    }
     if (window.API) API.logout();
     location.reload();
   },
@@ -4526,6 +4826,20 @@ window.Dialog = Dialog;
 
 // ─── UTILS ────────────────────────────────────────────────────
 const Utils = {
+  // Format qty with palette display: "3 pal. (15 000 U)" — raw units used for all math
+  fmtQtyPalette(qty, unit, paletteSize, paletteLabel) {
+    if (!paletteSize || paletteSize <= 0 || !qty) return (qty || 0) + (unit ? ' ' + unit : '');
+    const palCount = Math.round((qty / paletteSize) * 100) / 100;
+    const palStr = Number.isInteger(palCount) ? palCount : palCount.toFixed(2);
+    const lbl = paletteLabel || 'pal.';
+    return palStr + ' ' + lbl + ' (' + qty + ' ' + (unit || 'U') + ')';
+  },
+  // Get palette config for a designation from the articles DB
+  getPaletteForArticle(designation) {
+    if (!designation || typeof DB === 'undefined') return null;
+    const art = DB.getAll('articles').find(a => a.name === designation);
+    return (art && art.paletteSize > 0) ? art : null;
+  },
   fmtDate(d) {
     if (!d) return '';
     try { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`; }

@@ -648,10 +648,22 @@
       const bodyRows6 = (br.lines||[]).map((l,i)=>{
         const qty=Number(l.qty)||0, pu=Number(l.price)||0, disc=Number(l.disc)||0;
         const tot=Math.round(qty*pu*(1-disc/100)*100)/100;
+        let brDes6 = this._t(l.designation||'');
+        let brUnit6 = this._t(l.unit||'U');
+        // Palette fallback for old data
+        if (!l.paletteUnitQty && l.designation && typeof DB !== 'undefined') {
+          const _brArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === (l.designation||'').trim().toLowerCase());
+          if (_brArt && _brArt.paletteSize > 0) { l.paletteUnitQty = Number(_brArt.paletteSize); l.paletteCount = Number(l.qty || 0); if (_brArt.unit) l.unit = _brArt.unit; }
+        }
+        if (l.paletteCount && l.paletteUnitQty) {
+          const tU6 = Math.round(l.paletteCount * l.paletteUnitQty * 100)/100;
+          brDes6 += ` (${l.paletteCount} PAL, 1pal=${l.paletteUnitQty}u, Total:${tU6}u)`;
+          brUnit6 = 'PAL';
+        }
         return [
           String(i+1).padStart(2,'0'),
-          this._t(l.designation||''),
-          this._t(l.unit||'U'),
+          brDes6,
+          brUnit6,
           this._fmtNum(qty),
           this._fmtMoney(pu)+(disc?` (-${disc}%)`:''),
           this._fmtMoney(tot),
@@ -770,10 +782,22 @@
       ];
       
       const bodyRows = (items || []).map((l, i) => {
+        let evDes = this._t(l.designation||'');
+        let evUnit = this._t(l.unit||'U');
+        // Palette fallback for old data
+        if (!l.paletteUnitQty && l.designation && typeof DB !== 'undefined') {
+          const _evArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === (l.designation||'').trim().toLowerCase());
+          if (_evArt && _evArt.paletteSize > 0) { l.paletteUnitQty = Number(_evArt.paletteSize); l.paletteCount = Number(l.qty || 0); if (_evArt.unit) l.unit = _evArt.unit; }
+        }
+        if (l.paletteCount && l.paletteUnitQty) {
+          const tUEV = Math.round(l.paletteCount * l.paletteUnitQty * 100)/100;
+          evDes += ` (${l.paletteCount} PAL, 1pal=${l.paletteUnitQty}u, Total:${tUEV}u)`;
+          evUnit = 'PAL';
+        }
         return [
           String(i+1).padStart(2,'0'),
-          this._t(l.designation||''),
-          this._t(l.unit||'U'),
+          evDes,
+          evUnit,
           this._fmtNum(l.qty),
           this._fmtMoney(l.unitPrice),
           this._fmtMoney((l.qty || 0) * (l.unitPrice || 0)),
@@ -979,6 +1003,14 @@
 
         const blColStyles = {};
         blCols.forEach((c, i) => { blColStyles[i] = { halign: c.halign, cellWidth: c.width }; });
+        // Fit-to-content for ref/date/money columns so amounts never wrap onto 2 lines; client absorbs the rest
+        blColStyles[1] = { halign: 'center', cellWidth: 'wrap' };
+        blColStyles[2] = { halign: 'center', cellWidth: 'wrap' };
+        blColStyles[3] = { halign: isAR ? 'right' : 'left', cellWidth: 'auto' };
+        blColStyles[4] = { halign: 'right', cellWidth: 'wrap' };
+        blColStyles[5] = { halign: 'right', cellWidth: 'wrap' };
+        blColStyles[6] = { halign: 'right', cellWidth: 'wrap' };
+        blColStyles[7] = { halign: 'right', cellWidth: 'wrap' };
 
         this._autoTable(doc, {
           startY: y,
@@ -1036,15 +1068,27 @@
           if (brItems.length > 0) {
             brItems.forEach(item => {
               const artName = item.designation || item.name || item.article || (isAR ? 'مادة' : 'Article');
-              const artQty = Number(item.qty || item.quantity || item.qte || 0);
-              const artUnit = item.unit || item.unite || 'U';
+              let artQty = Number(item.qty || item.quantity || item.qte || 0);
+              let artUnit = item.unit || item.unite || 'U';
+              let pUnitQty = Number(item.paletteUnitQty || 0);
+              let pCount = Number(item.paletteCount || 0);
+              // Fallback for older data: read palette config from the article catalog
+              if (!pUnitQty && typeof DB !== 'undefined') {
+                const _ra = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === String(artName).trim().toLowerCase());
+                if (_ra && _ra.paletteSize > 0) { pUnitQty = Number(_ra.paletteSize); pCount = artQty; }
+              }
+              let detail = this._t(artName);
+              let qtyTxt = artQty + ' ' + this._t(artUnit);
+              if (pUnitQty > 0 && pCount > 0) {
+                const totU = Math.round(pCount * pUnitQty * 100) / 100;
+                detail += '  (' + pCount + ' PAL, 1pal=' + pUnitQty + 'u, Total:' + totU + 'u)';
+                qtyTxt = pCount + ' PAL';
+              }
+              const subFill = [254, 249, 249];
               retRows.push([
-                { content: '', styles: { fillColor: [254, 249, 249] } },
-                { content: '', styles: { fillColor: [254, 249, 249] } },
-                { content: isAR ? '↞ مادة مرتجعة' : '↪ Art. retourné', styles: { fontStyle: 'italic', fontSize: 6.8, textColor: [156, 163, 175], fillColor: [254, 249, 249], halign: 'center' } },
-                { content: '', styles: { fillColor: [254, 249, 249] } },
-                { content: this._t(artName), styles: { fontStyle: 'italic', fontSize: 7, textColor: [107, 114, 128], fillColor: [254, 249, 249], halign: isAR ? 'right' : 'left' } },
-                { content: artQty + ' ' + this._t(artUnit), styles: { fontStyle: 'bold', fontSize: 7, textColor: [220, 38, 38], fillColor: [254, 249, 249], halign: 'right' } }
+                { content: '', styles: { fillColor: subFill } },
+                { content: (isAR ? '- ' : '- Article : ') + detail, colSpan: 4, styles: { fontStyle: 'italic', fontSize: 7, textColor: [107, 114, 128], fillColor: subFill, halign: isAR ? 'right' : 'left' } },
+                { content: qtyTxt, styles: { fontStyle: 'bold', fontSize: 7, textColor: [220, 38, 38], fillColor: subFill, halign: 'right' } }
               ]);
             });
           }
@@ -1058,6 +1102,11 @@
 
         const retColStyles = {};
         retCols.forEach((c, i) => { retColStyles[i] = { halign: c.halign, cellWidth: c.width }; });
+        retColStyles[1] = { halign: 'center', cellWidth: 'wrap' };
+        retColStyles[2] = { halign: 'center', cellWidth: 'wrap' };
+        retColStyles[3] = { halign: 'center', cellWidth: 'wrap' };
+        retColStyles[4] = { halign: isAR ? 'right' : 'left', cellWidth: 'auto' };
+        retColStyles[5] = { halign: 'right', cellWidth: 'wrap' };
 
         this._autoTable(doc, {
           startY: y,
@@ -1345,6 +1394,15 @@
         const visibleLines = lines.slice(0, maxRows);
         const rowH = 4.8;
         visibleLines.forEach((l, i) => {
+          // Palette fallback: look up from articles catalog if not stored
+          if (!l.paletteUnitQty && l.designation && typeof DB !== 'undefined') {
+            const _pArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === (l.designation||'').trim().toLowerCase());
+            if (_pArt && _pArt.paletteSize > 0) {
+              l.paletteUnitQty = Number(_pArt.paletteSize);
+              l.paletteCount = Number(l.qtyDelivered || l.qty || 0);
+              if (_pArt.unit) l.unit = _pArt.unit;
+            }
+          }
           const qty = Number(l.qtyDelivered || l.qty || 0);
           const pu = Number(l.price || 0);
           const disc = Number(l.disc || 0);
@@ -1358,13 +1416,22 @@
           // N°
           doc.text(String(i + 1).padStart(2, '0'), rx + 5, y + 3.4, { align: 'center' });
           rx += 10;
-          // Désignation
-          doc.text(this._t(l.designation || 'Article').slice(0, 46), rx + 2, y + 3.4);
+          // Désignation + palette detail
+          let desName = this._t(l.designation || 'Article');
+          let desDetail = '';
+          if (l.paletteCount && l.paletteUnitQty) {
+            const tU = Math.round(l.paletteCount * l.paletteUnitQty * 100)/100;
+            desDetail = ` (${l.paletteCount} PAL, 1pal=${l.paletteUnitQty}u, Total:${tU}u)`;
+          }
+          const desRoom = Math.max(8, 70 - desDetail.length);
+          if (desName.length > desRoom) desName = desName.slice(0, desRoom - 1) + '…';
+          doc.text(desName + desDetail, rx + 2, y + 3.4);
           rx += 82;
-          // Unité
-          doc.text(this._t(l.unit || 'U'), rx + 7, y + 3.4, { align: 'center' });
+          // Unité — show PAL if palette article
+          const unitTxt = (l.paletteUnitQty && l.paletteCount) ? 'PAL' : this._t(l.unit || 'U');
+          doc.text(unitTxt, rx + 7, y + 3.4, { align: 'center' });
           rx += 14;
-          // Qté (Clean space formatting!)
+          // Qté + palette detail
           doc.setFont('helvetica', 'bold');
           doc.text(this._fmtNum(qty), rx + 10, y + 3.4, { align: 'center' });
           rx += 20;
@@ -1748,11 +1815,24 @@
         const pu  = Number(l.price || 0);
         const disc = Number(l.disc || 0);
         const tot = Math.round(qty * pu * (1 - disc / 100) * 100) / 100;
+        let blDes = this._t(l.designation || '');
+        let blUnit = this._t(l.unit || 'U');
+        let blQtyStr = this._fmtNum(qty);
+        // Palette fallback for old data
+        if (!l.paletteUnitQty && l.designation && typeof DB !== 'undefined') {
+          const _blArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === (l.designation||'').trim().toLowerCase());
+          if (_blArt && _blArt.paletteSize > 0) { l.paletteUnitQty = Number(_blArt.paletteSize); l.paletteCount = Number(l.qtyDelivered || l.qty || 0); if (_blArt.unit) l.unit = _blArt.unit; }
+        }
+        if (l.paletteCount && l.paletteUnitQty) {
+          const tUBL = Math.round(l.paletteCount * l.paletteUnitQty * 100)/100;
+          blDes += ` (${l.paletteCount} PAL, 1pal=${l.paletteUnitQty}u, Total:${tUBL}u)`;
+          blUnit = 'PAL';
+        }
         return [
           String(i + 1).padStart(2, '0'),
-          this._t(l.designation || ''),
-          this._t(l.unit || 'U'),
-          this._fmtNum(qty),
+          blDes,
+          blUnit,
+          blQtyStr,
           this._fmtMoney(pu) + (disc ? ` (-${disc}%)` : ''),
           this._fmtMoney(tot),
         ];
@@ -2106,9 +2186,19 @@
         let rx = ML;
         doc.text(String(i + 1).padStart(2, '0'), rx + 5, y + 4, { align: 'center' });
         rx += 10;
-        doc.text(this._t(l.designation || 'Marchandise').slice(0, 50), rx + 2, y + 4);
+        let retName = this._t(l.designation || 'Marchandise');
+        let retDetail = '';
+        if (l.paletteCount && l.paletteUnitQty) {
+          const tUR = Math.round(l.paletteCount * l.paletteUnitQty * 100)/100;
+          retDetail = ` (${l.paletteCount} PAL, 1pal=${l.paletteUnitQty}u, Total:${tUR}u)`;
+        }
+        // Truncate the NAME (never the palette detail)
+        const retRoom = Math.max(8, 60 - retDetail.length);
+        if (retName.length > retRoom) retName = retName.slice(0, retRoom - 1) + '…';
+        doc.text(retName + retDetail, rx + 2, y + 4);
         rx += 82;
-        doc.text(this._t(l.unit || 'U'), rx + 7, y + 4, { align: 'center' });
+        const retUnit = (l.paletteUnitQty && l.paletteCount) ? 'PAL' : this._t(l.unit || 'U');
+        doc.text(retUnit, rx + 7, y + 4, { align: 'center' });
         rx += 14;
         doc.setFont('helvetica', 'bold');
         doc.text(this._fmtNum(qty), rx + 10, y + 4, { align: 'center' });

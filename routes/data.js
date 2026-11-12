@@ -5,6 +5,7 @@ const Settings = require('../models/Settings');
 const Counter  = require('../models/Counter');
 const auth     = require('../middleware/auth');
 const { bump, snapshot } = require('../lib/versions');
+const { BOOT_COLS, getCachedDocs, isBootCol } = require('../lib/cache');
 
 const router = express.Router();
 router.use(auth); // ALL data routes require authentication
@@ -229,6 +230,69 @@ router.patch('/settings/main', async (req, res) => {
   }
 });
 
+// ─── Helper: apply supplier isolation to cached raw docs ──────────
+const BLOCKED_FOR_SUPPLIER = ['caisse_admin', 'bank_accounts', 'bank_transactions', 'etat_vente_docs', 'pointage'];
+
+function filterCachedDocsForUser(col, rawDocs, user) {
+  const isSupplier = user?.role === 'supplier' || user?.role === 'supplier_agent';
+  if (!isSupplier) return rawDocs;
+  if (BLOCKED_FOR_SUPPLIER.includes(col)) return [];
+  const sid = user.supplierId;
+  if (!sid) {
+    if (col === 'bls' || col === 'brs' || col === 'bon_retours') return [];
+    return rawDocs;
+  }
+  const sidStr = String(sid);
+  const uidStr = String(user.id);
+  if (col === 'bls' || col === 'brs' || col === 'bon_retours') {
+    return rawDocs.filter(d => {
+      if (!d?.data) return false;
+      if (String(d.data.supplierId) !== sidStr) return false;
+      if (col === 'bls' && d.data.source === 'stock') return false;
+      return true;
+    });
+  }
+  if (col === 'notifications' || col === 'sessions') {
+    return rawDocs.filter(d => d?.data && String(d.data.userId) === uidStr);
+  }
+  if (col === 'users') {
+    return rawDocs.filter(d => d?.data && String(d.data.id) === uidStr);
+  }
+  return rawDocs;
+}
+
+// ─── GET /api/data/_bootstrap (single-request full warm load) ────
+router.get('/_bootstrap', async (req, res) => {
+  try {
+    const serverTime = Date.now();
+    const collections = {};
+    const [settingsDoc, slabsDoc] = await Promise.all([
+      Settings.findOne({ key: 'main' }).lean().catch(() => null),
+      Document.findOne({ col: 'timbre_slabs', 'data.key': 'main' }).lean().catch(() => null)
+    ]);
+    for (const col of BOOT_COLS) {
+      const cached = await getCachedDocs(col);
+      if (cached) {
+        const filtered = filterCachedDocsForUser(col, cached, req.user);
+        collections[col] = filtered.map(d => publicData(col, d.data));
+      } else {
+        collections[col] = [];
+      }
+    }
+    res.json({
+      __bootstrap: true,
+      serverTime,
+      versions: snapshot(),
+      settings: settingsDoc?.value || {},
+      timbre_slabs: slabsDoc?.data?.slabs || [],
+      collections
+    });
+  } catch (e) {
+    console.error('[DATA/BOOTSTRAP]', e);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // ─── GET /api/data/:col  (get all docs in a collection) ──────────
 //   ?limit=N          newest N (newest first)        — legacy
 //   ?tail=N           newest N, returned oldest→newest — for append-only logs
@@ -243,9 +307,34 @@ router.get('/:col', async (req, res) => {
     const supplierSid = isSupplier ? req.user.supplierId : null;
 
     // Collections that suppliers are NOT allowed to access at all
-    const BLOCKED_FOR_SUPPLIER = ['caisse_admin', 'bank_accounts', 'bank_transactions', 'etat_vente_docs', 'pointage'];
     if (isSupplier && BLOCKED_FOR_SUPPLIER.includes(col)) {
       return res.json([]); // empty — no access
+    }
+
+    // ── FAST RAM CACHE PATH (for active BOOT_COLS when MongoDB is connected) ──
+    if (isBootCol(col)) {
+      const cached = await getCachedDocs(col);
+      if (cached) {
+        const scoped = filterCachedDocsForUser(col, cached, req.user);
+        if (req.query.since !== undefined) {
+          const sinceMs = Number(req.query.since);
+          if (Number.isFinite(sinceMs)) {
+            const serverTime = Date.now();
+            const dRes = scoped
+              .filter(d => d.updatedAt && d.updatedAt.getTime() > sinceMs)
+              .map(d => publicData(col, d.data));
+            return res.json({ __delta: true, serverTime, total: scoped.length, docs: dRes });
+          }
+        }
+        let list = scoped;
+        if (tail > 0) {
+          list = [...scoped].sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)).slice(0, tail).reverse();
+        } else if (limit > 0) {
+          const sortDir = req.query.sort === 'asc' ? 1 : -1;
+          list = [...scoped].sort((a, b) => sortDir * ((a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0))).slice(0, limit);
+        }
+        return res.json(list.map(d => publicData(col, d.data)));
+      }
     }
 
     // Build MongoDB query with supplier filter for relevant collections
@@ -273,6 +362,25 @@ router.get('/:col', async (req, res) => {
         if (col === 'bls' || col === 'brs' || col === 'bon_retours') {
           return res.json([]);
         }
+      }
+    }
+
+    // ── DELTA SYNC: ?since=<server ms> returns ONLY docs changed after that instant + total count.
+    //    The client merges them by id and compares 'total' to detect deletions. ──
+    if (req.query.since !== undefined) {
+      const sinceMs = Number(req.query.since);
+      if (Number.isFinite(sinceMs)) {
+        const serverTime = Date.now();
+        const dFilter = { ...filter, updatedAt: { $gt: new Date(sinceMs) } };
+        const [dDocs, total] = await Promise.all([
+          Document.find(dFilter).lean(),
+          Document.countDocuments(filter)
+        ]);
+        let dRes = dDocs.map(d => publicData(col, d.data));
+        if (isSupplier && col === 'users') {
+          dRes = dRes.filter(u => u.id === req.user.id || String(u.id) === String(req.user.id));
+        }
+        return res.json({ __delta: true, serverTime, total, docs: dRes });
       }
     }
 

@@ -364,10 +364,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="api.js?v=43.0"></script>
-<script src="core.js?v=43.0"></script>
-<script src="modules.js?v=43.0"></script>
-<script src="pdf.js?v=43.0"></script>
+<script src="api.js?v=47.0"></script>
+<script src="core.js?v=47.0"></script>
+<script src="modules.js?v=47.0"></script>
+<script src="pdf.js?v=47.0"></script>
 
 <script>
 /* ═══════════════════════════════════════════════════════════
@@ -377,7 +377,43 @@ const App = {
   _currentModule: null,
   _reloadTimer: null,
 
-  init() {
+  _showBootProgress(pct, label) {
+    let el = document.getElementById('bootProgressOverlay');
+    if (pct === null || pct === undefined) {
+      if (el) {
+        el.style.opacity = '0';
+        setTimeout(() => { try { el.remove(); } catch (_) {} }, 250);
+      }
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'bootProgressOverlay';
+      el.style.cssText = 'position:fixed;inset:0;z-index:100000;background:var(--bg,#0f172a);display:flex;align-items:center;justify-content:center;transition:opacity .25s ease';
+      el.innerHTML = `
+        <div style="width:min(380px,88vw);background:var(--bg-card,#1e293b);border:1px solid var(--border,#334155);border-radius:16px;padding:28px 24px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.35)">
+          <div style="width:48px;height:48px;border-radius:12px;background:rgba(13,148,136,.15);color:#14b8a6;display:inline-flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px">
+            <i class="fas fa-bolt"></i>
+          </div>
+          <div id="bootProgressLabel" style="font-size:14px;font-weight:700;color:var(--text,#f8fafc);margin-bottom:12px"></div>
+          <div style="height:8px;background:var(--bg-inset,#0f172a);border-radius:999px;overflow:hidden;border:1px solid var(--border,#334155)">
+            <div id="bootProgressBar" style="height:100%;width:15%;background:linear-gradient(90deg,#0d9488,#14b8a6);border-radius:999px;transition:width .3s ease"></div>
+          </div>
+          <div id="bootProgressPct" style="font-size:11px;font-weight:700;color:var(--text-muted,#94a3b8);margin-top:8px;font-family:var(--font-mono,monospace)">15%</div>
+        </div>
+      `;
+      document.body.appendChild(el);
+    }
+    const lbl = document.getElementById('bootProgressLabel');
+    const bar = document.getElementById('bootProgressBar');
+    const pEl = document.getElementById('bootProgressPct');
+    if (lbl && label) lbl.textContent = label;
+    if (bar) bar.style.width = `${Math.max(5, Math.min(100, pct))}%`;
+    if (pEl) pEl.textContent = `${Math.round(pct)}%`;
+  },
+
+  async init() {
+    if (typeof DB.initStorage === 'function') await DB.initStorage();
     DB.init();
 
     // ── Prevent scroll from changing number input values (accidental changes) ──
@@ -421,9 +457,11 @@ const App = {
 
         API.login(un, pw).then(async res => {
           if (!res?.token) throw new Error(T.isRTL() ? 'فشل تسجيل الدخول' : 'Échec de connexion');
-          btn.innerHTML = '<i class="fas fa-sync fa-spin"></i> ' + (T.isRTL() ? 'مزامنة البيانات...' : 'Synchronisation...');
+          btn.innerHTML = '<i class="fas fa-sync fa-spin"></i> ' + (T.isRTL() ? 'مزامنة البيانات...' : 'Chargement des données...');
           try {
-            await API.syncCloudToLocal();
+            await API.syncCloudToLocal((p, msg) => {
+              btn.innerHTML = `<i class="fas fa-sync fa-spin"></i> ${T.isRTL() ? 'تحميل البيانات' : (msg || 'Synchronisation')} (${Math.round(p)}%)`;
+            });
             DB.runMigrations(); // backfill any caisse entries from synced BLs
             // Use the REAL user from the JWT — never do Auth.login() here (bcrypt vs plain)
             const realUser = res.user; // { id, name, username, role }
@@ -475,14 +513,27 @@ const App = {
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
       const hasToken = API.initFromToken();
       if (hasToken) {
-        // Valid JWT — restore user from token and sync from cloud
+        // Valid JWT — restore user from token
         const apiUser = API.getUser();
         if (apiUser && !Auth.getCurrentUser()) {
           localStorage.setItem('currentUser', JSON.stringify(apiUser));
         }
-        API.syncCloudToLocal().catch(() => {}).finally(() => {
+        if (typeof DB.hasLocalData === 'function' && DB.hasLocalData()) {
+          // Returning device: boot in <0.1s from IndexedDB/RAM, catch up in background
           this._bootApp();
-        });
+          API.syncCloudToLocal().then(() => {
+            if (this._currentModule && !document.getElementById('modalOverlay')?.classList.contains('active')) {
+              this.reloadDebounced(this._currentModule, 80);
+            }
+          }).catch(() => {});
+        } else {
+          // Brand-new device with empty storage: show clean progress bar during single-shot bootstrap
+          this._showBootProgress(15, T.isRTL() ? 'جارٍ تحميل البيانات لأول مرة...' : 'Chargement initial des données…');
+          API.syncCloudToLocal((p, msg) => this._showBootProgress(p, msg)).catch(() => {}).finally(() => {
+            this._showBootProgress(null);
+            this._bootApp();
+          });
+        }
       } else {
         // No valid token — show login screen
         document.getElementById('loginScreen').style.display = 'flex';
@@ -863,6 +914,30 @@ const App = {
     this._setActiveSidebarItem(this._currentModule);
   },
 
+  _syncBar(on) {
+    let b = document.getElementById('syncTopBar');
+    if (on) {
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'syncTopBar';
+        b.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,#0d9488,#14b8a6);z-index:99999;opacity:1;transition:width 10s cubic-bezier(.1,.8,.2,1),opacity .3s;pointer-events:none';
+        document.body.appendChild(b);
+      }
+      b._n = (b._n || 0) + 1;
+      b.style.transition = 'width 10s cubic-bezier(.1,.8,.2,1),opacity .3s';
+      b.style.opacity = '1';
+      requestAnimationFrame(() => { b.style.width = '85%'; });
+    } else if (b) {
+      b._n = Math.max(0, (b._n || 1) - 1);
+      if (b._n === 0) {
+        b.style.transition = 'width .2s, opacity .4s .2s';
+        b.style.width = '100%';
+        b.style.opacity = '0';
+        setTimeout(() => { if (b._n === 0) { b.style.transition = 'none'; b.style.width = '0'; } }, 700);
+      }
+    }
+  },
+
   _setActiveSidebarItem(mod) {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     const el = document.querySelector(`.nav-item[data-mod="${mod}"]`);
@@ -912,12 +987,14 @@ const App = {
     };
     // Background sync: don't block render — localStorage already has data from last session
     if (needs[mod] && typeof DB.ensureLoaded === 'function') {
+      let _barShown = false;
+      const _barT = setTimeout(() => { _barShown = true; this._syncBar(true); }, 150);
       DB.ensureLoaded(needs[mod]).then((didSync) => {
         // If fresh data arrived from server and we're still on this module, re-render
         if (didSync && this._currentModule === mod && !document.getElementById('modalOverlay')?.classList.contains('active')) {
           this.reloadDebounced(mod, 60);
         }
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => { clearTimeout(_barT); if (_barShown) this._syncBar(false); });
     }
     // -------------------------
 

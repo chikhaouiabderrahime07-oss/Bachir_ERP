@@ -264,6 +264,10 @@ async function start() {
     });
     console.log('✅ MongoDB connecté');
 
+    // Warm up RAM cache from compressed snapshot immediately in background
+    const { initCache } = require('./lib/cache');
+    initCache().catch(err => console.warn('[Cache] Warm-up warning:', err.message));
+
     // Seed admin user if no users exist
     await seedAdminIfNeeded();
     await warnIfDefaultAdminPassword();
@@ -278,6 +282,16 @@ async function start() {
     // Render's proxy keeps sockets open ~60s; Node's default (5s) causes sporadic 502s.
     server.keepAliveTimeout = 65 * 1000;
     server.headersTimeout   = 66 * 1000;
+
+    // ── Keep-warm: ping our own public URL every 9 min so Render never spins the instance down ──
+    // (cold start = 30-60 s of "no data" for the first user of the day)
+    const selfUrl = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL;
+    if (selfUrl && typeof fetch === 'function') {
+      setInterval(() => {
+        fetch(selfUrl.replace(/\/$/, '') + '/health').catch(() => {});
+      }, 9 * 60 * 1000).unref();
+      console.log('   Keep-warm ping actif →', selfUrl);
+    }
 
     mongoose.connection.on('disconnected', () => console.warn('⚠️ MongoDB déconnecté (reconnexion automatique)…'));
     mongoose.connection.on('reconnected',  () => console.log('✅ MongoDB reconnecté'));

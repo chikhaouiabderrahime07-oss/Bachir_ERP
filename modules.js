@@ -205,6 +205,11 @@ const QtyPaletteCalc = {
     const input = document.getElementById(inputId);
     if (!input) return;
 
+    // Auto-load palette size from article dataset (set when article is selected)
+    if (input.dataset.paletteUnitQty && !input.dataset.unitqty) {
+      input.dataset.unitqty = input.dataset.paletteUnitQty;
+    }
+
     let baseQty = 0;
     let count = 4; // user request: default 4 pallets
 
@@ -999,9 +1004,16 @@ const BRModule = {
                 const name = Utils.escHTML(l.designation || l.name || l.articleName || 'Article');
                 const qty = (l.qty != null && l.qty !== '') ? Number(l.qty) : '';
                 const unit = l.unit ? Utils.escHTML(l.unit) : '';
-                const qtyFmt = qty !== '' ? (!isNaN(qty) ? (Math.round(qty * 100) / 100) : qty) : '';
-                return `<div style="font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" title="${name}${qtyFmt !== '' ? ` (${qtyFmt} ${unit})` : ''}">
-                  <span style="color:var(--text2)">${name}</span> ${qtyFmt !== '' ? `<span style="color:var(--text4);font-size:10px">(${qtyFmt}${unit ? ' ' + unit : ''})</span>` : ''}
+                // Use stored palette data from QtyPaletteCalc
+                let qtyFmt;
+                if (qty !== '' && l.paletteCount && l.paletteUnitQty) {
+                  const totalU2 = Math.round(l.paletteCount * l.paletteUnitQty * 100) / 100;
+                  qtyFmt = `${l.paletteCount} PAL (1 pal.=${l.paletteUnitQty} ${unit} | Total:${totalU2} ${unit})`;
+                } else {
+                  qtyFmt = qty !== '' ? (!isNaN(qty) ? (Math.round(qty * 100) / 100) + (unit ? ' ' + unit : '') : qty) : '';
+                }
+                return `<div style="font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" title="${name}${qty !== '' ? ` (${qtyFmt})` : ''}">
+                  <span style="color:var(--text2)">${name}</span> ${qty !== '' ? `<span style="color:var(--text4);font-size:10px">(${qtyFmt})</span>` : ''}
                 </div>`;
               }).join('');
               const artMore = brLines.length > 2 ? `<div style="font-size:9px;color:var(--primary);font-weight:700;margin-top:1px">+${brLines.length - 2} ${isAR ? 'أخرى' : 'autre' + (brLines.length - 2 > 1 ? 's' : '')}</div>` : '';
@@ -1357,7 +1369,10 @@ const BRModule = {
           <div class="autocomplete-dropdown" id="br-ac-${idx}"></div>
         </div>
       </td>
-      <td class="col-unit"><input type="text" id="br-unit-${idx}" value="${Utils.escHTML(line.unit||'')}" placeholder="${T.isRTL() ? 'وحدة' : 'u'}" style="${lockedStyle}" ${lockedAttr}></td>
+      <td class="col-unit"><select id="br-unit-${idx}" class="input" style="padding:4px 6px;font-size:12px;text-align:center;appearance:auto;cursor:pointer;font-weight:700;${lockedStyle}" ${isLocked ? 'disabled' : ''} onchange="BRModule._onBRUnitChange(${idx}, this.value)">
+          <option value="U" ${(line.unit||'U')!=='PAL' ? 'selected' : ''}>U</option>
+          <option value="PAL" ${(line.unit||'')==='PAL' ? 'selected' : ''}>PAL</option>
+        </select></td>
       <td class="col-qty">
         ${QtyPaletteCalc.renderField({
           id: `br-qty-${idx}`,
@@ -1367,9 +1382,15 @@ const BRModule = {
           unitQty: line.paletteUnitQty,
           unit: line.unit || '',
           inputStyle: isLocked ? 'width:90px;text-align:center;opacity:0.65;pointer-events:none' : 'width:90px;text-align:center',
-          extraAttrs: isLocked ? ' readonly tabindex="-1"' : '',
+          extraAttrs: (isLocked ? ' readonly tabindex="-1"' : '') + (line.paletteUnitQty > 0 ? ` data-palette-size="${line.paletteUnitQty}" data-palette-mode="${line.palMode||'pal'}"` : ''),
           onRecalc: `BRModule._recalcLine(${idx})`
         })}
+        ${(line.paletteUnitQty > 0) ? `
+          <div style="text-align:center;margin-top:3px">
+            <span id="pal-info-br-${idx}" style="font-size:9.5px;color:var(--text3);font-weight:600;line-height:1.15">
+              ${(line.palMode||'pal')==='pal' ? `(1 pal = ${line.paletteUnitQty} U | Total: ${Math.round(qty*(line.paletteUnitQty||1)*100)/100} U)` : `(${qty} U → ${Math.round(qty/(line.paletteUnitQty||1)*100)/100} PAL)`}
+            </span>
+          </div>` : ''}
       </td>
       <td class="col-price"><input type="number" id="br-price-${idx}" value="${price}" min="0" step="any" style="${lockedStyle}" ${lockedAttr} oninput="BRModule._recalcLine(${idx})"></td>
       <td class="col-disc"><input type="number" id="br-disc-${idx}" value="${disc}" min="0" max="100" step="any" style="${lockedStyle}" ${lockedAttr} oninput="BRModule._recalcLine(${idx})"></td>
@@ -1409,9 +1430,36 @@ const BRModule = {
     const u = document.getElementById(`br-unit-${idx}`);
     const p = document.getElementById(`br-price-${idx}`);
     if (des) { des.value = name; des.dispatchEvent(new Event('change')); }
-    if (u && unit) { u.value = unit; u.dispatchEvent(new Event('change')); }
-    if (p) { p.value = price; p.dispatchEvent(new Event('change')); }
+    // Look up article for palette config
+    const _brArt2 = DB.getAll('articles').find(a => a.name === name);
+    // Force PAL in dropdown when article has palette
+    if (u) { u.value = (_brArt2 && _brArt2.paletteSize > 0) ? 'PAL' : (unit || 'U'); u.dispatchEvent(new Event('change')); }
+    // Multiply price by paletteSize when palette article
+    if (_brArt2 && _brArt2.paletteSize > 0) {
+      const _palP = Math.round(price * _brArt2.paletteSize * 100) / 100;
+      if (p) { p.value = _palP; p.dataset.unitPrice = price; p.dispatchEvent(new Event('change')); }
+    } else {
+      if (p) { p.value = price; p.dispatchEvent(new Event('change')); }
+    }
     this._closeAC(idx);
+    // Auto-set palette unit qty from article config
+    if (_brArt2 && _brArt2.paletteSize > 0) {
+      const _qi = document.getElementById(`br-qty-${idx}`);
+      if (_qi) {
+        _qi.dataset.paletteSize = _art.paletteSize;
+        _qi.dataset.paletteUnitQty = _art.paletteSize;
+        if (!_qi.dataset.paletteMode) _qi.dataset.paletteMode = 'pal';
+        // Info text only — no toggle buttons (dropdown handles PAL/U)
+        const _td = _qi.closest('td');
+        if (_td && !_td.querySelector('#pal-info-br-' + idx)) {
+          const _iw = document.createElement('div');
+          _iw.id = 'pal-toggle-br-' + idx;
+          _iw.style.cssText = 'text-align:center;margin-top:3px';
+          _iw.innerHTML = `<span id="pal-info-br-${idx}" style="font-size:9.5px;color:var(--text3);font-weight:600;line-height:1.15"></span>`;
+          _td.appendChild(_iw);
+        }
+      }
+    }
     this._recalcLine(idx);
     // Focus quantity field after article selection
     const qtyEl = document.getElementById(`br-qty-${idx}`);
@@ -1419,9 +1467,25 @@ const BRModule = {
   },
 
   _recalcLine(idx) {
-    const qty = QtyPaletteCalc.parseVal(document.getElementById(`br-qty-${idx}`)?.value)||0;
-    const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value)||0;
-    const disc = parseFloat(document.getElementById(`br-disc-${idx}`)?.value)||0;
+    const qtyEl = document.getElementById(`br-qty-${idx}`);
+    const rawInput = QtyPaletteCalc.parseVal(qtyEl?.value) || 0;
+    const palSize = parseFloat(qtyEl?.dataset?.paletteSize) || parseFloat(qtyEl?.dataset?.paletteUnitQty) || 0;
+    const palMode = qtyEl?.dataset?.paletteMode || 'pal';
+    const qty = (palSize > 0 && palMode === 'u') ? Math.round(rawInput / palSize * 1000) / 1000 : rawInput;
+    if (palSize > 0) {
+      const infoEl = document.getElementById(`pal-info-br-${idx}`);
+      if (infoEl) {
+        if (palMode === 'pal') {
+          const totalU = Math.round(rawInput * palSize * 100) / 100;
+          infoEl.textContent = `(1 pal. = ${palSize} U | Total: ${totalU} U)`;
+        } else {
+          const pals = Math.round(rawInput / palSize * 100) / 100;
+          infoEl.textContent = `(${rawInput} U → ${pals} PAL)`;
+        }
+      }
+    }
+    const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value) || 0;
+    const disc = parseFloat(document.getElementById(`br-disc-${idx}`)?.value) || 0;
     const tot = Math.round(qty * price * (1 - disc/100) * 100) / 100;
     const el = document.getElementById(`br-ltot-${idx}`);
     if (el) el.textContent = Utils.fmtCurrency(tot);
@@ -1432,7 +1496,11 @@ const BRModule = {
     let ht = 0;
     let idx = 0;
     while (document.getElementById(`br-line-${idx}`)) {
-      const qty   = QtyPaletteCalc.parseVal(document.getElementById(`br-qty-${idx}`)?.value)||0;
+      const qEl = document.getElementById(`br-qty-${idx}`);
+      const raw = QtyPaletteCalc.parseVal(qEl?.value) || 0;
+      const ps = parseFloat(qEl?.dataset?.paletteSize) || parseFloat(qEl?.dataset?.paletteUnitQty) || 0;
+      const pm = qEl?.dataset?.paletteMode || 'pal';
+      const qty = (ps > 0 && pm === 'u') ? Math.round(raw / ps * 1000) / 1000 : raw;
       const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value)||0;
       const disc  = parseFloat(document.getElementById(`br-disc-${idx}`)?.value)||0;
       ht += Math.round(qty * price * (1 - disc/100) * 100) / 100;
@@ -1500,21 +1568,94 @@ const BRModule = {
     while (document.getElementById(`br-line-${idx}`)) {
       const designation = (document.getElementById(`br-des-${idx}`)?.value||'').trim();
       if (designation) {
-        const unit = document.getElementById(`br-unit-${idx}`)?.value||'';
+        let unit = document.getElementById(`br-unit-${idx}`)?.value||'';
         const qtyInp = document.getElementById(`br-qty-${idx}`);
-        const qty = QtyPaletteCalc.parseVal(qtyInp?.value)||0;
+        const rawInput = QtyPaletteCalc.parseVal(qtyInp?.value) || 0;
+        let palSize = parseFloat(qtyInp?.dataset?.paletteSize) || parseFloat(qtyInp?.dataset?.paletteUnitQty) || 0;
+        const palMode = qtyInp?.dataset?.paletteMode || 'pal';
+        // Fallback: look up article palette config if not set on input
+        if (!palSize && designation) {
+          const _catArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === designation.trim().toLowerCase());
+          if (_catArt && _catArt.paletteSize > 0) {
+            palSize = Number(_catArt.paletteSize);
+          }
+        }
+        const qty = (palSize > 0 && palMode === 'u') ? Math.round(rawInput / palSize * 1000) / 1000 : rawInput;
         const price = parseFloat(document.getElementById(`br-price-${idx}`)?.value)||0;
         const disc = parseFloat(document.getElementById(`br-disc-${idx}`)?.value)||0;
         const tot = Math.round(qty * price * (1 - disc/100) * 100) / 100;
         const formula = qtyInp?.dataset?.formula || '';
-        const paletteCount = parseInt(qtyInp?.dataset?.count) || null;
-        const paletteUnitQty = parseFloat(qtyInp?.dataset?.unitqty) || null;
-        lines.push({ designation, unit, qty, price, disc, total: tot, formula, paletteCount, paletteUnitQty });
+        const paletteCount = palSize > 0 ? (palMode === 'pal' ? rawInput : Math.round(rawInput / palSize * 100)/100) : (parseInt(qtyInp?.dataset?.count) || null);
+        const paletteUnitQty = palSize > 0 ? palSize : (parseFloat(qtyInp?.dataset?.unitqty) || null);
+        lines.push({ designation, unit, qty, price, disc, total: tot, formula, paletteCount, paletteUnitQty, palMode: palSize > 0 ? palMode : undefined });
         DB.saveArticle(designation, unit, price);
       }
       idx++;
     }
     return lines;
+  },
+
+
+  _onBRUnitChange(idx, val) {
+    const qtyEl = document.getElementById(`br-qty-${idx}`);
+    if (!qtyEl) return;
+    const pInp = document.getElementById(`br-price-${idx}`);
+    if (val === 'PAL') {
+      const des = (document.getElementById(`br-des-${idx}`)?.value || '').trim();
+      const _catArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === des.toLowerCase());
+      const palSize = _catArt && _catArt.paletteSize > 0 ? Number(_catArt.paletteSize) : 0;
+      if (palSize > 0) {
+        qtyEl.dataset.paletteSize = palSize;
+        qtyEl.dataset.paletteUnitQty = palSize;
+        qtyEl.dataset.paletteMode = 'pal';
+        // Multiply price by paletteSize
+        if (pInp) {
+          const curP = parseFloat(pInp.value) || 0;
+          pInp.dataset.unitPrice = curP;
+          pInp.value = Math.round(curP * palSize * 100) / 100;
+        }
+        const _td = qtyEl.closest('td');
+        if (_td && !_td.querySelector('#pal-info-br-' + idx)) {
+          const _iw = document.createElement('div');
+          _iw.id = 'pal-toggle-br-' + idx;
+          _iw.style.cssText = 'text-align:center;margin-top:3px';
+          _iw.innerHTML = `<span id="pal-info-br-${idx}" style="font-size:9.5px;color:var(--text3);font-weight:600;line-height:1.15"></span>`;
+          _td.appendChild(_iw);
+        }
+      }
+    } else {
+      // Restore unit price
+      const palSize = parseFloat(qtyEl.dataset.paletteSize) || 0;
+      if (pInp && palSize > 0) {
+        const unitP = parseFloat(pInp.dataset.unitPrice);
+        pInp.value = !isNaN(unitP) ? unitP : Math.round((parseFloat(pInp.value) || 0) / palSize * 100) / 100;
+        delete pInp.dataset.unitPrice;
+      }
+      qtyEl.dataset.paletteMode = '';
+      qtyEl.dataset.paletteSize = '';
+      qtyEl.dataset.paletteUnitQty = '';
+      const tog = document.getElementById('pal-toggle-br-' + idx);
+      if (tog) tog.remove();
+    }
+    BRModule._recalcLine(idx);
+  },
+
+  _setPalMode(idx, mode) {
+    const qtyEl = document.getElementById(`br-qty-${idx}`);
+    if (!qtyEl) return;
+    const palSize = parseFloat(qtyEl.dataset.paletteSize) || parseFloat(qtyEl.dataset.paletteUnitQty) || 0;
+    if (!palSize) return;
+    const currentMode = qtyEl.dataset.paletteMode || 'pal';
+    if (mode === currentMode) return;
+    const currentVal = QtyPaletteCalc.parseVal(qtyEl.value) || 0;
+    qtyEl.value = mode === 'u'
+      ? Math.round(currentVal * palSize * 100) / 100
+      : Math.round(currentVal / palSize * 100) / 100;
+    qtyEl.dataset.paletteMode = mode;
+    // Sync unit dropdown
+    const uSel = document.getElementById(`br-unit-${idx}`);
+    if (uSel) uSel.value = mode === 'pal' ? 'PAL' : 'U';
+    this._recalcLine(idx);
   },
 
   _validateBRNum(num, year, excludeId=null) {
@@ -2268,11 +2409,18 @@ const BLModule = {
               const blLines = (bl.lines && bl.lines.length) ? bl.lines : (br?.lines || []);
               const artPills = blLines.slice(0, 2).map(l => {
                 const name = Utils.escHTML(l.designation || l.name || l.articleName || 'Article');
-                const qty = (l.qty != null && l.qty !== '') ? Number(l.qty) : '';
+                const rawQty = (l.qtyDelivered ?? l.qty);
+                const qty = (rawQty != null && rawQty !== '') ? Number(rawQty) : '';
                 const unit = l.unit ? Utils.escHTML(l.unit) : '';
-                const qtyFmt = qty !== '' ? (!isNaN(qty) ? (Math.round(qty * 100) / 100) : qty) : '';
-                return `<div style="font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" title="${name}${qtyFmt !== '' ? ` (${qtyFmt} ${unit})` : ''}">
-                  <span style="color:var(--text2)">${name}</span> ${qtyFmt !== '' ? `<span style="color:var(--text4);font-size:10px">(${qtyFmt}${unit ? ' ' + unit : ''})</span>` : ''}
+                // Use stored palette data from QtyPaletteCalc (paletteCount = nb palettes, paletteUnitQty = units/palette)
+                let qtyFmt;
+                if (qty !== '' && l.paletteCount && l.paletteUnitQty) {
+                  qtyFmt = `${l.paletteCount} pal. (${Math.round(qty*100)/100} ${unit})`;
+                } else {
+                  qtyFmt = qty !== '' ? (!isNaN(qty) ? (Math.round(qty * 100) / 100) + (unit ? ' ' + unit : '') : qty) : '';
+                }
+                return `<div style="font-size:11px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px" title="${name}${qty !== '' ? ` (${qtyFmt})` : ''}">
+                  <span style="color:var(--text2)">${name}</span> ${qty !== '' ? `<span style="color:var(--text4);font-size:10px">(${qtyFmt})</span>` : ''}
                 </div>`;
               }).join('');
               const artMore = blLines.length > 2 ? `<div style="font-size:9px;color:var(--primary);font-weight:700;margin-top:1px">+${blLines.length - 2} ${isAR ? 'أخرى' : 'autre' + (blLines.length - 2 > 1 ? 's' : '')}</div>` : '';
@@ -3073,10 +3221,13 @@ const BLModule = {
     tr.id = `direct-bch-tr-${idx}`;
     tr.innerHTML = `
       <td>
-        <input type="text" id="direct-bch-des-${idx}" list="bch-articles-list" class="input" style="padding:6px 8px;font-size:12px;${lockedStyle}" placeholder="${T.isRTL() ? 'تعيين البضاعة...' : 'Désignation marchandise...'}" value="${Utils.escHTML(item.designation||'')}" ${lockedAttr} oninput="BLModule._onDirectArticleSelect(${idx}, this.value)">
+        <input type="text" id="direct-bch-des-${idx}" list="bch-articles-list" class="input" style="padding:6px 8px;font-size:12px;${lockedStyle}" placeholder="${T.isRTL() ? 'تعيين البضاعة...' : 'Désignation marchandise...'}" value="${Utils.escHTML(item.designation||'')}" ${lockedAttr} oninput="BLModule._onDirectArticleSelect(${idx}, this.value)" onchange="BLModule._onDirectArticleSelect(${idx}, this.value)">
       </td>
       <td>
-        <input type="text" id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center;${lockedStyle}" placeholder="${T.isRTL() ? 'وحدة' : 'U'}" value="${Utils.escHTML(item.unit||'U')}" ${lockedAttr}>
+        <select id="direct-bch-unit-${idx}" class="input" style="padding:6px 8px;font-size:12px;text-align:center;appearance:auto;cursor:pointer;font-weight:700;${lockedStyle}" ${isLocked ? 'disabled' : ''} onchange="BLModule._onUnitChange(${idx}, this.value)">
+          <option value="U" ${(item.unit||'U')==='U' ? 'selected' : ''}>U</option>
+          <option value="PAL" ${(item.unit||'')==='PAL' ? 'selected' : ''}>PAL</option>
+        </select>
       </td>
       <td>
         ${QtyPaletteCalc.renderField({
@@ -3109,6 +3260,10 @@ const BLModule = {
       </td>
     `;
     tbody.appendChild(tr);
+    // If row has existing designation (loaded from saved data), trigger article select to set palette toggle
+    if (item.designation) {
+      setTimeout(() => BLModule._onDirectArticleSelect(idx, item.designation), 0);
+    }
     BLModule._recalcDirectBCHTotals();
   },
 
@@ -3116,16 +3271,120 @@ const BLModule = {
     if (!val) return;
     const cleanVal = val.trim().toLowerCase();
     const matches = DB.searchArticles(val);
-    const art = matches.find(a => a.name.toLowerCase() === cleanVal) || matches[0];
-    if (art) {
-      const uInp = document.getElementById(`direct-bch-unit-${idx}`);
-      const pInp = document.getElementById(`direct-bch-price-${idx}`);
-      const bInp = document.getElementById(`direct-bch-buy-${idx}`);
-      if (uInp && art.unit) uInp.value = art.unit;
-      if (pInp && art.price && !pInp.value) pInp.value = art.price;
-      if (bInp && art.purchasePrice && !bInp.value) bInp.value = art.purchasePrice;
-      BLModule._recalcDirectBCHRow(idx);
+    const art = matches.find(a => a.name.toLowerCase() === cleanVal);
+    if (!art) return;
+    const uInp = document.getElementById(`direct-bch-unit-${idx}`);
+    const pInp = document.getElementById(`direct-bch-price-${idx}`);
+    const bInp = document.getElementById(`direct-bch-buy-${idx}`);
+    if (uInp) uInp.value = (art.paletteSize > 0) ? 'PAL' : (art.unit || 'U');
+    if (art.paletteSize > 0) {
+      // Store original unit price, show palette price = unitPrice × paletteSize
+      const _palPrice = Math.round((art.price || 0) * art.paletteSize * 100) / 100;
+      const _palBuy = Math.round((art.purchasePrice || 0) * art.paletteSize * 100) / 100;
+      if (pInp) { pInp.value = _palPrice; pInp.dataset.unitPrice = art.price || 0; }
+      if (bInp) { bInp.value = _palBuy; bInp.dataset.unitPrice = art.purchasePrice || 0; }
+    } else {
+      if (pInp && art.price) pInp.value = art.price;
+      if (bInp && art.purchasePrice) bInp.value = art.purchasePrice;
     }
+    if (art.paletteSize > 0) {
+      const _dqi = document.getElementById(`direct-bch-qty-${idx}`);
+      if (_dqi) {
+        _dqi.dataset.paletteSize = art.paletteSize;
+        _dqi.dataset.paletteUnitQty = art.paletteSize;
+        if (!_dqi.dataset.paletteMode) _dqi.dataset.paletteMode = 'pal';
+        // Info text only — no toggle buttons (dropdown handles PAL/U)
+        const _dtd = _dqi.closest('td');
+        if (_dtd && !_dtd.querySelector('#dpal-info-' + idx)) {
+          const _iw = document.createElement('div');
+          _iw.id = 'dpal-toggle-' + idx;
+          _iw.style.cssText = 'text-align:center;margin-top:3px';
+          _iw.innerHTML = `<span id="dpal-info-${idx}" style="font-size:9.5px;color:var(--text3);font-weight:600;line-height:1.15"></span>`;
+          _dtd.appendChild(_iw);
+        }
+      }
+    } else {
+      // Non-palette article — clear palette data
+      const _dqi2 = document.getElementById(`direct-bch-qty-${idx}`);
+      if (_dqi2) { _dqi2.dataset.paletteSize = ''; _dqi2.dataset.paletteUnitQty = ''; _dqi2.dataset.paletteMode = ''; }
+      const tog = document.getElementById(`dpal-toggle-${idx}`);
+      if (tog) tog.remove();
+    }
+    BLModule._recalcDirectBCHRow(idx);
+  },
+
+
+  _onUnitChange(idx, val) {
+    const qtyEl = document.getElementById(`direct-bch-qty-${idx}`);
+    if (!qtyEl) return;
+    const pInp = document.getElementById(`direct-bch-price-${idx}`);
+    const bInp = document.getElementById(`direct-bch-buy-${idx}`);
+    if (val === 'PAL') {
+      const des = (document.getElementById(`direct-bch-des-${idx}`)?.value || '').trim();
+      const _catArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === des.toLowerCase());
+      const palSize = _catArt && _catArt.paletteSize > 0 ? Number(_catArt.paletteSize) : 0;
+      if (palSize > 0) {
+        qtyEl.dataset.paletteSize = palSize;
+        qtyEl.dataset.paletteUnitQty = palSize;
+        qtyEl.dataset.paletteMode = 'pal';
+        // Multiply price by paletteSize (unit price → palette price)
+        if (pInp) {
+          const curP = parseFloat(pInp.value) || 0;
+          pInp.dataset.unitPrice = curP;
+          pInp.value = Math.round(curP * palSize * 100) / 100;
+        }
+        if (bInp) {
+          const curB = parseFloat(bInp.value) || 0;
+          bInp.dataset.unitPrice = curB;
+          bInp.value = Math.round(curB * palSize * 100) / 100;
+        }
+        const _dtd = qtyEl.closest('td');
+        if (_dtd && !_dtd.querySelector('#dpal-info-' + idx)) {
+          const _iw = document.createElement('div');
+          _iw.id = 'dpal-toggle-' + idx;
+          _iw.style.cssText = 'text-align:center;margin-top:3px';
+          _iw.innerHTML = `<span id="dpal-info-${idx}" style="font-size:9.5px;color:var(--text3);font-weight:600;line-height:1.15"></span>`;
+          _dtd.appendChild(_iw);
+        }
+      }
+    } else {
+      // Switching back to U — restore unit price
+      const palSize = parseFloat(qtyEl.dataset.paletteSize) || 0;
+      if (pInp && palSize > 0) {
+        const unitP = parseFloat(pInp.dataset.unitPrice);
+        pInp.value = !isNaN(unitP) ? unitP : Math.round((parseFloat(pInp.value) || 0) / palSize * 100) / 100;
+        delete pInp.dataset.unitPrice;
+      }
+      if (bInp && palSize > 0) {
+        const unitB = parseFloat(bInp.dataset.unitPrice);
+        bInp.value = !isNaN(unitB) ? unitB : Math.round((parseFloat(bInp.value) || 0) / palSize * 100) / 100;
+        delete bInp.dataset.unitPrice;
+      }
+      qtyEl.dataset.paletteMode = '';
+      qtyEl.dataset.paletteSize = '';
+      qtyEl.dataset.paletteUnitQty = '';
+      const tog = document.getElementById(`dpal-toggle-${idx}`);
+      if (tog) tog.remove();
+    }
+    BLModule._recalcDirectBCHRow(idx);
+  },
+
+  _setDirectPalMode(idx, mode) {
+    const qtyEl = document.getElementById(`direct-bch-qty-${idx}`);
+    if (!qtyEl) return;
+    const palSize = parseFloat(qtyEl.dataset.paletteSize) || parseFloat(qtyEl.dataset.paletteUnitQty) || 0;
+    if (!palSize) return;
+    const currentMode = qtyEl.dataset.paletteMode || 'pal';
+    if (mode === currentMode) return;
+    const currentVal = QtyPaletteCalc.parseVal(qtyEl.value) || 0;
+    qtyEl.value = mode === 'u'
+      ? Math.round(currentVal * palSize * 100) / 100
+      : Math.round(currentVal / palSize * 100) / 100;
+    qtyEl.dataset.paletteMode = mode;
+    // Sync unit dropdown
+    const uSel = document.getElementById(`direct-bch-unit-${idx}`);
+    if (uSel) uSel.value = mode === 'pal' ? 'PAL' : 'U';
+    BLModule._recalcDirectBCHRow(idx);
   },
 
   _removeDirectBCHRow(idx) {
@@ -3135,7 +3394,23 @@ const BLModule = {
   },
 
   _recalcDirectBCHRow(idx) {
-    const qty = QtyPaletteCalc.parseVal(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
+    const qEl = document.getElementById(`direct-bch-qty-${idx}`);
+    const rawInput = QtyPaletteCalc.parseVal(qEl?.value) || 0;
+    const palSize = parseFloat(qEl?.dataset?.paletteSize) || parseFloat(qEl?.dataset?.paletteUnitQty) || 0;
+    const palMode = qEl?.dataset?.paletteMode || 'pal';
+    const qty = (palSize > 0 && palMode === 'u') ? Math.round(rawInput / palSize * 1000) / 1000 : rawInput;
+    if (palSize > 0) {
+      const infoEl = document.getElementById(`dpal-info-${idx}`);
+      if (infoEl) {
+        if (palMode === 'pal') {
+          const totalU = Math.round(rawInput * palSize * 100) / 100;
+          infoEl.textContent = `(1 pal. = ${palSize} U | Total: ${totalU} U)`;
+        } else {
+          const pals = Math.round(rawInput / palSize * 100) / 100;
+          infoEl.textContent = `(${rawInput} U → ${pals} PAL)`;
+        }
+      }
+    }
     const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
     const disc = parseFloat(document.getElementById(`direct-bch-disc-${idx}`)?.value) || 0;
     const tot = Math.round(qty * price * (1 - disc / 100) * 100) / 100;
@@ -3149,7 +3424,11 @@ const BLModule = {
     const rows = document.querySelectorAll('#direct-bch-rows tr');
     rows.forEach(tr => {
       const idx = tr.id.replace('direct-bch-tr-', '');
-      const qty = QtyPaletteCalc.parseVal(document.getElementById(`direct-bch-qty-${idx}`)?.value) || 0;
+      const qEl2 = document.getElementById(`direct-bch-qty-${idx}`);
+      const raw2 = QtyPaletteCalc.parseVal(qEl2?.value) || 0;
+      const ps2 = parseFloat(qEl2?.dataset?.paletteSize) || parseFloat(qEl2?.dataset?.paletteUnitQty) || 0;
+      const pm2 = qEl2?.dataset?.paletteMode || 'pal';
+      const qty = (ps2 > 0 && pm2 === 'u') ? Math.round(raw2 / ps2 * 1000) / 1000 : raw2;
       const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
       const disc = parseFloat(document.getElementById(`direct-bch-disc-${idx}`)?.value) || 0;
       totalHT += Math.round(qty * price * (1 - disc / 100) * 100) / 100;
@@ -3459,9 +3738,20 @@ const BLModule = {
     rows.forEach(tr => {
       const idx = tr.id.replace('direct-bch-tr-', '');
       const designation = (document.getElementById(`direct-bch-des-${idx}`)?.value || '').trim();
-      const unit = (document.getElementById(`direct-bch-unit-${idx}`)?.value || 'U').trim();
+      let unit = (document.getElementById(`direct-bch-unit-${idx}`)?.value || 'U').trim();
       const qtyInp = document.getElementById(`direct-bch-qty-${idx}`);
-      const qty = QtyPaletteCalc.parseVal(qtyInp?.value) || 0;
+      const rawInput2 = QtyPaletteCalc.parseVal(qtyInp?.value) || 0;
+      let palSize2 = parseFloat(qtyInp?.dataset?.paletteSize) || parseFloat(qtyInp?.dataset?.paletteUnitQty) || 0;
+      const palMode2 = qtyInp?.dataset?.paletteMode || 'pal';
+      // Fallback: look up article palette config if not set on input
+      if (!palSize2 && designation) {
+        const _catArt = (DB.getAll('articles') || []).find(a => a && a.name && a.name.trim().toLowerCase() === designation.trim().toLowerCase());
+        if (_catArt && _catArt.paletteSize > 0) {
+          palSize2 = Number(_catArt.paletteSize);
+          // Don't overwrite unit from dropdown — keep user's PAL/U selection
+        }
+      }
+      const qty = (palSize2 > 0 && palMode2 === 'u') ? Math.round(rawInput2 / palSize2 * 1000) / 1000 : rawInput2;
       const price = parseFloat(document.getElementById(`direct-bch-price-${idx}`)?.value) || 0;
       const purchasePrice = parseFloat(document.getElementById(`direct-bch-buy-${idx}`)?.value) || price;
       const disc = parseFloat(document.getElementById(`direct-bch-disc-${idx}`)?.value) || 0;
@@ -3478,8 +3768,9 @@ const BLModule = {
           disc,
           total: tot,
           formula: qtyInp?.dataset?.formula || undefined,
-          paletteCount: qtyInp?.dataset?.count ? Number(qtyInp.dataset.count) : undefined,
-          paletteUnitQty: qtyInp?.dataset?.unitqty ? Number(qtyInp.dataset.unitqty) : undefined
+          paletteCount: palSize2 > 0 ? (palMode2 === 'pal' ? rawInput2 : Math.round(rawInput2 / palSize2 * 100)/100) : (qtyInp?.dataset?.count ? Number(qtyInp.dataset.count) : undefined),
+          paletteUnitQty: palSize2 > 0 ? palSize2 : (qtyInp?.dataset?.unitqty ? Number(qtyInp.dataset.unitqty) : undefined),
+          palMode: palSize2 > 0 ? palMode2 : undefined
         });
       }
     });
@@ -3503,7 +3794,7 @@ const BLModule = {
 
     // Save articles to catalog if new
     lines.forEach(l => {
-      DB.saveArticle(l.designation, l.unit, l.price);
+      DB.saveArticle(l.designation, l.unit, l.price, l.purchasePrice);
     });
 
     // User attribution
@@ -5548,8 +5839,8 @@ const BLModule = {
   },
   _activeFilters: {},
   exportBLCSV() {
-    const brs  = {}; DB.getAll('brs').forEach(b => brs[b.id] = b);
-    const clis = {}; DB.getAll('clients').forEach(c => clis[c.id] = c);
+    const brsMap  = {}; DB.getAll('brs').forEach(b => brsMap[b.id] = b);
+    const clis = {}; DB.getAll('clients').forEach(cl => clis[cl.id] = cl);
     let items = (this._lastFilteredItems && this._lastFilteredItems.length) ? [...this._lastFilteredItems] : null;
     const f = this._filters || {};
     if (!items) {
@@ -5558,34 +5849,84 @@ const BLModule = {
         const ql = (f.q || '').toLowerCase();
         items = items.filter(b => (b.ref||'').toLowerCase().includes(ql) || ((clis[b.clientId]||{}).name||'').toLowerCase().includes(ql) || (b.driverName||'').toLowerCase().includes(ql));
       }
-      if (f.clientId && f.clientId !== 'all') {
-        items = items.filter(b => String(b.clientId) === String(f.clientId));
-      }
-      if (f.status && f.status !== 'all') {
-        items = items.filter(b => (b.status || 'open') === f.status);
-      }
+      if (f.clientId && f.clientId !== 'all') items = items.filter(b => String(b.clientId) === String(f.clientId));
+      if (f.status && f.status !== 'all') items = items.filter(b => (b.status || 'open') === f.status);
       if (f.createdBy && f.createdBy !== 'all') items = items.filter(b => String(b.createdBy) === String(f.createdBy));
       if (f.driver && f.driver !== 'all') items = items.filter(b => (b.driverName || '') === f.driver);
     }
-    // Strict period filter guarantee: only records within active dateFrom/dateTo are exported
     if (f.dateFrom) items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) >= f.dateFrom);
-    if (f.dateTo) items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) <= f.dateTo);
+    if (f.dateTo)   items = items.filter(b => (b.date || (b.createdAt||'').slice(0, 10)) <= f.dateTo);
 
-    const rows = items.map(bl => [
-      bl.ref||'', bl.date||'',
-      (clis[bl.clientId]||{}).name||'',
-      (brs[bl.brId]||{}).ref||'',
-      bl.driverName||'', bl.truckIMM||'',
-      Number(bl.totalHT||0), Number(bl.tvaRate||0), Number(bl.tvaAmount||0),
-      Number(bl.timbreAmount||0), Number(bl.totalTTC||0),
-      bl.status||'open', bl.notes||''
-    ]);
+    // Build one row per article line (expanded), plus a summary row per BCH
+    const headers = [
+      'BCH Référence','Date','Client','Téléphone','Adresse Destination',
+      'BR Lié','Chauffeur','Immatriculation',
+      'Désignation Article','Unité','Quantité','Prix Unitaire','Remise %','Total Ligne HT',
+      'Total BCH HT','TVA %','Montant TVA','Timbre','Total BCH TTC',
+      'Statut','Créé par','Notes'
+    ];
+
+    const rows = [];
+    const statusLabel = { open:'En cours', delivered:'Livré', returned:'Retourné', pending_usine:'En attente usine', validated_usine:'Validé usine', locked:'Verrouillé' };
+
+    items.forEach(bl => {
+      const cli = clis[bl.clientId] || {};
+      const br  = brsMap[bl.brId] || {};
+      const dest = bl.destinationAddress || cli.address || '';
+      const phone = cli.phone || bl.clientPhone || '';
+      const lines = bl.lines && bl.lines.length ? bl.lines : [];
+      const st = statusLabel[bl.status] || bl.status || 'En cours';
+
+      if (lines.length === 0) {
+        rows.push([
+          bl.ref||'', bl.date||'',
+          cli.name||bl.clientName||'', phone, dest,
+          br.ref||bl.linkedBrRef||'', bl.driverName||'', bl.truckIMM||'',
+          '—','—','','','','',
+          Number(bl.totalHT||0), Number(bl.tvaRate||0), Number(bl.tvaAmount||0),
+          Number(bl.timbreAmount||0), Number(bl.totalTTC||0),
+          st, bl.createdByName||'', bl.notes||''
+        ]);
+      } else {
+        lines.forEach((l, idx) => {
+          const qty   = Number(l.qtyDelivered ?? l.qty ?? 0);
+          const price = Number(l.price ?? 0);
+          const disc  = Number(l.disc ?? 0);
+          const lineHT = Math.round(qty * price * (1 - disc/100) * 100) / 100;
+          // Palette display — use stored palette data
+          let qtyDisplay = qty;
+          let unitDisplay = l.unit || '';
+          if (l.paletteCount && l.paletteUnitQty) {
+            const totalUnits = Math.round(l.paletteCount * l.paletteUnitQty * 100)/100;
+            qtyDisplay = `${l.paletteCount} PAL (1 pal.=${l.paletteUnitQty} ${l.unit||'U'} | Total: ${totalUnits} ${l.unit||'U'})`;
+            unitDisplay = 'PAL';
+          }
+          rows.push([
+            idx === 0 ? (bl.ref||'') : '', // ref only on first line
+            idx === 0 ? (bl.date||'') : '',
+            idx === 0 ? (cli.name||bl.clientName||'') : '',
+            idx === 0 ? phone : '',
+            idx === 0 ? dest : '',
+            idx === 0 ? (br.ref||bl.linkedBrRef||'') : '',
+            idx === 0 ? (bl.driverName||'') : '',
+            idx === 0 ? (bl.truckIMM||'') : '',
+            l.designation||'', unitDisplay, qtyDisplay, price, disc > 0 ? disc : '', lineHT,
+            idx === 0 ? Number(bl.totalHT||0) : '',
+            idx === 0 ? Number(bl.tvaRate||0) : '',
+            idx === 0 ? Number(bl.tvaAmount||0) : '',
+            idx === 0 ? Number(bl.timbreAmount||0) : '',
+            idx === 0 ? Number(bl.totalTTC||0) : '',
+            idx === 0 ? st : '',
+            idx === 0 ? (bl.createdByName||'') : '',
+            idx === 0 ? (bl.notes||'') : ''
+          ]);
+        });
+      }
+    });
+
     const dateSuffix = (f.dateFrom ? `_${f.dateFrom}` : '') + (f.dateTo ? `_au_${f.dateTo}` : `_${new Date().toISOString().slice(0,10)}`);
-    exportXLSX(
-      ['Référence','Date','Client','BR lié','Chauffeur','Immatriculation','Total HT','TVA %','Montant TVA','Timbre','Total TTC','Statut','Notes'],
-      rows,
-      'Bons_Livraison' + dateSuffix
-    );
+    exportXLSX(headers, rows, 'BCH' + dateSuffix);
+    Utils.notify('Export BCH OK — ' + items.length + ' BCH(s)', 'success');
   },
 
   _historyFilters: { dateFrom: '', dateTo: '', clientId: 'all', q: '', status: 'all', sortDir: 'desc' },
@@ -11786,7 +12127,7 @@ const CatalogueModule = {
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>#</th><th>${isAR ? "التسمية" : "Désignation"}</th><th>${isAR ? "الوحدة" : "Unité"}</th><th>${isAR ? "آخر سعر" : "Dernier prix"}</th><th>${isAR ? "مستخدم" : "Utilisé"}</th><th>${isAR ? "إجراءات" : "Actions"}</th></tr></thead>
+          <thead><tr><th>#</th><th>${isAR ? "التسمية" : "Désignation"}</th><th>${isAR ? "الوحدة" : "Unité"}</th><th><i class="fas fa-pallet" style="color:var(--primary)"></i> ${isAR ? "الباليطة" : "Palette"}</th><th>${isAR ? "آخر سعر" : "Dernier prix"}</th><th>${isAR ? "مستخدم" : "Utilisé"}</th><th>${isAR ? "إجراءات" : "Actions"}</th></tr></thead>
           <tbody>
             ${items.length ? items.map((a,i) => {
               const usedCount = DB.getAll('brs').reduce((s,br) => s+(br.lines||[]).filter(l=>l.designation===a.name).length, 0);
@@ -11794,6 +12135,7 @@ const CatalogueModule = {
                 <td style="color:var(--text4);font-size:11px">${i+1}</td>
                 <td><strong>${Utils.escHTML(a.name)}</strong></td>
                 <td>${Utils.escHTML(a.unit||'—')}</td>
+                <td>${a.paletteSize > 0 ? `<span style="font-size:11px;background:rgba(99,102,241,.12);color:#6366f1;border-radius:5px;padding:2px 7px;font-weight:700"><i class="fas fa-pallet"></i> 1 pal. = ${a.paletteSize} ${a.unit||'U'}</span>` : '<span style="color:var(--text4);font-size:11px">—</span>'}</td>
                 <td class="text-primary fw-bold">${Utils.fmtCurrency(a.price||0)}</td>
                 <td><span class="badge badge-secondary">${usedCount}x</span></td>
                 <td class="td-actions">
@@ -11866,6 +12208,22 @@ const CatalogueModule = {
       <div class="form-group span-full"><label class="required">${isAR ? "التسمية" : "Désignation"}</label><input id="cat-name" value="${Utils.escHTML(a.name||'')}" placeholder="${isAR ? "اسم المادة" : "Nom de l'article"}"></div>
       <div class="form-group"><label>${isAR ? "الوحدة" : "Unité"}</label><input id="cat-unit" value="${Utils.escHTML(a.unit||'')}" placeholder="pcs, m², kg..."></div>
       <div class="form-group"><label>${isAR ? "السعر الافتراضي (د.ج)" : "Prix par défaut (DA)"}</label><input type="number" id="cat-price" value="${a.price||0}" min="0" step="any"></div>
+      <div class="form-group span-full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <label style="font-weight:700;color:var(--primary)"><i class="fas fa-pallet"></i> ${isAR ? "إعداد الباليطة" : "Configuration Palette"}</label>
+        <div style="display:flex;align-items:flex-start;gap:16px;margin-top:8px;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11px;color:var(--text4);display:block;margin-bottom:3px">${isAR ? "وحدات في الباليطة الواحدة" : "Unités par palette"}</label>
+            <input type="number" id="cat-palette-size" value="${a.paletteSize||''}" min="1" step="1" style="width:130px;text-align:center;font-weight:700;font-size:14px" placeholder="${isAR ? 'مثال: 5000' : 'ex: 5000'}">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text4);display:block;margin-bottom:3px">${isAR ? "اسم الباليطة" : "Libellé palette (optionnel)"}</label>
+            <input type="text" id="cat-palette-label" value="${Utils.escHTML(a.paletteLabel||'')}" style="width:200px" placeholder="${isAR ? 'مثال: باليطة بريك 12' : 'ex: Palette Brique 12'}">
+          </div>
+          <div style="font-size:11px;color:var(--text4);max-width:220px;line-height:1.5;padding-top:16px">
+            💡 ${isAR ? 'سيُعرض مساعد الباليطة تلقائياً مع الحجم المضبوط' : "Lors de la saisie, le calculateur s'ouvrira avec ce nombre pré-rempli"}
+          </div>
+        </div>
+      </div>
     </div>`;
   },
   _showAddArticle() {
@@ -11885,9 +12243,12 @@ const CatalogueModule = {
     const name  = (document.getElementById('cat-name')?.value||'').trim();
     const unit  = (document.getElementById('cat-unit')?.value||'').trim();
     const price = parseFloat(document.getElementById('cat-price')?.value)||0;
+    const paletteSize = parseInt(document.getElementById('cat-palette-size')?.value)||0;
+    const paletteLabel = (document.getElementById('cat-palette-label')?.value||'').trim();
     if (!name) { Utils.notify((T.isRTL()?'التسمية مطلوبة':'Désignation requise'),'error'); return; }
-    if (id) { DB.update('articles',id,{name,unit,price}); Utils.notify((T.isRTL()?'تم تعديل المادة':'Article modifié'),'success'); }
-    else    { DB.insert('articles',{name,unit,price}); Utils.notify((T.isRTL()?'تمت إضافة المادة':'Article ajouté'),'success'); }
+    const artData = {name, unit, price, paletteSize: paletteSize||0, paletteLabel: paletteSize > 0 ? (paletteLabel||'Palette '+name) : ''};
+    if (id) { DB.update('articles',id,artData); Utils.notify((T.isRTL()?'تم تعديل المادة':'Article modifié'),'success'); }
+    else    { DB.insert('articles',artData); Utils.notify((T.isRTL()?'تمت إضافة المادة':'Article ajouté'),'success'); }
     UI.closeModal(); App.loadModule('catalogue');
   },
   async _deleteArticle(id) {
@@ -16783,10 +17144,22 @@ const EtatVenteModule = {
   },
 
   async _adminValidate(docId) {
+    this._validatingEV = this._validatingEV || new Set();
+    const _k = String(docId);
+    if (this._validatingEV.has(_k)) return;   // already running for this EV
+    this._validatingEV.add(_k);
+    try {
+      return await this._doAdminValidate(docId);
+    } finally {
+      this._validatingEV.delete(_k);
+    }
+  },
+
+  async _doAdminValidate(docId) {
     const doc = DB.getById('etat_vente_docs', docId);
     if (!doc) return;
     const isAR = T.isRTL();
-    // Guard: prevent double-validation (duplicate bank deposit)
+    // Guard 1: prevent double-validation (duplicate bank deposit)
     if (doc.status === 'validated') {
       Utils.notify(isAR ? 'تم تأكيد هذا الكشف مسبقاً.' : 'Cet état de vente a déjà été validé.', 'warning');
       return;
@@ -16816,6 +17189,15 @@ const EtatVenteModule = {
     });
     
     if (!res) return;
+
+    // Guard 2: re-read the EV AFTER the dialog (it may have been validated while the dialog was open / from another PC)
+    try { if (typeof DB.ensureLoaded === 'function') { localStorage.removeItem('_sync_ts_etat_vente_docs'); DB._loaded && (DB._loaded['etat_vente_docs'] = false); await DB.ensureLoaded(['etat_vente_docs']); } } catch (_) {}
+    const _fresh = DB.getById('etat_vente_docs', docId);
+    if (!_fresh || _fresh.status === 'validated') {
+      Utils.notify(isAR ? 'تم تأكيد هذا الكشف مسبقاً.' : 'Cet état de vente a déjà été validé.', 'warning');
+      App.loadModule('etat_vente');
+      return;
+    }
     
     const nGross = Number(document.getElementById('v_gross')?.value) || 0;
     const nRet = Number(document.getElementById('v_ret')?.value) || 0;
@@ -17005,11 +17387,43 @@ const EtatVenteModule = {
     App.loadModule('etat_vente');
   },
 
+  // Re-entrancy lock: a second click / Enter key / double-tap while the first run is still awaiting is ignored
   async _saveAndGenerate() {
+    if (this._isSavingEV) return;
+    this._isSavingEV = true;
+    document.querySelectorAll('[onclick*="EtatVenteModule._saveAndGenerate"]').forEach(b => { b.disabled = true; b.style.opacity = '.6'; b.style.pointerEvents = 'none'; });
+    try {
+      return await this._doSaveAndGenerate();
+    } finally {
+      this._isSavingEV = false;
+      document.querySelectorAll('[onclick*="EtatVenteModule._saveAndGenerate"]').forEach(b => { b.disabled = false; b.style.opacity = ''; b.style.pointerEvents = ''; });
+    }
+  },
+
+  // Returns [{ref, id}] of the other (non-cancelled) EVs that already contain any of the given BCH ids
+  _findEVsContainingBLs(blIds, ignoreEvId = null) {
+    const ids = new Set((blIds || []).map(x => String(x)));
+    const hits = [];
+    (DB.getAll('etat_vente_docs') || []).forEach(d => {
+      if (!d || d.status === 'cancelled' || (ignoreEvId != null && String(d.id) === String(ignoreEvId))) return;
+      const docIds = new Set([...(d.blList || []).map(b => String(b.id)), ...(d.blIds || []).map(String)]);
+      for (const id of ids) { if (docIds.has(id)) { hits.push({ ref: d.ref, id: d.id }); break; } }
+    });
+    return hits;
+  },
+
+  async _doSaveAndGenerate() {
     const isAR = T.isRTL();
     const { bls, retours, items, grossTotalTTC, returnsTotalTTC, netTotalTTC, marginRate, totalMargin, priorReturnsTotalTTC } = this._getFilteredData();
     if (!bls.length && !retours.length) {
       Utils.notify(isAR ? 'لا توجد سندات شحن أو مرتجعات ضمن هذا التحديد.' : 'Aucun bon de chargement ni retour pour cette sélection.', 'warning');
+      return;
+    }
+    // Duplicate guard: a BCH may only belong to ONE état de vente
+    const _dupEVs = this._findEVsContainingBLs(bls.map(b => b.id));
+    if (_dupEVs.length) {
+      const refs = [...new Set(_dupEVs.map(h => h.ref))].join(', ');
+      Utils.notify(isAR ? `⛔ بعض سندات الشحن مضمنة مسبقاً في كشف مبيعات: ${refs}` : `⛔ Certains BCH sont déjà inclus dans un état de vente : ${refs}`, 'error', 7000);
       return;
     }
     
