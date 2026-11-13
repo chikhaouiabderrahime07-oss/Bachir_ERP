@@ -1019,12 +1019,27 @@ const DB = {
           );
         }
 
+        const depsByBank = new Map();
+        const witsByBank = new Map();
+        for (let i = 0; i < cleanedBankTxs.length; i++) {
+          const t = cleanedBankTxs[i];
+          if (!t) continue;
+          const amt = Number(t.amount) || 0;
+          if (t.type === 'deposit') depsByBank.set(t.bankId, (depsByBank.get(t.bankId) || 0) + amt);
+          else if (t.type === 'withdrawal') witsByBank.set(t.bankId, (witsByBank.get(t.bankId) || 0) + amt);
+        }
+        const supPayByBank = new Map();
+        for (let i = 0; i < supPays.length; i++) {
+          const p = supPays[i];
+          if (p && p.bankId != null) supPayByBank.set(p.bankId, (supPayByBank.get(p.bankId) || 0) + (Number(p.amount) || 0));
+        }
+
         const bankBalances = {};
         banks.forEach(b => {
           const init = Number(b.initialBalance) || 0;
-          const deps = cleanedBankTxs.filter(t => t.bankId === b.id && t.type === 'deposit').reduce((s, t) => s + (Number(t.amount) || 0), 0);
-          const wits = cleanedBankTxs.filter(t => t.bankId === b.id && t.type === 'withdrawal').reduce((s, t) => s + (Number(t.amount) || 0), 0);
-          const sup = supPays.filter(p => p.bankId === b.id).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          const deps = depsByBank.get(b.id) || 0;
+          const wits = witsByBank.get(b.id) || 0;
+          const sup = supPayByBank.get(b.id) || 0;
           bankBalances[b.id] = Math.round((init + deps - wits - sup) * 100) / 100;
         });
 
@@ -1040,15 +1055,29 @@ const DB = {
         const brs = DB.getAll('brs');
         const pays = DB.getAll('supplier_payments');
 
+        const purBySup = new Map();
+        for (let i = 0; i < brs.length; i++) {
+          const b = brs[i];
+          if (!b || b.isCancelled) continue;
+          const sid = Number(b.supplierId);
+          purBySup.set(sid, (purBySup.get(sid) || 0) + (Number(b.totalTTC) || 0));
+        }
+        const paidBySup = new Map();
+        for (let i = 0; i < pays.length; i++) {
+          const p = pays[i];
+          if (!p) continue;
+          const sid = Number(p.supplierId);
+          paidBySup.set(sid, (paidBySup.get(sid) || 0) + (Number(p.amount) || 0));
+        }
+
         let totalPurchases = 0;
         let totalPaid = 0;
         const supplierStats = {};
 
         suppliers.forEach(s => {
-          const supBRs = brs.filter(b => Number(b.supplierId) === Number(s.id));
-          const supPays = pays.filter(p => Number(p.supplierId) === Number(s.id));
-          const pur = supBRs.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
-          const pd = supPays.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+          const sid = Number(s.id);
+          const pur = purBySup.get(sid) || 0;
+          const pd = paidBySup.get(sid) || 0;
           const remaining = Math.max(0, pur - pd);
 
           totalPurchases += pur;
@@ -1078,26 +1107,40 @@ const DB = {
         const clients = DB.getAll('clients');
         const bls = DB.getAll('bls');
 
+        const clientAgg = new Map();
+        for (let i = 0; i < bls.length; i++) {
+          const b = bls[i];
+          if (!b) continue;
+          const cid = String(b.clientId);
+          let agg = clientAgg.get(cid);
+          if (!agg) {
+            agg = { dCount: 0, rev: 0, pCount: 0, pend: 0 };
+            clientAgg.set(cid, agg);
+          }
+          const ttc = Number(b.totalTTC) || 0;
+          if (b.status === 'delivered' || b.status === 'locked') {
+            agg.dCount++;
+            agg.rev += ttc;
+          } else if (b.status === 'open') {
+            agg.pCount++;
+            agg.pend += ttc;
+          }
+        }
+
         let totalRevenue = 0;
         let totalPending = 0;
         const clientStats = {};
 
         clients.forEach(c => {
-          const clientBLs = bls.filter(b => String(b.clientId) === String(c.id));
-          const delivered = clientBLs.filter(b => b.status === 'delivered' || b.status === 'locked');
-          const pending = clientBLs.filter(b => b.status === 'open');
-
-          const rev = delivered.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
-          const pend = pending.reduce((sum, b) => sum + (Number(b.totalTTC) || 0), 0);
-
-          totalRevenue += rev;
-          totalPending += pend;
+          const agg = clientAgg.get(String(c.id)) || { dCount: 0, rev: 0, pCount: 0, pend: 0 };
+          totalRevenue += agg.rev;
+          totalPending += agg.pend;
           clientStats[c.id] = {
             name: c.name,
-            deliveredCount: delivered.length,
-            revenue: Math.round(rev * 100) / 100,
-            pendingCount: pending.length,
-            pending: Math.round(pend * 100) / 100
+            deliveredCount: agg.dCount,
+            revenue: Math.round(agg.rev * 100) / 100,
+            pendingCount: agg.pCount,
+            pending: Math.round(agg.pend * 100) / 100
           };
         });
 
@@ -3339,7 +3382,16 @@ const DB = {
     ]);
   },
 
+  _settingsCache: null,
+  _settingsCacheTs: 0,
+  _settingsRaw: null,
+  _slabsRaw: null,
+
   _resetSettings() {
+    this._settingsCache = null;
+    this._settingsCacheTs = 0;
+    this._settingsRaw = null;
+    this._slabsRaw = null;
     const s = this._defaultSettings();
     localStorage.setItem('settings', JSON.stringify(s));
     return s;
@@ -3373,7 +3425,13 @@ const DB = {
 
   getSettings() {
     try {
-      const s = JSON.parse(localStorage.getItem('settings') || 'null');
+      const raw = localStorage.getItem('settings') || 'null';
+      const slabsRaw = localStorage.getItem('timbre_slabs_data') || '';
+      const now = Date.now();
+      if (this._settingsCache && this._settingsRaw === raw && this._slabsRaw === slabsRaw && (now - this._settingsCacheTs < 2000)) {
+        return this._settingsCache;
+      }
+      const s = JSON.parse(raw);
       if (!s) return this._resetSettings();
       const def = this._defaultSettings();
       const merged = { ...def, ...s };
@@ -3384,9 +3442,12 @@ const DB = {
       if (merged.historicalBackfillMode === undefined) merged.historicalBackfillMode = false;
       // Read slabs from DEDICATED key (not from settings — avoids Mixed-type cloud issues)
       try {
-        const slabsRaw = localStorage.getItem('timbre_slabs_data');
         merged.timbreSlabs = slabsRaw ? JSON.parse(slabsRaw) : (Array.isArray(merged.timbreSlabs) ? merged.timbreSlabs : []);
       } catch { merged.timbreSlabs = []; }
+      this._settingsRaw = raw;
+      this._slabsRaw = slabsRaw;
+      this._settingsCache = merged;
+      this._settingsCacheTs = now;
       return merged;
     } catch { return this._resetSettings(); }
   },
@@ -3394,6 +3455,9 @@ const DB = {
   saveSettings(d) {
     const cur = this.getSettings();
     const upd = { ...cur, ...d };
+    this._settingsCache = null;
+    this._settingsCacheTs = 0;
+    this._settingsRaw = null;
     localStorage.setItem('settings', JSON.stringify(upd));
     // Cloud sync — silent background, never show UI error (runs before/after login)
     if (typeof window.API !== 'undefined' && location.protocol !== 'file:') {
@@ -3478,6 +3542,9 @@ const DB = {
                 }
                 localStorage.removeItem('_immutable_bch_vault');
               } catch (_) {}
+              this._idMap = {};
+              this._idMapArr = {};
+              this._docNumCache = {};
               this._idbReady = true;
               resolve(true);
             };
@@ -3591,6 +3658,9 @@ const DB = {
   // CRUD — backed by RAM (_mem) + IndexedDB, with 500ms localStorage fallback for non-IDB environments
   _getAllCache: {},
   _getAllCacheTs: {},
+  _idMap: {},
+  _idMapArr: {},
+  _docNumCache: {},
   getAll(col) {
     if (this._idbReady && Array.isArray(this._mem[col])) {
       return this._mem[col];
@@ -3609,6 +3679,21 @@ const DB = {
   _invalidateCache(col) {
     delete this._getAllCache[col];
     delete this._getAllCacheTs[col];
+    delete this._idMap[col];
+    delete this._idMapArr[col];
+    if (col === 'bls' || col === 'brs') this._docNumCache = {};
+    if (col === 'settings' || col === '_settings' || col === 'timbre_slabs_data' || col === '_timbre_slabs') {
+      this._settingsCache = null;
+      this._settingsCacheTs = 0;
+      this._settingsRaw = null;
+      this._slabsRaw = null;
+    }
+    if (col === 'sessions' && typeof SessionMgr !== 'undefined') SessionMgr._sessionCache = {};
+    if (col === 'users' && typeof Auth !== 'undefined') {
+      Auth._userCache = null;
+      Auth._userCacheTs = 0;
+      Auth._userRaw = undefined;
+    }
   },
   rawSet(col, data) {
     this._invalidateCache(col);
@@ -3623,11 +3708,23 @@ const DB = {
       try { localStorage.setItem(col, JSON.stringify(arr)); } catch (_) {}
     }
   },
-  
+
   getById(col, id) {
     if (id === null || id === undefined) return null;
-    const strId = String(id);
-    return this.getAll(col).find(i => String(i.id) === strId) || null;
+    const all = this.getAll(col);
+    let map = this._idMap[col];
+    if (!map || this._idMapArr[col] !== all) {
+      map = new Map();
+      for (let i = 0; i < all.length; i++) {
+        const item = all[i];
+        if (item && item.id !== undefined && item.id !== null) {
+          map.set(String(item.id), item);
+        }
+      }
+      this._idMap[col] = map;
+      this._idMapArr[col] = all;
+    }
+    return map.get(String(id)) || null;
   },
   where(col, fn) { return this.getAll(col).filter(fn); },
 
@@ -3933,77 +4030,77 @@ const DB = {
   // ─── Unified Sequential Document Numbering & Cross-Checker ───────
   // Rule: Starts from 1 (0001 / 00001), next number is always (highest used + 1).
   // Cross-checks both BR and BCH collections so Option 1 pairs and doc numbers never collide.
-  getNextDocNumSync(year = null) {
-    const y = year || new Date().getFullYear();
-    const takenSet = new Set();
-    let maxPad = 4; // default minimum 4 digits (e.g. 0001)
-
-    // 1. Collect from BRs
-    this.getAll('brs').forEach(b => {
-      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
-      if (bYear !== y) return;
-      const n = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
-      if (n > 0) {
-        takenSet.add(n);
-        const m = (b.ref || '').match(/(\d+)/);
-        if (m && m[1].length > maxPad) maxPad = m[1].length;
-        else if (String(b.brNum || '').length > maxPad) maxPad = String(b.brNum).length;
-      }
-    });
-
-    // 2. Collect from BLs / BCHs
-    this.getAll('bls').forEach(b => {
-      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
-      if (bYear !== y) return;
-      const n = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
-      if (n > 0) {
-        takenSet.add(n);
-        const m = (b.ref || '').match(/BCH-(\d+)/) || (b.ref || '').match(/(\d+)/);
-        if (m && m[1].length > maxPad) maxPad = m[1].length;
-      }
-    });
-
-    let candidate = 1;
-    if (takenSet.size > 0) {
-      const maxNum = Math.max(...takenSet);
-      candidate = maxNum + 1;
+  _getYearDocIndex(year = null) {
+    const y = parseInt(year) || new Date().getFullYear();
+    const brs = this.getAll('brs');
+    const bls = this.getAll('bls');
+    const cached = this._docNumCache[y];
+    if (cached && cached.brsRef === brs && cached.blsRef === bls) {
+      return cached;
     }
-    if (candidate < 1) candidate = 1;
-    while (takenSet.has(candidate)) candidate++;
 
-    const formatted = String(candidate).padStart(maxPad, '0');
-    return { num: candidate, formatted, maxPad, takenSet };
+    const takenSet = new Set();
+    const brsByNum = new Map();
+    const blsByNum = new Map();
+    let maxPad = 4; // default minimum 4 digits (e.g. 0001)
+    let maxNum = 0;
+
+    for (let i = 0; i < brs.length; i++) {
+      const b = brs[i];
+      if (!b) continue;
+      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+      if (bYear !== y) continue;
+      const refM = b.ref ? b.ref.match(/(\d+)/) : null;
+      const n = parseInt(b.brNum) || (refM ? parseInt(refM[1]) : 0);
+      if (n > 0) {
+        takenSet.add(n);
+        if (n > maxNum) maxNum = n;
+        if (refM && refM[1].length > maxPad) maxPad = refM[1].length;
+        else if (String(b.brNum || '').length > maxPad) maxPad = String(b.brNum).length;
+        let arr = brsByNum.get(n);
+        if (!arr) { arr = []; brsByNum.set(n, arr); }
+        arr.push(b);
+      }
+    }
+
+    for (let i = 0; i < bls.length; i++) {
+      const b = bls[i];
+      if (!b) continue;
+      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
+      if (bYear !== y) continue;
+      const refStr = b.ref || '';
+      const rawM = refStr ? refStr.match(/(\d+)/) : null;
+      const n = parseInt(b.bchNum || b.bcNum || b.blNum) || (rawM ? parseInt(rawM[1]) : 0);
+      if (n > 0) {
+        takenSet.add(n);
+        if (n > maxNum) maxNum = n;
+        const m = refStr.match(/BCH-(\d+)/) || rawM;
+        if (m && m[1].length > maxPad) maxPad = m[1].length;
+        if (b.status !== 'returned' && b.status !== 'cancelled') {
+          let arr = blsByNum.get(n);
+          if (!arr) { arr = []; blsByNum.set(n, arr); }
+          arr.push(b);
+        }
+      }
+    }
+
+    const idx = { brsRef: brs, blsRef: bls, takenSet, maxPad, maxNum, brsByNum, blsByNum };
+    this._docNumCache[y] = idx;
+    return idx;
+  },
+
+  getNextDocNumSync(year = null) {
+    const idx = this._getYearDocIndex(year);
+    let candidate = idx.takenSet.size > 0 ? idx.maxNum + 1 : 1;
+    if (candidate < 1) candidate = 1;
+    while (idx.takenSet.has(candidate)) candidate++;
+    const formatted = String(candidate).padStart(idx.maxPad, '0');
+    return { num: candidate, formatted, maxPad: idx.maxPad, takenSet: idx.takenSet };
   },
 
   async getNextDocNum(year = null) {
-    const y = year || new Date().getFullYear();
-    const local = this.getNextDocNumSync(y);
-    const takenSet = new Set(local.takenSet);
-    let maxPad = local.maxPad;
-
-    // Server check: use lightweight endpoint only (no full collection download)
-    if (window.API) {
-      try {
-        const res = await API.get(`/data/next-num/bls?year=${y}`);
-        if (res && res.num && res.num > 0) {
-          takenSet.add(res.num - 1); // server says next=N, so N-1 is taken
-        }
-      } catch(e) {}
-    }
-
-    // 4. Calculate candidate:
-    // Starts at 1 if none exist.
-    // If numbers exist, next is (max + 1).
-    let candidate = 1;
-    if (takenSet.size > 0) {
-      const maxNum = Math.max(...takenSet);
-      candidate = maxNum + 1;
-    }
-    if (candidate < 1) candidate = 1;
-    while (takenSet.has(candidate)) candidate++;
-
-    const formatted = String(candidate).padStart(maxPad, '0');
-    return { num: candidate, formatted, maxPad };
+    const { num, formatted, maxPad } = this.getNextDocNumSync(year);
+    return { num, formatted, maxPad };
   },
 
   async getNextBRNum() {
@@ -4029,39 +4126,32 @@ const DB = {
       return { valid: false, reason: 'invalid', message: 'Numéro invalide' };
     }
 
-    // Check in BRs
-    const takenBR = this.getAll('brs').find(b => {
-      if (excludeBrId && Number(b.id) === Number(excludeBrId)) return false;
-      if (parentBrId && Number(b.id) === Number(parentBrId)) return false;
-      if (excludeBlId) {
-        const bl = this.getById('bls', excludeBlId);
-        if (bl && Number(b.id) === Number(bl.brId)) return false;
-      }
-      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
-      if (bYear !== y) return false;
-      const bNum = parseInt(b.brNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
-      return bNum === n;
-    });
+    const idx = this._getYearDocIndex(y);
+    const exclBl = excludeBlId ? this.getById('bls', excludeBlId) : null;
+    const exclBlBrId = exclBl ? Number(exclBl.brId) : null;
 
-    if (takenBR) {
-      return { valid: false, reason: 'taken_br', ref: takenBR.ref, doc: takenBR, message: `Déjà utilisé dans BR (${takenBR.ref})` };
+    // Check in BRs
+    const brHits = idx.brsByNum.get(n);
+    if (brHits) {
+      for (let i = 0; i < brHits.length; i++) {
+        const b = brHits[i];
+        if (excludeBrId && Number(b.id) === Number(excludeBrId)) continue;
+        if (parentBrId && Number(b.id) === Number(parentBrId)) continue;
+        if (exclBlBrId && Number(b.id) === exclBlBrId) continue;
+        return { valid: false, reason: 'taken_br', ref: b.ref, doc: b, message: `Déjà utilisé dans BR (${b.ref})` };
+      }
     }
 
-    // Check in BLs / BCHs — SKIP returned/cancelled (they free the number for R-/P- reuse)
-    // Also ignore any BL that belongs to the BR currently being excluded or parented
-    const takenBL = this.getAll('bls').find(b => {
-      if (excludeBlId && Number(b.id) === Number(excludeBlId)) return false;
-      if (excludeBrId && Number(b.brId) === Number(excludeBrId)) return false;
-      if (parentBrId && Number(b.brId) === Number(parentBrId)) return false;
-      if (b.status === 'returned' || b.status === 'cancelled') return false;
-      const bYear = b.year || (b.date ? parseInt(b.date.substring(0, 4)) : y);
-      if (bYear !== y) return false;
-      const bNum = parseInt(b.bchNum || b.bcNum || b.blNum) || (b.ref ? parseInt((b.ref.match(/(\d+)/) || [])[1]) : 0);
-      return bNum === n;
-    });
-
-    if (takenBL) {
-      return { valid: false, reason: 'taken_bch', ref: takenBL.ref, doc: takenBL, message: `Déjà utilisé dans BCH (${takenBL.ref})` };
+    // Check in BLs / BCHs — returned/cancelled already omitted in index
+    const blHits = idx.blsByNum.get(n);
+    if (blHits) {
+      for (let i = 0; i < blHits.length; i++) {
+        const b = blHits[i];
+        if (excludeBlId && Number(b.id) === Number(excludeBlId)) continue;
+        if (excludeBrId && Number(b.brId) === Number(excludeBrId)) continue;
+        if (parentBrId && Number(b.brId) === Number(parentBrId)) continue;
+        return { valid: false, reason: 'taken_bch', ref: b.ref, doc: b, message: `Déjà utilisé dans BCH (${b.ref})` };
+      }
     }
 
     return { valid: true, reason: 'available', message: 'Disponible' };
@@ -4672,7 +4762,20 @@ const DB = {
 
 // ─── AUTH ──────────────────────────────────────────────────────
 const Auth = {
-  getCurrentUser() { try { return JSON.parse(localStorage.getItem('currentUser')||'null'); } catch { return null; } },
+  _userCache: null,
+  _userCacheTs: 0,
+  _userRaw: undefined,
+  getCurrentUser() {
+    try {
+      const raw = localStorage.getItem('currentUser');
+      if (this._userRaw === raw) return this._userCache;
+      const parsed = JSON.parse(raw || 'null');
+      this._userRaw = raw;
+      this._userCache = parsed;
+      this._userCacheTs = Date.now();
+      return parsed;
+    } catch { return null; }
+  },
   isLoggedIn() { return !!this.getCurrentUser(); },
   isAdmin() { return this.getCurrentUser()?.role === 'admin'; },
   isSupplier() {
@@ -4686,6 +4789,9 @@ const Auth = {
     
     // If forced bypass but user not found (first login on new client), create a temporary session user
     const finalUser = u || { id: 'admin', username, role: 'admin', name: username };
+    this._userCache = null;
+    this._userCacheTs = 0;
+    this._userRaw = undefined;
     localStorage.setItem('currentUser', JSON.stringify(finalUser));
     // Log work start AFTER saving currentUser so DB.insert can read it
     if (u) WorkLog.logIn(u.id);
@@ -4695,6 +4801,9 @@ const Auth = {
   async logout() {
     const u = this.getCurrentUser();
     if (u) WorkLog.logOut(u.id);
+    this._userCache = null;
+    this._userCacheTs = 0;
+    this._userRaw = undefined;
     localStorage.removeItem('currentUser');
     localStorage.removeItem('_erp_token');
     // Clear sync timestamps and IDB cache so next user (e.g. supplier vs admin) starts clean
@@ -5306,7 +5415,18 @@ const NotifMgr = {
 
 // ─── SESSION MANAGER — Mini Caisse & Clôture Vendeur ─────────
 const SessionMgr = {
+  _sessionCache: {},
+  _sessionArrRef: null,
   getTodaySession(userId, date = Utils.today()) {
+    const sessions = DB.getAll('sessions');
+    if (this._sessionArrRef !== sessions) {
+      this._sessionCache = {};
+      this._sessionArrRef = sessions;
+    }
+    const cacheKey = `${userId}_${date}`;
+    if (Object.prototype.hasOwnProperty.call(this._sessionCache, cacheKey)) {
+      return this._sessionCache[cacheKey];
+    }
     const isUserMatch = (id) => {
       if (id === userId || String(id) === String(userId)) return true;
       const isAdminDoc = (id === 1 || id === '1' || id === 'admin');
@@ -5314,7 +5434,9 @@ const SessionMgr = {
       if (isAdminDoc && isAdminQuery) return true;
       return false;
     };
-    return DB.getAll('sessions').find(s => isUserMatch(s.userId) && s.date === date) || null;
+    const found = sessions.find(s => isUserMatch(s.userId) && s.date === date) || null;
+    this._sessionCache[cacheKey] = found;
+    return found;
   },
 
   getLastClosedSession(userId) {

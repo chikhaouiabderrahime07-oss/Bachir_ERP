@@ -2387,12 +2387,14 @@ const BLModule = {
             <th style="font-size:11px">${T.get('col_total_ttc')}</th><th style="font-size:11px">${T.get('col_status')}</th><th class="td-actions" style="font-size:11px;text-align:center">${T.get('col_actions')}</th>
           </tr></thead>
           <tbody>
-            ${items.length ? items.slice(0, this._displayLimit).map(bl=>{
+            ${(() => {
+              const isAR = T.isRTL();
+              const usineRule = (typeof SessionMgr !== 'undefined' && SessionMgr.getEvUsineRule) ? SessionMgr.getEvUsineRule() : { active: false, covers: () => false };
+              return items.length ? items.slice(0, this._displayLimit).map(bl=>{
               const br = brMap[bl.brId];
               const cli = cliMap[bl.clientId];
               const isLocked = bl.status==='delivered'||bl.status==='locked';
               const dest = bl.destinationAddress||cli?.address||'';
-              const isAR = T.isRTL();
 
               // Detect reference / number mismatch between BCH and linked BR
               const brNum = br ? (br.brNum || (br.ref ? parseInt((br.ref.match(/(\d+)/) || [])[1], 10) : null)) : null;
@@ -2401,7 +2403,6 @@ const BLModule = {
                               (br && br.bcRef && br.bcRef === bl.ref) || 
                               (bl.linkedBrRef && br && bl.linkedBrRef === br.ref);
               const isMismatch = br && !isMatch;
-              const usineRule = (typeof SessionMgr !== 'undefined' && SessionMgr.getEvUsineRule) ? SessionMgr.getEvUsineRule() : { active: false, covers: () => false };
               const bCreationDate = bl ? (bl.date || (bl.createdAt || '').slice(0, 10)) : '';
               const isExcludedFromEv = !!bl && bl.status === 'pending_usine' && usineRule.active && usineRule.covers(bCreationDate);
               const rowStyle = isMismatch ? 'background:rgba(239,68,68,0.14) !important;border-left:5px solid #ef4444 !important;' : isExcludedFromEv ? 'opacity:0.62;background:rgba(245,158,11,0.06) !important;border-left:4px solid #f59e0b !important;' : '';
@@ -2460,7 +2461,7 @@ const BLModule = {
                   </div>
                 </td>
               </tr>`;
-            }).join('') : `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`}
+            }).join('') : `<tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-export"></i><h4>${T.get('no_data')}</h4></div></td></tr>`; })()}
           </tbody>
         </table>
       </div>
@@ -2820,6 +2821,7 @@ const BLModule = {
       }
     });
     // Fast exhaustion check using pre-built index
+    const remByBrId = new Map();
     const isBRExhausted = (br) => {
       const key = l => String(l.designation || l.articleId || '').trim();
       const total = {};
@@ -2829,7 +2831,8 @@ const BLModule = {
         (b.lines || []).forEach(l => { const k = key(l); used[k] = (used[k] || 0) + (Number(l.qtyDelivered ?? l.qty) || 0); });
       });
       let remainingQty = 0;
-      Object.keys(total).forEach(k => { remainingQty += Math.max(0, total[k] - (used[k] || 0)); });
+      Object.keys(total).forEach(k => { remainingQty += Math.max(0, Math.round((total[k] - (used[k] || 0)) * 1000) / 1000); });
+      remByBrId.set(br.id, { remainingQty });
       return remainingQty <= 0.0001;
     };
     // FIFO: First-in, first-out (oldest BR in stock is served first)
@@ -3032,7 +3035,7 @@ const BLModule = {
           <!-- BR Results List (replaces plain select) -->
           <div id="br-stock-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg2)">
             ${openBRs.length ? openBRs.map((br, idx) => {
-              const rem = BLModule.getBRRemaining(br.id);
+              const rem = remByBrId.get(br.id) ?? BLModule.getBRRemaining(br.id);
               const supName = supMap[br.supplierId]?.name || '?';
               const dateStr = br.date ? Utils.fmtDate(br.date) : '';
               const fcfsTag = idx === 0;
